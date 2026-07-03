@@ -1,0 +1,1 @@
+const db = require("./dist/config/database").default; const { optimizeImage } = require("./dist/utils/imageProcessor"); async function run() { try { await db.authenticate(); console.log("DB connected"); } catch(e) { console.error("DB ERR", e); } process.exit(); } run();

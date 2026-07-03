@@ -1,0 +1,34 @@
+======================================================================
+PostgreSQL Connection Diagnostics
+======================================================================
+
+Testing: Config 1: No SSL, direct credentials
+----------------------------------------------------------------------
+Attempting connection...
+❌ Failed: password authentication failed for user "postgres"
+   Code: 28P01
+   Severity: FATAL
+   → Invalid password
+
+Testing: Config 2: SSL with rejectUnauthorized false
+----------------------------------------------------------------------
+Attempting connection...
+❌ Failed: The server does not support SSL connections
+   Code: N/A
+   Severity: N/A
+
+Testing: Config 3: Explicit no SSL, no encryption
+----------------------------------------------------------------------
+Attempting connection...
+❌ Failed: read ECONNRESET
+   Code: ECONNRESET
+   Severity: N/A
+   → Connection was reset by server
+   → This usually means pg_hba.conf rejected the connection
+
+======================================================================
+❌ ALL CONFIGURATIONS FAILED
+======================================================================
+
+Server-side configuration is still required.
+Please check POSTGRES_SERVER_CONFIG.md for instructions.

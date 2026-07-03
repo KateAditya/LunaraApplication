@@ -1,0 +1,637 @@
+{
+  "info": {
+    "name": "Lunara — Support & Legal APIs",
+    "_postman_id": "lunara-support-legal-v1",
+    "description": "Complete API collection for the Support & Legal module of the Lunara platform.\n\n## Base URLs\n- **Local Dev:** `http://localhost:9076`\n- **Production:** `http://103.224.247.35:9076`\n\n## Authentication\n- **Admin endpoints** require a Bearer token (login via `/api/auth/login` first)\n- **Mobile / Public endpoints** require NO authentication\n\n## Modules\n1. **Help Center** — FAQ-style articles for users\n2. **Community Guidelines** — Platform rules & policies\n3. **Legal & Terms** — Terms of Service, Privacy Policy, Refund Policy etc.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:9076",
+      "type": "string",
+      "description": "Change to http://103.224.247.35:9076 for production"
+    },
+    {
+      "key": "admin_token",
+      "value": "",
+      "type": "string",
+      "description": "Paste your admin Bearer token here after logging in"
+    },
+    {
+      "key": "help_article_id",
+      "value": "",
+      "type": "string",
+      "description": "Set after creating a help article"
+    },
+    {
+      "key": "guideline_id",
+      "value": "",
+      "type": "string",
+      "description": "Set after creating a community guideline"
+    },
+    {
+      "key": "legal_doc_id",
+      "value": "",
+      "type": "string",
+      "description": "Set after creating a legal document"
+    }
+  ],
+  "item": [
+    {
+      "name": "🔐 Auth — Get Admin Token",
+      "item": [
+        {
+          "name": "Admin Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.accessToken) {",
+                  "  pm.collectionVariables.set('admin_token', res.accessToken);",
+                  "  console.log('Admin token saved.');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"vishal.karpe@micraft.co.in\",\n  \"password\": \"Vishal#2407\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Login as admin. The test script auto-saves the accessToken to the `admin_token` collection variable."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "📖 Help Center — Admin (CRUD)",
+      "item": [
+        {
+          "name": "Get All Help Articles (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/support/help-center",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support", "help-center"],
+              "query": [
+                { "key": "category", "value": "Booking", "disabled": true, "description": "Filter by category" },
+                { "key": "published", "value": "true", "disabled": true, "description": "Filter by published status (true/false)" }
+              ]
+            },
+            "description": "Returns all help articles (including drafts). Admin only."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Help Article by ID (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/support/help-center/{{help_article_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support", "help-center", "{{help_article_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Help Article",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.article && res.article.id) {",
+                  "  pm.collectionVariables.set('help_article_id', res.article.id);",
+                  "  console.log('Help article ID saved:', res.article.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"How to Book a Venue\",\n  \"content\": \"To book a venue on Lunara, navigate to the venue page, select your date and time, fill in guest details, and proceed to payment. You will receive a confirmation email once the booking is confirmed.\",\n  \"category\": \"Booking\",\n  \"isPublished\": true,\n  \"displayOrder\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/support/help-center",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support", "help-center"]
+            },
+            "description": "Creates a new help article. Requires admin token.\n\nRequired fields: title, content, category\nOptional fields: isPublished (default: false), displayOrder (default: 0)\n\nValid categories: General, Account, Booking, Payment, Venue, Safety, Technical, Other"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Help Article",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"How to Book a Venue — Updated\",\n  \"content\": \"Updated content here. To book a venue on Lunara, go to the venue detail page and tap the Book Now button.\",\n  \"isPublished\": true,\n  \"displayOrder\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/support/help-center/{{help_article_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support", "help-center", "{{help_article_id}}"]
+            },
+            "description": "Updates an existing help article. Only send the fields you want to change — all fields are optional."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Help Article",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/support/help-center/{{help_article_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support", "help-center", "{{help_article_id}}"]
+            },
+            "description": "Permanently deletes a help article."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🛡️ Community Guidelines — Admin (CRUD)",
+      "item": [
+        {
+          "name": "Get All Community Guidelines (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/support/community-guidelines",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support", "community-guidelines"],
+              "query": [
+                { "key": "category", "value": "Safety", "disabled": true },
+                { "key": "active", "value": "true", "disabled": true }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Community Guideline by ID (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/support/community-guidelines/{{guideline_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support", "community-guidelines", "{{guideline_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Community Guideline",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.guideline && res.guideline.id) {",
+                  "  pm.collectionVariables.set('guideline_id', res.guideline.id);",
+                  "  console.log('Guideline ID saved:', res.guideline.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Respect Other Users\",\n  \"content\": \"All Lunara users are expected to treat others with respect and dignity. Harassment, bullying, or abusive language of any kind is strictly prohibited and will result in account suspension.\",\n  \"category\": \"Behavior\",\n  \"isActive\": true,\n  \"displayOrder\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/support/community-guidelines",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support", "community-guidelines"]
+            },
+            "description": "Creates a new community guideline. Requires admin token.\n\nRequired fields: title, content, category\nOptional fields: isActive (default: true), displayOrder (default: 0)\n\nValid categories: Behavior, Content, Privacy, Safety, Venue Rules, Community Standards, Other"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Community Guideline",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Respect Other Users — Updated\",\n  \"isActive\": true,\n  \"displayOrder\": 2\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/support/community-guidelines/{{guideline_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support", "community-guidelines", "{{guideline_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Community Guideline",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/support/community-guidelines/{{guideline_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support", "community-guidelines", "{{guideline_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "⚖️ Legal & Terms — Admin (CRUD)",
+      "item": [
+        {
+          "name": "Get All Legal Documents (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/support/legal",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support", "legal"],
+              "query": [
+                { "key": "type", "value": "terms_of_service", "disabled": true, "description": "Filter by type: terms_of_service | privacy_policy | refund_policy | other" },
+                { "key": "active", "value": "true", "disabled": true }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Legal Document by ID (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/support/legal/{{legal_doc_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support", "legal", "{{legal_doc_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Legal Document",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.document && res.document.id) {",
+                  "  pm.collectionVariables.set('legal_doc_id', res.document.id);",
+                  "  console.log('Legal doc ID saved:', res.document.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Terms of Service\",\n  \"type\": \"terms_of_service\",\n  \"content\": \"Welcome to Lunara. By using our platform, you agree to these terms of service. Lunara provides a nightlife discovery and booking platform. Users must be 18 years or older to use our services. All bookings are subject to venue availability and confirmation.\",\n  \"version\": \"1.0\",\n  \"isActive\": true,\n  \"effectiveDate\": \"2025-01-01\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/support/legal",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support", "legal"]
+            },
+            "description": "Creates a new legal document. Requires admin token.\n\nRequired fields: title, type, content, version, effectiveDate\nOptional fields: isActive (default: true)\n\nValid types:\n- terms_of_service\n- privacy_policy\n- refund_policy\n- other\n\neffectiveDate format: YYYY-MM-DD"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Privacy Policy",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Privacy Policy\",\n  \"type\": \"privacy_policy\",\n  \"content\": \"Lunara respects your privacy. This policy describes how we collect, use, and protect your personal information. We collect information you provide during registration including name, email, phone, and date of birth. We use this information to provide our services and improve user experience. We do not sell your personal data to third parties.\",\n  \"version\": \"1.0\",\n  \"isActive\": true,\n  \"effectiveDate\": \"2025-01-01\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/support/legal",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support", "legal"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Refund Policy",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Refund Policy\",\n  \"type\": \"refund_policy\",\n  \"content\": \"Cancellations made more than 48 hours before the booking date are eligible for a full refund. Cancellations within 24-48 hours will receive a 50% refund. Cancellations within 24 hours of the event are non-refundable. Refunds are processed within 5-7 business days.\",\n  \"version\": \"1.0\",\n  \"isActive\": true,\n  \"effectiveDate\": \"2025-01-01\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/support/legal",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support", "legal"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Legal Document",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Terms of Service — v2\",\n  \"version\": \"2.0\",\n  \"content\": \"Updated terms content here...\",\n  \"effectiveDate\": \"2025-06-01\",\n  \"isActive\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/support/legal/{{legal_doc_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support", "legal", "{{legal_doc_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Legal Document",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/support/legal/{{legal_doc_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support", "legal", "{{legal_doc_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "📱 Mobile App — Help Center (Public)",
+      "item": [
+        {
+          "name": "Get Published Help Articles",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/support/help-center",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "support", "help-center"],
+              "query": [
+                { "key": "category", "value": "Booking", "disabled": true, "description": "Optional: filter by category" },
+                { "key": "search", "value": "venue", "disabled": true, "description": "Optional: search in title/content" }
+              ]
+            },
+            "description": "Returns published help articles only. No authentication required.\n\nResponse includes:\n- articles[] — flat list\n- grouped{} — articles grouped by category (useful for category-based UI)"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Help Article by ID (Mobile)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/support/help-center/{{help_article_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "support", "help-center", "{{help_article_id}}"]
+            },
+            "description": "Returns a single published help article. Returns 404 if not published."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Help Categories",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/support/help-categories",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "support", "help-categories"]
+            },
+            "description": "Returns a sorted list of unique categories that have published articles. Useful to populate a category filter in the app."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Help Articles",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/support/help-center?search=book",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "support", "help-center"],
+              "query": [
+                { "key": "search", "value": "book" }
+              ]
+            },
+            "description": "Search help articles by keyword in title, content, or category."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "📱 Mobile App — Community Guidelines (Public)",
+      "item": [
+        {
+          "name": "Get Active Community Guidelines",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/support/community-guidelines",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "support", "community-guidelines"],
+              "query": [
+                { "key": "category", "value": "Safety", "disabled": true, "description": "Optional: filter by category" }
+              ]
+            },
+            "description": "Returns active community guidelines only. No authentication required.\n\nResponse includes:\n- guidelines[] — flat list\n- grouped{} — guidelines grouped by category"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Community Guideline by ID (Mobile)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/support/community-guidelines/{{guideline_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "support", "community-guidelines", "{{guideline_id}}"]
+            },
+            "description": "Returns a single active community guideline. Returns 404 if inactive."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "📱 Mobile App — Legal & Terms (Public)",
+      "item": [
+        {
+          "name": "Get All Active Legal Documents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/support/legal",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "support", "legal"],
+              "query": [
+                { "key": "type", "value": "terms_of_service", "disabled": true, "description": "Filter: terms_of_service | privacy_policy | refund_policy | other" }
+              ]
+            },
+            "description": "Returns active legal documents. No authentication required."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Terms of Service",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/support/legal/type/terms_of_service",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "support", "legal", "type", "terms_of_service"]
+            },
+            "description": "Returns the latest active Terms of Service document. Convenience endpoint — no need to know the ID."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Privacy Policy",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/support/legal/type/privacy_policy",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "support", "legal", "type", "privacy_policy"]
+            },
+            "description": "Returns the latest active Privacy Policy document."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Refund Policy",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/support/legal/type/refund_policy",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "support", "legal", "type", "refund_policy"]
+            },
+            "description": "Returns the latest active Refund Policy document."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Legal Document by ID (Mobile)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/support/legal/{{legal_doc_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "support", "legal", "{{legal_doc_id}}"]
+            },
+            "description": "Returns a single active legal document by ID."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

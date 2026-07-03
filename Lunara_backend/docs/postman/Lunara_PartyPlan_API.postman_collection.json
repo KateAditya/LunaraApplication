@@ -1,0 +1,257 @@
+{
+  "info": {
+    "name": "Lunara — Party Plans API",
+    "_postman_id": "lunara-party-plans-v1",
+    "description": "Complete API collection for the Party Plans feature of the Lunara platform.\n\n## Base URLs\n- **Local Dev:** `http://localhost:9076`\n- **Production:** `http://103.224.247.35:9076`\n\n## Authentication\nAll Party Plan endpoints are **public** — no Bearer token needed.\nPassing `userId` in the request body is used to identify the creator.\n\n## Key Endpoints\n| Method | URL | Description |\n|--------|-----|-------------|\n| `POST` | `/api/mobile/party-plans` | ✅ Create a party plan (on tap of POST PARTY PLAN) |\n| `GET` | `/api/mobile/party-plans` | Get all active plans |\n| `GET` | `/api/mobile/party-plans/user/:userId` | Get all plans by a user |\n| `GET` | `/api/mobile/party-plans/:id` | Get single plan with full details |\n| `PATCH` | `/api/mobile/party-plans/:id/status` | Update plan status |\n| `DELETE` | `/api/mobile/party-plans/:id` | Delete a plan |",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:9076",
+      "type": "string",
+      "description": "Change to http://103.224.247.35:9076 for production"
+    },
+    {
+      "key": "party_plan_id",
+      "value": "",
+      "type": "string",
+      "description": "Auto-filled after POST. Use in GET/PATCH/DELETE"
+    },
+    {
+      "key": "user_id",
+      "value": "",
+      "type": "string",
+      "description": "Set this to a valid user UUID from your database"
+    },
+    {
+      "key": "venue_id",
+      "value": "",
+      "type": "string",
+      "description": "Set this to a valid venue UUID from your database"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Create Party Plan (POST PARTY PLAN button)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const res = pm.response.json();",
+              "if (res.success && res.data && res.data.id) {",
+              "  pm.collectionVariables.set('party_plan_id', res.data.id);",
+              "  console.log('✅ Party Plan ID saved:', res.data.id);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{user_id}}\",\n  \"venueId\": \"{{venue_id}}\",\n  \"message\": \"Let's party at H2O! 🚀 Join me for an epic night out!\",\n  \"planDateTime\": \"2025-12-31T22:00:00.000Z\"\n}",
+          "options": {
+            "raw": { "language": "json" }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/mobile/party-plans",
+          "host": ["{{base_url}}"],
+          "path": ["api", "mobile", "party-plans"]
+        },
+        "description": "## POST PARTY PLAN\n\nThis is the main endpoint called when the user taps the **POST PARTY PLAN** button in the Create a Party Plan screen.\n\n### Required Fields\n| Field | Type | Description |\n|-------|------|-------------|\n| `userId` | UUID string | ID of the logged-in user (plan creator) |\n| `venueId` | UUID string | ID of the selected venue |\n| `message` | string | Party message / description (1–500 chars) |\n| `planDateTime` | ISO 8601 string | Date and time of the party (must be future) |\n\n### Example Success Response (201)\n```json\n{\n  \"success\": true,\n  \"message\": \"Party plan posted successfully! 🎉\",\n  \"data\": {\n    \"id\": \"<uuid>\",\n    \"status\": \"active\",\n    \"message\": \"Let's party at H2O! 🚀\",\n    \"planDateTime\": \"2025-12-31T22:00:00.000Z\",\n    \"createdAt\": \"2025-05-14T07:00:00.000Z\",\n    \"user\": { \"id\": \"...\", \"firstName\": \"Vishal\", \"lastName\": \"K\", \"email\": \"...\" },\n    \"venue\": { \"id\": \"...\", \"name\": \"H2O\", \"city\": \"Mumbai\", \"category\": \"club\" }\n  }\n}\n```\n\n### Validation Errors (400)\n- `userId` is required and must be a UUID\n- `venueId` is required and must be a UUID\n- `message` is required (max 500 chars)\n- `planDateTime` must be a valid future ISO 8601 date"
+      },
+      "response": []
+    },
+    {
+      "name": "2. Get All Active Party Plans",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/mobile/party-plans?status=active&page=1&limit=20",
+          "host": ["{{base_url}}"],
+          "path": ["api", "mobile", "party-plans"],
+          "query": [
+            { "key": "status", "value": "active", "description": "active | inactive | cancelled (default: active)" },
+            { "key": "venueId", "value": "{{venue_id}}", "disabled": true, "description": "Optional: filter by venue" },
+            { "key": "page", "value": "1", "description": "Page number (default: 1)" },
+            { "key": "limit", "value": "20", "description": "Results per page, max 100 (default: 20)" }
+          ]
+        },
+        "description": "Returns all party plans with full user and venue details.\n\nEach plan in the response includes:\n- `id`, `status`, `message`, `planDateTime`, `createdAt`\n- `user` — creator details (name, email, bio, occupation, city, gender)\n- `venue` — venue details (name, address, category, cover charge)"
+      },
+      "response": []
+    },
+    {
+      "name": "3. Get All Plans by User ID",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/mobile/party-plans/user/{{user_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "mobile", "party-plans", "user", "{{user_id}}"],
+          "query": [
+            { "key": "status", "value": "active", "disabled": true, "description": "Optional filter by status" }
+          ]
+        },
+        "description": "Returns all party plans posted by a specific user.\n\nUse this for:\n- Showing the user's own plans in their profile\n- Displaying plans history"
+      },
+      "response": []
+    },
+    {
+      "name": "4. Get Single Party Plan by ID",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/mobile/party-plans/{{party_plan_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "mobile", "party-plans", "{{party_plan_id}}"]
+        },
+        "description": "Returns complete details of a single party plan including full user and venue details."
+      },
+      "response": []
+    },
+    {
+      "name": "5. Update Plan Status (Cancel a Plan)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{user_id}}\",\n  \"status\": \"cancelled\"\n}",
+          "options": {
+            "raw": { "language": "json" }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/mobile/party-plans/{{party_plan_id}}/status",
+          "host": ["{{base_url}}"],
+          "path": ["api", "mobile", "party-plans", "{{party_plan_id}}", "status"]
+        },
+        "description": "Update the status of a party plan.\n\nValid statuses:\n- `active` — plan is visible and live\n- `inactive` — plan is hidden but not deleted\n- `cancelled` — plan is cancelled\n\n**Only the plan creator** (matching `userId`) can update the status."
+      },
+      "response": []
+    },
+    {
+      "name": "5b. Reactivate a Plan",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{user_id}}\",\n  \"status\": \"active\"\n}",
+          "options": {
+            "raw": { "language": "json" }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/mobile/party-plans/{{party_plan_id}}/status",
+          "host": ["{{base_url}}"],
+          "path": ["api", "mobile", "party-plans", "{{party_plan_id}}", "status"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "6. Delete Party Plan",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{user_id}}\"\n}",
+          "options": {
+            "raw": { "language": "json" }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/mobile/party-plans/{{party_plan_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "mobile", "party-plans", "{{party_plan_id}}"]
+        },
+        "description": "Permanently deletes a party plan.\n\n**Only the plan creator** (matching `userId`) can delete the plan.\n\nReturns 403 if userId doesn't match the creator."
+      },
+      "response": []
+    },
+    {
+      "name": "7. Filter Plans by Venue",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/mobile/party-plans?venueId={{venue_id}}&status=active",
+          "host": ["{{base_url}}"],
+          "path": ["api", "mobile", "party-plans"],
+          "query": [
+            { "key": "venueId", "value": "{{venue_id}}" },
+            { "key": "status", "value": "active" }
+          ]
+        },
+        "description": "Filter all active party plans at a specific venue.\nUseful for showing plans at the currently viewed venue."
+      },
+      "response": []
+    },
+    {
+      "name": "❌ Validation Test — Missing Fields",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"not-a-uuid\",\n  \"venueId\": \"\",\n  \"message\": \"\"\n}",
+          "options": {
+            "raw": { "language": "json" }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/mobile/party-plans",
+          "host": ["{{base_url}}"],
+          "path": ["api", "mobile", "party-plans"]
+        },
+        "description": "Test that validation returns proper error messages when required fields are missing or invalid."
+      },
+      "response": []
+    },
+    {
+      "name": "❌ Validation Test — Past Date",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{user_id}}\",\n  \"venueId\": \"{{venue_id}}\",\n  \"message\": \"Old party plan\",\n  \"planDateTime\": \"2020-01-01T10:00:00.000Z\"\n}",
+          "options": {
+            "raw": { "language": "json" }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/mobile/party-plans",
+          "host": ["{{base_url}}"],
+          "path": ["api", "mobile", "party-plans"]
+        },
+        "description": "Test that the API rejects plans with a past date/time."
+      },
+      "response": []
+    }
+  ]
+}

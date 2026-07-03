@@ -1,0 +1,1 @@
+const path = require("path"); const fs = require("fs"); const file = { path: "uploads\\venues\\temp\\raw\\test.jpg", filename: "test.jpg" }; const newVenueId = "1234-uuid"; const cwd = process.cwd(); console.log(file.path.includes(path.join("venues", "temp")));

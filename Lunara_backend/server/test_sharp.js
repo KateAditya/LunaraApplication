@@ -1,0 +1,1 @@
+const sharp = require("sharp"); const fs = require("fs"); fs.writeFileSync("test.jpg", Buffer.alloc(100)); sharp("test.jpg").resize(10, 10).toFile("test2.jpg").then(() => { try { fs.unlinkSync("test.jpg"); console.log("success"); } catch(e) { console.log(e.message); } });

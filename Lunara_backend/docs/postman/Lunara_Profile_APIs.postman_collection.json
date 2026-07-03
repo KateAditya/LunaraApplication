@@ -1,0 +1,182 @@
+{
+	"info": {
+		"_postman_id": "b3e51f8a-abcd-1234-5678-0123456789ab",
+		"name": "Lunara Profile APIs",
+		"description": "APIs for Edit Profile, Change Password, and Photo Management",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Update Profile",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{jwt_token}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"firstName\": \"John\",\r\n    \"lastName\": \"Doe\",\r\n    \"phone\": \"9876543210\",\r\n    \"dateOfBirth\": \"1995-08-15\",\r\n    \"gender\": \"Male\",\r\n    \"city\": \"Mumbai\",\r\n    \"bio\": \"Love exploring new venues!\",\r\n    \"lookingFor\": [\"Partner\", \"Crew\"],\r\n    \"musicPreference\": [\"Techno\", \"House\"],\r\n    \"smokingPreference\": \"Non-Smoker\",\r\n    \"drinkPreference\": [\"Socially\"],\r\n    \"occupation\": \"Designer\",\r\n    \"education\": \"NID\",\r\n    \"minBudget\": 2000,\r\n    \"maxBudget\": 10000,\r\n    \"preferredGenders\": [\"Women\"],\r\n    \"minAgePreference\": 21,\r\n    \"maxAgePreference\": 35,\r\n    \"invisibleMode\": false,\r\n    \"matchDistanceKm\": 10,\r\n    \"bookingAlertsEnabled\": true\r\n}"
+				},
+				"url": {
+					"raw": "http://localhost:5000/api/profile/update",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "5000",
+					"path": [
+						"api",
+						"profile",
+						"update"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Change Password",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{jwt_token}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"currentPassword\": \"OldPassword123!\",\r\n    \"newPassword\": \"NewSecurePassword456@\",\r\n    \"confirmPassword\": \"NewSecurePassword456@\"\r\n}"
+				},
+				"url": {
+					"raw": "http://localhost:5000/api/profile/change-password",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "5000",
+					"path": [
+						"api",
+						"profile",
+						"change-password"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Upload Photos",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{jwt_token}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "photos",
+							"type": "file",
+							"src": []
+						}
+					]
+				},
+				"url": {
+					"raw": "http://localhost:5000/api/profile/photos",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "5000",
+					"path": [
+						"api",
+						"profile",
+						"photos"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Set Primary Photo",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{jwt_token}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "http://localhost:5000/api/profile/photos/REPLACE_WITH_PHOTO_ID/primary",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "5000",
+					"path": [
+						"api",
+						"profile",
+						"photos",
+						"REPLACE_WITH_PHOTO_ID",
+						"primary"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Delete Photo",
+			"request": {
+				"method": "DELETE",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{jwt_token}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "http://localhost:5000/api/profile/photos/REPLACE_WITH_PHOTO_ID",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "5000",
+					"path": [
+						"api",
+						"profile",
+						"photos",
+						"REPLACE_WITH_PHOTO_ID"
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "jwt_token",
+			"value": "YOUR_JWT_TOKEN_HERE"
+		}
+	]
+}

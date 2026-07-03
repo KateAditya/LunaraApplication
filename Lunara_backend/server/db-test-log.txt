@@ -1,0 +1,23 @@
+============================================================
+PostgreSQL Connection Test
+============================================================
+Host: 103.224.247.22
+Port: 5432
+User: postgres
+Database: postgres (default)
+
+Connecting...
+SUCCESS: Connected to PostgreSQL!
+
+PostgreSQL Version:
+PostgreSQL 18.1 on x86_64-windows, compiled by msvc-19.44.35221, 64-bit...
+
+Existing Databases:
+  - lunara_db
+  - postgres
+
+INFO: Database "lunara_db" already exists!
+
+============================================================
+TEST RESULT: SUCCESS
+============================================================

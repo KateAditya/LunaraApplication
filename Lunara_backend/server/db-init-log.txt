@@ -1,0 +1,69 @@
+======================================================================
+Lunara Database Initialization - Enhanced Schema
+======================================================================
+
+Step 1: Testing database connection...
+✅ Database connected successfully
+
+Step 2: Creating tables...
+
+Creating core tables...
+✅ users
+✅ venues
+✅ bookings
+✅ group_bookings
+✅ payments
+
+Creating authentication tables...
+✅ password_reset_tokens
+✅ email_verifications
+✅ otp_verifications
+
+Creating user profile tables...
+✅ user_profiles
+✅ user_photos
+✅ user_interests
+✅ user_preferences
+
+Creating social matching tables...
+✅ user_matches
+✅ social_connections
+
+Creating venue media tables...
+✅ venue_images
+
+Step 3: Verifying tables...
+Tables in database (15):
+  ✓ bookings
+  ✓ email_verifications
+  ✓ group_bookings
+  ✓ otp_verifications
+  ✓ password_reset_tokens
+  ✓ payments
+  ✓ social_connections
+  ✓ user_interests
+  ✓ user_matches
+  ✓ user_photos
+  ✓ user_preferences
+  ✓ user_profiles
+  ✓ users
+  ✓ venue_images
+  ✓ venues
+
+======================================================================
+✅ Database initialization completed successfully!
+======================================================================
+
+Total tables created: 15
+
+New features enabled:
+  ✅ Password reset workflow
+  ✅ Email verification
+  ✅ OTP phone verification
+  ✅ Extended user profiles
+  ✅ User photo galleries
+  ✅ Interest-based matching
+  ✅ Vibe matching preferences
+  ✅ Social connections
+  ✅ Venue photo management
+
