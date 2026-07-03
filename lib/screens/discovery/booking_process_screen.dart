@@ -1,0 +1,891 @@
+import 'package:flutter/material.dart';
+import '../../core/theme.dart';
+import '../../widgets/action_button.dart';
+import 'payment_confirmation_screen.dart';
+import '../../services/api_service.dart';
+
+class BookingProcessScreen extends StatefulWidget {
+  final Map<dynamic, dynamic> venue;
+
+  const BookingProcessScreen({super.key, required this.venue});
+
+  @override
+  State<BookingProcessScreen> createState() => _BookingProcessScreenState();
+}
+
+class _BookingProcessScreenState extends State<BookingProcessScreen> {
+  DateTime _selectedDate = DateTime.now();
+  String? _selectedTime;
+  bool _isGoingSolo = true;
+  final TextEditingController _guestsController = TextEditingController();
+  final TextEditingController _partySubjectController = TextEditingController();
+  final TextEditingController _partyRequirementController =
+      TextEditingController();
+  final TextEditingController _partyDescriptionController =
+      TextEditingController();
+
+  @override
+  void dispose() {
+    _guestsController.dispose();
+    _partySubjectController.dispose();
+    _partyRequirementController.dispose();
+    _partyDescriptionController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildHeader(),
+            _buildProgressBar(),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 16),
+                    const Text(
+                      '1. SELECT DATE',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.5,
+                        color: Colors.black54,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildDateSelection(),
+                    const SizedBox(height: 32),
+                    const Text(
+                      '2. SELECT TIME',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.5,
+                        color: Colors.black54,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildTimeSelection(),
+                    const SizedBox(height: 48),
+                    const Text(
+                      '3. CHOOSE MODE',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.5,
+                        color: Colors.black54,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() => _isGoingSolo = true);
+                              _showBookingPopup(context, isSolo: true);
+                            },
+                            child: _buildModeBox(
+                              title: 'Going solo',
+                              subtitle: 'Table for yourself',
+                              icon: Icons.person_rounded,
+                              isSelected: _isGoingSolo,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() => _isGoingSolo = false);
+                              _showBookingPopup(context, isSolo: false);
+                            },
+                            child: _buildModeBox(
+                              title: 'With Friends',
+                              subtitle: 'Party for group',
+                              icon: Icons.group_rounded,
+                              isSelected: !_isGoingSolo,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.all(24.0),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.close, color: Colors.black),
+            onPressed: () => Navigator.pop(context),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              'BOOKING: ${widget.venue['name']}',
+              style: LunaraTheme.headingStyle.copyWith(
+                fontSize: 16,
+                color: Colors.black,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 2,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProgressBar() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      child: Row(
+        children: [
+          Expanded(child: _progressSegment(active: true)),
+          const SizedBox(width: 8),
+          Expanded(child: _progressSegment(active: _selectedTime != null)),
+          const SizedBox(width: 8),
+          Expanded(child: _progressSegment(active: false)),
+        ],
+      ),
+    );
+  }
+
+  Widget _progressSegment({required bool active}) {
+    return Container(
+      height: 4,
+      decoration: BoxDecoration(
+        color: active ? LunaraTheme.electricViolet : Colors.grey[200],
+        borderRadius: BorderRadius.circular(2),
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────
+  //  Going Solo Box
+  // ─────────────────────────────────────────────────────────
+
+  Widget _buildModeBox({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required bool isSelected,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isSelected
+            ? LunaraTheme.electricViolet.withValues(alpha: 0.05)
+            : Colors.grey[50],
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isSelected ? LunaraTheme.electricViolet : Colors.grey[200]!,
+          width: 1.5,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? LunaraTheme.electricViolet.withValues(alpha: 0.1)
+                  : Colors.grey[200],
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              icon,
+              color: isSelected ? LunaraTheme.electricViolet : Colors.grey[500],
+              size: 24,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              color: isSelected ? LunaraTheme.electricViolet : Colors.black,
+              letterSpacing: 1,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: const TextStyle(fontSize: 12, color: Colors.black54),
+          ),
+        ],
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration(String hint) {
+    return InputDecoration(
+      hintText: hint,
+      filled: true,
+      fillColor: Colors.grey[50],
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: Colors.grey[200]!),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: Colors.grey[200]!),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: LunaraTheme.electricViolet),
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────
+  //  Date Selection
+  // ─────────────────────────────────────────────────────────
+
+  Widget _buildDateSelection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'SELECT DATE',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 2,
+            color: Colors.black,
+          ),
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 90,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: 7,
+            itemBuilder: (context, index) {
+              final date = DateTime.now().add(Duration(days: index));
+              final isSelected =
+                  _selectedDate.day == date.day &&
+                  _selectedDate.month == date.month;
+              return GestureDetector(
+                onTap: () => setState(() {
+                  _selectedDate = date;
+                }),
+                child: Container(
+                  width: 66,
+                  margin: const EdgeInsets.only(right: 12),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? LunaraTheme.electricViolet
+                        : Colors.grey[100],
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: isSelected ? [
+                      BoxShadow(
+                        color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      )
+                    ] : [],
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        [
+                          'MON',
+                          'TUE',
+                          'WED',
+                          'THU',
+                          'FRI',
+                          'SAT',
+                          'SUN',
+                        ][date.weekday - 1],
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          color: isSelected ? Colors.white70 : Colors.grey[500],
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        date.day.toString(),
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                          color: isSelected ? Colors.white : Colors.black,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────
+  //  Time Selection
+  // ─────────────────────────────────────────────────────────
+
+  Widget _buildTimeSelection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'SELECT TIME SLOT',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 2,
+            color: Colors.black,
+          ),
+        ),
+        const SizedBox(height: 16),
+        GestureDetector(
+          onTap: () async {
+            final TimeOfDay? picked = await showTimePicker(
+              context: context,
+              initialTime: const TimeOfDay(hour: 22, minute: 0),
+              builder: (context, child) {
+                return Theme(
+                  data: ThemeData.light().copyWith(
+                    colorScheme: const ColorScheme.light(
+                      primary: LunaraTheme.electricViolet,
+                      onPrimary: Colors.white,
+                      surface: Colors.white,
+                      onSurface: Colors.black,
+                    ),
+                    timePickerTheme: TimePickerThemeData(
+                      backgroundColor: Colors.white,
+                      dialHandColor: LunaraTheme.electricViolet,
+                      dialBackgroundColor: Colors.grey[100],
+                      hourMinuteTextColor: Colors.black,
+                      dayPeriodTextColor: Colors.black,
+                      entryModeIconColor: LunaraTheme.electricViolet,
+                    ),
+                  ),
+                  child: child!,
+                );
+              },
+            );
+            if (picked != null) {
+              setState(() {
+                _selectedTime =
+                    '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+              });
+            }
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            decoration: BoxDecoration(
+              gradient: _selectedTime != null ? LunaraTheme.cardGradient : null,
+              color: _selectedTime != null ? null : Colors.grey[50],
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: _selectedTime != null ? LunaraTheme.premiumCardShadow : [],
+              border: Border.all(
+                color: _selectedTime != null
+                    ? LunaraTheme.electricViolet
+                    : Colors.grey[200]!,
+                width: 1,
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.access_time,
+                  color: _selectedTime != null
+                      ? LunaraTheme.electricViolet
+                      : Colors.grey[400],
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  _selectedTime ?? 'TAP TO SELECT TIME',
+                  style: TextStyle(
+                    color: _selectedTime != null
+                        ? Colors.black
+                        : Colors.grey[500],
+                    fontWeight: _selectedTime != null
+                        ? FontWeight.w900
+                        : FontWeight.normal,
+                    fontSize: 16,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatTimeOfBooking(String? timeStr) {
+    if (timeStr == null) return '10:30 PM';
+    try {
+      final parts = timeStr.split(':');
+      if (parts.length == 2) {
+        final hour = int.parse(parts[0]);
+        final minute = int.parse(parts[1]);
+        final ampm = hour >= 12 ? 'PM' : 'AM';
+        final displayHour = hour % 12 == 0 ? 12 : hour % 12;
+        final displayMinute = minute.toString().padLeft(2, '0');
+        return '$displayHour:$displayMinute $ampm';
+      }
+    } catch (_) {}
+    return timeStr;
+  }
+
+  void _showBookingPopup(BuildContext outerContext, {required bool isSolo}) {
+    if (_selectedTime == null) {
+      ScaffoldMessenger.of(outerContext).showSnackBar(
+        const SnackBar(content: Text('Please select a time slot first.')),
+      );
+      return;
+    }
+
+    if (isSolo) {
+      _guestsController.text = '1';
+    } else if (_guestsController.text.isEmpty || _guestsController.text == '1') {
+      _guestsController.text = '2'; // Default for friends
+    }
+
+    showModalBottomSheet(
+      context: outerContext,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext bottomSheetCtx) {
+        return StatefulBuilder(
+          builder: (BuildContext modalCtx, StateSetter setModalState) {
+            int guests = int.tryParse(_guestsController.text) ?? 1;
+            bool isLargeParty = !isSolo && guests > 20;
+
+            return Container(
+              margin: EdgeInsets.only(
+                top: MediaQuery.of(outerContext).padding.top + 40,
+              ),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(24),
+                  topRight: Radius.circular(24),
+                ),
+              ),
+              child: Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(outerContext).viewInsets.bottom,
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Header
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          top: 8,
+                          left: 16,
+                          right: 8,
+                          bottom: 8,
+                        ),
+                        child: Column(
+                          children: [
+                            Center(
+                              child: Container(
+                                width: 40,
+                                height: 4,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[300],
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'BOOKING AT ${widget.venue['name'].toString().toUpperCase()}',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1,
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.close),
+                                  onPressed: () => Navigator.pop(bottomSheetCtx),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      Divider(height: 1, color: Colors.grey[200]),
+
+                      Padding(
+                        padding: const EdgeInsets.all(24.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (!isSolo) ...[
+                              const Text(
+                                'NUMBER OF FRIENDS',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black54,
+                                  letterSpacing: 1,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[50],
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: Colors.grey[200]!),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.group,
+                                      color: LunaraTheme.electricViolet,
+                                    ),
+                                    const Spacer(),
+                                    GestureDetector(
+                                      onTap: () {
+                                        if (guests > 1) {
+                                          setModalState(() {
+                                            _guestsController.text =
+                                                (guests - 1).toString();
+                                          });
+                                        }
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                          border: Border.all(
+                                            color: Colors.grey[300]!,
+                                          ),
+                                        ),
+                                        child: const Icon(
+                                          Icons.remove,
+                                          size: 20,
+                                          color: LunaraTheme.electricViolet,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    SizedBox(
+                                      width: 32,
+                                      child: Text(
+                                        guests.toString(),
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    GestureDetector(
+                                      onTap: () {
+                                        setModalState(() {
+                                          _guestsController.text = (guests + 1)
+                                              .toString();
+                                        });
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                          border: Border.all(
+                                            color: Colors.grey[300]!,
+                                          ),
+                                        ),
+                                        child: const Icon(
+                                          Icons.add,
+                                          size: 20,
+                                          color: LunaraTheme.electricViolet,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 32),
+                            ],
+
+                            if (isLargeParty) ...[
+                              const Text(
+                                'LARGE PARTY DETAILS',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: LunaraTheme.electricViolet,
+                                  letterSpacing: 1,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              TextField(
+                                controller: _partySubjectController,
+                                decoration: _inputDecoration('Party Subject'),
+                              ),
+                              const SizedBox(height: 12),
+                              TextField(
+                                controller: _partyRequirementController,
+                                decoration: _inputDecoration(
+                                  'Party Requirement',
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              TextField(
+                                controller: _partyDescriptionController,
+                                maxLines: 3,
+                                decoration: _inputDecoration('Description'),
+                              ),
+                              const SizedBox(height: 32),
+                            ],
+
+                            if (!isLargeParty) ...[
+                              const Text(
+                                'PRICING DETAILS',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black54,
+                                  letterSpacing: 1,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: LunaraTheme.electricViolet.withValues(
+                                    alpha: 0.05,
+                                  ),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: LunaraTheme.electricViolet.withValues(
+                                      alpha: 0.1,
+                                    ),
+                                  ),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          'Table Booking Charges (${isSolo ? '1' : guests})',
+                                          style: const TextStyle(
+                                            color: Colors.black87,
+                                          ),
+                                        ),
+                                        const Text(
+                                          '₹ 20',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: const [
+                                        Text(
+                                          'Discount (10%)',
+                                          style: TextStyle(color: Colors.black87),
+                                        ),
+                                        Text(
+                                          '₹ 0',
+                                          style: TextStyle(
+                                            color: Colors.teal,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Divider(height: 1, color: Colors.grey[300]),
+                                    const SizedBox(height: 12),
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: const [
+                                        Text(
+                                          'Total Amount',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                        Text(
+                                          '₹ 20',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                            color: LunaraTheme.electricViolet,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 32),
+                            ],
+
+                            LunaraActionButton(
+                              text: isLargeParty
+                                  ? 'SUBMIT REQUEST'
+                                  : 'PROCEED TO PAYMENT',
+                              onPressed: () async {
+                                if (isLargeParty) {
+                                  if (_partySubjectController.text
+                                          .trim()
+                                          .isEmpty ||
+                                      _partyRequirementController.text
+                                          .trim()
+                                          .isEmpty) {
+                                    ScaffoldMessenger.of(outerContext).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Please fill out the party subject and requirement.',
+                                        ),
+                                      ),
+                                    );
+                                    return;
+                                  }
+
+                                  Navigator.pop(bottomSheetCtx); // Close popup
+
+                                  // Show loading snackbar
+                                  ScaffoldMessenger.of(outerContext).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Submitting request...'),
+                                    ),
+                                  );
+
+                                  final success =
+                                      await ApiService.submitLargePartyRequest(
+                                        venueId: widget.venue['id'],
+                                        date:
+                                            '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
+                                        time: _selectedTime!,
+                                        guests: guests,
+                                        subject: _partySubjectController.text,
+                                        requirement:
+                                            _partyRequirementController.text,
+                                        description:
+                                            _partyDescriptionController.text,
+                                      );
+
+                                  if (!success) {
+                                    ScaffoldMessenger.of(outerContext).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Failed to submit request. Please try again later.',
+                                        ),
+                                      ),
+                                    );
+                                    return;
+                                  }
+
+                                  showDialog(
+                                    context: outerContext,
+                                    builder: (ctx2) => AlertDialog(
+                                      title: const Text('Request Submitted'),
+                                      content: const Text(
+                                        'Your large party request has been submitted to the admin for approval. You will see it in your Live Feed once approved.',
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () {
+                                            Navigator.pop(ctx2); // close dialog
+                                            if (mounted) {
+                                              Navigator.pop(outerContext); // Go back from booking process screen
+                                            }
+                                          },
+                                          child: const Text('OK'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                String chargesStr = '20';
+                                Navigator.pop(bottomSheetCtx); // close popup
+                                Navigator.push(
+                                  outerContext,
+                                  MaterialPageRoute(
+                                    builder: (_) => PaymentConfirmationScreen(
+                                      venue: Map<String, dynamic>.from(widget.venue),
+                                      date:
+                                          '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
+                                      package: 'Confirmation Charges',
+                                      time: _formatTimeOfBooking(_selectedTime),
+                                      table: 'Confirmation Charges',
+                                      guests: isSolo
+                                          ? '1 Guest'
+                                          : '$guests Guests',
+                                      totalPrice: '₹$chargesStr',
+                                      showSplitBill: false,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}

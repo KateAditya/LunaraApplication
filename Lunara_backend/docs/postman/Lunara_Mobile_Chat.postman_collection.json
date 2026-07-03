@@ -1,0 +1,301 @@
+{
+	"info": {
+		"_postman_id": "6a9f4e24-8b6b-4f9e-a843-1e5b1d1f7c22",
+		"name": "Lunara Mobile Chat API",
+		"description": "Collection for all Mobile Chat API endpoints, including Conversations, Messages, Read Receipts, and Invitations.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Get User Online Status",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/mobile/user/{{otherUserId}}/status",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"mobile",
+						"user",
+						"{{otherUserId}}",
+						"status"
+					]
+				},
+				"description": "Returns the online status and last active timestamp for a specific user."
+			},
+			"response": []
+		},
+		{
+			"name": "Get Icebreakers",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/mobile/chat/icebreakers",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"mobile",
+						"chat",
+						"icebreakers"
+					]
+				},
+				"description": "Returns the static list of icebreaker prompts shown in the bottom sheet."
+			},
+			"response": []
+		},
+		{
+			"name": "Get Conversations",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/mobile/chat/conversations?userId={{userId}}",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"mobile",
+						"chat",
+						"conversations"
+					],
+					"query": [
+						{
+							"key": "userId",
+							"value": "{{userId}}"
+						}
+					]
+				},
+				"description": "Returns all conversations for the user (chat list screen). Sorted by lastMessageAt DESC."
+			},
+			"response": []
+		},
+		{
+			"name": "Create or Get Conversation",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"userId\": \"{{userId}}\",\n    \"otherUserId\": \"{{otherUserId}}\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/mobile/chat/conversations",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"mobile",
+						"chat",
+						"conversations"
+					]
+				},
+				"description": "Create or retrieve an existing 1-to-1 conversation."
+			},
+			"response": []
+		},
+		{
+			"name": "Get Messages",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/mobile/chat/conversations/{{conversationId}}/messages?userId={{userId}}&limit=30",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"mobile",
+						"chat",
+						"conversations",
+						"{{conversationId}}",
+						"messages"
+					],
+					"query": [
+						{
+							"key": "userId",
+							"value": "{{userId}}"
+						},
+						{
+							"key": "limit",
+							"value": "30"
+						}
+					]
+				},
+				"description": "Returns paginated messages in a conversation (newest first, reversed for display). Automatically marks messages as READ for the requesting user."
+			},
+			"response": []
+		},
+		{
+			"name": "Send Message",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"senderId\": \"{{userId}}\",\n    \"type\": \"text\",\n    \"content\": \"Hello!\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/mobile/chat/conversations/{{conversationId}}/messages",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"mobile",
+						"chat",
+						"conversations",
+						"{{conversationId}}",
+						"messages"
+					]
+				},
+				"description": "Send a message. Supports: text | image | sticker | invitation | icebreaker."
+			},
+			"response": []
+		},
+		{
+			"name": "Respond to Invitation",
+			"request": {
+				"method": "PATCH",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"userId\": \"{{userId}}\",\n    \"action\": \"accept\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/mobile/chat/conversations/{{conversationId}}/messages/{{messageId}}/invitation",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"mobile",
+						"chat",
+						"conversations",
+						"{{conversationId}}",
+						"messages",
+						"{{messageId}}",
+						"invitation"
+					]
+				},
+				"description": "Accept or decline an invitation message."
+			},
+			"response": []
+		},
+		{
+			"name": "Delete Message",
+			"request": {
+				"method": "DELETE",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"userId\": \"{{userId}}\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/mobile/chat/conversations/{{conversationId}}/messages/{{messageId}}",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"mobile",
+						"chat",
+						"conversations",
+						"{{conversationId}}",
+						"messages",
+						"{{messageId}}"
+					]
+				},
+				"description": "Soft-delete a message (only the sender can delete)."
+			},
+			"response": []
+		},
+		{
+			"name": "Mark Conversation Read",
+			"request": {
+				"method": "PATCH",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"userId\": \"{{userId}}\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/mobile/chat/conversations/{{conversationId}}/read",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"mobile",
+						"chat",
+						"conversations",
+						"{{conversationId}}",
+						"read"
+					]
+				},
+				"description": "Mark all unread messages in a conversation as read."
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:5000",
+			"type": "string"
+		},
+		{
+			"key": "userId",
+			"value": "your-user-id-uuid",
+			"type": "string"
+		},
+		{
+			"key": "otherUserId",
+			"value": "other-user-id-uuid",
+			"type": "string"
+		},
+		{
+			"key": "conversationId",
+			"value": "your-conversation-id-uuid",
+			"type": "string"
+		},
+		{
+			"key": "messageId",
+			"value": "your-message-id-uuid",
+			"type": "string"
+		}
+	]
+}

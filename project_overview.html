@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lunara App - Development Overview</title>
+    <style>
+        :root {
+            --primary: #8A2BE2;
+            --secondary: #FF1493;
+            --background: #FFFFFF;
+            --surface: #F8F9FA;
+            --border: #EEEEEE;
+            --text-main: #1A1A1A;
+            --text-muted: #888888;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background-color: var(--background);
+            color: var(--text-main);
+            margin: 0;
+            padding: 40px;
+            line-height: 1.6;
+        }
+
+        header {
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 20px;
+            margin-bottom: 40px;
+        }
+
+        h1 { font-size: 2.5rem; margin: 0; letter-spacing: -1px; }
+        h2 { font-size: 1.5rem; margin-top: 40px; border-left: 4px solid var(--primary); padding-left: 15px; }
+
+        .code-container {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.9rem;
+            margin: 20px 0;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+        }
+
+        section { max-width: 800px; }
+        ul { padding-left: 20px; }
+        footer { margin-top: 60px; color: var(--text-muted); font-size: 0.8rem; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Lunara App</h1>
+    <p style="color: var(--text-muted)">Premium Whitish Aesthetic Refactor</p>
+</header>
+
+<section>
+  <p>The Lunara app is being transitioned to a clean, minimal design. This refactor focuses on moving away from dark glassmorphism toward high-contrast, premium light surfaces.</p>
+</section>
+
+<h2>Project Structure</h2>
+<div class="code-container">
+<pre>
+lib/
+├── core/
+│   ├── constants/       # Global constants, colors, theme
+│   ├── network/         # API clients
+│   └── utils/           # Shared utility functions
+├── features/
+│   ├── auth/           # Login, Register, Forgot Password
+│   ├── booking/        # Venue and Event bookings
+│   └── user_profile/   # Profile settings and stats
+├── shared_widgets/      # Common UI (Buttons, Cards, Modals)
+└── main.dart
+</pre>
+</div>
+
+<h2>Core Principles</h2>
+<ul>
+  <li><strong>Minimalism:</strong> High use of whitespace and subtle shadows.</li>
+  <li><strong>Brand Consistency:</strong> Strict use of Violet/Pink gradients for primary actions.</li>
+  <li><strong>Premium UX:</strong> Smooth transitions and high-quality typography (AllroundGothic & AloeVera).</li>
+</ul>
+
+<footer>
+  <p>© 2026 Lunara Tech Team. Confidential Development Resource.</p>
+</footer>
+
+</body>
+</html>

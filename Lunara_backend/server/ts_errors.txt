@@ -1,0 +1,8 @@
+﻿src/controllers/userController.ts(4,1): error TS6133: 'Op' is declared but its value is never read.
+src/controllers/userController.ts(45,28): error TS7030: Not all code paths return a value.
+src/controllers/userController.ts(77,27): error TS7030: Not all code paths return a value.
+src/controllers/userController.ts(91,13): error TS2353: Object literal may only specify known properties, and 'password' does not exist in type 'Optional<UserCreationAttributes, NullishPropertiesOf<UserCreationAttributes>>'.
+src/controllers/userController.ts(92,36): error TS2339: Property 'USER' does not exist on type 'typeof UserRole'.
+src/controllers/userController.ts(123,27): error TS7030: Not all code paths return a value.
+src/controllers/userController.ts(171,27): error TS7030: Not all code paths return a value.
+src/server.ts(48,21): error TS6133: 'req' is declared but its value is never read.

@@ -1,0 +1,178 @@
+import { Model, DataTypes, Optional } from 'sequelize';
+import sequelize from '../config/database';
+
+export enum StrangersMeetStatus {
+    PENDING  = 'pending',
+    APPROVED = 'approved',
+    REJECTED = 'rejected',
+}
+
+export enum StrangersMeetPaymentStatus {
+    UNPAID = 'unpaid',
+    PAID   = 'paid',
+}
+
+export interface StrangersMeetRequestAttributes {
+    id: string;
+    userId: string;
+    venueId: string;
+    subject: string;
+    tagline: string;
+    eventDateTime: Date;
+    numberOfPersons: number;
+    status: StrangersMeetStatus;
+    paymentAmount?: number;          // Set by admin on approval
+    paymentStatus: StrangersMeetPaymentStatus;
+    adminNotes?: string;
+    ticketId?: string;               // Generated on payment
+    razorpayOrderId?: string;
+    razorpayPaymentId?: string;
+    razorpaySignature?: string;
+    createdAt?: Date;
+    updatedAt?: Date;
+}
+
+export interface StrangersMeetRequestCreationAttributes
+    extends Optional<
+        StrangersMeetRequestAttributes,
+        | 'id'
+        | 'status'
+        | 'paymentAmount'
+        | 'paymentStatus'
+        | 'adminNotes'
+        | 'ticketId'
+        | 'createdAt'
+        | 'updatedAt'
+    > {}
+
+class StrangersMeetRequest
+    extends Model<StrangersMeetRequestAttributes, StrangersMeetRequestCreationAttributes>
+    implements StrangersMeetRequestAttributes {
+    public id!: string;
+    public userId!: string;
+    public venueId!: string;
+    public subject!: string;
+    public tagline!: string;
+    public eventDateTime!: Date;
+    public numberOfPersons!: number;
+    public status!: StrangersMeetStatus;
+    public paymentAmount?: number;
+    public paymentStatus!: StrangersMeetPaymentStatus;
+    public adminNotes?: string;
+    public ticketId?: string;
+    public razorpayOrderId?: string;
+    public razorpayPaymentId?: string;
+    public razorpaySignature?: string;
+    public readonly createdAt!: Date;
+    public readonly updatedAt!: Date;
+}
+
+StrangersMeetRequest.init(
+    {
+        id: {
+            type: DataTypes.UUID,
+            defaultValue: DataTypes.UUIDV4,
+            primaryKey: true,
+        },
+        userId: {
+            type: DataTypes.UUID,
+            allowNull: false,
+            field: 'user_id',
+            references: { model: 'users', key: 'id' },
+            onDelete: 'CASCADE',
+        },
+        venueId: {
+            type: DataTypes.UUID,
+            allowNull: false,
+            field: 'venue_id',
+            references: { model: 'venues', key: 'id' },
+            onDelete: 'CASCADE',
+        },
+        subject: {
+            type: DataTypes.STRING(200),
+            allowNull: false,
+            validate: {
+                notEmpty: { msg: 'Subject is required' },
+                len: { args: [1, 200], msg: 'Subject must be between 1 and 200 characters' },
+            },
+        },
+        tagline: {
+            type: DataTypes.TEXT,
+            allowNull: false,
+            validate: {
+                notEmpty: { msg: 'Tagline is required' },
+            },
+        },
+        eventDateTime: {
+            type: DataTypes.DATE,
+            allowNull: false,
+            field: 'event_date_time',
+        },
+        numberOfPersons: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            field: 'number_of_persons',
+            validate: {
+                min: { args: [21], msg: 'Minimum 21 persons required' },
+                max: { args: [50], msg: 'Maximum 50 persons allowed' },
+            },
+        },
+        status: {
+            type: DataTypes.ENUM(...Object.values(StrangersMeetStatus)),
+            allowNull: false,
+            defaultValue: StrangersMeetStatus.PENDING,
+        },
+        paymentAmount: {
+            type: DataTypes.DECIMAL(10, 2),
+            allowNull: true,
+            field: 'payment_amount',
+        },
+        paymentStatus: {
+            type: DataTypes.ENUM(...Object.values(StrangersMeetPaymentStatus)),
+            allowNull: false,
+            defaultValue: StrangersMeetPaymentStatus.UNPAID,
+            field: 'payment_status',
+        },
+        adminNotes: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+            field: 'admin_notes',
+        },
+        ticketId: {
+            type: DataTypes.STRING(50),
+            allowNull: true,
+            unique: true,
+            field: 'ticket_id',
+        },
+        razorpayOrderId: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'razorpay_order_id',
+        },
+        razorpayPaymentId: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'razorpay_payment_id',
+        },
+        razorpaySignature: {
+            type: DataTypes.STRING(200),
+            allowNull: true,
+            field: 'razorpay_signature',
+        },
+    },
+    {
+        sequelize,
+        tableName: 'strangers_meet_requests',
+        underscored: true,
+        timestamps: true,
+        indexes: [
+            { fields: ['user_id'] },
+            { fields: ['venue_id'] },
+            { fields: ['status'] },
+            { fields: ['payment_status'] },
+            { fields: ['created_at'] },
+        ],
+    }
+);
+
+export default StrangersMeetRequest;

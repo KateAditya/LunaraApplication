@@ -1,0 +1,144 @@
+import { initializeApp, getApps, App, cert, applicationDefault } from 'firebase-admin/app';
+import { getMessaging, Message, MulticastMessage } from 'firebase-admin/messaging';
+import { logger } from '../config/logger';
+
+// ── Initialise Firebase Admin SDK once ───────────────────────────────────────
+let _app: App | null = null;
+
+function getApp(): App | null {
+    // Return existing app if already initialised
+    if (_app) return _app;
+    if (getApps().length > 0) {
+        _app = getApps()[0];
+        return _app;
+    }
+
+    try {
+        // Option A – service-account JSON string in env var (production-friendly)
+        const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+        if (raw) {
+            const serviceAccount = JSON.parse(raw);
+            _app = initializeApp({ credential: cert(serviceAccount) });
+            logger.info('Firebase Admin SDK initialised (from env JSON).');
+            return _app;
+        }
+
+        // Option B – path provided via GOOGLE_APPLICATION_CREDENTIALS
+        if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+            _app = initializeApp({ credential: applicationDefault() });
+            logger.info('Firebase Admin SDK initialised (applicationDefault).');
+            return _app;
+        }
+
+        logger.warn(
+            'Firebase Admin SDK NOT initialised: set FIREBASE_SERVICE_ACCOUNT_JSON or ' +
+            'GOOGLE_APPLICATION_CREDENTIALS to enable push notifications.'
+        );
+        return null;
+    } catch (err: any) {
+        logger.error('Firebase Admin SDK init error:', err.message);
+        return null;
+    }
+}
+
+export interface FcmPayload {
+    title: string;
+    body: string;
+    data?: Record<string, string>;
+    imageUrl?: string;
+}
+
+/**
+ * Send a push notification to a single FCM token.
+ * Silently swallows errors so a notification failure never breaks the API response.
+ */
+export async function sendPushNotification(
+    fcmToken: string,
+    payload: FcmPayload
+): Promise<void> {
+    const app = getApp();
+    if (!app) return;
+    if (!fcmToken || fcmToken.trim() === '') return;
+
+    try {
+        const message: Message = {
+            token: fcmToken,
+            notification: {
+                title: payload.title,
+                body: payload.body,
+                ...(payload.imageUrl ? { imageUrl: payload.imageUrl } : {}),
+            },
+            data: payload.data ?? {},
+            android: {
+                priority: 'high',
+                notification: {
+                    channelId: 'lunara_high_importance',
+                    sound: 'default',
+                },
+            },
+            apns: {
+                payload: {
+                    aps: {
+                        sound: 'default',
+                        badge: 1,
+                    },
+                },
+            },
+        };
+
+        const response = await getMessaging(app).send(message);
+        logger.debug(`FCM notification sent: ${response}`);
+    } catch (err: any) {
+        // Don't re-throw — notification failure must not break the API
+        logger.warn(`FCM send failed for token ${fcmToken.substring(0, 20)}...: ${err.message}`);
+    }
+}
+
+/**
+ * Send push notifications to multiple FCM tokens.
+ * Invalid / expired tokens are silently ignored.
+ */
+export async function sendMulticastPushNotification(
+    fcmTokens: string[],
+    payload: FcmPayload
+): Promise<void> {
+    const app = getApp();
+    if (!app) return;
+
+    const validTokens = fcmTokens.filter(t => t && t.trim() !== '');
+    if (validTokens.length === 0) return;
+
+    try {
+        const message: MulticastMessage = {
+            tokens: validTokens,
+            notification: {
+                title: payload.title,
+                body: payload.body,
+                ...(payload.imageUrl ? { imageUrl: payload.imageUrl } : {}),
+            },
+            data: payload.data ?? {},
+            android: {
+                priority: 'high',
+                notification: {
+                    channelId: 'lunara_high_importance',
+                    sound: 'default',
+                },
+            },
+            apns: {
+                payload: {
+                    aps: {
+                        sound: 'default',
+                        badge: 1,
+                    },
+                },
+            },
+        };
+
+        const response = await getMessaging(app).sendEachForMulticast(message);
+        logger.debug(
+            `FCM multicast: ${response.successCount} sent, ${response.failureCount} failed`
+        );
+    } catch (err: any) {
+        logger.warn(`FCM multicast failed: ${err.message}`);
+    }
+}
