@@ -593,7 +593,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
       children: [
         // Backtrack button with label
         Opacity(
-          opacity: widget.canBacktrack ? 1.0 : 0.4,
+          opacity: widget.canBacktrack ? 1.0 : 0.6,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -607,12 +607,12 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                       : LinearGradient(
                           colors: isDark 
                               ? [Colors.grey.shade800, Colors.grey.shade900]
-                              : [Colors.grey.shade200, Colors.grey.shade300],
+                              : [Colors.grey.shade300, Colors.grey.shade400],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
                   border: Border.all(
-                    color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.grey.shade300,
+                    color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.grey.shade400,
                     width: 1.5,
                   ),
                   boxShadow: widget.canBacktrack
@@ -626,7 +626,10 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                       : null,
                 ),
                 child: IconButton(
-                  icon: const Icon(Icons.undo_rounded, color: Colors.white),
+                  icon: Icon(
+                    Icons.undo_rounded, 
+                    color: widget.canBacktrack ? Colors.white : (isDark ? Colors.white54 : Colors.grey.shade700),
+                  ),
                   onPressed: widget.canBacktrack ? widget.onBacktrack : null,
                 ),
               ),

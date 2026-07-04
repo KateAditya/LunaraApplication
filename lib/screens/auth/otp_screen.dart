@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../widgets/action_button.dart';
 import '../../services/auth_service.dart';
-import '../home/dashboard.dart';
 import 'password_setup_screen.dart';
 import 'reset_password_screen.dart';
 
@@ -66,7 +65,9 @@ class _OtpScreenState extends State<OtpScreen>
                 style: LunaraTheme.bodyStyle.copyWith(
                   fontSize: 12,
                   letterSpacing: 2,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.45),
                 ),
               ),
               const SizedBox(height: 8),
@@ -80,7 +81,12 @@ class _OtpScreenState extends State<OtpScreen>
               const SizedBox(height: 16),
               Text(
                 'We sent a 4-digit code to your registered mobile number.',
-                style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), height: 1.5),
+                style: TextStyle(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.54),
+                  height: 1.5,
+                ),
               ),
               const SizedBox(height: 60),
               _buildOtpFields(),
@@ -158,10 +164,8 @@ class _OtpScreenState extends State<OtpScreen>
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => ResetPasswordScreen(
-                                phone: phone,
-                                otp: otp,
-                              ),
+                              builder: (context) =>
+                                  ResetPasswordScreen(phone: phone, otp: otp),
                             ),
                           );
                         }
@@ -176,7 +180,10 @@ class _OtpScreenState extends State<OtpScreen>
 
   Widget _buildHeader(BuildContext context) {
     return IconButton(
-      icon: Icon(Icons.arrow_back, color: Theme.of(context).colorScheme.onSurface),
+      icon: Icon(
+        Icons.arrow_back,
+        color: Theme.of(context).colorScheme.onSurface,
+      ),
       onPressed: () => Navigator.pop(context),
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(),
@@ -221,7 +228,11 @@ class _OtpScreenState extends State<OtpScreen>
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.bold,
-              color: active ? LunaraTheme.primaryRich : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+              color: active
+                  ? LunaraTheme.primaryRich
+                  : Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.38),
               letterSpacing: 1,
             ),
           ),

@@ -10,10 +10,12 @@ class StrangersMeetRequestsScreen extends StatefulWidget {
   const StrangersMeetRequestsScreen({super.key});
 
   @override
-  State<StrangersMeetRequestsScreen> createState() => _StrangersMeetRequestsScreenState();
+  State<StrangersMeetRequestsScreen> createState() =>
+      _StrangersMeetRequestsScreenState();
 }
 
-class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScreen> {
+class _StrangersMeetRequestsScreenState
+    extends State<StrangersMeetRequestsScreen> {
   String _selectedFilter = 'pending'; // 'pending', 'approved', 'rejected'
   bool _isLoading = true;
   List<StrangersMeetRequest> _requests = [];
@@ -26,7 +28,9 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
 
   Future<void> _loadRequests() async {
     setState(() => _isLoading = true);
-    final requests = await ApiService.fetchMyStrangersMeetRequests(status: _selectedFilter);
+    final requests = await ApiService.fetchMyStrangersMeetRequests(
+      status: _selectedFilter,
+    );
     if (mounted) {
       setState(() {
         _requests = requests;
@@ -95,20 +99,27 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
           // List
           Expanded(
             child: _isLoading
-                ? const Center(child: CircularProgressIndicator(color: LunaraTheme.electricViolet))
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      color: LunaraTheme.electricViolet,
+                    ),
+                  )
                 : _requests.isEmpty
-                    ? _buildEmptyState()
-                    : RefreshIndicator(
-                        onRefresh: _loadRequests,
-                        child: ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          itemCount: _requests.length,
-                          itemBuilder: (context, index) {
-                            final req = _requests[index];
-                            return _buildRequestCard(req);
-                          },
-                        ),
+                ? _buildEmptyState()
+                : RefreshIndicator(
+                    onRefresh: _loadRequests,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
                       ),
+                      itemCount: _requests.length,
+                      itemBuilder: (context, index) {
+                        final req = _requests[index];
+                        return _buildRequestCard(req);
+                      },
+                    ),
+                  ),
           ),
         ],
       ),
@@ -168,19 +179,19 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
   Widget _buildRequestCard(StrangersMeetRequest req) {
     final isApproved = req.status == 'approved';
     final isPaid = req.paymentStatus == 'paid';
-    
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: LunaraTheme.electricViolet.withOpacity(0.1),
+          color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
           width: 1.2,
         ),
         boxShadow: [
           BoxShadow(
-            color: LunaraTheme.electricViolet.withOpacity(0.05),
+            color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
             blurRadius: 16,
             offset: const Offset(0, 6),
           ),
@@ -210,7 +221,7 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
               ],
             ),
             const SizedBox(height: 8),
-            
+
             // Tagline
             Text(
               req.tagline,
@@ -219,28 +230,44 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
             const SizedBox(height: 16),
 
             // Details
-            _buildDetailRow(Icons.location_on_rounded, req.venue?['name'] ?? 'Unknown Venue'),
+            _buildDetailRow(
+              Icons.location_on_rounded,
+              req.venue?['name'] ?? 'Unknown Venue',
+            ),
             const SizedBox(height: 8),
-            _buildDetailRow(Icons.calendar_today_rounded, DateFormat('MMM dd, yyyy • hh:mm a').format(req.eventDateTime)),
+            _buildDetailRow(
+              Icons.calendar_today_rounded,
+              DateFormat('MMM dd, yyyy • hh:mm a').format(req.eventDateTime),
+            ),
             const SizedBox(height: 8),
-            _buildDetailRow(Icons.people_alt_rounded, '${req.numberOfPersons} persons'),
-            
+            _buildDetailRow(
+              Icons.people_alt_rounded,
+              '${req.numberOfPersons} persons',
+            ),
+
             if (req.adminNotes != null && req.adminNotes!.isNotEmpty) ...[
               const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
+                  color: Colors.orange.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.info_outline_rounded, color: Colors.orange, size: 16),
+                    const Icon(
+                      Icons.info_outline_rounded,
+                      color: Colors.orange,
+                      size: 16,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         'Admin Note: ${req.adminNotes}',
-                        style: const TextStyle(color: Colors.orange, fontSize: 12),
+                        style: const TextStyle(
+                          color: Colors.orange,
+                          fontSize: 12,
+                        ),
                       ),
                     ),
                   ],
@@ -259,10 +286,17 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Amount to Pay', style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+                      Text(
+                        'Amount to Pay',
+                        style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                      ),
                       Text(
                         '₹${req.paymentAmount?.toStringAsFixed(0) ?? '0'}',
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black),
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
                       ),
                     ],
                   ),
@@ -271,10 +305,21 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
                     style: ElevatedButton.styleFrom(
                       backgroundColor: LunaraTheme.electricViolet,
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
                     ),
-                    child: const Text('PROCEED TO PAYMENT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                    child: const Text(
+                      'PROCEED TO PAYMENT',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -288,11 +333,22 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   onPressed: () => _onViewTicket(req),
-                  icon: const Icon(Icons.local_activity_rounded, color: LunaraTheme.electricViolet),
-                  label: const Text('VIEW TICKET', style: TextStyle(color: LunaraTheme.electricViolet, fontWeight: FontWeight.bold)),
+                  icon: const Icon(
+                    Icons.local_activity_rounded,
+                    color: LunaraTheme.electricViolet,
+                  ),
+                  label: const Text(
+                    'VIEW TICKET',
+                    style: TextStyle(
+                      color: LunaraTheme.electricViolet,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: LunaraTheme.electricViolet),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                 ),
@@ -310,18 +366,18 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
     String label = status.toUpperCase();
 
     if (status == 'pending') {
-      bg = Colors.orange.withOpacity(0.1);
+      bg = Colors.orange.withValues(alpha: 0.1);
       text = Colors.orange;
     } else if (status == 'rejected') {
-      bg = Colors.red.withOpacity(0.1);
+      bg = Colors.red.withValues(alpha: 0.1);
       text = Colors.red;
     } else {
       if (paymentStatus == 'paid') {
-        bg = Colors.green.withOpacity(0.1);
+        bg = Colors.green.withValues(alpha: 0.1);
         text = Colors.green;
         label = 'PAID';
       } else {
-        bg = LunaraTheme.electricViolet.withOpacity(0.1);
+        bg = LunaraTheme.electricViolet.withValues(alpha: 0.1);
         text = LunaraTheme.electricViolet;
         label = 'APPROVED';
       }

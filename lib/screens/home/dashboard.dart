@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../profile/profile_hub_screen.dart';
@@ -69,43 +70,11 @@ class _DashboardState extends State<Dashboard> {
           Positioned(
             left: 16,
             bottom: 16,
-            child: GestureDetector(
+            child: AnimatedUpgradeButton(
               key: AppTourService.vipUpgradeKey,
               onTap: () {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const VIPMembershipScreen()));
               },
-              child: Container(
-                height: 43,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  gradient: LunaraTheme.purpleGradient,
-                  borderRadius: BorderRadius.circular(30),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF3e0f6b).withValues(alpha: 0.35),
-                      blurRadius: 12,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.workspace_premium_rounded, color: Colors.white, size: 18),
-                    const SizedBox(width: 6),
-                    const Text(
-                      'UPGRADE',
-                      style: TextStyle(
-                        fontFamily: 'AllroundGothic',
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 10,
-                        letterSpacing: 1,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             ),
           ),
         ],
@@ -201,6 +170,92 @@ class _DashboardState extends State<Dashboard> {
           showGradientBorder: false,
           isInteractive: false,
         ),
+      ),
+    );
+  }
+}
+
+class AnimatedUpgradeButton extends StatefulWidget {
+  final VoidCallback onTap;
+  
+  const AnimatedUpgradeButton({super.key, required this.onTap});
+
+  @override
+  State<AnimatedUpgradeButton> createState() => _AnimatedUpgradeButtonState();
+}
+
+class _AnimatedUpgradeButtonState extends State<AnimatedUpgradeButton> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          final pulseValue = (math.sin(_controller.value * 2 * math.pi) + 1) / 2;
+          final scale = 1.0 + (0.08 * pulseValue);
+          final glow = 4.0 + (11.0 * pulseValue);
+
+          return Transform.scale(
+            scale: scale,
+            child: Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF2C0055), Color(0xFF6B00B6)], // Premium deep purple
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                border: Border.all(
+                  color: const Color(0xFFFFD700).withValues(alpha: 0.8), // Golden border
+                  width: 1.5,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFFFD700).withValues(alpha: 0.4), // Golden glow
+                    blurRadius: glow,
+                    spreadRadius: glow / 4,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Center(
+                child: Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()
+                    ..setEntry(3, 2, 0.001) // Softer perspective
+                    ..rotateY(math.sin(_controller.value * 2 * math.pi) * 0.4), // Subtle 3D rocking
+                  child: const Text(
+                    '👑',
+                    style: TextStyle(
+                      fontSize: 28,
+                      height: 1.1,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

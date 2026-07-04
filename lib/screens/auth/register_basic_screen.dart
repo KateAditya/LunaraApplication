@@ -5,6 +5,7 @@ import '../../widgets/action_button.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import 'otp_screen.dart';
+import 'terms_condition_screen.dart';
 
 class RegisterBasicScreen extends StatefulWidget {
   const RegisterBasicScreen({super.key});
@@ -25,6 +26,7 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
   DateTime? _selectedDob;
   String _selectedCity = 'Mumbai';
   String _selectedGender = 'MALE';
+  bool _acceptTerms = false;
 
   List<String> _indianCities = [
     'Mumbai', 'Delhi', 'Bangalore', 'Hyderabad', 'Ahmedabad',
@@ -235,7 +237,59 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                 maxLength: 12,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               ),
-              const SizedBox(height: 80),
+              const SizedBox(height: 40),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    height: 24,
+                    width: 24,
+                    child: Checkbox(
+                      value: _acceptTerms,
+                      onChanged: (value) {
+                        setState(() {
+                          _acceptTerms = value ?? false;
+                        });
+                      },
+                      activeColor: LunaraTheme.primaryRich,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const TermsConditionScreen(),
+                          ),
+                        );
+                      },
+                      child: RichText(
+                        text: TextSpan(
+                          text: 'I accept the ',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
+                          ),
+                          children: const [
+                            TextSpan(
+                              text: 'terms & conditions',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: LunaraTheme.primaryRich,
+                                fontWeight: FontWeight.bold,
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 40),
               _isLoading
                   ? const Center(
                       child: CircularProgressIndicator(
@@ -260,6 +314,8 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                           errorMessage = 'Please select your gender';
                         } else if (_selectedCity.isEmpty) {
                           errorMessage = 'Please select your city';
+                        } else if (!_acceptTerms) {
+                          errorMessage = 'Please accept the terms & conditions';
                         }
 
                         if (errorMessage != null) {

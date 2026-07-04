@@ -17,10 +17,12 @@ class StrangersMeetPaymentScreen extends StatefulWidget {
   });
 
   @override
-  State<StrangersMeetPaymentScreen> createState() => _StrangersMeetPaymentScreenState();
+  State<StrangersMeetPaymentScreen> createState() =>
+      _StrangersMeetPaymentScreenState();
 }
 
-class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen> {
+class _StrangersMeetPaymentScreenState
+    extends State<StrangersMeetPaymentScreen> {
   bool _isProcessing = false;
   late Razorpay _razorpay;
   String? _lastOrderId;
@@ -69,7 +71,9 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
     setState(() => _isProcessing = true);
 
     // Call checkout / initiate endpoint on backend
-    final checkoutData = await ApiService.initiateStrangersMeetPayment(widget.request.id);
+    final checkoutData = await ApiService.initiateStrangersMeetPayment(
+      widget.request.id,
+    );
 
     if (checkoutData == null) {
       if (!mounted) return;
@@ -85,7 +89,8 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
 
     final String orderId = checkoutData['razorpayOrderId'];
     _lastOrderId = orderId;
-    final String razorpayKeyId = checkoutData['razorpayKeyId'] ?? 'rzp_test_123';
+    final String razorpayKeyId =
+        checkoutData['razorpayKeyId'] ?? 'rzp_test_123';
     final int amount = checkoutData['amount'];
 
     var options = {
@@ -94,10 +99,7 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
       'name': 'Lunara',
       'description': 'Strangers Meet - ${widget.request.subject}',
       'order_id': orderId,
-      'prefill': {
-        'contact': '8888888888',
-        'email': 'test@razorpay.com'
-      }
+      'prefill': {'contact': '8888888888', 'email': 'test@razorpay.com'},
     };
 
     bool razorpayOpened = false;
@@ -105,7 +107,9 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
       _razorpay.open(options);
       razorpayOpened = true;
     } catch (e) {
-      debugPrint('Error opening Razorpay, falling back to simulated payment: $e');
+      debugPrint(
+        'Error opening Razorpay, falling back to simulated payment: $e',
+      );
     }
 
     if (!razorpayOpened) {
@@ -116,7 +120,11 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
     }
   }
 
-  Future<void> _confirmPayment(String orderId, String paymentId, String signature) async {
+  Future<void> _confirmPayment(
+    String orderId,
+    String paymentId,
+    String signature,
+  ) async {
     if (!mounted) return;
     setState(() => _isProcessing = true);
 
@@ -126,14 +134,14 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
       paymentId,
       signature,
     );
-    
+
     if (!mounted) return;
-    
+
     setState(() => _isProcessing = false);
 
     if (result != null) {
       widget.onPaymentSuccess();
-      
+
       // Update the request with ticket info before passing
       final updatedReq = StrangersMeetRequest(
         id: widget.request.id,
@@ -176,7 +184,10 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Payment Confirmation', style: TextStyle(fontWeight: FontWeight.w900)),
+        title: const Text(
+          'Payment Confirmation',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
         backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
@@ -221,11 +232,22 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
                             ),
                           ),
                           const SizedBox(height: 24),
-                          _buildSummaryRow('Venue', req.venue?['name'] ?? 'Unknown'),
+                          _buildSummaryRow(
+                            'Venue',
+                            req.venue?['name'] ?? 'Unknown',
+                          ),
                           const SizedBox(height: 12),
-                          _buildSummaryRow('Date & Time', DateFormat('MMM dd, yyyy • hh:mm a').format(req.eventDateTime)),
+                          _buildSummaryRow(
+                            'Date & Time',
+                            DateFormat(
+                              'MMM dd, yyyy • hh:mm a',
+                            ).format(req.eventDateTime),
+                          ),
                           const SizedBox(height: 12),
-                          _buildSummaryRow('Persons', '${req.numberOfPersons} pax'),
+                          _buildSummaryRow(
+                            'Persons',
+                            '${req.numberOfPersons} pax',
+                          ),
                         ],
                       ),
                     ),
@@ -240,7 +262,10 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
                       ),
                     ),
                     const SizedBox(height: 16),
-                    _buildPaymentRow('Event Arrangement Fee', '₹${amount.toStringAsFixed(0)}'),
+                    _buildPaymentRow(
+                      'Event Arrangement Fee',
+                      '₹${amount.toStringAsFixed(0)}',
+                    ),
                     const SizedBox(height: 8),
                     _buildPaymentRow('Taxes & Fees', 'Included'),
                     const Padding(
@@ -271,7 +296,7 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
                 ),
               ),
             ),
-            
+
             // Pay Button
             Container(
               padding: const EdgeInsets.all(24),
@@ -279,7 +304,7 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
                 color: Colors.white,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 20,
                     offset: const Offset(0, -5),
                   ),
@@ -349,19 +374,10 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 14,
-            color: Colors.grey[600],
-          ),
-        ),
+        Text(label, style: TextStyle(fontSize: 14, color: Colors.grey[600])),
         Text(
           value,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-          ),
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
         ),
       ],
     );

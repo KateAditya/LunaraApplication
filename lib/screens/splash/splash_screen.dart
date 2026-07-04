@@ -26,7 +26,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _initApp() async {
     _controller = VideoPlayerController.asset('assets/videos/splash.mp4');
-    
+
     // Run both video initialization and API auth in parallel
     Future.wait([
       _controller.initialize().then((_) {
@@ -51,7 +51,7 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   void _videoListener() {
-    if (_controller.value.isInitialized && 
+    if (_controller.value.isInitialized &&
         _controller.value.position >= _controller.value.duration) {
       _checkAndNavigate();
     }
@@ -59,11 +59,10 @@ class _SplashScreenState extends State<SplashScreen> {
 
   void _checkAndNavigate() {
     if (_hasNavigated) return;
-    
-    if (_isApiInitDone && 
-        _controller.value.isInitialized && 
+
+    if (_isApiInitDone &&
+        _controller.value.isInitialized &&
         _controller.value.position >= _controller.value.duration) {
-      
       _hasNavigated = true;
       _controller.removeListener(_videoListener);
       _navigateToNext();
@@ -72,13 +71,13 @@ class _SplashScreenState extends State<SplashScreen> {
 
   void _navigateToNext() {
     if (!mounted) return;
-    
+
     if (ApiService.currentUserId != null) {
       Navigator.pushReplacement(
         context,
         PageRouteBuilder(
-          pageBuilder: (_, __, ___) => const Dashboard(),
-          transitionsBuilder: (_, a, __, child) =>
+          pageBuilder: (_, _, _) => const Dashboard(),
+          transitionsBuilder: (_, a, _, child) =>
               FadeTransition(opacity: a, child: child),
           transitionDuration: const Duration(milliseconds: 400),
         ),
@@ -87,8 +86,8 @@ class _SplashScreenState extends State<SplashScreen> {
       Navigator.pushReplacement(
         context,
         PageRouteBuilder(
-          pageBuilder: (_, __, ___) => const WelcomeCarousel(),
-          transitionsBuilder: (_, a, __, child) =>
+          pageBuilder: (_, _, _) => const WelcomeCarousel(),
+          transitionsBuilder: (_, a, _, child) =>
               FadeTransition(opacity: a, child: child),
           transitionDuration: const Duration(milliseconds: 400),
         ),
@@ -107,18 +106,18 @@ class _SplashScreenState extends State<SplashScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: _isInit 
-        ? SizedBox.expand(
-            child: FittedBox(
-              fit: BoxFit.cover,
-              child: SizedBox(
-                width: _controller.value.size.width,
-                height: _controller.value.size.height,
-                child: VideoPlayer(_controller),
+      body: _isInit
+          ? SizedBox.expand(
+              child: FittedBox(
+                fit: BoxFit.cover,
+                child: SizedBox(
+                  width: _controller.value.size.width,
+                  height: _controller.value.size.height,
+                  child: VideoPlayer(_controller),
+                ),
               ),
-            ),
-          )
-        : const SizedBox.shrink(),
+            )
+          : const SizedBox.shrink(),
     );
   }
 }

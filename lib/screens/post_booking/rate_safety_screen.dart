@@ -105,7 +105,11 @@ class _RateSafetyScreenState extends State<RateSafetyScreen> {
       ),
       child: const Row(
         children: [
-          Icon(Icons.verified_user_outlined, color: LunaraTheme.electricViolet, size: 20),
+          Icon(
+            Icons.verified_user_outlined,
+            color: LunaraTheme.electricViolet,
+            size: 20,
+          ),
           SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -129,7 +133,9 @@ class _RateSafetyScreenState extends State<RateSafetyScreen> {
         gradient: LunaraTheme.cardGradient,
         borderRadius: BorderRadius.circular(24),
         boxShadow: LunaraTheme.premiumCardShadow,
-        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.05)),
+        border: Border.all(
+          color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
+        ),
       ),
       child: Row(
         children: [
@@ -236,10 +242,12 @@ class _RateSafetyScreenState extends State<RateSafetyScreen> {
                     boxShadow: _feltSafe == true
                         ? [
                             BoxShadow(
-                              color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                              color: LunaraTheme.electricViolet.withValues(
+                                alpha: 0.1,
+                              ),
                               blurRadius: 10,
                               offset: const Offset(0, 4),
-                            )
+                            ),
                           ]
                         : [],
                   ),
@@ -295,7 +303,7 @@ class _RateSafetyScreenState extends State<RateSafetyScreen> {
                               color: Colors.red.withValues(alpha: 0.1),
                               blurRadius: 10,
                               offset: const Offset(0, 4),
-                            )
+                            ),
                           ]
                         : [],
                   ),
@@ -339,7 +347,7 @@ class _RateSafetyScreenState extends State<RateSafetyScreen> {
         children: [
           const Text(
             'TELL US MORE',
-            style: const TextStyle(
+            style: TextStyle(
               color: Colors.black,
               fontSize: 11,
               fontWeight: FontWeight.w900,
@@ -372,9 +380,7 @@ class _RateSafetyScreenState extends State<RateSafetyScreen> {
                         isSelected
                             ? Icons.radio_button_checked
                             : Icons.radio_button_unchecked,
-                        color: isSelected
-                            ? Colors.redAccent
-                            : Colors.grey[300],
+                        color: isSelected ? Colors.redAccent : Colors.grey[300],
                         size: 20,
                       ),
                       const SizedBox(width: 14),
@@ -425,7 +431,10 @@ class _RateSafetyScreenState extends State<RateSafetyScreen> {
                       const SizedBox(height: 4),
                       Text(
                         'Share your last known venue location with your emergency contact.',
-                        style: const TextStyle(color: Colors.black, fontSize: 11),
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontSize: 11,
+                        ),
                       ),
                     ],
                   ),
@@ -435,7 +444,7 @@ class _RateSafetyScreenState extends State<RateSafetyScreen> {
                   value: false,
                   onChanged: (_) {},
                   activeTrackColor: Colors.amber.withValues(alpha: 0.3),
-                  activeColor: Colors.amber,
+                  activeThumbColor: Colors.amber,
                 ),
               ],
             ),
@@ -512,7 +521,9 @@ class _RateSafetyScreenState extends State<RateSafetyScreen> {
                     Text(
                       label,
                       style: TextStyle(
-                        color: isSelected ? LunaraTheme.electricViolet : Colors.black,
+                        color: isSelected
+                            ? LunaraTheme.electricViolet
+                            : Colors.black,
                         fontSize: 12,
                         fontWeight: FontWeight.w900,
                       ),
@@ -530,7 +541,9 @@ class _RateSafetyScreenState extends State<RateSafetyScreen> {
   Widget _buildSubmitButton() {
     return LunaraActionButton(
       text: _feltSafe == false ? 'SUBMIT REPORT' : 'SUBMIT FEEDBACK',
-      icon: _feltSafe == false ? Icons.report_gmailerrorred_rounded : Icons.send_rounded,
+      icon: _feltSafe == false
+          ? Icons.report_gmailerrorred_rounded
+          : Icons.send_rounded,
       onPressed: () {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -539,10 +552,16 @@ class _RateSafetyScreenState extends State<RateSafetyScreen> {
               children: [
                 const Icon(Icons.check_circle, color: Colors.white),
                 const SizedBox(width: 12),
-                Text(_feltSafe == false ? 'REPORT SUBMITTED' : 'FEEDBACK SUBMITTED'),
+                Text(
+                  _feltSafe == false
+                      ? 'REPORT SUBMITTED'
+                      : 'FEEDBACK SUBMITTED',
+                ),
               ],
             ),
-            backgroundColor: _feltSafe == false ? Colors.redAccent : LunaraTheme.electricViolet,
+            backgroundColor: _feltSafe == false
+                ? Colors.redAccent
+                : LunaraTheme.electricViolet,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),

@@ -29,13 +29,13 @@ class PushNotificationService {
   /// Android notification channel for high-importance notifications.
   static const AndroidNotificationChannel _highImportanceChannel =
       AndroidNotificationChannel(
-    'lunara_high_importance', // Must match AndroidManifest meta-data value
-    'Lunara Notifications',
-    description: 'Notifications for offers, messages, and events',
-    importance: Importance.high,
-    playSound: true,
-    enableVibration: true,
-  );
+        'lunara_high_importance', // Must match AndroidManifest meta-data value
+        'Lunara Notifications',
+        description: 'Notifications for offers, messages, and events',
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+      );
 
   // ── Public API ──────────────────────────────────────────────────────────────
 
@@ -112,9 +112,10 @@ class PushNotificationService {
   static Future<void> _createNotificationChannel() async {
     if (kIsWeb) return;
     try {
-      final androidPlugin =
-          _localNotifications.resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>();
+      final androidPlugin = _localNotifications
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
       if (androidPlugin != null) {
         await androidPlugin.createNotificationChannel(_highImportanceChannel);
       }
@@ -270,9 +271,7 @@ class PushNotificationService {
     };
 
     navigator.push(
-      MaterialPageRoute(
-        builder: (_) => VenueDetailScreen(venue: venueMap),
-      ),
+      MaterialPageRoute(builder: (_) => VenueDetailScreen(venue: venueMap)),
     );
   }
 
@@ -299,13 +298,11 @@ class PushNotificationService {
           ? senderName.split(' ').sublist(1).join(' ')
           : '',
       'image': senderImage ?? '',
-      if (conversationId != null) 'conversationId': conversationId,
+      'conversationId': ?conversationId,
     };
 
     navigator.push(
-      MaterialPageRoute(
-        builder: (_) => ChatScreen(user: userMap),
-      ),
+      MaterialPageRoute(builder: (_) => ChatScreen(user: userMap)),
     );
   }
 }

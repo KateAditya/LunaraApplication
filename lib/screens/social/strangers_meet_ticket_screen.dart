@@ -14,7 +14,10 @@ class StrangersMeetTicketScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: LunaraTheme.midnightBlack,
       appBar: AppBar(
-        title: const Text('Your Ticket', style: TextStyle(fontWeight: FontWeight.w900)),
+        title: const Text(
+          'Your Ticket',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
@@ -26,7 +29,11 @@ class StrangersMeetTicketScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               // Success Header
-              const Icon(Icons.check_circle_outline_rounded, color: Colors.greenAccent, size: 64),
+              const Icon(
+                Icons.check_circle_outline_rounded,
+                color: Colors.greenAccent,
+                size: 64,
+              ),
               const SizedBox(height: 16),
               const Text(
                 'Payment Successful!',
@@ -55,7 +62,7 @@ class StrangersMeetTicketScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: [
                     BoxShadow(
-                      color: LunaraTheme.electricViolet.withOpacity(0.4),
+                      color: LunaraTheme.electricViolet.withValues(alpha: 0.4),
                       blurRadius: 20,
                       offset: const Offset(0, 10),
                     ),
@@ -73,53 +80,69 @@ class StrangersMeetTicketScreen extends StatelessWidget {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.2),
+                                  color: Colors.white.withValues(alpha: 0.2),
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: const Text(
                                   'LUNARA MEET',
-                                  style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1),
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 1,
+                                  ),
                                 ),
                               ),
                               Text(
                                 request.ticketId ?? 'TICKET',
-                                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  fontFamily: 'monospace',
+                                ),
                               ),
                             ],
                           ),
                           const SizedBox(height: 24),
                           Text(
                             request.subject,
-                            style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900, height: 1.2),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 24,
+                              fontWeight: FontWeight.w900,
+                              height: 1.2,
+                            ),
                           ),
                           const SizedBox(height: 8),
                           Text(
                             request.tagline,
-                            style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 14),
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.8),
+                              fontSize: 14,
+                            ),
                           ),
                           const SizedBox(height: 32),
-                          
+
                           // Details Grid
                           Row(
                             children: [
                               Expanded(
-                                child: _buildTicketDetail('VENUE', request.venue?['name'] ?? 'Unknown Venue'),
+                                child: _buildTicketDetail(
+                                  'VENUE',
+                                  request.venue?['name'] ?? 'Unknown Venue',
+                                ),
                               ),
                               Expanded(
-                                child: _buildTicketDetail('CITY', request.venue?['city'] ?? 'Unknown'),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildTicketDetail('DATE', DateFormat('MMM dd, yyyy').format(request.eventDateTime)),
-                              ),
-                              Expanded(
-                                child: _buildTicketDetail('TIME', DateFormat('hh:mm a').format(request.eventDateTime)),
+                                child: _buildTicketDetail(
+                                  'CITY',
+                                  request.venue?['city'] ?? 'Unknown',
+                                ),
                               ),
                             ],
                           ),
@@ -127,10 +150,37 @@ class StrangersMeetTicketScreen extends StatelessWidget {
                           Row(
                             children: [
                               Expanded(
-                                child: _buildTicketDetail('PERSONS', '${request.numberOfPersons} pax'),
+                                child: _buildTicketDetail(
+                                  'DATE',
+                                  DateFormat(
+                                    'MMM dd, yyyy',
+                                  ).format(request.eventDateTime),
+                                ),
                               ),
                               Expanded(
-                                child: _buildTicketDetail('HOST', '${request.user?['firstName'] ?? ''} ${request.user?['lastName'] ?? ''}'),
+                                child: _buildTicketDetail(
+                                  'TIME',
+                                  DateFormat(
+                                    'hh:mm a',
+                                  ).format(request.eventDateTime),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildTicketDetail(
+                                  'PERSONS',
+                                  '${request.numberOfPersons} pax',
+                                ),
+                              ),
+                              Expanded(
+                                child: _buildTicketDetail(
+                                  'HOST',
+                                  '${request.user?['firstName'] ?? ''} ${request.user?['lastName'] ?? ''}',
+                                ),
                               ),
                             ],
                           ),
@@ -141,26 +191,50 @@ class StrangersMeetTicketScreen extends StatelessWidget {
                     // Divider (dashed line)
                     Row(
                       children: [
-                        Container(width: 12, height: 24, decoration: const BoxDecoration(color: LunaraTheme.midnightBlack, borderRadius: BorderRadius.horizontal(right: Radius.circular(12)))),
+                        Container(
+                          width: 12,
+                          height: 24,
+                          decoration: const BoxDecoration(
+                            color: LunaraTheme.midnightBlack,
+                            borderRadius: BorderRadius.horizontal(
+                              right: Radius.circular(12),
+                            ),
+                          ),
+                        ),
                         Expanded(
                           child: LayoutBuilder(
                             builder: (context, constraints) {
                               return Flex(
                                 direction: Axis.horizontal,
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 mainAxisSize: MainAxisSize.max,
                                 children: List.generate(
                                   (constraints.constrainWidth() / 10).floor(),
                                   (index) => const SizedBox(
-                                    width: 5, height: 2,
-                                    child: DecoratedBox(decoration: BoxDecoration(color: Colors.white54)),
+                                    width: 5,
+                                    height: 2,
+                                    child: DecoratedBox(
+                                      decoration: BoxDecoration(
+                                        color: Colors.white54,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               );
                             },
                           ),
                         ),
-                        Container(width: 12, height: 24, decoration: const BoxDecoration(color: LunaraTheme.midnightBlack, borderRadius: BorderRadius.horizontal(left: Radius.circular(12)))),
+                        Container(
+                          width: 12,
+                          height: 24,
+                          decoration: const BoxDecoration(
+                            color: LunaraTheme.midnightBlack,
+                            borderRadius: BorderRadius.horizontal(
+                              left: Radius.circular(12),
+                            ),
+                          ),
+                        ),
                       ],
                     ),
 
@@ -170,7 +244,9 @@ class StrangersMeetTicketScreen extends StatelessWidget {
                       padding: const EdgeInsets.all(24),
                       decoration: const BoxDecoration(
                         color: Colors.white,
-                        borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
+                        borderRadius: BorderRadius.vertical(
+                          bottom: Radius.circular(24),
+                        ),
                       ),
                       child: Column(
                         children: [
@@ -183,7 +259,11 @@ class StrangersMeetTicketScreen extends StatelessWidget {
                           const SizedBox(height: 16),
                           const Text(
                             'Scan at venue to verify',
-                            style: TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.w500),
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ],
                       ),
@@ -201,13 +281,26 @@ class StrangersMeetTicketScreen extends StatelessWidget {
                 child: ElevatedButton.icon(
                   onPressed: () {
                     // Just a placeholder for saving/sharing
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Take a screenshot to save your ticket!')));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Take a screenshot to save your ticket!'),
+                      ),
+                    );
                   },
                   icon: const Icon(Icons.download_rounded, color: Colors.white),
-                  label: const Text('SAVE TICKET', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                  label: const Text(
+                    'SAVE TICKET',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white.withOpacity(0.1),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    backgroundColor: Colors.white.withValues(alpha: 0.1),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                     elevation: 0,
                   ),
                 ),
@@ -218,7 +311,13 @@ class StrangersMeetTicketScreen extends StatelessWidget {
                   // Pop back to My Requests
                   Navigator.pop(context);
                 },
-                child: const Text('BACK TO REQUESTS', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+                child: const Text(
+                  'BACK TO REQUESTS',
+                  style: TextStyle(
+                    color: Colors.grey,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ],
           ),
@@ -233,12 +332,21 @@ class StrangersMeetTicketScreen extends StatelessWidget {
       children: [
         Text(
           label,
-          style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1),
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.6),
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1,
+          ),
         ),
         const SizedBox(height: 4),
         Text(
           value,
-          style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+          ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),

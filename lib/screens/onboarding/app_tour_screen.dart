@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../home/dashboard.dart';
 import '../../widgets/action_button.dart';
-import 'dart:ui';
 
 class AppTourScreen extends StatefulWidget {
   const AppTourScreen({super.key});
@@ -18,19 +17,22 @@ class _AppTourScreenState extends State<AppTourScreen> {
   final List<Map<String, dynamic>> _pages = [
     {
       'title': 'DISCOVER\nTHE BEST VENUES',
-      'description': 'Find top-rated clubs, lounges, and bars tailored to your vibe. Check out interior galleries and exclusive menus before you step out.',
+      'description':
+          'Find top-rated clubs, lounges, and bars tailored to your vibe. Check out interior galleries and exclusive menus before you step out.',
       'icon': Icons.local_fire_department_rounded,
       'gradient': LunaraTheme.primaryGradient,
     },
     {
       'title': 'CONNECT WITH\nVIBE-MATES',
-      'description': 'Meet new people sharing your nightlife interests. Plan hangouts, send Stranger Meet Requests, and party together safely.',
+      'description':
+          'Meet new people sharing your nightlife interests. Plan hangouts, send Stranger Meet Requests, and party together safely.',
       'icon': Icons.people_alt_rounded,
       'gradient': LunaraTheme.secondaryGradient,
     },
     {
       'title': 'HOST &\nJOIN PARTIES',
-      'description': 'Create your own Party Plans or join public events hosted by others. Keep track of your bookings and guest lists in one place.',
+      'description':
+          'Create your own Party Plans or join public events hosted by others. Keep track of your bookings and guest lists in one place.',
       'icon': Icons.celebration_rounded,
       'gradient': LunaraTheme.purpleGradient,
     },
@@ -121,7 +123,7 @@ class _AppTourScreenState extends State<AppTourScreen> {
                     },
                   ),
                 ),
-                
+
                 // Bottom Navigation
                 _buildBottomNavigation(),
               ],
@@ -147,7 +149,8 @@ class _AppTourScreenState extends State<AppTourScreen> {
               gradient: pageData['gradient'] as Gradient,
               boxShadow: [
                 BoxShadow(
-                  color: (pageData['gradient'] as LinearGradient).colors.first.withValues(alpha: 0.4),
+                  color: (pageData['gradient'] as LinearGradient).colors.first
+                      .withValues(alpha: 0.4),
                   blurRadius: 40,
                   spreadRadius: 10,
                 ),
@@ -204,14 +207,16 @@ class _AppTourScreenState extends State<AppTourScreen> {
                 height: 8,
                 width: _currentPage == index ? 24 : 8,
                 decoration: BoxDecoration(
-                  color: _currentPage == index ? LunaraTheme.cyberCyan : Colors.white24,
+                  color: _currentPage == index
+                      ? LunaraTheme.cyberCyan
+                      : Colors.white24,
                   borderRadius: BorderRadius.circular(4),
                 ),
               ),
             ),
           ),
           const SizedBox(height: 48),
-          
+
           // Action Buttons
           Row(
             children: [
@@ -240,7 +245,10 @@ class _AppTourScreenState extends State<AppTourScreen> {
                       onTap: _onNext,
                       borderRadius: BorderRadius.circular(30),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 32,
+                          vertical: 16,
+                        ),
                         decoration: BoxDecoration(
                           gradient: LunaraTheme.primaryGradient,
                           borderRadius: BorderRadius.circular(30),
@@ -259,7 +267,11 @@ class _AppTourScreenState extends State<AppTourScreen> {
                               ),
                             ),
                             SizedBox(width: 8),
-                            Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 20),
+                            Icon(
+                              Icons.arrow_forward_rounded,
+                              color: Colors.white,
+                              size: 20,
+                            ),
                           ],
                         ),
                       ),

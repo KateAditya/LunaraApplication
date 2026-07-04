@@ -43,9 +43,7 @@ class _LightMapViewState extends State<LightMapView> {
       _markers.clear();
       _polylines.clear();
       _initMarkers();
-      if (_controller != null) {
-        _animateCameraToFitFallback();
-      }
+      _animateCameraToFitFallback();
     }
   }
 
@@ -54,8 +52,10 @@ class _LightMapViewState extends State<LightMapView> {
 
     for (int i = 0; i < widget.venues.length; i++) {
       final venue = widget.venues[i];
-      final double lat = (venue['latitude'] as num?)?.toDouble() ?? (18.535 + i * 0.005);
-      final double lng = (venue['longitude'] as num?)?.toDouble() ?? (73.834 + i * 0.005);
+      final double lat =
+          (venue['latitude'] as num?)?.toDouble() ?? (18.535 + i * 0.005);
+      final double lng =
+          (venue['longitude'] as num?)?.toDouble() ?? (73.834 + i * 0.005);
 
       newMarkers.add(
         Marker(
@@ -111,9 +111,7 @@ class _LightMapViewState extends State<LightMapView> {
               );
             });
 
-            if (_controller != null) {
-              _animateCameraToFitPolyline(routePoints);
-            }
+            _animateCameraToFitPolyline(routePoints);
           }
         });
       }
@@ -159,7 +157,10 @@ class _LightMapViewState extends State<LightMapView> {
 
       if (targetLat != null && targetLng != null) {
         final LatLng venueLatLng = LatLng(targetLat, targetLng);
-        final LatLng userLatLng = LatLng(widget.userPosition!.latitude, widget.userPosition!.longitude);
+        final LatLng userLatLng = LatLng(
+          widget.userPosition!.latitude,
+          widget.userPosition!.longitude,
+        );
         _animateCameraToFitPolyline([userLatLng, venueLatLng]);
       }
     }

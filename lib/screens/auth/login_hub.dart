@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
-import '../../widgets/welcome_background.dart';
 import '../../widgets/action_button.dart';
 import '../../services/auth_service.dart';
 import '../home/dashboard.dart';
@@ -79,7 +78,9 @@ class _LoginHubState extends State<LoginHub> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => const Center(child: CircularProgressIndicator(color: LunaraTheme.electricViolet)),
+      builder: (ctx) => const Center(
+        child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+      ),
     );
 
     Future.delayed(const Duration(seconds: 2), () {
@@ -106,15 +107,17 @@ class _LoginHubState extends State<LoginHub> {
                 const SizedBox(height: 40),
                 Hero(
                   tag: 'lunara_logo',
-                  child: Image.asset(
-                    LunaraTheme.logoIcon,
-                    height: 120,
-                  ),
+                  child: Image.asset(LunaraTheme.logoIcon, height: 120),
                 ),
                 const SizedBox(height: 16),
                 const Text(
                   'MEET • EXPLORE • EXPERIENCE',
-                  style: TextStyle(fontSize: 13, letterSpacing: 4, fontWeight: FontWeight.bold, color: Colors.black),
+                  style: TextStyle(
+                    fontSize: 13,
+                    letterSpacing: 4,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
                 ),
                 const SizedBox(height: 48),
                 _buildTextField(
@@ -122,7 +125,12 @@ class _LoginHubState extends State<LoginHub> {
                   controller: _emailController,
                   hint: 'your@email.com',
                   keyboardType: TextInputType.emailAddress,
-                  style: const TextStyle(fontSize: 13, letterSpacing: 2, fontWeight: FontWeight.bold, color: Colors.black),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    letterSpacing: 2,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 _buildTextField(
@@ -130,21 +138,40 @@ class _LoginHubState extends State<LoginHub> {
                   controller: _passwordController,
                   hint: '••••••••',
                   obscureText: _obscurePassword,
-                  style: const TextStyle(fontSize: 13, letterSpacing: 2, fontWeight: FontWeight.bold, color: Colors.black),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    letterSpacing: 2,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                      _obscurePassword
+                          ? Icons.visibility_off
+                          : Icons.visibility,
                       color: Colors.grey,
                     ),
-                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                    onPressed: () =>
+                        setState(() => _obscurePassword = !_obscurePassword),
                   ),
                 ),
                 const SizedBox(height: 12),
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ForgotPasswordScreen())),
-                    child: const Text('Forgot Password?', style: TextStyle(color: LunaraTheme.electricViolet, fontWeight: FontWeight.bold)),
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ForgotPasswordScreen(),
+                      ),
+                    ),
+                    child: const Text(
+                      'Forgot Password?',
+                      style: TextStyle(
+                        color: LunaraTheme.electricViolet,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -154,25 +181,72 @@ class _LoginHubState extends State<LoginHub> {
                   onPressed: _handleLogin,
                 ),
                 const SizedBox(height: 32),
-                const Text('OR CONTINUE WITH', style: TextStyle(fontFamily: 'AllroundGothic', color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                const Text(
+                  'OR CONTINUE WITH',
+                  style: TextStyle(
+                    fontFamily: 'AllroundGothic',
+                    color: Colors.black,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1,
+                  ),
+                ),
                 const SizedBox(height: 24),
                 Row(
                   children: [
-                    Expanded(child: _socialButton(icon: Icons.apple, label: 'APPLE', onTap: () => _handleSocialLogin(context, 'APPLE'))),
+                    Expanded(
+                      child: _socialButton(
+                        icon: Icons.apple,
+                        label: 'APPLE',
+                        onTap: () => _handleSocialLogin(context, 'APPLE'),
+                      ),
+                    ),
                     const SizedBox(width: 12),
-                    Expanded(child: _socialButton(icon: Icons.g_mobiledata, label: 'GOOGLE', onTap: () => _handleSocialLogin(context, 'GOOGLE'))),
+                    Expanded(
+                      child: _socialButton(
+                        icon: Icons.g_mobiledata,
+                        label: 'GOOGLE',
+                        onTap: () => _handleSocialLogin(context, 'GOOGLE'),
+                      ),
+                    ),
                     const SizedBox(width: 12),
-                    Expanded(child: _socialButton(icon: Icons.phone, label: 'PHONE', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PhoneLoginScreen())))),
+                    Expanded(
+                      child: _socialButton(
+                        icon: Icons.phone,
+                        label: 'PHONE',
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const PhoneLoginScreen(),
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 32),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text("DON'T HAVE AN ACCOUNT? ", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                    const Text(
+                      "DON'T HAVE AN ACCOUNT? ",
+                      style: TextStyle(color: Colors.grey, fontSize: 12),
+                    ),
                     GestureDetector(
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RegisterBasicScreen())),
-                      child: const Text('REGISTER NOW', style: TextStyle(color: LunaraTheme.electricViolet, fontWeight: FontWeight.bold, fontSize: 12)),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const RegisterBasicScreen(),
+                        ),
+                      ),
+                      child: const Text(
+                        'REGISTER NOW',
+                        style: TextStyle(
+                          color: LunaraTheme.electricViolet,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -211,25 +285,31 @@ class _LoginHubState extends State<LoginHub> {
           decoration: BoxDecoration(
             color: const Color(0xFFF7F2FF), // Light lavender/purple tint
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.15)),
+            border: Border.all(
+              color: LunaraTheme.electricViolet.withValues(alpha: 0.15),
+            ),
           ),
           child: TextField(
             controller: controller,
             obscureText: obscureText,
             keyboardType: keyboardType,
-            style: style ?? const TextStyle(
-              color: Colors.black,
-              fontWeight: FontWeight.bold,
-            ),
+            style:
+                style ??
+                const TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.bold,
+                ),
             decoration: InputDecoration(
               hintText: hint,
-              hintStyle: style?.copyWith(
-                color: Colors.black26,
-                fontWeight: FontWeight.normal,
-              ) ?? const TextStyle(
-                color: Colors.black26,
-                fontWeight: FontWeight.normal,
-              ),
+              hintStyle:
+                  style?.copyWith(
+                    color: Colors.black26,
+                    fontWeight: FontWeight.normal,
+                  ) ??
+                  const TextStyle(
+                    color: Colors.black26,
+                    fontWeight: FontWeight.normal,
+                  ),
               border: InputBorder.none,
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 20,
@@ -243,7 +323,11 @@ class _LoginHubState extends State<LoginHub> {
     );
   }
 
-  Widget _socialButton({required IconData icon, required String label, required VoidCallback onTap}) {
+  Widget _socialButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -258,7 +342,14 @@ class _LoginHubState extends State<LoginHub> {
           children: [
             Icon(icon, size: 20),
             const SizedBox(width: 8),
-            Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 1)),
+            Text(
+              label,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 11,
+                letterSpacing: 1,
+              ),
+            ),
           ],
         ),
       ),

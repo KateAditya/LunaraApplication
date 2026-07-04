@@ -7,8 +7,6 @@ import 'profile_screen.dart';
 import 'safety_check_screen.dart';
 import '../post_booking/ticket_pocket_screen.dart';
 import '../post_booking/booking_history_screen.dart';
-import '../post_booking/rate_venue_screen.dart';
-import '../post_booking/rate_safety_screen.dart';
 import '../onboarding/welcome_carousel.dart';
 import '../../services/api_service.dart';
 import '../../models/user.dart';
@@ -45,16 +43,20 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
     if (_currentUser == null) return 0;
     int completed = 0;
     int total = 8;
-    
+
     if (_currentUser!.firstName.trim().isNotEmpty) completed++;
     if (_currentUser!.lastName.trim().isNotEmpty) completed++;
     if (_currentUser!.email.trim().isNotEmpty) completed++;
     if (_currentUser!.phone.trim().isNotEmpty) completed++;
-    if (_currentUser!.profilePhoto != null && _currentUser!.profilePhoto!.isNotEmpty) completed++;
+    if (_currentUser!.profilePhoto != null &&
+        _currentUser!.profilePhoto!.isNotEmpty)
+      completed++;
     if (_currentUser!.bio != null && _currentUser!.bio!.isNotEmpty) completed++;
-    if (_currentUser!.city != null && _currentUser!.city!.isNotEmpty) completed++;
-    if (_currentUser!.gender != null && _currentUser!.gender!.isNotEmpty) completed++;
-    
+    if (_currentUser!.city != null && _currentUser!.city!.isNotEmpty)
+      completed++;
+    if (_currentUser!.gender != null && _currentUser!.gender!.isNotEmpty)
+      completed++;
+
     return ((completed / total) * 100).round();
   }
 
@@ -63,7 +65,9 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
     if (_isLoading) {
       return const Scaffold(
         backgroundColor: Colors.white,
-        body: Center(child: CircularProgressIndicator(color: LunaraTheme.electricViolet)),
+        body: Center(
+          child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+        ),
       );
     }
 
@@ -126,7 +130,11 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
                       color: LunaraTheme.electricViolet,
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.edit_rounded, size: 12, color: Colors.white),
+                    child: const Icon(
+                      Icons.edit_rounded,
+                      size: 12,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
               ],
@@ -137,7 +145,8 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    (_currentUser != null && _currentUser!.fullName.trim().isNotEmpty)
+                    (_currentUser != null &&
+                            _currentUser!.fullName.trim().isNotEmpty)
                         ? _currentUser!.fullName.toUpperCase()
                         : 'LUNARA USER',
                     style: const TextStyle(
@@ -203,12 +212,14 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
                               value: completion / 100,
                               minHeight: 4,
                               backgroundColor: Colors.grey[200],
-                              valueColor: const AlwaysStoppedAnimation<Color>(LunaraTheme.electricViolet),
+                              valueColor: const AlwaysStoppedAnimation<Color>(
+                                LunaraTheme.electricViolet,
+                              ),
                             ),
                           ),
                         ],
                       );
-                    }
+                    },
                   ),
                 ],
               ),
@@ -252,7 +263,11 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
                 color: Colors.amber.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.auto_awesome_rounded, color: Colors.amber, size: 24),
+              child: const Icon(
+                Icons.auto_awesome_rounded,
+                color: Colors.amber,
+                size: 24,
+              ),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -294,7 +309,9 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
         boxShadow: LunaraTheme.premiumCardShadow,
-        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.05)),
+        border: Border.all(
+          color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
+        ),
       ),
       child: Row(
         children: [
@@ -409,7 +426,9 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
           'Review your tonight\'s experience',
           () => Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => SafetyCheckScreen(user: _currentUser)),
+            MaterialPageRoute(
+              builder: (context) => SafetyCheckScreen(user: _currentUser),
+            ),
           ),
         ),
       ],
@@ -440,7 +459,10 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
           borderRadius: BorderRadius.circular(24),
           child: ListTile(
             onTap: onTap,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 4,
+            ),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(24),
               side: BorderSide(color: Colors.grey[50]!),
@@ -463,7 +485,11 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
             ),
             subtitle: Text(
               subtitle,
-              style: const TextStyle(color: Colors.black, fontSize: 11, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                color: Colors.black,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             trailing: const Icon(
               Icons.chevron_right_rounded,

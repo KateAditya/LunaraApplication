@@ -100,7 +100,9 @@ class _RateVenueScreenState extends State<RateVenueScreen> {
         gradient: LunaraTheme.cardGradient,
         borderRadius: BorderRadius.circular(24),
         boxShadow: LunaraTheme.premiumCardShadow,
-        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.05)),
+        border: Border.all(
+          color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
+        ),
       ),
       child: Column(
         children: [
@@ -168,7 +170,7 @@ class _RateVenueScreenState extends State<RateVenueScreen> {
         const Center(
           child: Text(
             'HOW WAS YOUR NIGHT?',
-            style: const TextStyle(
+            style: TextStyle(
               color: Colors.black,
               fontSize: 11,
               fontWeight: FontWeight.w900,
@@ -187,11 +189,18 @@ class _RateVenueScreenState extends State<RateVenueScreen> {
                   onTap: () => setState(() => _starRating = index + 1),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 8,
+                    ),
                     child: Icon(
-                      isSelected ? Icons.star_rounded : Icons.star_outline_rounded,
+                      isSelected
+                          ? Icons.star_rounded
+                          : Icons.star_outline_rounded,
                       size: 42,
-                      color: isSelected ? LunaraTheme.electricViolet : Colors.grey[200],
+                      color: isSelected
+                          ? LunaraTheme.electricViolet
+                          : Colors.grey[200],
                     ),
                   ),
                 );
@@ -233,7 +242,7 @@ class _RateVenueScreenState extends State<RateVenueScreen> {
       children: [
         const Text(
           'WHAT STOOD OUT?',
-          style: const TextStyle(
+          style: TextStyle(
             color: Colors.black,
             fontSize: 11,
             fontWeight: FontWeight.w900,
@@ -276,7 +285,9 @@ class _RateVenueScreenState extends State<RateVenueScreen> {
                 child: Text(
                   tag,
                   style: TextStyle(
-                    color: isSelected ? LunaraTheme.electricViolet : Colors.black,
+                    color: isSelected
+                        ? LunaraTheme.electricViolet
+                        : Colors.black,
                     fontSize: 12,
                     fontWeight: FontWeight.w900,
                   ),

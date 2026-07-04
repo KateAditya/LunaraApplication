@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import '../../services/auth_service.dart';
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
@@ -30,9 +29,10 @@ class _ProfileFinalReviewScreenState extends State<ProfileFinalReviewScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     );
-    _scoreProgress = Tween<double>(begin: 0, end: score).animate(
-      CurvedAnimation(parent: _scoreAnim, curve: Curves.easeOutCubic),
-    );
+    _scoreProgress = Tween<double>(
+      begin: 0,
+      end: score,
+    ).animate(CurvedAnimation(parent: _scoreAnim, curve: Curves.easeOutCubic));
     // Kick off animation after frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scoreAnim.forward();
@@ -138,7 +138,9 @@ class _ProfileFinalReviewScreenState extends State<ProfileFinalReviewScreen>
       );
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to save profile. Please try again.')),
+        const SnackBar(
+          content: Text('Failed to save profile. Please try again.'),
+        ),
       );
     }
   }
@@ -150,7 +152,9 @@ class _ProfileFinalReviewScreenState extends State<ProfileFinalReviewScreen>
     return Scaffold(
       body: Container(
         width: double.infinity,
-        decoration: BoxDecoration(color: Theme.of(context).scaffoldBackgroundColor),
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+        ),
         child: SafeArea(
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
@@ -181,7 +185,9 @@ class _ProfileFinalReviewScreenState extends State<ProfileFinalReviewScreen>
                   'Your nightlife profile is calibrated for maximum vibe.\nTime to explore the city.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.54),
                     height: 1.6,
                     fontSize: 13,
                   ),
@@ -193,7 +199,9 @@ class _ProfileFinalReviewScreenState extends State<ProfileFinalReviewScreen>
                 const SizedBox(height: 56),
 
                 _isLoading
-                    ? const CircularProgressIndicator(color: LunaraTheme.accentVivid)
+                    ? const CircularProgressIndicator(
+                        color: LunaraTheme.accentVivid,
+                      )
                     : LunaraActionButton(
                         text: 'ENTER THE NIGHT',
                         onPressed: _submitProfile,
@@ -222,7 +230,11 @@ class _ProfileFinalReviewScreenState extends State<ProfileFinalReviewScreen>
                   color: LunaraTheme.accentVivid.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.shield_outlined, color: LunaraTheme.accentVivid, size: 18),
+                child: const Icon(
+                  Icons.shield_outlined,
+                  color: LunaraTheme.accentVivid,
+                  size: 18,
+                ),
               ),
               const SizedBox(width: 12),
               Column(
@@ -234,7 +246,9 @@ class _ProfileFinalReviewScreenState extends State<ProfileFinalReviewScreen>
                       fontSize: 11,
                       letterSpacing: 1.5,
                       fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.54),
                     ),
                   ),
                   AnimatedBuilder(
@@ -268,8 +282,9 @@ class _ProfileFinalReviewScreenState extends State<ProfileFinalReviewScreen>
                     child: LinearProgressIndicator(
                       value: _scoreProgress.value,
                       minHeight: 8,
-                      backgroundColor:
-                          Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
+                      backgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.08),
                       valueColor: AlwaysStoppedAnimation<Color>(
                         _scoreColor((_scoreProgress.value * 100).round()),
                       ),
@@ -292,7 +307,9 @@ class _ProfileFinalReviewScreenState extends State<ProfileFinalReviewScreen>
           _buildScoreRow(
             icon: Icons.verified_user_outlined,
             label: 'Selfie Verified',
-            value: widget.collectedData?['selfieVerified'] == true ? 'Yes' : 'No',
+            value: widget.collectedData?['selfieVerified'] == true
+                ? 'Yes'
+                : 'No',
             active: widget.collectedData?['selfieVerified'] == true,
           ),
           const SizedBox(height: 12),
@@ -318,15 +335,20 @@ class _ProfileFinalReviewScreenState extends State<ProfileFinalReviewScreen>
               ),
               child: Row(
                 children: [
-                  Icon(Icons.tips_and_updates_outlined,
-                      size: 14, color: LunaraTheme.accentVivid),
+                  Icon(
+                    Icons.tips_and_updates_outlined,
+                    size: 14,
+                    color: LunaraTheme.accentVivid,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       'Complete your occupation, bio & interests to boost your score.',
                       style: TextStyle(
                         fontSize: 11,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.7),
                         height: 1.4,
                       ),
                     ),
@@ -364,7 +386,9 @@ class _ProfileFinalReviewScreenState extends State<ProfileFinalReviewScreen>
                 label,
                 style: TextStyle(
                   fontSize: 12,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.7),
                 ),
               ),
               if (subtitle != null)
@@ -372,7 +396,9 @@ class _ProfileFinalReviewScreenState extends State<ProfileFinalReviewScreen>
                   subtitle,
                   style: TextStyle(
                     fontSize: 10,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.35),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.35),
                   ),
                 ),
             ],
@@ -385,7 +411,9 @@ class _ProfileFinalReviewScreenState extends State<ProfileFinalReviewScreen>
             fontWeight: FontWeight.bold,
             color: active
                 ? LunaraTheme.accentVivid
-                : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.35),
+                : Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.35),
           ),
         ),
       ],

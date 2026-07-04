@@ -9,10 +9,12 @@ class HostPartyPlanManagerScreen extends StatefulWidget {
   const HostPartyPlanManagerScreen({super.key});
 
   @override
-  State<HostPartyPlanManagerScreen> createState() => _HostPartyPlanManagerScreenState();
+  State<HostPartyPlanManagerScreen> createState() =>
+      _HostPartyPlanManagerScreenState();
 }
 
-class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen> {
+class _HostPartyPlanManagerScreenState
+    extends State<HostPartyPlanManagerScreen> {
   bool _isLoading = true;
   List<Map<String, dynamic>> _myPlans = [];
   Map<String, List<Map<String, dynamic>>> _planRequests = {};
@@ -57,9 +59,17 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
       MaterialPageRoute(
         builder: (_) => PaymentConfirmationScreen(
           venue: venue,
-          date: plan['planDateTime'] != null ? DateFormat('dd/MM/yyyy').format(DateTime.parse(plan['planDateTime'])) : 'Tonight',
+          date: plan['planDateTime'] != null
+              ? DateFormat(
+                  'dd/MM/yyyy',
+                ).format(DateTime.parse(plan['planDateTime']))
+              : 'Tonight',
           package: 'Party Plan Safety Deposit',
-          time: plan['planDateTime'] != null ? DateFormat('hh:mm a').format(DateTime.parse(plan['planDateTime'])) : '21:00',
+          time: plan['planDateTime'] != null
+              ? DateFormat(
+                  'hh:mm a',
+                ).format(DateTime.parse(plan['planDateTime']))
+              : '21:00',
           table: 'Host Table',
           guests: '1 Head',
           totalPrice: '₹99',
@@ -68,15 +78,26 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
           onRazorpayPaymentSuccess: (paymentId, signature) async {
             try {
               final orderId = plan['hostRazorpayOrderId'] ?? 'mock_order';
-              final success = await ApiService.verifyHostPayment(planId, orderId, paymentId, signature);
+              final success = await ApiService.verifyHostPayment(
+                planId,
+                orderId,
+                paymentId,
+                signature,
+              );
               if (success) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Payment Successful!'), backgroundColor: Colors.green),
+                  const SnackBar(
+                    content: Text('Payment Successful!'),
+                    backgroundColor: Colors.green,
+                  ),
                 );
                 _loadData();
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Payment Verification Failed.'), backgroundColor: Colors.red),
+                  const SnackBar(
+                    content: Text('Payment Verification Failed.'),
+                    backgroundColor: Colors.red,
+                  ),
                 );
               }
             } catch (e) {
@@ -86,15 +107,26 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
           onPaymentSuccess: () async {
             try {
               final orderId = plan['hostRazorpayOrderId'] ?? 'mock_order';
-              final success = await ApiService.verifyHostPayment(planId, orderId, 'mock_payment', 'mock_signature');
+              final success = await ApiService.verifyHostPayment(
+                planId,
+                orderId,
+                'mock_payment',
+                'mock_signature',
+              );
               if (success) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Payment Successful!'), backgroundColor: Colors.green),
+                  const SnackBar(
+                    content: Text('Payment Successful!'),
+                    backgroundColor: Colors.green,
+                  ),
                 );
                 _loadData();
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Payment Verification Failed.'), backgroundColor: Colors.red),
+                  const SnackBar(
+                    content: Text('Payment Verification Failed.'),
+                    backgroundColor: Colors.red,
+                  ),
                 );
               }
             } catch (e) {
@@ -108,18 +140,20 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
-    
+
     try {
       final plans = await ApiService.fetchMyPartyPlans();
-      final activePlans = plans.where((p) => p['status'] != 'cancelled').toList();
-      
+      final activePlans = plans
+          .where((p) => p['status'] != 'cancelled')
+          .toList();
+
       final reqsMap = <String, List<Map<String, dynamic>>>{};
       for (final plan in activePlans) {
         final planId = plan['id'];
         final reqs = await ApiService.fetchPartyPlanRequests(planId);
         reqsMap[planId] = reqs;
       }
-      
+
       if (mounted) {
         setState(() {
           _myPlans = activePlans;
@@ -137,12 +171,19 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
     final result = await ApiService.acceptPartyPlanRequest(reqId);
     if (result != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Request Accepted! Complete your deposit to lock match.')),
+        const SnackBar(
+          content: Text(
+            'Request Accepted! Complete your deposit to lock match.',
+          ),
+        ),
       );
       _loadData();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to accept request.'), backgroundColor: Colors.red),
+        const SnackBar(
+          content: Text('Failed to accept request.'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
@@ -156,7 +197,10 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
       _loadData();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to cancel plan.'), backgroundColor: Colors.red),
+        const SnackBar(
+          content: Text('Failed to cancel plan.'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
@@ -166,29 +210,36 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: const Text('Manage My Plans', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+        title: const Text(
+          'Manage My Plans',
+          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+        ),
         backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
         iconTheme: const IconThemeData(color: Colors.black),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: LunaraTheme.electricViolet))
+          ? const Center(
+              child: CircularProgressIndicator(
+                color: LunaraTheme.electricViolet,
+              ),
+            )
           : _myPlans.isEmpty
-              ? _buildEmptyState()
-              : RefreshIndicator(
-                  onRefresh: _loadData,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _myPlans.length,
-                    itemBuilder: (context, index) {
-                      final plan = _myPlans[index];
-                      final planId = plan['id'];
-                      final requests = _planRequests[planId] ?? [];
-                      return _buildPlanCard(plan, requests);
-                    },
-                  ),
-                ),
+          ? _buildEmptyState()
+          : RefreshIndicator(
+              onRefresh: _loadData,
+              child: ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: _myPlans.length,
+                itemBuilder: (context, index) {
+                  final plan = _myPlans[index];
+                  final planId = plan['id'];
+                  final requests = _planRequests[planId] ?? [];
+                  return _buildPlanCard(plan, requests);
+                },
+              ),
+            ),
     );
   }
 
@@ -212,11 +263,16 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
     );
   }
 
-  Widget _buildPlanCard(Map<String, dynamic> plan, List<Map<String, dynamic>> requests) {
+  Widget _buildPlanCard(
+    Map<String, dynamic> plan,
+    List<Map<String, dynamic>> requests,
+  ) {
     final venue = plan['venue'] ?? {};
     final venueName = venue['name'] ?? 'Unknown Venue';
     final message = plan['message'] ?? 'Let\'s party!';
-    final planDateTime = plan['planDateTime'] != null ? DateTime.parse(plan['planDateTime']).toLocal() : DateTime.now();
+    final planDateTime = plan['planDateTime'] != null
+        ? DateTime.parse(plan['planDateTime']).toLocal()
+        : DateTime.now();
     final isLive = plan['isLive'] ?? false;
     final paymentStatus = plan['hostPaymentStatus'] ?? 'pending';
 
@@ -225,10 +281,13 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: LunaraTheme.electricViolet.withOpacity(0.1), width: 1.2),
+        border: Border.all(
+          color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+          width: 1.2,
+        ),
         boxShadow: [
           BoxShadow(
-            color: LunaraTheme.electricViolet.withOpacity(0.05),
+            color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
             blurRadius: 16,
             offset: const Offset(0, 6),
           ),
@@ -249,15 +308,23 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                     Expanded(
                       child: Text(
                         message,
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
-                        color: isLive ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
+                        color: isLive
+                            ? Colors.green.withValues(alpha: 0.1)
+                            : Colors.orange.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
@@ -274,17 +341,31 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    Icon(Icons.location_on_rounded, size: 14, color: Colors.grey[600]),
+                    Icon(
+                      Icons.location_on_rounded,
+                      size: 14,
+                      color: Colors.grey[600],
+                    ),
                     const SizedBox(width: 4),
-                    Text(venueName, style: TextStyle(color: Colors.grey[800], fontSize: 13)),
+                    Text(
+                      venueName,
+                      style: TextStyle(color: Colors.grey[800], fontSize: 13),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    Icon(Icons.calendar_today_rounded, size: 14, color: Colors.grey[600]),
+                    Icon(
+                      Icons.calendar_today_rounded,
+                      size: 14,
+                      color: Colors.grey[600],
+                    ),
                     const SizedBox(width: 4),
-                    Text(DateFormat('MMM dd, yyyy • hh:mm a').format(planDateTime), style: TextStyle(color: Colors.grey[800], fontSize: 13)),
+                    Text(
+                      DateFormat('MMM dd, yyyy • hh:mm a').format(planDateTime),
+                      style: TextStyle(color: Colors.grey[800], fontSize: 13),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -298,22 +379,40 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
-                            color: (paymentStatus == 'paid' || paymentStatus == 'refunded') ? Colors.green : Colors.orange,
+                            color:
+                                (paymentStatus == 'paid' ||
+                                    paymentStatus == 'refunded')
+                                ? Colors.green
+                                : Colors.orange,
                           ),
                         ),
-                        if (paymentStatus == 'unpaid' && requests.any((r) => r['status'] == 'payment_pending')) ...[
+                        if (paymentStatus == 'unpaid' &&
+                            requests.any(
+                              (r) => r['status'] == 'payment_pending',
+                            )) ...[
                           const SizedBox(width: 8),
                           ElevatedButton(
                             onPressed: () => _onHostPayDeposit(plan),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.orange,
                               foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
                               minimumSize: const Size(0, 26),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(6),
+                              ),
                               elevation: 0,
                             ),
-                            child: const Text('PAY ₹99', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
+                            child: const Text(
+                              'PAY ₹99',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
                         ],
                       ],
@@ -326,14 +425,20 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                         minimumSize: const Size(50, 30),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                      child: const Text('CANCEL PLAN', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      child: const Text(
+                        'CANCEL PLAN',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ],
                 ),
               ],
             ),
           ),
-          
+
           // Requests Section
           if (requests.isNotEmpty) ...[
             Container(color: Colors.grey[200], height: 1),
@@ -344,27 +449,47 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                 children: [
                   Text(
                     'REQUESTS (${requests.length})',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey[600], letterSpacing: 1),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[600],
+                      letterSpacing: 1,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   ...requests.map((req) {
                     final reqUser = req['requester'] ?? {};
-                    final name = '${reqUser['firstName'] ?? ''} ${reqUser['lastName'] ?? ''}'.trim();
+                    final name =
+                        '${reqUser['firstName'] ?? ''} ${reqUser['lastName'] ?? ''}'
+                            .trim();
                     final status = req['status'] ?? 'pending';
-                    final hostPaid = plan['hostPaymentStatus'] == 'paid' || plan['hostPaymentStatus'] == 'refunded';
-                    final joinerPaid = req['joinerPaymentStatus'] == 'paid' || req['joinerPaymentStatus'] == 'refunded';
-                    final timerText = _getTimeRemaining(req['paymentTimeoutAt']);
-                    
+                    final hostPaid =
+                        plan['hostPaymentStatus'] == 'paid' ||
+                        plan['hostPaymentStatus'] == 'refunded';
+                    final joinerPaid =
+                        req['joinerPaymentStatus'] == 'paid' ||
+                        req['joinerPaymentStatus'] == 'refunded';
+                    final timerText = _getTimeRemaining(
+                      req['paymentTimeoutAt'],
+                    );
+
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: LunaraTheme.electricViolet.withOpacity(0.1), width: 1.2),
+                        border: Border.all(
+                          color: LunaraTheme.electricViolet.withValues(
+                            alpha: 0.1,
+                          ),
+                          width: 1.2,
+                        ),
                         boxShadow: [
                           BoxShadow(
-                            color: LunaraTheme.electricViolet.withOpacity(0.05),
+                            color: LunaraTheme.electricViolet.withValues(
+                              alpha: 0.05,
+                            ),
                             blurRadius: 10,
                             offset: const Offset(0, 4),
                           ),
@@ -377,7 +502,10 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                             backgroundColor: LunaraTheme.electricViolet,
                             child: Text(
                               name.isNotEmpty ? name[0].toUpperCase() : 'U',
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -385,37 +513,102 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(name.isNotEmpty ? name : 'Lunara User', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                Text(
+                                  name.isNotEmpty ? name : 'Lunara User',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
                                 const SizedBox(height: 4),
                                 if (status == 'pending')
-                                  const Text('Wants to join', style: TextStyle(color: Colors.orange, fontSize: 12, fontWeight: FontWeight.w600))
+                                  const Text(
+                                    'Wants to join',
+                                    style: TextStyle(
+                                      color: Colors.orange,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  )
                                 else if (status == 'payment_pending') ...[
                                   if (!hostPaid)
-                                    const Text('Please pay your ₹99 deposit to lock match.', style: TextStyle(color: Colors.red, fontSize: 11, fontWeight: FontWeight.bold))
+                                    const Text(
+                                      'Please pay your ₹99 deposit to lock match.',
+                                      style: TextStyle(
+                                        color: Colors.red,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    )
                                   else if (hostPaid && !joinerPaid)
-                                    Text('Waiting for joiner payment... ($timerText)', style: TextStyle(color: Colors.blue, fontSize: 11, fontWeight: FontWeight.bold))
+                                    Text(
+                                      'Waiting for joiner payment... ($timerText)',
+                                      style: TextStyle(
+                                        color: Colors.blue,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    )
                                   else if (hostPaid && joinerPaid)
-                                    const Text('Match Successful! Booking Confirmed 🎉', style: TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.bold))
+                                    const Text(
+                                      'Match Successful! Booking Confirmed 🎉',
+                                      style: TextStyle(
+                                        color: Colors.green,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                                 ] else if (status == 'accepted')
-                                  const Text('Match Successful! Booking Confirmed 🎉', style: TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.bold))
+                                  const Text(
+                                    'Match Successful! Booking Confirmed 🎉',
+                                    style: TextStyle(
+                                      color: Colors.green,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  )
                                 else if (status == 'payment_failed')
-                                  const Text('Payment timeout or failed', style: TextStyle(color: Colors.grey, fontSize: 11))
+                                  const Text(
+                                    'Payment timeout or failed',
+                                    style: TextStyle(
+                                      color: Colors.grey,
+                                      fontSize: 11,
+                                    ),
+                                  )
                                 else if (status == 'rejected')
-                                  const Text('Rejected', style: TextStyle(color: Colors.grey, fontSize: 11))
+                                  const Text(
+                                    'Rejected',
+                                    style: TextStyle(
+                                      color: Colors.grey,
+                                      fontSize: 11,
+                                    ),
+                                  ),
                               ],
                             ),
                           ),
                           if (status == 'pending')
                             ElevatedButton(
-                              onPressed: () => _onAcceptRequest(req['id'], plan['id']),
+                              onPressed: () =>
+                                  _onAcceptRequest(req['id'], plan['id']),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: LunaraTheme.electricViolet,
                                 foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
                                 minimumSize: const Size(0, 36),
                               ),
-                              child: const Text('ACCEPT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                              child: const Text(
+                                'ACCEPT',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ),
                           if (status == 'payment_pending' && !hostPaid)
                             ElevatedButton(
@@ -423,11 +616,22 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green,
                                 foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
                                 minimumSize: const Size(0, 36),
                               ),
-                              child: const Text('PAY ₹99', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                              child: const Text(
+                                'PAY ₹99',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ),
                         ],
                       ),
@@ -442,4 +646,3 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
     );
   }
 }
-

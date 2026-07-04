@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../core/theme.dart';
 import '../../widgets/action_button.dart';
 
 class VIPMembershipScreen extends StatelessWidget {
@@ -22,10 +21,7 @@ class VIPMembershipScreen extends StatelessWidget {
             const SizedBox(height: 40),
             _buildBenefits(),
             const SizedBox(height: 40),
-            LunaraActionButton(
-              text: 'UPGRADE NOW',
-              onPressed: () {},
-            ),
+            LunaraActionButton(text: 'UPGRADE NOW', onPressed: () {}),
           ],
         ),
       ),
@@ -36,9 +32,7 @@ class VIPMembershipScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Colors.amber, Colors.orange],
-        ),
+        gradient: const LinearGradient(colors: [Colors.amber, Colors.orange]),
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
@@ -54,7 +48,11 @@ class VIPMembershipScreen extends StatelessWidget {
           SizedBox(height: 16),
           Text(
             'GOLD MEMBER',
-            style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           Text(
             'Enjoy exclusive benefits',
@@ -69,11 +67,26 @@ class VIPMembershipScreen extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('YOUR BENEFITS', style: TextStyle(fontWeight: FontWeight.bold)),
+        const Text(
+          'YOUR BENEFITS',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         const SizedBox(height: 16),
-        _benefitItem(Icons.bolt, 'Priority Entry', 'Skip the line at any venue'),
-        _benefitItem(Icons.support_agent, 'VIP Host', '24/7 personal assistance'),
-        _benefitItem(Icons.celebration, 'Exclusive Invites', 'Access to private parties'),
+        _benefitItem(
+          Icons.bolt,
+          'Priority Entry',
+          'Skip the line at any venue',
+        ),
+        _benefitItem(
+          Icons.support_agent,
+          'VIP Host',
+          '24/7 personal assistance',
+        ),
+        _benefitItem(
+          Icons.celebration,
+          'Exclusive Invites',
+          'Access to private parties',
+        ),
       ],
     );
   }
@@ -85,7 +98,10 @@ class VIPMembershipScreen extends StatelessWidget {
         children: [
           Container(
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: Colors.amber.withValues(alpha: 0.1), shape: BoxShape.circle),
+            decoration: BoxDecoration(
+              color: Colors.amber.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
             child: Icon(icon, color: Colors.amber),
           ),
           const SizedBox(width: 16),
@@ -93,7 +109,10 @@ class VIPMembershipScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-              Text(desc, style: const TextStyle(color: Colors.black, fontSize: 12)),
+              Text(
+                desc,
+                style: const TextStyle(color: Colors.black, fontSize: 12),
+              ),
             ],
           ),
         ],

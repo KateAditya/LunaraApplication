@@ -31,7 +31,7 @@ class AppTourTooltip extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -51,7 +51,9 @@ class AppTourTooltip extends StatelessWidget {
                   child: Text(
                     title,
                     style: const TextStyle(
-                      color: Color(0xFF3b5998), // A blue color resembling the image
+                      color: Color(
+                        0xFF3b5998,
+                      ), // A blue color resembling the image
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
@@ -63,7 +65,10 @@ class AppTourTooltip extends StatelessWidget {
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      border: Border.all(color: Colors.grey.shade400, width: 1.5),
+                      border: Border.all(
+                        color: Colors.grey.shade400,
+                        width: 1.5,
+                      ),
                     ),
                     child: Icon(
                       Icons.close,
@@ -107,7 +112,10 @@ class AppTourTooltip extends StatelessWidget {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 8,
+                      ),
                     ),
                     child: const Text('Previous'),
                   )
@@ -120,7 +128,10 @@ class AppTourTooltip extends StatelessWidget {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 8,
+                      ),
                     ),
                     child: const Text('End Tour'),
                   ),
@@ -144,7 +155,10 @@ class AppTourTooltip extends StatelessWidget {
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 8,
+                    ),
                     elevation: 0,
                   ),
                   child: Text(isLastStep ? 'Finish' : 'Next'),

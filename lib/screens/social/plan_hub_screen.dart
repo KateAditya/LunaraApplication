@@ -133,7 +133,6 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     );
   }
 
-
   Widget _buildHeader() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
@@ -158,25 +157,42 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                 ),
               ),
               Text(
-                _currentUser != null ? 'Welcome back, ${_currentUser!.firstName}!' : 'Create plans & connect',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[50],
-                ),
+                _currentUser != null
+                    ? 'Welcome back, ${_currentUser!.firstName}!'
+                    : 'Create plans & connect',
+                style: TextStyle(fontSize: 12, color: Colors.grey[50]),
               ),
             ],
           ),
           const Spacer(),
           PopupMenuButton<String>(
-            icon: const Icon(Icons.list_alt_rounded, color: LunaraTheme.electricViolet),
+            icon: const Icon(
+              Icons.list_alt_rounded,
+              color: LunaraTheme.electricViolet,
+            ),
             tooltip: 'My Plans & Requests',
             onSelected: (value) {
               if (value == 'manage_plans') {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const HostPartyPlanManagerScreen()));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const HostPartyPlanManagerScreen(),
+                  ),
+                );
               } else if (value == 'party_plan_requests') {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const PartyPlanRequestsScreen()));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const PartyPlanRequestsScreen(),
+                  ),
+                );
               } else if (value == 'strangers_meet_requests') {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const StrangersMeetRequestsScreen()));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const StrangersMeetRequestsScreen(),
+                  ),
+                );
               }
             },
             itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
@@ -206,8 +222,11 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                     color: LunaraTheme.electricViolet.withValues(alpha: 0.08),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.notifications_none_rounded,
-                      color: LunaraTheme.electricViolet, size: 20),
+                  child: const Icon(
+                    Icons.notifications_none_rounded,
+                    color: LunaraTheme.electricViolet,
+                    size: 20,
+                  ),
                 ),
         ],
       ),
@@ -296,12 +315,15 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             children: [
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 5),
+                                  horizontal: 10,
+                                  vertical: 5,
+                                ),
                                 decoration: BoxDecoration(
                                   color: Colors.white.withValues(alpha: 0.2),
                                   borderRadius: BorderRadius.circular(20),
                                   border: Border.all(
-                                      color: Colors.white.withValues(alpha: 0.3)),
+                                    color: Colors.white.withValues(alpha: 0.3),
+                                  ),
                                 ),
                                 child: const Text(
                                   '✦ LUNARA PLANS',
@@ -343,8 +365,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             color: Colors.white.withValues(alpha: 0.2),
                             shape: BoxShape.circle,
                             border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.3),
-                                width: 1.5),
+                              color: Colors.white.withValues(alpha: 0.3),
+                              width: 1.5,
+                            ),
                           ),
                           child: Transform.rotate(
                             angle: _rotateAnim.value * 2,
@@ -409,7 +432,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
-                          builder: (_) => const GroupPartyBookingScreen()),
+                        builder: (_) => const GroupPartyBookingScreen(),
+                      ),
                     ),
                   ),
                 ),
@@ -463,7 +487,11 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       color: Colors.white.withValues(alpha: 0.15),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.science_outlined, color: Colors.white, size: 20),
+                    child: const Icon(
+                      Icons.science_outlined,
+                      color: Colors.white,
+                      size: 20,
+                    ),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -490,7 +518,11 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       ],
                     ),
                   ),
-                  const Icon(Icons.arrow_forward_ios, color: Colors.white70, size: 14),
+                  const Icon(
+                    Icons.arrow_forward_ios,
+                    color: Colors.white70,
+                    size: 14,
+                  ),
                 ],
               ),
             ),
@@ -549,11 +581,14 @@ class _PlanHubScreenState extends State<PlanHubScreen>
       final myGender = _currentUser!.gender!.toLowerCase();
       filteredList = _customerList.where((u) {
         final isNotMe = u['id']?.toString() != _currentUser?.id;
-        final uGender = (u['gender'] ?? 
-                         (u['profile'] is Map ? u['profile']['gender'] : null) ?? 
-                         u['vibe'] ?? 
-                         '').toString().toLowerCase();
-        
+        final uGender =
+            (u['gender'] ??
+                    (u['profile'] is Map ? u['profile']['gender'] : null) ??
+                    u['vibe'] ??
+                    '')
+                .toString()
+                .toLowerCase();
+
         if (myGender == 'male' || myGender == 'm') {
           if (uGender == 'male' || uGender == 'm') return false;
         } else if (myGender == 'female' || myGender == 'f') {
@@ -609,7 +644,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
               : ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   scrollDirection: Axis.horizontal,
-                  itemCount: _currentUser != null ? (filteredList.length + 1) : filteredList.length,
+                  itemCount: _currentUser != null
+                      ? (filteredList.length + 1)
+                      : filteredList.length,
                   itemBuilder: (context, index) {
                     final Map<String, dynamic> person;
                     final bool isMe;
@@ -623,13 +660,22 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       };
                     } else {
                       isMe = false;
-                      final adjustedIndex = _currentUser != null ? index - 1 : index;
+                      final adjustedIndex = _currentUser != null
+                          ? index - 1
+                          : index;
                       person = filteredList[adjustedIndex];
                     }
 
                     // Extract fields safely
-                    final name = person['name'] ?? person['firstName'] ?? person['first_name'] ?? 'User';
-                    final photo = person['profilePhotoUrl'] ?? person['profilePhoto'] ?? person['avatar'];
+                    final name =
+                        person['name'] ??
+                        person['firstName'] ??
+                        person['first_name'] ??
+                        'User';
+                    final photo =
+                        person['profilePhotoUrl'] ??
+                        person['profilePhoto'] ??
+                        person['avatar'];
                     final vibe = person['gender'] ?? person['vibe'] ?? 'Party';
 
                     return Container(
@@ -658,7 +704,11 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             vibe,
                             style: TextStyle(
                               fontSize: 9,
-                              color: isMe ? const Color(0xFFB952EB) : LunaraTheme.electricViolet.withValues(alpha: 0.8),
+                              color: isMe
+                                  ? const Color(0xFFB952EB)
+                                  : LunaraTheme.electricViolet.withValues(
+                                      alpha: 0.8,
+                                    ),
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -671,17 +721,21 @@ class _PlanHubScreenState extends State<PlanHubScreen>
       ],
     );
   }
+
   Widget _buildTopTenProfilesSection() {
     List<Map<String, dynamic>> filteredList = _customerList;
     if (_currentUser?.gender != null) {
       final myGender = _currentUser!.gender!.toLowerCase();
       filteredList = _customerList.where((u) {
         final isNotMe = u['id']?.toString() != _currentUser?.id;
-        final uGender = (u['gender'] ?? 
-                         (u['profile'] is Map ? u['profile']['gender'] : null) ?? 
-                         u['vibe'] ?? 
-                         '').toString().toLowerCase();
-        
+        final uGender =
+            (u['gender'] ??
+                    (u['profile'] is Map ? u['profile']['gender'] : null) ??
+                    u['vibe'] ??
+                    '')
+                .toString()
+                .toLowerCase();
+
         if (myGender == 'male' || myGender == 'm') {
           if (uGender == 'male' || uGender == 'm') return false;
         } else if (myGender == 'female' || myGender == 'f') {
@@ -698,7 +752,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
           padding: EdgeInsets.fromLTRB(24, 24, 24, 16),
           child: Text(
             'TOP 10 PROFILES',
-            style: TextStyle( 
+            style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.bold,
               letterSpacing: 1,
@@ -718,9 +772,17 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                 itemCount: filteredList.length > 10 ? 10 : filteredList.length,
                 itemBuilder: (context, index) {
                   final person = filteredList[index];
-                  final name = person['name'] ?? person['firstName'] ?? person['first_name'] ?? 'User';
-                  final photo = person['profilePhotoUrl'] ?? person['profilePhoto'] ?? person['avatar'];
-                  final vibe = person['gender'] ?? person['vibe'] ?? 'Discovery';
+                  final name =
+                      person['name'] ??
+                      person['firstName'] ??
+                      person['first_name'] ??
+                      'User';
+                  final photo =
+                      person['profilePhotoUrl'] ??
+                      person['profilePhoto'] ??
+                      person['avatar'];
+                  final vibe =
+                      person['gender'] ?? person['vibe'] ?? 'Discovery';
                   final matchPct = 65 + (index * 4) % 35;
 
                   return Container(
@@ -729,7 +791,10 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: const Color(0x1A7F00FF), width: 1.2),
+                      border: Border.all(
+                        color: const Color(0x1A7F00FF),
+                        width: 1.2,
+                      ),
                       boxShadow: [
                         BoxShadow(
                           color: const Color(0x0D7F00FF),
@@ -761,8 +826,11 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     ),
                                   ),
                                   const SizedBox(width: 4),
-                                  const Icon(Icons.verified,
-                                      color: LunaraTheme.cyberCyan, size: 14),
+                                  const Icon(
+                                    Icons.verified,
+                                    color: LunaraTheme.cyberCyan,
+                                    size: 14,
+                                  ),
                                 ],
                               ),
                               const SizedBox(height: 3),
@@ -779,7 +847,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               Text(
                                 '${1 + index} km away',
                                 style: TextStyle(
-                                    fontSize: 11, color: Colors.grey[400]),
+                                  fontSize: 11,
+                                  color: Colors.grey[400],
+                                ),
                               ),
                             ],
                           ),
@@ -789,12 +859,17 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                           children: [
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 4),
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
                               decoration: BoxDecoration(
                                 color: matchPct >= 80
-                                    ? const Color(0xFF10B981).withValues(alpha: 0.12)
-                                    : LunaraTheme.electricViolet
-                                        .withValues(alpha: 0.1),
+                                    ? const Color(
+                                        0xFF10B981,
+                                      ).withValues(alpha: 0.12)
+                                    : LunaraTheme.electricViolet.withValues(
+                                        alpha: 0.1,
+                                      ),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Text(
@@ -808,7 +883,6 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                 ),
                               ),
                             ),
-
                           ],
                         ),
                       ],
@@ -844,441 +918,575 @@ class _PlanHubScreenState extends State<PlanHubScreen>
         });
         return StatefulBuilder(
           builder: (context, setSheetState) {
-          final List<Venue> displayedVenues = searchQuery.isEmpty
-              ? _allVenues.take(5).toList()
-              : _allVenues
-                  .where((v) =>
-                      v.name.toLowerCase().contains(searchQuery.toLowerCase()) ||
-                      v.city.toLowerCase().contains(searchQuery.toLowerCase()))
-                  .toList();
+            final List<Venue> displayedVenues = searchQuery.isEmpty
+                ? _allVenues.take(5).toList()
+                : _allVenues
+                      .where(
+                        (v) =>
+                            v.name.toLowerCase().contains(
+                              searchQuery.toLowerCase(),
+                            ) ||
+                            v.city.toLowerCase().contains(
+                              searchQuery.toLowerCase(),
+                            ),
+                      )
+                      .toList();
 
-          return ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.90,
-            ),
-            child: Container(
-              padding: EdgeInsets.fromLTRB(24, 16, 24, 16 + MediaQuery.of(context).viewInsets.bottom),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+            return ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.90,
               ),
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[300],
-                        borderRadius: BorderRadius.circular(10),
+              child: Container(
+                padding: EdgeInsets.fromLTRB(
+                  24,
+                  16,
+                  24,
+                  16 + MediaQuery.of(context).viewInsets.bottom,
+                ),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+                ),
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[300],
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'CREATE A PARTY PLAN',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.5,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  
-                  // Venue Search
-                  Container(
-                    key: AppTourService.createPlanVenueSearchKey,
-                    child: _sheetField(
-                      hint: 'Search venue...',
-                      icon: Icons.search_rounded,
-                      onChanged: (val) => setSheetState(() => searchQuery = val),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  
-                  // Horizontal Venue List
-                  if (_isLoadingVenues)
-                    const Center(child: CircularProgressIndicator())
-                  else if (displayedVenues.isEmpty)
-                    const Text('No venues found', style: TextStyle(color: Colors.grey, fontSize: 12))
-                  else
-                    SizedBox(
-                      height: 100,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: displayedVenues.length,
-                        itemBuilder: (context, index) {
-                          final v = displayedVenues[index];
-                          final isSelected = selectedVenue?.id == v.id;
-                          return GestureDetector(
-                            onTap: () {
-                              setSheetState(() {
-                                selectedVenue = v;
-                                descriptionCtrl.text = "Let's party at ${v.name}! 🚀";
-                              });
-                            },
-                            child: Container(
-                              width: 140,
-                              margin: const EdgeInsets.only(right: 12),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: isSelected ? LunaraTheme.electricViolet : Colors.grey[200]!,
-                                  width: 2,
-                                ),
-                                image: v.imageUrl != null
-                                    ? DecorationImage(
-                                        image: NetworkImage(v.imageUrl!),
-                                        fit: BoxFit.cover,
-                                        colorFilter: ColorFilter.mode(
-                                          Colors.black.withValues(alpha: isSelected ? 0.2 : 0.4),
-                                          BlendMode.darken,
+                      const SizedBox(height: 12),
+                      const Text(
+                        'CREATE A PARTY PLAN',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Venue Search
+                      Container(
+                        key: AppTourService.createPlanVenueSearchKey,
+                        child: _sheetField(
+                          hint: 'Search venue...',
+                          icon: Icons.search_rounded,
+                          onChanged: (val) =>
+                              setSheetState(() => searchQuery = val),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Horizontal Venue List
+                      if (_isLoadingVenues)
+                        const Center(child: CircularProgressIndicator())
+                      else if (displayedVenues.isEmpty)
+                        const Text(
+                          'No venues found',
+                          style: TextStyle(color: Colors.grey, fontSize: 12),
+                        )
+                      else
+                        SizedBox(
+                          height: 100,
+                          child: ListView.builder(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: displayedVenues.length,
+                            itemBuilder: (context, index) {
+                              final v = displayedVenues[index];
+                              final isSelected = selectedVenue?.id == v.id;
+                              return GestureDetector(
+                                onTap: () {
+                                  setSheetState(() {
+                                    selectedVenue = v;
+                                    descriptionCtrl.text =
+                                        "Let's party at ${v.name}! 🚀";
+                                  });
+                                },
+                                child: Container(
+                                  width: 140,
+                                  margin: const EdgeInsets.only(right: 12),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: isSelected
+                                          ? LunaraTheme.electricViolet
+                                          : Colors.grey[200]!,
+                                      width: 2,
+                                    ),
+                                    image: v.imageUrl != null
+                                        ? DecorationImage(
+                                            image: NetworkImage(v.imageUrl!),
+                                            fit: BoxFit.cover,
+                                            colorFilter: ColorFilter.mode(
+                                              Colors.black.withValues(
+                                                alpha: isSelected ? 0.2 : 0.4,
+                                              ),
+                                              BlendMode.darken,
+                                            ),
+                                          )
+                                        : null,
+                                    color: Colors.grey[100],
+                                  ),
+                                  child: Center(
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(8.0),
+                                      child: Text(
+                                        v.name.toUpperCase(),
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
                                         ),
-                                      )
-                                    : null,
-                                color: Colors.grey[100],
-                              ),
-                              child: Center(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(8.0),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+
+                      const SizedBox(height: 12),
+
+                      // Auto-filled Description
+                      _sheetField(
+                        controller: descriptionCtrl,
+                        hint: 'Plan details...',
+                        icon: Icons.info_outline_rounded,
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Date & Time Picker
+                      GestureDetector(
+                        onTap: () async {
+                          final date = await showDatePicker(
+                            context: context,
+                            initialDate: DateTime.now(),
+                            firstDate: DateTime.now(),
+                            lastDate: DateTime.now().add(
+                              const Duration(days: 30),
+                            ),
+                          );
+                          if (date != null) {
+                            final time = await showTimePicker(
+                              context: context,
+                              initialTime: TimeOfDay.now(),
+                            );
+                            if (time != null) {
+                              setSheetState(() {
+                                selectedDate = date;
+                                selectedTime = time;
+                                dateCtrl.text =
+                                    "${DateFormat('MMM dd, yyyy').format(date)} at ${time.format(context)}";
+                              });
+                            }
+                          }
+                        },
+                        child: AbsorbPointer(
+                          child: _sheetField(
+                            controller: dateCtrl,
+                            hint: 'Pick Date & Time',
+                            icon: Icons.calendar_today_rounded,
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 10),
+                      const Text(
+                        'SELECT PRIVACY',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.5,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: ['Public', 'Private'].map((type) {
+                          final isSelected = selectedPrivacy == type;
+                          return Expanded(
+                            child: GestureDetector(
+                              onTap: () {
+                                setSheetState(() {
+                                  selectedPrivacy = type;
+                                });
+                              },
+                              child: Container(
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                decoration: BoxDecoration(
+                                  gradient: isSelected
+                                      ? LunaraTheme.purpleGradient
+                                      : null,
+                                  color: isSelected ? null : Colors.grey[50],
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? Colors.transparent
+                                        : Colors.grey[200]!,
+                                  ),
+                                ),
+                                child: Center(
                                   child: Text(
-                                    v.name.toUpperCase(),
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 10,
+                                    type.toUpperCase(),
+                                    style: TextStyle(
+                                      fontSize: 11,
                                       fontWeight: FontWeight.bold,
+                                      color: isSelected
+                                          ? Colors.white
+                                          : Colors.black54,
+                                      letterSpacing: 1,
                                     ),
                                   ),
                                 ),
                               ),
                             ),
                           );
-                        },
+                        }).toList(),
                       ),
-                    ),
-                  
-                  const SizedBox(height: 12),
-                  
-                  // Auto-filled Description
-                  _sheetField(
-                    controller: descriptionCtrl,
-                    hint: 'Plan details...',
-                    icon: Icons.info_outline_rounded,
-                  ),
-                  const SizedBox(height: 10),
-                  
-                  // Date & Time Picker
-                  GestureDetector(
-                    onTap: () async {
-                      final date = await showDatePicker(
-                        context: context,
-                        initialDate: DateTime.now(),
-                        firstDate: DateTime.now(),
-                        lastDate: DateTime.now().add(const Duration(days: 30)),
-                      );
-                      if (date != null) {
-                        final time = await showTimePicker(
-                          context: context,
-                          initialTime: TimeOfDay.now(),
-                        );
-                        if (time != null) {
-                          setSheetState(() {
-                            selectedDate = date;
-                            selectedTime = time;
-                            dateCtrl.text = "${DateFormat('MMM dd, yyyy').format(date)} at ${time.format(context)}";
-                          });
-                        }
-                      }
-                    },
-                    child: AbsorbPointer(
-                      child: _sheetField(
-                        controller: dateCtrl,
-                        hint: 'Pick Date & Time',
-                        icon: Icons.calendar_today_rounded,
-                      ),
-                    ),
-                  ),
 
-                  const SizedBox(height: 10),
-                  const Text(
-                    'SELECT PRIVACY',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.5,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: ['Public', 'Private'].map((type) {
-                      final isSelected = selectedPrivacy == type;
-                      return Expanded(
-                        child: GestureDetector(
-                          onTap: () {
+                      if (selectedPrivacy == 'Private') ...[
+                        const SizedBox(height: 10),
+                        _sheetField(
+                          hint: 'Search profiles to invite...',
+                          icon: Icons.person_search_rounded,
+                          onChanged: (val) {
                             setSheetState(() {
-                              selectedPrivacy = type;
+                              userSearchQuery = val;
                             });
                           },
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 4),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            decoration: BoxDecoration(
-                              gradient: isSelected ? LunaraTheme.purpleGradient : null,
-                              color: isSelected ? null : Colors.grey[50],
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: isSelected ? Colors.transparent : Colors.grey[200]!,
-                              ),
-                            ),
-                            child: Center(
-                              child: Text(
-                                type.toUpperCase(),
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: isSelected ? Colors.white : Colors.black54,
-                                  letterSpacing: 1,
-                                ),
-                              ),
-                            ),
-                          ),
                         ),
-                      );
-                    }).toList(),
-                  ),
-
-                  if (selectedPrivacy == 'Private') ...[
-                    const SizedBox(height: 10),
-                    _sheetField(
-                      hint: 'Search profiles to invite...',
-                      icon: Icons.person_search_rounded,
-                      onChanged: (val) {
-                        setSheetState(() {
-                          userSearchQuery = val;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      height: 90,
-                      child: _customerList.isEmpty
-                          ? const Center(child: Text('No profiles available', style: TextStyle(color: Colors.grey, fontSize: 12)))
-                          : ListView.builder(
-                              scrollDirection: Axis.horizontal,
-                              itemCount: _customerList.where((u) {
-                                final name = (u['name'] ?? u['firstName'] ?? u['first_name'] ?? '').toString().toLowerCase();
-                                final searchVal = userSearchQuery.toLowerCase();
-                                final isNotMe = u['id']?.toString() != ApiService.currentUserId;
-                                return name.contains(searchVal) && isNotMe;
-                              }).length,
-                              itemBuilder: (ctx, idx) {
-                                final filteredList = _customerList.where((u) {
-                                  final name = (u['name'] ?? u['firstName'] ?? u['first_name'] ?? '').toString().toLowerCase();
-                                  final searchVal = userSearchQuery.toLowerCase();
-                                  final isNotMe = u['id']?.toString() != ApiService.currentUserId;
-                                  return name.contains(searchVal) && isNotMe;
-                                }).toList();
-                                final p = filteredList[idx];
-                                final pId = p['id']?.toString() ?? '';
-                                final pName = p['name'] ?? p['firstName'] ?? p['first_name'] ?? 'User';
-                                final isSelected = selectedUserIds.contains(pId);
-                                
-                                return GestureDetector(
-                                  onTap: () {
-                                    setSheetState(() {
-                                      if (isSelected) {
-                                        selectedUserIds.remove(pId);
-                                      } else {
-                                        selectedUserIds.add(pId);
-                                      }
-                                    });
-                                  },
-                                  child: Padding(
-                                    padding: const EdgeInsets.only(right: 14),
-                                    child: Column(
-                                      children: [
-                                        Stack(
-                                          children: [
-                                            LunaraProfileImage(
-                                              userData: p,
-                                              radius: 24,
-                                              showGradientBorder: isSelected,
-                                              isInteractive: false,
-                                            ),
-                                            if (isSelected)
-                                              Positioned(
-                                                right: 0,
-                                                bottom: 0,
-                                                child: Container(
-                                                  padding: const EdgeInsets.all(2),
-                                                  decoration: const BoxDecoration(
-                                                    color: Colors.green,
-                                                    shape: BoxShape.circle,
-                                                  ),
-                                                  child: const Icon(Icons.check, color: Colors.white, size: 10),
-                                                ),
-                                              ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Text(
-                                          pName,
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w600,
-                                            color: isSelected ? LunaraTheme.electricViolet : Colors.black87,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ],
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          height: 90,
+                          child: _customerList.isEmpty
+                              ? const Center(
+                                  child: Text(
+                                    'No profiles available',
+                                    style: TextStyle(
+                                      color: Colors.grey,
+                                      fontSize: 12,
                                     ),
                                   ),
-                                );
-                              },
-                            ),
-                    ),
-                  ],
-                  
-                  const SizedBox(height: 16),
-                  
-                  Container(
-                    key: AppTourService.createPlanPostButtonKey,
-                    child: _sheetButton(
-                      label: isPosting ? 'PROCEEDING...' : 'POST PARTY PLAN',
-                      onTap: isPosting
-                        ? () {}
-                        : () async {
-                            if (selectedVenue == null) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Please select a venue')),
-                              );
-                              return;
-                            }
-                            if (selectedDate == null || selectedTime == null) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Please select date and time')),
-                              );
-                              return;
-                            }
+                                )
+                              : ListView.builder(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: _customerList.where((u) {
+                                    final name =
+                                        (u['name'] ??
+                                                u['firstName'] ??
+                                                u['first_name'] ??
+                                                '')
+                                            .toString()
+                                            .toLowerCase();
+                                    final searchVal = userSearchQuery
+                                        .toLowerCase();
+                                    final isNotMe =
+                                        u['id']?.toString() !=
+                                        ApiService.currentUserId;
+                                    return name.contains(searchVal) && isNotMe;
+                                  }).length,
+                                  itemBuilder: (ctx, idx) {
+                                    final filteredList = _customerList.where((
+                                      u,
+                                    ) {
+                                      final name =
+                                          (u['name'] ??
+                                                  u['firstName'] ??
+                                                  u['first_name'] ??
+                                                  '')
+                                              .toString()
+                                              .toLowerCase();
+                                      final searchVal = userSearchQuery
+                                          .toLowerCase();
+                                      final isNotMe =
+                                          u['id']?.toString() !=
+                                          ApiService.currentUserId;
+                                      return name.contains(searchVal) &&
+                                          isNotMe;
+                                    }).toList();
+                                    final p = filteredList[idx];
+                                    final pId = p['id']?.toString() ?? '';
+                                    final pName =
+                                        p['name'] ??
+                                        p['firstName'] ??
+                                        p['first_name'] ??
+                                        'User';
+                                    final isSelected = selectedUserIds.contains(
+                                      pId,
+                                    );
 
-final userId = ApiService.currentUserId;
-                            if (userId == null) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Please login to post a plan')),
-                              );
-                              return;
-                            }
+                                    return GestureDetector(
+                                      onTap: () {
+                                        setSheetState(() {
+                                          if (isSelected) {
+                                            selectedUserIds.remove(pId);
+                                          } else {
+                                            selectedUserIds.add(pId);
+                                          }
+                                        });
+                                      },
+                                      child: Padding(
+                                        padding: const EdgeInsets.only(
+                                          right: 14,
+                                        ),
+                                        child: Column(
+                                          children: [
+                                            Stack(
+                                              children: [
+                                                LunaraProfileImage(
+                                                  userData: p,
+                                                  radius: 24,
+                                                  showGradientBorder:
+                                                      isSelected,
+                                                  isInteractive: false,
+                                                ),
+                                                if (isSelected)
+                                                  Positioned(
+                                                    right: 0,
+                                                    bottom: 0,
+                                                    child: Container(
+                                                      padding:
+                                                          const EdgeInsets.all(
+                                                            2,
+                                                          ),
+                                                      decoration:
+                                                          const BoxDecoration(
+                                                            color: Colors.green,
+                                                            shape:
+                                                                BoxShape.circle,
+                                                          ),
+                                                      child: const Icon(
+                                                        Icons.check,
+                                                        color: Colors.white,
+                                                        size: 10,
+                                                      ),
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Text(
+                                              pName,
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w600,
+                                                color: isSelected
+                                                    ? LunaraTheme.electricViolet
+                                                    : Colors.black87,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+                      ],
 
-                            if (selectedPrivacy == 'Private' && selectedUserIds.isEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Please select at least one profile to invite')),
-                              );
-                              return;
-                            }
+                      const SizedBox(height: 16),
 
-                            setSheetState(() => isPosting = true);
+                      Container(
+                        key: AppTourService.createPlanPostButtonKey,
+                        child: _sheetButton(
+                          label: isPosting
+                              ? 'PROCEEDING...'
+                              : 'POST PARTY PLAN',
+                          onTap: isPosting
+                              ? () {}
+                              : () async {
+                                  if (selectedVenue == null) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Please select a venue'),
+                                      ),
+                                    );
+                                    return;
+                                  }
+                                  if (selectedDate == null ||
+                                      selectedTime == null) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Please select date and time',
+                                        ),
+                                      ),
+                                    );
+                                    return;
+                                  }
 
-                            final dt = DateTime(
-                              selectedDate!.year,
-                              selectedDate!.month,
-                              selectedDate!.day,
-                              selectedTime!.hour,
-                              selectedTime!.minute,
-                            );
+                                  final userId = ApiService.currentUserId;
+                                  if (userId == null) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Please login to post a plan',
+                                        ),
+                                      ),
+                                    );
+                                    return;
+                                  }
 
-                            // Validate unique plan per day constraint
-                            try {
-                              final existingPlans = await ApiService.fetchMyPartyPlans();
-                              final targetDateStr = DateFormat('yyyy-MM-dd').format(selectedDate!);
-                              final alreadyHasPlan = existingPlans.any((p) {
-                                final pStatus = p['status']?.toString().toLowerCase();
-                                if (pStatus == 'cancelled') return false;
-                                
-                                final pDtStr = p['planDateTime'];
-                                if (pDtStr == null) return false;
-                                try {
-                                  final pDt = DateTime.parse(pDtStr).toLocal();
-                                  final pDateStr = DateFormat('yyyy-MM-dd').format(pDt);
-                                  return pDateStr == targetDateStr;
-                                } catch (_) {
-                                  return false;
-                                }
-                              });
+                                  if (selectedPrivacy == 'Private' &&
+                                      selectedUserIds.isEmpty) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Please select at least one profile to invite',
+                                        ),
+                                      ),
+                                    );
+                                    return;
+                                  }
 
-                              if (alreadyHasPlan) {
-                                setSheetState(() => isPosting = false);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: const Text('You already have a party plan scheduled for this day. limit: 1 plan per day.'),
-                                    backgroundColor: Colors.red[800],
-                                  ),
-                                );
-                                return;
-                              }
-                            } catch (e) {
-                              debugPrint('Error validating unique plan: $e');
-                            }
+                                  setSheetState(() => isPosting = true);
 
-                            try {
-                              final response = await ApiService.post(
-                                '/api/mobile/party-plans',
-                                body: {
-                                  'userId': userId,
-                                  'venueId': selectedVenue!.id,
-                                  'message': descriptionCtrl.text.isEmpty
-                                      ? "Let's party at ${selectedVenue!.name}"
-                                      : descriptionCtrl.text,
-                                  'planDateTime': DateFormat('yyyy-MM-dd HH:mm:ss').format(dt),
-                                  'privacyType': selectedPrivacy.toLowerCase(),
-                                  'paymentStatus': 'pending',
-                                  'selectedUserIds': selectedUserIds,
+                                  final dt = DateTime(
+                                    selectedDate!.year,
+                                    selectedDate!.month,
+                                    selectedDate!.day,
+                                    selectedTime!.hour,
+                                    selectedTime!.minute,
+                                  );
+
+                                  // Validate unique plan per day constraint
+                                  try {
+                                    final existingPlans =
+                                        await ApiService.fetchMyPartyPlans();
+                                    final targetDateStr = DateFormat(
+                                      'yyyy-MM-dd',
+                                    ).format(selectedDate!);
+                                    final alreadyHasPlan = existingPlans.any((
+                                      p,
+                                    ) {
+                                      final pStatus = p['status']
+                                          ?.toString()
+                                          .toLowerCase();
+                                      if (pStatus == 'cancelled') return false;
+
+                                      final pDtStr = p['planDateTime'];
+                                      if (pDtStr == null) return false;
+                                      try {
+                                        final pDt = DateTime.parse(
+                                          pDtStr,
+                                        ).toLocal();
+                                        final pDateStr = DateFormat(
+                                          'yyyy-MM-dd',
+                                        ).format(pDt);
+                                        return pDateStr == targetDateStr;
+                                      } catch (_) {
+                                        return false;
+                                      }
+                                    });
+
+                                    if (alreadyHasPlan) {
+                                      setSheetState(() => isPosting = false);
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: const Text(
+                                            'You already have a party plan scheduled for this day. limit: 1 plan per day.',
+                                          ),
+                                          backgroundColor: Colors.red[800],
+                                        ),
+                                      );
+                                      return;
+                                    }
+                                  } catch (e) {
+                                    debugPrint(
+                                      'Error validating unique plan: $e',
+                                    );
+                                  }
+
+                                  try {
+                                    final response = await ApiService.post(
+                                      '/api/mobile/party-plans',
+                                      body: {
+                                        'userId': userId,
+                                        'venueId': selectedVenue!.id,
+                                        'message': descriptionCtrl.text.isEmpty
+                                            ? "Let's party at ${selectedVenue!.name}"
+                                            : descriptionCtrl.text,
+                                        'planDateTime': DateFormat(
+                                          'yyyy-MM-dd HH:mm:ss',
+                                        ).format(dt),
+                                        'privacyType': selectedPrivacy
+                                            .toLowerCase(),
+                                        'paymentStatus': 'pending',
+                                        'selectedUserIds': selectedUserIds,
+                                      },
+                                    );
+
+                                    if (response.statusCode == 200 ||
+                                        response.statusCode == 201) {
+                                      Navigator.pop(
+                                        context,
+                                      ); // Close bottom sheet
+
+                                      if (!mounted) return;
+                                      ScaffoldMessenger.of(
+                                        this.context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Plan posted for ${selectedVenue!.name}!',
+                                          ),
+                                          backgroundColor:
+                                              LunaraTheme.electricViolet,
+                                        ),
+                                      );
+                                    } else {
+                                      setSheetState(() => isPosting = false);
+                                      String errorMsg =
+                                          'Failed to save plan data.';
+                                      try {
+                                        final data = jsonDecode(response.body);
+                                        errorMsg =
+                                            data['message'] ??
+                                            data['error'] ??
+                                            errorMsg;
+                                      } catch (_) {}
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(content: Text(errorMsg)),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    setSheetState(() => isPosting = false);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('Error: $e')),
+                                    );
+                                  }
                                 },
-                              );
-
-                              if (response.statusCode == 200 || response.statusCode == 201) {
-                                Navigator.pop(context); // Close bottom sheet
-
-                                if (!this.mounted) return;
-                                ScaffoldMessenger.of(this.context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Plan posted for ${selectedVenue!.name}!'),
-                                    backgroundColor: LunaraTheme.electricViolet,
-                                  ),
-                                );
-                              } else {
-                                setSheetState(() => isPosting = false);
-                                String errorMsg = 'Failed to save plan data.';
-                                try {
-                                  final data = jsonDecode(response.body);
-                                  errorMsg = data['message'] ?? data['error'] ?? errorMsg;
-                                } catch (_) {}
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(errorMsg)),
-                                );
-                              }
-                            } catch (e) {
-                              setSheetState(() => isPosting = false);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Error: $e')),
-                                );
-                            }
-                          },
+                        ),
+                      ),
+                    ],
                   ),
-                  ),
-                ],
+                ),
               ),
-              ),
-            ),
-          );
-        },
-      );
+            );
+          },
+        );
       },
     );
   }
@@ -1304,296 +1512,356 @@ final userId = ApiService.currentUserId;
         });
         return StatefulBuilder(
           builder: (context, setSheetState) {
-          final List<Venue> displayedVenues = searchQuery.isEmpty
-              ? _allVenues.take(5).toList()
-              : _allVenues
-                  .where((v) =>
-                      v.name.toLowerCase().contains(searchQuery.toLowerCase()) ||
-                      v.city.toLowerCase().contains(searchQuery.toLowerCase()))
-                  .toList();
+            final List<Venue> displayedVenues = searchQuery.isEmpty
+                ? _allVenues.take(5).toList()
+                : _allVenues
+                      .where(
+                        (v) =>
+                            v.name.toLowerCase().contains(
+                              searchQuery.toLowerCase(),
+                            ) ||
+                            v.city.toLowerCase().contains(
+                              searchQuery.toLowerCase(),
+                            ),
+                      )
+                      .toList();
 
-          return ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.90,
-            ),
-            child: Container(
-              padding: EdgeInsets.fromLTRB(24, 16, 24, 16 + MediaQuery.of(context).viewInsets.bottom),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+            return ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.90,
               ),
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[300],
-                        borderRadius: BorderRadius.circular(10),
+              child: Container(
+                padding: EdgeInsets.fromLTRB(
+                  24,
+                  16,
+                  24,
+                  16 + MediaQuery.of(context).viewInsets.bottom,
+                ),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+                ),
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[300],
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'ARRANGE STRANGERS MEET',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.5,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  
-                  // Venue Search
-                  Container(
-                    key: AppTourService.strangersMeetSearchKey,
-                    child: _sheetField(
-                      hint: 'Search venue...',
-                      icon: Icons.search_rounded,
-                      onChanged: (val) => setSheetState(() => searchQuery = val),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // Horizontal Venue List
-                  if (_isLoadingVenues)
-                    const Center(child: CircularProgressIndicator())
-                  else if (displayedVenues.isEmpty)
-                    const Text('No venues found', style: TextStyle(color: Colors.grey, fontSize: 12))
-                  else
-                    SizedBox(
-                      height: 100,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: displayedVenues.length,
-                        itemBuilder: (context, index) {
-                          final v = displayedVenues[index];
-                          final isSelected = selectedVenue?.id == v.id;
-                          return GestureDetector(
-                            onTap: () {
-                              setSheetState(() {
-                                selectedVenue = v;
-                              });
-                            },
-                            child: Container(
-                              width: 140,
-                              margin: const EdgeInsets.only(right: 12),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: isSelected ? LunaraTheme.electricViolet : Colors.grey[200]!,
-                                  width: 2,
-                                ),
-                                image: v.imageUrl != null
-                                    ? DecorationImage(
-                                        image: NetworkImage(v.imageUrl!),
-                                        fit: BoxFit.cover,
-                                        colorFilter: ColorFilter.mode(
-                                          Colors.black.withValues(alpha: isSelected ? 0.2 : 0.4),
-                                          BlendMode.darken,
+                      const SizedBox(height: 12),
+                      const Text(
+                        'ARRANGE STRANGERS MEET',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Venue Search
+                      Container(
+                        key: AppTourService.strangersMeetSearchKey,
+                        child: _sheetField(
+                          hint: 'Search venue...',
+                          icon: Icons.search_rounded,
+                          onChanged: (val) =>
+                              setSheetState(() => searchQuery = val),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Horizontal Venue List
+                      if (_isLoadingVenues)
+                        const Center(child: CircularProgressIndicator())
+                      else if (displayedVenues.isEmpty)
+                        const Text(
+                          'No venues found',
+                          style: TextStyle(color: Colors.grey, fontSize: 12),
+                        )
+                      else
+                        SizedBox(
+                          height: 100,
+                          child: ListView.builder(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: displayedVenues.length,
+                            itemBuilder: (context, index) {
+                              final v = displayedVenues[index];
+                              final isSelected = selectedVenue?.id == v.id;
+                              return GestureDetector(
+                                onTap: () {
+                                  setSheetState(() {
+                                    selectedVenue = v;
+                                  });
+                                },
+                                child: Container(
+                                  width: 140,
+                                  margin: const EdgeInsets.only(right: 12),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: isSelected
+                                          ? LunaraTheme.electricViolet
+                                          : Colors.grey[200]!,
+                                      width: 2,
+                                    ),
+                                    image: v.imageUrl != null
+                                        ? DecorationImage(
+                                            image: NetworkImage(v.imageUrl!),
+                                            fit: BoxFit.cover,
+                                            colorFilter: ColorFilter.mode(
+                                              Colors.black.withValues(
+                                                alpha: isSelected ? 0.2 : 0.4,
+                                              ),
+                                              BlendMode.darken,
+                                            ),
+                                          )
+                                        : null,
+                                    color: Colors.grey[100],
+                                  ),
+                                  child: Center(
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(8.0),
+                                      child: Text(
+                                        v.name.toUpperCase(),
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
                                         ),
-                                      )
-                                    : null,
-                                color: Colors.grey[100],
-                              ),
-                              child: Center(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(8.0),
-                                  child: Text(
-                                    v.name.toUpperCase(),
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
+                              );
+                            },
+                          ),
+                        ),
+
+                      const SizedBox(height: 20),
+
+                      // Event Subject
+                      _sheetField(
+                        controller: subjectCtrl,
+                        hint: 'Enter Event Subject...',
+                        icon: Icons.title_rounded,
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Tag line / other details
+                      _sheetField(
+                        controller: taglineCtrl,
+                        hint: 'Enter Tagline / Details...',
+                        icon: Icons.subtitles_rounded,
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Date & Time Picker
+                      GestureDetector(
+                        onTap: () async {
+                          final date = await showDatePicker(
+                            context: context,
+                            initialDate: DateTime.now(),
+                            firstDate: DateTime.now(),
+                            lastDate: DateTime.now().add(
+                              const Duration(days: 30),
                             ),
                           );
+                          if (date != null) {
+                            if (!context.mounted) return;
+                            final time = await showTimePicker(
+                              context: context,
+                              initialTime: TimeOfDay.now(),
+                            );
+                            if (time != null) {
+                              setSheetState(() {
+                                selectedDate = date;
+                                selectedTime = time;
+                                dateCtrl.text =
+                                    "${DateFormat('MMM dd, yyyy').format(date)} at ${time.format(context)}";
+                              });
+                            }
+                          }
                         },
+                        child: AbsorbPointer(
+                          child: _sheetField(
+                            controller: dateCtrl,
+                            hint: 'Pick Date & Time',
+                            icon: Icons.calendar_today_rounded,
+                          ),
+                        ),
                       ),
-                    ),
-                  
-                  const SizedBox(height: 20),
-                  
-                  // Event Subject
-                  _sheetField(
-                    controller: subjectCtrl,
-                    hint: 'Enter Event Subject...',
-                    icon: Icons.title_rounded,
-                  ),
-                  const SizedBox(height: 14),
-                  
-                  // Tag line / other details
-                  _sheetField(
-                    controller: taglineCtrl,
-                    hint: 'Enter Tagline / Details...',
-                    icon: Icons.subtitles_rounded,
-                  ),
-                  const SizedBox(height: 10),
-                  
-                  // Date & Time Picker
-                  GestureDetector(
-                    onTap: () async {
-                      final date = await showDatePicker(
-                        context: context,
-                        initialDate: DateTime.now(),
-                        firstDate: DateTime.now(),
-                        lastDate: DateTime.now().add(const Duration(days: 30)),
-                      );
-                      if (date != null) {
-                        if (!context.mounted) return;
-                        final time = await showTimePicker(
-                          context: context,
-                          initialTime: TimeOfDay.now(),
-                        );
-                        if (time != null) {
-                          setSheetState(() {
-                            selectedDate = date;
-                            selectedTime = time;
-                            dateCtrl.text = "${DateFormat('MMM dd, yyyy').format(date)} at ${time.format(context)}";
-                          });
-                        }
-                      }
-                    },
-                    child: AbsorbPointer(
-                      child: _sheetField(
-                        controller: dateCtrl,
-                        hint: 'Pick Date & Time',
-                        icon: Icons.calendar_today_rounded,
-                      ),
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 16),
 
-                  // Number of Persons
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[50],
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.grey[200]!),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.people_alt_rounded, color: Color(0xFF7C3AED), size: 20),
-                        const SizedBox(width: 12),
-                        const Expanded(
-                          child: Text(
-                            'No. of Persons',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.black87,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
+                      const SizedBox(height: 16),
+
+                      // Number of Persons
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
                         ),
-                        // Decrement
-                        GestureDetector(
-                          onTap: () {
-                            if (numberOfPersons > 21) {
-                              setSheetState(() => numberOfPersons--);
-                            }
-                          },
-                          child: Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              color: numberOfPersons > 21
-                                  ? const Color(0xFF7C3AED)
-                                  : Colors.grey[300],
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(Icons.remove, color: Colors.white, size: 16),
-                          ),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.grey[200]!),
                         ),
-                        const SizedBox(width: 12),
-                        SizedBox(
-                          width: 32,
-                          child: Text(
-                            '$numberOfPersons',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.people_alt_rounded,
                               color: Color(0xFF7C3AED),
+                              size: 20,
                             ),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Text(
+                                'No. of Persons',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.black87,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            // Decrement
+                            GestureDetector(
+                              onTap: () {
+                                if (numberOfPersons > 21) {
+                                  setSheetState(() => numberOfPersons--);
+                                }
+                              },
+                              child: Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: numberOfPersons > 21
+                                      ? const Color(0xFF7C3AED)
+                                      : Colors.grey[300],
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(
+                                  Icons.remove,
+                                  color: Colors.white,
+                                  size: 16,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            SizedBox(
+                              width: 32,
+                              child: Text(
+                                '$numberOfPersons',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF7C3AED),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            // Increment
+                            GestureDetector(
+                              onTap: () {
+                                if (numberOfPersons < 50) {
+                                  setSheetState(() => numberOfPersons++);
+                                }
+                              },
+                              child: Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: numberOfPersons < 50
+                                      ? const Color(0xFF7C3AED)
+                                      : Colors.grey[300],
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(
+                                  Icons.add,
+                                  color: Colors.white,
+                                  size: 16,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          left: 4,
+                          top: 4,
+                          bottom: 4,
+                        ),
+                        child: Text(
+                          'Min 21 · Max 50 persons',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[500],
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        // Increment
-                        GestureDetector(
-                          onTap: () {
-                            if (numberOfPersons < 50) {
-                              setSheetState(() => numberOfPersons++);
-                            }
-                          },
-                          child: Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              color: numberOfPersons < 50
-                                  ? const Color(0xFF7C3AED)
-                                  : Colors.grey[300],
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(Icons.add, color: Colors.white, size: 16),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 4, top: 4, bottom: 4),
-                    child: Text(
-                      'Min 21 · Max 50 persons',
-                      style: TextStyle(fontSize: 11, color: Colors.grey[500]),
-                    ),
-                  ),
+                      ),
 
-                  const SizedBox(height: 16),
-                  
-                  Container(
-                    key: AppTourService.strangersMeetArrangeButtonKey,
-                    child: _sheetButton(
-                      label: 'SEND REQUEST',
-                      onTap: () async {
+                      const SizedBox(height: 16),
+
+                      Container(
+                        key: AppTourService.strangersMeetArrangeButtonKey,
+                        child: _sheetButton(
+                          label: 'SEND REQUEST',
+                          onTap: () async {
                             if (selectedVenue == null) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Please select a venue')),
+                                const SnackBar(
+                                  content: Text('Please select a venue'),
+                                ),
                               );
                               return;
                             }
                             if (subjectCtrl.text.trim().isEmpty) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Please enter an event subject')),
+                                const SnackBar(
+                                  content: Text(
+                                    'Please enter an event subject',
+                                  ),
+                                ),
                               );
                               return;
                             }
                             if (taglineCtrl.text.trim().isEmpty) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Please enter tag line / details')),
+                                const SnackBar(
+                                  content: Text(
+                                    'Please enter tag line / details',
+                                  ),
+                                ),
                               );
                               return;
                             }
                             if (selectedDate == null || selectedTime == null) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Please select date and time')),
+                                const SnackBar(
+                                  content: Text('Please select date and time'),
+                                ),
                               );
                               return;
                             }
                             if (numberOfPersons <= 20 || numberOfPersons > 50) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Number of persons must be between 21 and 50')),
+                                const SnackBar(
+                                  content: Text(
+                                    'Number of persons must be between 21 and 50',
+                                  ),
+                                ),
                               );
                               return;
                             }
@@ -1601,7 +1869,9 @@ final userId = ApiService.currentUserId;
                             final userId = ApiService.currentUserId;
                             if (userId == null) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Please login to continue')),
+                                const SnackBar(
+                                  content: Text('Please login to continue'),
+                                ),
                               );
                               return;
                             }
@@ -1616,7 +1886,9 @@ final userId = ApiService.currentUserId;
 
                             if (dt.isBefore(DateTime.now())) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Please select a future time')),
+                                const SnackBar(
+                                  content: Text('Please select a future time'),
+                                ),
                               );
                               return;
                             }
@@ -1625,25 +1897,31 @@ final userId = ApiService.currentUserId;
                             showDialog(
                               context: context,
                               barrierDismissible: false,
-                              builder: (_) => const Center(child: CircularProgressIndicator()),
+                              builder: (_) => const Center(
+                                child: CircularProgressIndicator(),
+                              ),
                             );
 
-                            final success = await ApiService.submitStrangersMeetRequest(
-                              venueId: selectedVenue!.id,
-                              subject: subjectCtrl.text.trim(),
-                              tagline: taglineCtrl.text.trim(),
-                              eventDateTime: dt.toUtc().toIso8601String(),
-                              numberOfPersons: numberOfPersons,
-                            );
+                            final success =
+                                await ApiService.submitStrangersMeetRequest(
+                                  venueId: selectedVenue!.id,
+                                  subject: subjectCtrl.text.trim(),
+                                  tagline: taglineCtrl.text.trim(),
+                                  eventDateTime: dt.toUtc().toIso8601String(),
+                                  numberOfPersons: numberOfPersons,
+                                );
 
-                            if (context.mounted) Navigator.pop(context); // Close loading dialog
+                            if (context.mounted)
+                              Navigator.pop(context); // Close loading dialog
 
                             if (success) {
                               if (context.mounted) {
                                 Navigator.pop(context); // Close bottom sheet
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text('Request submitted successfully! Admin will review it.'),
+                                    content: Text(
+                                      'Request submitted successfully! Admin will review it.',
+                                    ),
                                     backgroundColor: Colors.green,
                                   ),
                                 );
@@ -1652,22 +1930,24 @@ final userId = ApiService.currentUserId;
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text('Failed to submit request. Please try again.'),
+                                    content: Text(
+                                      'Failed to submit request. Please try again.',
+                                    ),
                                     backgroundColor: Colors.red,
                                   ),
                                 );
                               }
                             }
                           },
-                    ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
-              ),
-            ),
-          );
-        },
-      );
+            );
+          },
+        );
       },
     );
   }
@@ -1693,7 +1973,10 @@ final userId = ApiService.currentUserId;
           hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
           prefixIcon: Icon(icon, color: LunaraTheme.electricViolet, size: 20),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
         ),
       ),
     );
@@ -1735,11 +2018,14 @@ class PlanManagerSimulationScreen extends StatefulWidget {
   const PlanManagerSimulationScreen({super.key});
 
   @override
-  State<PlanManagerSimulationScreen> createState() => _PlanManagerSimulationScreenState();
+  State<PlanManagerSimulationScreen> createState() =>
+      _PlanManagerSimulationScreenState();
 }
 
-class _PlanManagerSimulationScreenState extends State<PlanManagerSimulationScreen> {
-  int _currentPhase = 0; // 0: Live, 1: Requests, 2: Deposits, 3: Check-in, 4: Completed, 5: Restricted
+class _PlanManagerSimulationScreenState
+    extends State<PlanManagerSimulationScreen> {
+  int _currentPhase =
+      0; // 0: Live, 1: Requests, 2: Deposits, 3: Check-in, 4: Completed, 5: Restricted
   int _noShowStrikes = 0;
   bool _hostPaid = false;
   bool _guestPaid = false;
@@ -1749,10 +2035,30 @@ class _PlanManagerSimulationScreenState extends State<PlanManagerSimulationScree
   String _simulationLog = "Welcome to Plan Simulation Center.";
 
   final List<Map<String, String>> _mockRequests = [
-    {'name': 'Priya S.', 'age': '24', 'vibe': 'UX Designer', 'avatar': 'assets/images/profiles/lyra.png'},
-    {'name': 'Rahul M.', 'age': '29', 'vibe': 'Finance Analyst', 'avatar': 'assets/images/profiles/elara.png'},
-    {'name': 'Alex R.', 'age': '27', 'vibe': 'Software Engineer', 'avatar': 'assets/images/profiles/zane.png'},
-    {'name': 'Mia K.', 'age': '25', 'vibe': 'Marketing Lead', 'avatar': 'assets/images/profiles/zane.png'},
+    {
+      'name': 'Priya S.',
+      'age': '24',
+      'vibe': 'UX Designer',
+      'avatar': 'assets/images/profiles/lyra.png',
+    },
+    {
+      'name': 'Rahul M.',
+      'age': '29',
+      'vibe': 'Finance Analyst',
+      'avatar': 'assets/images/profiles/elara.png',
+    },
+    {
+      'name': 'Alex R.',
+      'age': '27',
+      'vibe': 'Software Engineer',
+      'avatar': 'assets/images/profiles/zane.png',
+    },
+    {
+      'name': 'Mia K.',
+      'age': '25',
+      'vibe': 'Marketing Lead',
+      'avatar': 'assets/images/profiles/zane.png',
+    },
   ];
 
   @override
@@ -1779,12 +2085,14 @@ class _PlanManagerSimulationScreenState extends State<PlanManagerSimulationScree
     _countdownTimer?.cancel();
     setState(() {
       if (!_hostPaid) {
-        _simulationLog = "TIMEOUT: Host didn't pay in 30m. Guest is refunded. Suggested other plans.";
+        _simulationLog =
+            "TIMEOUT: Host didn't pay in 30m. Guest is refunded. Suggested other plans.";
         _hostPaid = false;
         _guestPaid = false;
         _currentPhase = 0;
       } else if (!_guestPaid) {
-        _simulationLog = "TIMEOUT: Guest didn't pay in 30m. Post relived again.";
+        _simulationLog =
+            "TIMEOUT: Guest didn't pay in 30m. Post relived again.";
         _hostPaid = false;
         _guestPaid = false;
         _currentPhase = 1; // back to requests
@@ -1811,7 +2119,12 @@ class _PlanManagerSimulationScreenState extends State<PlanManagerSimulationScree
       appBar: AppBar(
         title: const Text(
           'SIMULATION CENTER',
-          style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 2, fontSize: 16, color: Colors.black),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            letterSpacing: 2,
+            fontSize: 16,
+            color: Colors.black,
+          ),
         ),
         centerTitle: true,
         backgroundColor: Colors.white,
@@ -1832,7 +2145,12 @@ class _PlanManagerSimulationScreenState extends State<PlanManagerSimulationScree
             const SizedBox(height: 24),
             const Text(
               'ACTIVE FLOW STAGE',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.5, color: Colors.black54),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.5,
+                color: Colors.black54,
+              ),
             ),
             const SizedBox(height: 12),
             _buildStageContent(),
@@ -1855,11 +2173,20 @@ class _PlanManagerSimulationScreenState extends State<PlanManagerSimulationScree
         children: [
           Row(
             children: [
-              const Icon(Icons.stars, color: LunaraTheme.electricViolet, size: 20),
+              const Icon(
+                Icons.stars,
+                color: LunaraTheme.electricViolet,
+                size: 20,
+              ),
               const SizedBox(width: 8),
               Text(
                 'PLAN DETAILS (MOCK)',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey[800], letterSpacing: 1),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                  color: Colors.grey[800],
+                  letterSpacing: 1,
+                ),
               ),
             ],
           ),
@@ -1879,8 +2206,18 @@ class _PlanManagerSimulationScreenState extends State<PlanManagerSimulationScree
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(fontSize: 12, color: Colors.black54)),
-          Text(val, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87)),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12, color: Colors.black54),
+          ),
+          Text(
+            val,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
         ],
       ),
     );
@@ -1891,18 +2228,30 @@ class _PlanManagerSimulationScreenState extends State<PlanManagerSimulationScree
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.04),
+        color: Colors.black.withValues(alpha: 0.04),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.black.withOpacity(0.06)),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('SYSTEM LOG', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.black45)),
+          const Text(
+            'SYSTEM LOG',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              color: Colors.black45,
+            ),
+          ),
           const SizedBox(height: 6),
           Text(
             _simulationLog,
-            style: const TextStyle(fontFamily: 'Courier', fontSize: 12, color: LunaraTheme.electricViolet, fontWeight: FontWeight.bold),
+            style: const TextStyle(
+              fontFamily: 'Courier',
+              fontSize: 12,
+              color: LunaraTheme.electricViolet,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ],
       ),
@@ -1942,7 +2291,11 @@ class _PlanManagerSimulationScreenState extends State<PlanManagerSimulationScree
           const SizedBox(height: 16),
           const Text(
             'PLAN IS LIVE',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1),
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+              letterSpacing: 1,
+            ),
           ),
           const SizedBox(height: 8),
           const Text(
@@ -1960,9 +2313,14 @@ class _PlanManagerSimulationScreenState extends State<PlanManagerSimulationScree
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: LunaraTheme.electricViolet,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
-            child: const Text('Simulate 4 Incoming Requests', style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'Simulate 4 Incoming Requests',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -1991,15 +2349,30 @@ class _PlanManagerSimulationScreenState extends State<PlanManagerSimulationScree
                 CircleAvatar(
                   radius: 20,
                   backgroundColor: Colors.purple[50],
-                  child: Text(req['name']![0], style: const TextStyle(fontWeight: FontWeight.bold, color: LunaraTheme.electricViolet)),
+                  child: Text(
+                    req['name']![0],
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: LunaraTheme.electricViolet,
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('${req['name']!}, ${req['age']!}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                      Text(req['vibe']!, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                      Text(
+                        '${req['name']!}, ${req['age']!}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        req['vibe']!,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -2009,14 +2382,21 @@ class _PlanManagerSimulationScreenState extends State<PlanManagerSimulationScree
                       _acceptedGuest = req['name'];
                       _currentPhase = 2;
                       _startTimer();
-                      _addLog("Accepted ${_acceptedGuest!}. 3 other requests deleted. Starting 30m deposit timer.");
+                      _addLog(
+                        "Accepted ${_acceptedGuest!}. 3 other requests deleted. Starting 30m deposit timer.",
+                      );
                     });
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: LunaraTheme.electricViolet,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
-                  child: const Text('Accept', style: TextStyle(color: Colors.white, fontSize: 12)),
+                  child: const Text(
+                    'Accept',
+                    style: TextStyle(color: Colors.white, fontSize: 12),
+                  ),
                 ),
               ],
             ),
@@ -2039,18 +2419,31 @@ class _PlanManagerSimulationScreenState extends State<PlanManagerSimulationScree
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.timer_outlined, color: Colors.redAccent, size: 24),
+              const Icon(
+                Icons.timer_outlined,
+                color: Colors.redAccent,
+                size: 24,
+              ),
               const SizedBox(width: 8),
               Text(
                 _formatTimer(),
-                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.redAccent, fontFamily: 'Courier'),
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.redAccent,
+                  fontFamily: 'Courier',
+                ),
               ),
             ],
           ),
           const SizedBox(height: 16),
           const Text(
             'DEPOSIT STAGE (₹99 per head)',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1),
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+              letterSpacing: 1,
+            ),
           ),
           const SizedBox(height: 16),
           _paymentStatusRow('Host (You)', _hostPaid),
@@ -2061,41 +2454,61 @@ class _PlanManagerSimulationScreenState extends State<PlanManagerSimulationScree
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: _hostPaid ? null : () {
-                    setState(() {
-                      _hostPaid = true;
-                      _addLog("Host paid safety deposit of ₹99.");
-                      if (_hostPaid && _guestPaid) {
-                        _countdownTimer?.cancel();
-                        _currentPhase = 3;
-                        _addLog("Both paid! Party confirmed. Geolocation check-in unlocked.");
-                      }
-                    });
-                  },
+                  onPressed: _hostPaid
+                      ? null
+                      : () {
+                          setState(() {
+                            _hostPaid = true;
+                            _addLog("Host paid safety deposit of ₹99.");
+                            if (_hostPaid && _guestPaid) {
+                              _countdownTimer?.cancel();
+                              _currentPhase = 3;
+                              _addLog(
+                                "Both paid! Party confirmed. Geolocation check-in unlocked.",
+                              );
+                            }
+                          });
+                        },
                   style: OutlinedButton.styleFrom(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
-                  child: const Text('Pay Host ₹99', style: TextStyle(fontSize: 11)),
+                  child: const Text(
+                    'Pay Host ₹99',
+                    style: TextStyle(fontSize: 11),
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: OutlinedButton(
-                  onPressed: _guestPaid ? null : () {
-                    setState(() {
-                      _guestPaid = true;
-                      _addLog("Guest (${_acceptedGuest!}) paid safety deposit of ₹99.");
-                      if (_hostPaid && _guestPaid) {
-                        _countdownTimer?.cancel();
-                        _currentPhase = 3;
-                        _addLog("Both paid! Party confirmed. Geolocation check-in unlocked.");
-                      }
-                    });
-                  },
+                  onPressed: _guestPaid
+                      ? null
+                      : () {
+                          setState(() {
+                            _guestPaid = true;
+                            _addLog(
+                              "Guest (${_acceptedGuest!}) paid safety deposit of ₹99.",
+                            );
+                            if (_hostPaid && _guestPaid) {
+                              _countdownTimer?.cancel();
+                              _currentPhase = 3;
+                              _addLog(
+                                "Both paid! Party confirmed. Geolocation check-in unlocked.",
+                              );
+                            }
+                          });
+                        },
                   style: OutlinedButton.styleFrom(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
-                  child: const Text('Guest Pay ₹99', style: TextStyle(fontSize: 11)),
+                  child: const Text(
+                    'Guest Pay ₹99',
+                    style: TextStyle(fontSize: 11),
+                  ),
                 ),
               ),
             ],
@@ -2105,9 +2518,14 @@ class _PlanManagerSimulationScreenState extends State<PlanManagerSimulationScree
             onPressed: _handleTimeout,
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.amber[800],
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
-            child: const Text('Force Timeout (Simulate 30 min expiration)', style: TextStyle(color: Colors.white, fontSize: 11)),
+            child: const Text(
+              'Force Timeout (Simulate 30 min expiration)',
+              style: TextStyle(color: Colors.white, fontSize: 11),
+            ),
           ),
         ],
       ),
@@ -2121,9 +2539,20 @@ class _PlanManagerSimulationScreenState extends State<PlanManagerSimulationScree
         Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
         Row(
           children: [
-            Icon(isPaid ? Icons.check_circle : Icons.pending, color: isPaid ? Colors.green : Colors.amber, size: 18),
+            Icon(
+              isPaid ? Icons.check_circle : Icons.pending,
+              color: isPaid ? Colors.green : Colors.amber,
+              size: 18,
+            ),
             const SizedBox(width: 6),
-            Text(isPaid ? 'PAID' : 'PENDING', style: TextStyle(color: isPaid ? Colors.green : Colors.amber, fontWeight: FontWeight.bold, fontSize: 11)),
+            Text(
+              isPaid ? 'PAID' : 'PENDING',
+              style: TextStyle(
+                color: isPaid ? Colors.green : Colors.amber,
+                fontWeight: FontWeight.bold,
+                fontSize: 11,
+              ),
+            ),
           ],
         ),
       ],
@@ -2140,11 +2569,19 @@ class _PlanManagerSimulationScreenState extends State<PlanManagerSimulationScree
       ),
       child: Column(
         children: [
-          const Icon(Icons.location_on, color: LunaraTheme.electricViolet, size: 48),
+          const Icon(
+            Icons.location_on,
+            color: LunaraTheme.electricViolet,
+            size: 48,
+          ),
           const SizedBox(height: 16),
           const Text(
             'GEOLOCATION CHECK-IN',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 1),
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+              letterSpacing: 1,
+            ),
           ),
           const SizedBox(height: 8),
           const Text(
@@ -2160,14 +2597,21 @@ class _PlanManagerSimulationScreenState extends State<PlanManagerSimulationScree
                   onPressed: () {
                     setState(() {
                       _currentPhase = 4;
-                      _addLog("MATCH SUCCESS: Geolocation checks pass. Deposit refund scheduled in 3 hours.");
+                      _addLog(
+                        "MATCH SUCCESS: Geolocation checks pass. Deposit refund scheduled in 3 hours.",
+                      );
                     });
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
-                  child: const Text('Match Geolocation', style: TextStyle(color: Colors.white, fontSize: 11)),
+                  child: const Text(
+                    'Match Geolocation',
+                    style: TextStyle(color: Colors.white, fontSize: 11),
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -2176,10 +2620,14 @@ class _PlanManagerSimulationScreenState extends State<PlanManagerSimulationScree
                   onPressed: () {
                     setState(() {
                       _noShowStrikes++;
-                      _addLog("NO-SHOW REPORTED: warning notice sent. Strike added.");
+                      _addLog(
+                        "NO-SHOW REPORTED: warning notice sent. Strike added.",
+                      );
                       if (_noShowStrikes >= 2) {
                         _currentPhase = 5;
-                        _addLog("RESTRICTED: User banned for life after 2 strikes.");
+                        _addLog(
+                          "RESTRICTED: User banned for life after 2 strikes.",
+                        );
                       } else {
                         _hostPaid = false;
                         _guestPaid = false;
@@ -2189,9 +2637,14 @@ class _PlanManagerSimulationScreenState extends State<PlanManagerSimulationScree
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red[800],
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
-                  child: const Text('Report No-Show', style: TextStyle(color: Colors.white, fontSize: 11)),
+                  child: const Text(
+                    'Report No-Show',
+                    style: TextStyle(color: Colors.white, fontSize: 11),
+                  ),
                 ),
               ),
             ],
@@ -2215,7 +2668,11 @@ class _PlanManagerSimulationScreenState extends State<PlanManagerSimulationScree
           const SizedBox(height: 16),
           const Text(
             'PARTY ONGOING',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 1),
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+              letterSpacing: 1,
+            ),
           ),
           const SizedBox(height: 8),
           const Text(
@@ -2227,17 +2684,27 @@ class _PlanManagerSimulationScreenState extends State<PlanManagerSimulationScree
           ElevatedButton(
             onPressed: () {
               setState(() {
-                _addLog("REFUND COMPLETED: Safety deposit of ₹99 refunded to both parties.");
+                _addLog(
+                  "REFUND COMPLETED: Safety deposit of ₹99 refunded to both parties.",
+                );
               });
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Refund of ₹99 processed successfully!'), backgroundColor: Colors.green),
+                const SnackBar(
+                  content: Text('Refund of ₹99 processed successfully!'),
+                  backgroundColor: Colors.green,
+                ),
               );
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: LunaraTheme.electricViolet,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
-            child: const Text('Simulate 3 Hours Later (Refund)', style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'Simulate 3 Hours Later (Refund)',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
           const SizedBox(height: 12),
           TextButton(
@@ -2270,7 +2737,12 @@ class _PlanManagerSimulationScreenState extends State<PlanManagerSimulationScree
           const SizedBox(height: 16),
           Text(
             'PROFILE RESTRICTED',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.red[900], letterSpacing: 1),
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+              color: Colors.red[900],
+              letterSpacing: 1,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
@@ -2291,9 +2763,14 @@ class _PlanManagerSimulationScreenState extends State<PlanManagerSimulationScree
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red[800],
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
-            child: const Text('Clear Ban & Reset', style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'Clear Ban & Reset',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),

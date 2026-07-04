@@ -152,16 +152,15 @@ class Venue {
       if (url.isEmpty) return;
       final exists = imageList.any((item) => item['url'] == url);
       if (!exists) {
-        imageList.add({
-          'url': url,
-          'type': type,
-        });
+        imageList.add({'url': url, 'type': type});
       }
     }
 
     // Parse new API coverImage
     if (json['coverImage'] != null && json['coverImage'] is Map) {
-      final coverUrl = normalizeUrl(json['coverImage']['url'] ?? json['coverImage']['filePath']);
+      final coverUrl = normalizeUrl(
+        json['coverImage']['url'] ?? json['coverImage']['filePath'],
+      );
       if (coverUrl.isNotEmpty) {
         img = coverUrl;
         addImage(coverUrl, 'interior');
@@ -200,9 +199,7 @@ class Venue {
         if (item is Map) {
           final url = normalizeUrl(item['url'] ?? item['filePath']);
           if (url.isNotEmpty) {
-            if (video == null) {
-              video = url;
-            }
+            video ??= url;
             addImage(url, 'video');
           }
         }
@@ -257,16 +254,26 @@ class Venue {
       longitude: double.tryParse(json['longitude']?.toString() ?? ''),
       images: imageList.isNotEmpty ? imageList : null,
       videoUrl: video,
-      amenities: json['amenities'] != null ? VenueAmenities.fromJson(json['amenities']) : null,
-      tableBookingCharges: double.tryParse(json['tableBookingCharges']?.toString() ?? ''),
-      discountPercentage: double.tryParse(json['discountPercentage']?.toString() ?? ''),
-      description:json['description'],
+      amenities: json['amenities'] != null
+          ? VenueAmenities.fromJson(json['amenities'])
+          : null,
+      tableBookingCharges: double.tryParse(
+        json['tableBookingCharges']?.toString() ?? '',
+      ),
+      discountPercentage: double.tryParse(
+        json['discountPercentage']?.toString() ?? '',
+      ),
+      description: json['description'],
       openingTime: json['openingTime']?.toString(),
       closingTime: json['closingTime']?.toString(),
       daysOpen: json['daysOpen'] is List ? json['daysOpen'] as List : null,
       tagline: json['tagline']?.toString(),
-      coverChargeMale: double.tryParse(json['coverChargeMale']?.toString() ?? ''),
-      coverChargeFemale: double.tryParse(json['coverChargeFemale']?.toString() ?? ''),    
+      coverChargeMale: double.tryParse(
+        json['coverChargeMale']?.toString() ?? '',
+      ),
+      coverChargeFemale: double.tryParse(
+        json['coverChargeFemale']?.toString() ?? '',
+      ),
     );
   }
 
@@ -291,13 +298,13 @@ class Venue {
       'amenities': amenities?.toMap(),
       'tableBookingCharges': tableBookingCharges,
       'discountPercentage': discountPercentage,
-      'description':description,
+      'description': description,
       'openingTime': openingTime,
       'closingTime': closingTime,
       'daysOpen': daysOpen,
       'tagline': tagline,
       'coverChargeMale': coverChargeMale,
-      'coverChargeFemale': coverChargeFemale, 
+      'coverChargeFemale': coverChargeFemale,
     };
   }
 }
