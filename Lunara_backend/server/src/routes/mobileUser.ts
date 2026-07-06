@@ -103,8 +103,6 @@ router.post(
     mobileUserController.registerFcmToken
 );
 
-<<<<<<< HEAD
-=======
 /**
  * POST /api/mobile/user/block
  */
@@ -146,7 +144,7 @@ router.get('/notifications', async (req, res) => {
     try {
         const { userId } = req.query;
         if (!userId) return res.status(400).json({ success: false, message: 'userId required' });
-        
+
         // Mock notifications for demonstration
         const notifications = [
             {
@@ -178,7 +176,7 @@ router.get('/notifications', async (req, res) => {
                 read: false,
             }
         ];
-        
+
         return res.json({ success: true, data: notifications });
     } catch (error) {
         return res.status(500).json({ success: false, message: 'Failed to fetch notifications' });
@@ -199,10 +197,10 @@ router.get('/badge-counts', async (req, res) => {
     try {
         const { userId } = req.query;
         if (!userId) return res.status(400).json({ success: false, message: 'userId required' });
-        
+
         // Mock values: 2 unread notifications/live feed, 5 unread chats
-        return res.json({ 
-            success: true, 
+        return res.json({
+            success: true,
             data: {
                 liveFeedCount: 2,
                 chatCount: 5,
@@ -244,5 +242,4 @@ router.post('/chat/request-extension', chatSubCtrl.requestExtension);
 /** POST /api/mobile/chat/accept-extension-request */
 router.post('/chat/accept-extension-request', chatSubCtrl.acceptExtensionRequest);
 
->>>>>>> origin/main
 export default router;

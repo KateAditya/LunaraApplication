@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-import { Router } from 'express';
-=======
 import { Router, Request, Response } from 'express';
->>>>>>> origin/main
 import { body, param } from 'express-validator';
 import { validate } from '../middleware/validate';
 import {
@@ -245,8 +241,6 @@ router.post(
     verifyJoinerPayment
 );
 
-<<<<<<< HEAD
-=======
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/mobile/party-plans/requests/:reqId/reject
 // Reject request
@@ -295,5 +289,4 @@ router.post(
     }
 );
 
->>>>>>> origin/main
 export default router;

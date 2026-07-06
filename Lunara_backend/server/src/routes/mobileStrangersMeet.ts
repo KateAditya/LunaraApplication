@@ -27,11 +27,8 @@ router.post(
         body('numberOfPersons')
             .notEmpty().withMessage('numberOfPersons is required')
             .isInt({ min: 21, max: 50 }).withMessage('numberOfPersons must be between 21 and 50'),
-<<<<<<< HEAD
-=======
         body('mobileNumber').notEmpty().isString().withMessage('mobileNumber is required'),
         body('alternateMobileNumber').optional().isString(),
->>>>>>> origin/main
         validate,
     ],
     createRequest

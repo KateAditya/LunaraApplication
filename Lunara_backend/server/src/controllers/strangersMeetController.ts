@@ -18,12 +18,12 @@ const razorpay = new Razorpay({
 });
 
 // ─── Shared attributes ────────────────────────────────────────────────────────
-const USER_ATTRS    = ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'];
-const VENUE_ATTRS   = ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone'];
+const USER_ATTRS = ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'];
+const VENUE_ATTRS = ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone'];
 const PROFILE_ATTRS = ['bio', 'occupation', 'city', 'gender'];
 
 function genTicketId(): string {
-    const ts  = Date.now().toString(36).toUpperCase();
+    const ts = Date.now().toString(36).toUpperCase();
     const rnd = Math.random().toString(36).substring(2, 7).toUpperCase();
     return `LNR-${ts}-${rnd}`;
 }
@@ -37,7 +37,7 @@ function buildIncludes() {
             attributes: USER_ATTRS,
             include: [
                 { model: UserProfile, as: 'profile', attributes: PROFILE_ATTRS, required: false },
-                { model: UserPhoto,   as: 'photos',  attributes: ['id', 'filePath', 'isPrimary'], required: false },
+                { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary'], required: false },
             ],
         },
         {
@@ -58,8 +58,8 @@ function buildIncludes() {
 }
 
 function formatRequest(r: StrangersMeetRequest) {
-    const user    = (r as any).user;
-    const venue   = (r as any).venue;
+    const user = (r as any).user;
+    const venue = (r as any).venue;
 
     let userPhotoUrl = user?.profileImageUrl ?? null;
     if (user?.photos?.length > 0) {
@@ -73,42 +73,39 @@ function formatRequest(r: StrangersMeetRequest) {
     }
 
     return {
-        id:               r.id,
-        subject:          r.subject,
-        tagline:          r.tagline,
-        eventDateTime:    r.eventDateTime,
-        numberOfPersons:  r.numberOfPersons,
-        status:           r.status,
-        paymentAmount:    r.paymentAmount ?? null,
-        paymentStatus:    r.paymentStatus,
-<<<<<<< HEAD
-=======
-        mobileNumber:     r.mobileNumber,
+        id: r.id,
+        subject: r.subject,
+        tagline: r.tagline,
+        eventDateTime: r.eventDateTime,
+        numberOfPersons: r.numberOfPersons,
+        status: r.status,
+        paymentAmount: r.paymentAmount ?? null,
+        paymentStatus: r.paymentStatus,
+        mobileNumber: r.mobileNumber,
         alternateMobileNumber: r.alternateMobileNumber ?? null,
->>>>>>> origin/main
-        adminNotes:       r.adminNotes ?? null,
-        ticketId:         r.ticketId ?? null,
-        createdAt:        r.createdAt,
-        updatedAt:        r.updatedAt,
+        adminNotes: r.adminNotes ?? null,
+        ticketId: r.ticketId ?? null,
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt,
         user: user ? {
-            id:        user.id,
+            id: user.id,
             firstName: user.firstName,
-            lastName:  user.lastName,
-            email:     user.email,
-            phone:     user.phone,
-            photoUrl:  userPhotoUrl,
-            bio:       user.profile?.bio ?? null,
-            city:      user.profile?.city ?? null,
+            lastName: user.lastName,
+            email: user.email,
+            phone: user.phone,
+            photoUrl: userPhotoUrl,
+            bio: user.profile?.bio ?? null,
+            city: user.profile?.city ?? null,
         } : null,
         venue: venue ? {
-            id:           venue.id,
-            name:         venue.name,
+            id: venue.id,
+            name: venue.name,
             addressLine1: venue.addressLine1,
-            area:         venue.area,
-            city:         venue.city,
-            category:     venue.category,
-            phone:        venue.phone,
-            imageUrl:     venueImageUrl,
+            area: venue.area,
+            city: venue.city,
+            category: venue.category,
+            phone: venue.phone,
+            imageUrl: venueImageUrl,
         } : null,
     };
 }
@@ -119,23 +116,19 @@ function formatRequest(r: StrangersMeetRequest) {
 // ─────────────────────────────────────────────────────────────────────────────
 export const createRequest = async (req: Request, res: Response): Promise<void> => {
     try {
-<<<<<<< HEAD
-        const { userId, venueId, subject, tagline, eventDateTime, numberOfPersons } = req.body;
-=======
         const { userId, venueId, subject, tagline, eventDateTime, numberOfPersons, mobileNumber, alternateMobileNumber } = req.body;
->>>>>>> origin/main
 
         // Validate required fields
         const errors: Record<string, string> = {};
-        if (!userId)                               errors.userId          = 'userId is required';
-        if (!venueId)                              errors.venueId         = 'venueId is required';
-        if (!subject?.trim())                      errors.subject         = 'subject is required';
-        if (!tagline?.trim())                      errors.tagline         = 'tagline is required';
-        if (!eventDateTime)                        errors.eventDateTime   = 'eventDateTime is required';
+        if (!userId) errors.userId = 'userId is required';
+        if (!venueId) errors.venueId = 'venueId is required';
+        if (!subject?.trim()) errors.subject = 'subject is required';
+        if (!tagline?.trim()) errors.tagline = 'tagline is required';
+        if (!eventDateTime) errors.eventDateTime = 'eventDateTime is required';
         if (numberOfPersons === undefined || numberOfPersons === null)
-                                                   errors.numberOfPersons = 'numberOfPersons is required';
+            errors.numberOfPersons = 'numberOfPersons is required';
         else if (numberOfPersons < 21 || numberOfPersons > 50)
-                                                   errors.numberOfPersons = 'numberOfPersons must be between 21 and 50';
+            errors.numberOfPersons = 'numberOfPersons must be between 21 and 50';
 
         if (Object.keys(errors).length > 0) {
             res.status(400).json({ success: false, message: 'Validation failed', errors });
@@ -163,25 +156,22 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
         const request = await StrangersMeetRequest.create({
             userId,
             venueId,
-            subject:         subject.trim(),
-            tagline:         tagline.trim(),
-            eventDateTime:   eventDate,
+            subject: subject.trim(),
+            tagline: tagline.trim(),
+            eventDateTime: eventDate,
             numberOfPersons: Number(numberOfPersons),
-<<<<<<< HEAD
-=======
-            mobileNumber:    mobileNumber.trim(),
+            mobileNumber: mobileNumber.trim(),
             alternateMobileNumber: alternateMobileNumber?.trim() || null,
->>>>>>> origin/main
         });
 
         res.status(201).json({
             success: true,
             message: 'Request submitted successfully! Admin will review and get back to you. 🎉',
             data: {
-                id:             request.id,
-                status:         request.status,
-                paymentStatus:  request.paymentStatus,
-                createdAt:      request.createdAt,
+                id: request.id,
+                status: request.status,
+                paymentStatus: request.paymentStatus,
+                createdAt: request.createdAt,
             },
         });
     } catch (err: any) {
@@ -214,8 +204,8 @@ export const getUserRequests = async (req: Request, res: Response): Promise<void
 
         res.json({
             success: true,
-            total:   requests.length,
-            data:    requests.map(formatRequest),
+            total: requests.length,
+            data: requests.map(formatRequest),
         });
     } catch (err: any) {
         logger.error('getUserStrangersMeetRequests error:', err);
@@ -315,7 +305,7 @@ export const initiatePayment = async (req: Request, res: Response): Promise<void
 // ─────────────────────────────────────────────────────────────────────────────
 export const confirmPayment = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { id }     = req.params;
+        const { id } = req.params;
         const { userId, razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
         if (!userId) { res.status(400).json({ success: false, message: 'userId is required' }); return; }
@@ -357,17 +347,17 @@ export const confirmPayment = async (req: Request, res: Response): Promise<void>
             });
 
             res.json({
-                success:  true,
-                message:  'Payment confirmed! Your ticket is ready 🎟️',
+                success: true,
+                message: 'Payment confirmed! Your ticket is ready 🎟️',
                 data: {
                     ticketId,
-                    id:             request.id,
-                    subject:        request.subject,
-                    tagline:        request.tagline,
-                    eventDateTime:  request.eventDateTime,
+                    id: request.id,
+                    subject: request.subject,
+                    tagline: request.tagline,
+                    eventDateTime: request.eventDateTime,
                     numberOfPersons: request.numberOfPersons,
-                    paymentAmount:  request.paymentAmount,
-                    paymentStatus:  StrangersMeetPaymentStatus.PAID,
+                    paymentAmount: request.paymentAmount,
+                    paymentStatus: StrangersMeetPaymentStatus.PAID,
                 },
             });
         } else {
@@ -392,9 +382,9 @@ export const getAllRequests = async (req: Request, res: Response): Promise<void>
             where.status = status;
         }
 
-        const pageNum  = Math.max(1, parseInt(page as string));
+        const pageNum = Math.max(1, parseInt(page as string));
         const limitNum = Math.min(100, Math.max(1, parseInt(limit as string)));
-        const offset   = (pageNum - 1) * limitNum;
+        const offset = (pageNum - 1) * limitNum;
 
         const { count, rows } = await StrangersMeetRequest.findAndCountAll({
             where,
@@ -405,18 +395,18 @@ export const getAllRequests = async (req: Request, res: Response): Promise<void>
         });
 
         // Counts by status for badge display
-        const pendingCount  = await StrangersMeetRequest.count({ where: { status: StrangersMeetStatus.PENDING } });
+        const pendingCount = await StrangersMeetRequest.count({ where: { status: StrangersMeetStatus.PENDING } });
         const approvedCount = await StrangersMeetRequest.count({ where: { status: StrangersMeetStatus.APPROVED } });
         const rejectedCount = await StrangersMeetRequest.count({ where: { status: StrangersMeetStatus.REJECTED } });
 
         res.json({
             success: true,
-            total:   count,
-            page:    pageNum,
-            limit:   limitNum,
-            pages:   Math.ceil(count / limitNum),
+            total: count,
+            page: pageNum,
+            limit: limitNum,
+            pages: Math.ceil(count / limitNum),
             counts: {
-                pending:  pendingCount,
+                pending: pendingCount,
                 approved: approvedCount,
                 rejected: rejectedCount,
             },
@@ -435,7 +425,7 @@ export const getAllRequests = async (req: Request, res: Response): Promise<void>
 export const getFeedRequests = async (req: Request, res: Response): Promise<void> => {
     try {
         const { page = '1', limit = '20' } = req.query;
-        
+
         const pageNum = Math.max(1, parseInt(page as string));
         const limitNum = Math.min(100, Math.max(1, parseInt(limit as string)));
         const offset = (pageNum - 1) * limitNum;
@@ -472,8 +462,8 @@ export const getFeedRequests = async (req: Request, res: Response): Promise<void
 // ─────────────────────────────────────────────────────────────────────────────
 export const approveRequest = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { id }                          = req.params;
-        const { paymentAmount, adminNotes }   = req.body;
+        const { id } = req.params;
+        const { paymentAmount, adminNotes } = req.body;
 
         if (paymentAmount === undefined || paymentAmount === null) {
             res.status(400).json({ success: false, message: 'paymentAmount is required' });
@@ -492,19 +482,19 @@ export const approveRequest = async (req: Request, res: Response): Promise<void>
         }
 
         await request.update({
-            status:        StrangersMeetStatus.APPROVED,
+            status: StrangersMeetStatus.APPROVED,
             paymentAmount: Number(paymentAmount),
-            adminNotes:    adminNotes?.trim() || null,
+            adminNotes: adminNotes?.trim() || null,
         });
 
         res.json({
             success: true,
             message: 'Request approved successfully',
             data: {
-                id:            request.id,
-                status:        request.status,
+                id: request.id,
+                status: request.status,
                 paymentAmount: request.paymentAmount,
-                adminNotes:    request.adminNotes,
+                adminNotes: request.adminNotes,
             },
         });
     } catch (err: any) {
@@ -520,8 +510,8 @@ export const approveRequest = async (req: Request, res: Response): Promise<void>
 // ─────────────────────────────────────────────────────────────────────────────
 export const rejectRequest = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { id }          = req.params;
-        const { adminNotes }  = req.body;
+        const { id } = req.params;
+        const { adminNotes } = req.body;
 
         const request = await StrangersMeetRequest.findByPk(id);
         if (!request) { res.status(404).json({ success: false, message: 'Request not found' }); return; }
@@ -531,7 +521,7 @@ export const rejectRequest = async (req: Request, res: Response): Promise<void> 
         }
 
         await request.update({
-            status:     StrangersMeetStatus.REJECTED,
+            status: StrangersMeetStatus.REJECTED,
             adminNotes: adminNotes?.trim() || null,
         });
 

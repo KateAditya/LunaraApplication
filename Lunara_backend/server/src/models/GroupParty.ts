@@ -25,11 +25,8 @@ export interface GroupPartyAttributes {
     paymentStatus: GroupPartyPaymentStatus;
     paymentId?: string;
     partyDate: Date;
-<<<<<<< HEAD
-=======
     mobileNumber: string;
     optionalMobileNumber?: string;
->>>>>>> origin/main
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -37,12 +34,8 @@ export interface GroupPartyAttributes {
 export interface GroupPartyCreationAttributes
     extends Optional<
         GroupPartyAttributes,
-<<<<<<< HEAD
-        'id' | 'status' | 'paymentStatus' | 'paymentId' | 'createdAt' | 'updatedAt'
-=======
         'id' | 'status' | 'paymentStatus' | 'paymentId' | 'createdAt' | 'updatedAt' | 'optionalMobileNumber'
->>>>>>> origin/main
-    > {}
+    > { }
 
 class GroupParty
     extends Model<GroupPartyAttributes, GroupPartyCreationAttributes>
@@ -58,11 +51,8 @@ class GroupParty
     public paymentStatus!: GroupPartyPaymentStatus;
     public paymentId?: string;
     public partyDate!: Date;
-<<<<<<< HEAD
-=======
     public mobileNumber!: string;
     public optionalMobileNumber?: string;
->>>>>>> origin/main
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 }
@@ -133,8 +123,6 @@ GroupParty.init(
             allowNull: false,
             field: 'party_date',
         },
-<<<<<<< HEAD
-=======
         mobileNumber: {
             type: DataTypes.STRING,
             allowNull: false,
@@ -145,7 +133,6 @@ GroupParty.init(
             allowNull: true,
             field: 'optional_mobile_number',
         },
->>>>>>> origin/main
     },
     {
         sequelize,

@@ -2,14 +2,14 @@ import { Model, DataTypes, Optional } from 'sequelize';
 import sequelize from '../config/database';
 
 export enum StrangersMeetStatus {
-    PENDING  = 'pending',
+    PENDING = 'pending',
     APPROVED = 'approved',
     REJECTED = 'rejected',
 }
 
 export enum StrangersMeetPaymentStatus {
     UNPAID = 'unpaid',
-    PAID   = 'paid',
+    PAID = 'paid',
 }
 
 export interface StrangersMeetRequestAttributes {
@@ -23,11 +23,8 @@ export interface StrangersMeetRequestAttributes {
     status: StrangersMeetStatus;
     paymentAmount?: number;          // Set by admin on approval
     paymentStatus: StrangersMeetPaymentStatus;
-<<<<<<< HEAD
-=======
     mobileNumber: string;
     alternateMobileNumber?: string;
->>>>>>> origin/main
     adminNotes?: string;
     ticketId?: string;               // Generated on payment
     razorpayOrderId?: string;
@@ -44,15 +41,12 @@ export interface StrangersMeetRequestCreationAttributes
         | 'status'
         | 'paymentAmount'
         | 'paymentStatus'
-<<<<<<< HEAD
-=======
         | 'alternateMobileNumber'
->>>>>>> origin/main
         | 'adminNotes'
         | 'ticketId'
         | 'createdAt'
         | 'updatedAt'
-    > {}
+    > { }
 
 class StrangersMeetRequest
     extends Model<StrangersMeetRequestAttributes, StrangersMeetRequestCreationAttributes>
@@ -67,11 +61,8 @@ class StrangersMeetRequest
     public status!: StrangersMeetStatus;
     public paymentAmount?: number;
     public paymentStatus!: StrangersMeetPaymentStatus;
-<<<<<<< HEAD
-=======
     public mobileNumber!: string;
     public alternateMobileNumber?: string;
->>>>>>> origin/main
     public adminNotes?: string;
     public ticketId?: string;
     public razorpayOrderId?: string;
@@ -147,8 +138,6 @@ StrangersMeetRequest.init(
             defaultValue: StrangersMeetPaymentStatus.UNPAID,
             field: 'payment_status',
         },
-<<<<<<< HEAD
-=======
         mobileNumber: {
             type: DataTypes.STRING(20),
             allowNull: false,
@@ -160,7 +149,6 @@ StrangersMeetRequest.init(
             allowNull: true,
             field: 'alternate_mobile_number',
         },
->>>>>>> origin/main
         adminNotes: {
             type: DataTypes.TEXT,
             allowNull: true,
