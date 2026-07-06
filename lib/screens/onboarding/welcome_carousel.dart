@@ -17,27 +17,20 @@ class _WelcomeCarouselState extends State<WelcomeCarousel> {
 
   final List<Map<String, String>> _slides = [
     {
-      'tagline': 'UNLOCK THE NIGHT',
-      'titlePart1': 'UNLOCK',
-      'titlePart2': 'THE NIGHT',
-      'subtitle':
-          'The ultimate platform to find and book your perfect partner for an unforgettable clubbing experience.',
+      'tagline': 'Find your kind of people',
+      'subtitle': 'No forcing, No pretending\nJust good company.',
       'bg': 'assets/images/welcome_bg.png',
     },
     {
-      'tagline': 'CONNECT TOGETHER',
-      'titlePart1': 'MATCH AND',
-      'titlePart2': 'SOCIALIZE',
+      'tagline': 'Less texting. More showing up.',
       'subtitle':
-          'Connect with like minded people who share your taste in music and nightlife vibe.',
+          'Find people who actually want to grab coffee, hit a gig,\nor explore the city.',
       'bg': 'assets/images/welcome_bg_2.png',
     },
     {
-      'tagline': 'VIP EXPERIENCE',
-      'titlePart1': 'PREMIUM',
-      'titlePart2': 'ACCESS',
+      'tagline': 'Main Character nights only',
       'subtitle':
-          'Book exclusive tables, join VIP guestlists, and split bills seamlessly with your night partner.',
+          'Exclusive perks, premium experiences, and plans worth\ncanceling your Netflix for.',
       'bg': 'assets/images/welcome_bg_3.png',
     },
   ];
@@ -68,163 +61,65 @@ class _WelcomeCarouselState extends State<WelcomeCarousel> {
           final slide = _slides[index];
           return WelcomeBackground(
             backgroundImage: slide['bg'] ?? 'assets/images/welcome_bg.png',
-            child: GestureDetector(
-              onTap: _handleNext,
-              behavior: HitTestBehavior.opaque,
-              child: Column(
-                children: [
-                  Expanded(child: _buildSlide(slide)),
-                  _buildControls(),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildSlide(Map<String, String> slide) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 54), // Even more compact
-      child: Column(
-        children: [
-          const SizedBox(height: 60),
-          // Logo Section
-          Image.asset(LunaraTheme.logoIcon, height: 200),
-          const SizedBox(height: 10),
-          Text(
-            slide['tagline']?.toUpperCase() ?? 'UNLOCK THE NIGHT',
-            style: const TextStyle(
-              fontSize: 10,
-              letterSpacing: 4,
-              color: Colors.black,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const Spacer(flex: 1), // Shift card down
-          // Content Area (No card background)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(
-              children: [
-                // Icon
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.lock_open_rounded,
-                    color: LunaraTheme.electricViolet,
-                    size: 28,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                // Title with split color
-                RichText(
-                  textAlign: TextAlign.center,
-                  text: TextSpan(
-                    style: const TextStyle(
-                      fontFamily: 'AllroundGothic',
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black,
-                      letterSpacing: 1,
-                    ),
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.only(left: 24, right: 24, bottom: 24),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      TextSpan(text: '${slide['titlePart1']} '),
-                      TextSpan(
-                        text: slide['titlePart2'],
+                      Text(
+                        slide['tagline'] ?? '',
+                        textAlign: TextAlign.center,
                         style: const TextStyle(
-                          color: LunaraTheme.electricViolet,
+                          fontSize: 20,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        slide['subtitle'] ?? '',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Colors.white,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      GestureDetector(
+                        onTap: _handleNext,
+                        child: Container(
+                          width: 72,
+                          height: 72,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.grey.withOpacity(0.5),
+                              width: 6,
+                            ),
+                          ),
+                          child: Transform.rotate(
+                            angle: 0, // Rotate send icon slightly right
+                            child: const Icon(
+                              Icons.send,
+                              color: LunaraTheme.electricViolet,
+                              size: 30,
+                            ),
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  slide['subtitle'] ?? '',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.black,
-                    height: 1.4,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                // Bottom line indicator
-                Container(
-                  width: 30,
-                  height: 2,
-                  decoration: BoxDecoration(
-                    color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(1),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Spacer(flex: 1),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildControls() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(40, 0, 40, 60),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          // Dot Indicators on the left
-          Row(
-            children: List.generate(
-              _slides.length,
-              (index) => Container(
-                margin: const EdgeInsets.only(right: 6),
-                height: 6,
-                width: _currentPage == index ? 18 : 6,
-                decoration: BoxDecoration(
-                  color: _currentPage == index
-                      ? LunaraTheme.electricViolet
-                      : Colors.grey[300],
-                  borderRadius: BorderRadius.circular(3),
-                ),
               ),
             ),
-          ),
-          // Circular Button on the right
-          GestureDetector(
-            onTap: _handleNext,
-            child: Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                gradient: LunaraTheme.purpleGradient,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
-                    blurRadius: 15,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Icon(
-                _currentPage == _slides.length - 1
-                    ? Icons.check
-                    : Icons.arrow_forward,
-                color: Colors.white,
-                size: 24,
-              ),
-            ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }

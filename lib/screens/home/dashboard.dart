@@ -116,39 +116,25 @@ class _DashboardState extends State<Dashboard> {
                 );
               },
               child: Container(
-                height: 43,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                height: 48,
+                width: 48,
                 decoration: BoxDecoration(
-                  gradient: LunaraTheme.purpleGradient,
-                  borderRadius: BorderRadius.circular(30),
+                  color: Colors.amber,
+                  shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF3e0f6b).withValues(alpha: 0.35),
+                      color: Colors.amber.withValues(alpha: 0.35),
                       blurRadius: 12,
                       offset: const Offset(0, 6),
                     ),
                   ],
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.workspace_premium_rounded,
-                      color: Colors.white,
-                      size: 18,
-                    ),
-                    const SizedBox(width: 6),
-                    const Text(
-                      'UPGRADE',
-                      style: TextStyle(
-                        fontFamily: 'AllroundGothic',
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 10,
-                        letterSpacing: 1,
-                      ),
-                    ),
-                  ],
+                child: const Center(
+                  child: Icon(
+                    Icons.workspace_premium_rounded,
+                    color: Colors.white,
+                    size: 24,
+                  ),
                 ),
               ),
             ),

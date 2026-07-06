@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/gestures.dart';
 import '../../core/theme.dart';
 import '../../widgets/action_button.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import 'otp_screen.dart';
+import 'terms_screen.dart';
 
 class RegisterBasicScreen extends StatefulWidget {
   const RegisterBasicScreen({super.key});
@@ -16,6 +18,7 @@ class RegisterBasicScreen extends StatefulWidget {
 class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
   bool _isLoading = false;
   bool _isCitiesLoading = true;
+  bool _acceptedTerms = false;
   final _firstNameController = TextEditingController();
   final _lastNameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -235,7 +238,49 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                 maxLength: 12,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               ),
-              const SizedBox(height: 80),
+              const SizedBox(height: 32),
+              Row(
+                children: [
+                  Checkbox(
+                    value: _acceptedTerms,
+                    onChanged: (value) {
+                      setState(() {
+                        _acceptedTerms = value ?? false;
+                      });
+                    },
+                    activeColor: LunaraTheme.primaryRich,
+                  ),
+                  Expanded(
+                    child: RichText(
+                      text: TextSpan(
+                        text: 'I accept the ',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.8),
+                          fontSize: 14,
+                        ),
+                        children: [
+                          TextSpan(
+                            text: 'Terms and Conditions',
+                            style: const TextStyle(
+                              color: LunaraTheme.primaryRich,
+                              fontWeight: FontWeight.bold,
+                              decoration: TextDecoration.underline,
+                            ),
+                            recognizer: TapGestureRecognizer()
+                              ..onTap = () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (context) => const TermsScreen()),
+                                );
+                              },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 40),
               _isLoading
                   ? const Center(
                       child: CircularProgressIndicator(
@@ -260,6 +305,8 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                           errorMessage = 'Please select your gender';
                         } else if (_selectedCity.isEmpty) {
                           errorMessage = 'Please select your city';
+                        } else if (!_acceptedTerms) {
+                          errorMessage = 'Please accept the Terms and Conditions';
                         }
 
                         if (errorMessage != null) {
