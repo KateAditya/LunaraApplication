@@ -10,28 +10,28 @@ import { logger } from '../config/logger';
 
 // ─── Default packages seeded per venue on first request ──────────────────────
 const DEFAULT_PACKAGES = [
-    { name: TablePackageName.SILVER,   label: 'Silver',   description: 'Up to 5 People • 1 Bottle',      price: 500,  maxGuests: 5,  bottlesIncluded: 1 },
-    { name: TablePackageName.GOLD,     label: 'Gold',     description: 'Up to 8 People • 2 Bottles',     price: 900,  maxGuests: 8,  bottlesIncluded: 2 },
-    { name: TablePackageName.PLATINUM, label: 'Platinum', description: 'VIP Table • Unlimited Mixers',   price: 1500, maxGuests: 20, bottlesIncluded: 0 },
+    { name: TablePackageName.SILVER, label: 'Silver', description: 'Up to 5 People • 1 Bottle', price: 500, maxGuests: 5, bottlesIncluded: 1 },
+    { name: TablePackageName.GOLD, label: 'Gold', description: 'Up to 8 People • 2 Bottles', price: 900, maxGuests: 8, bottlesIncluded: 2 },
+    { name: TablePackageName.PLATINUM, label: 'Platinum', description: 'VIP Table • Unlimited Mixers', price: 1500, maxGuests: 20, bottlesIncluded: 0 },
 ];
 
 // ─── Helper: build ticket response ───────────────────────────────────────────
 function buildTicket(booking: Booking, venue: Venue | null, ticketCode: string) {
     return {
-        bookingId:     booking.id,
+        bookingId: booking.id,
         bookingNumber: booking.bookingNumber,
         ticketCode,
         venue: venue
             ? { id: (venue as any).id, name: (venue as any).name, address: (venue as any).address }
             : null,
-        bookingDate:    booking.bookingDate,
-        startTime:      booking.startTime,
-        tablePackage:   booking.tablePackage,
+        bookingDate: booking.bookingDate,
+        startTime: booking.startTime,
+        tablePackage: booking.tablePackage,
         numberOfGuests: booking.numberOfGuests,
-        status:         booking.status,
-        paymentStatus:  booking.paymentStatus,
-        paymentMode:    booking.paymentMode,
-        addedToWallet:  booking.addedToWallet ?? false,
+        status: booking.status,
+        paymentStatus: booking.paymentStatus,
+        paymentMode: booking.paymentMode,
+        addedToWallet: booking.addedToWallet ?? false,
     };
 }
 
@@ -72,12 +72,12 @@ export const getTimeSlots = async (req: Request, res: Response) => {
 
         // Dummy slots — replace with DB-driven availability in production
         const slots = [
-            { time: '20:00', label: '8:00 PM',   available: true },
-            { time: '21:00', label: '9:00 PM',   available: true },
-            { time: '22:00', label: '10:00 PM',  available: true },
-            { time: '22:30', label: '10:30 PM',  available: true },
-            { time: '23:00', label: '11:00 PM',  available: false }, // simulated full
-            { time: '23:30', label: '11:30 PM',  available: true },
+            { time: '20:00', label: '8:00 PM', available: true },
+            { time: '21:00', label: '9:00 PM', available: true },
+            { time: '22:00', label: '10:00 PM', available: true },
+            { time: '22:30', label: '10:30 PM', available: true },
+            { time: '23:00', label: '11:00 PM', available: false }, // simulated full
+            { time: '23:30', label: '11:30 PM', available: true },
         ];
 
         return res.json({ success: true, data: { venueId, date: date || new Date().toISOString().split('T')[0], slots } });
@@ -118,12 +118,20 @@ export const createBooking = async (req: Request, res: Response) => {
 
         // Fetch package price (auto-seed if needed)
         let pkg = null;
-        if (packageName && packageName !== 'none') {
+        let isStandardOrGroup = packageName === 'Standard Booking' || packageName === 'Group Party Booking';
+
+        const venue = await Venue.findByPk(venueId);
+        if (!venue) return res.status(404).json({ success: false, message: 'Venue not found' });
+
+        // Enforce boundary constraint
+        if (numberOfGuests > venue.capacity) {
+            return res.status(400).json({ success: false, message: `Maximum capacity for this venue is ${venue.capacity} guests.` });
+        }
+
+        if (packageName && packageName !== 'none' && !isStandardOrGroup) {
             pkg = await BookingTablePackage.findOne({ where: { venueId, name: packageName, isActive: true } });
             if (!pkg) {
                 // Try seeding
-                const venue = await Venue.findByPk(venueId);
-                if (!venue) return res.status(404).json({ success: false, message: 'Venue not found' });
                 await BookingTablePackage.bulkCreate(DEFAULT_PACKAGES.map(p => ({ ...p, venueId })));
                 pkg = await BookingTablePackage.findOne({ where: { venueId, name: packageName, isActive: true } });
             }
@@ -132,8 +140,15 @@ export const createBooking = async (req: Request, res: Response) => {
 
         let totalAmount = 0;
         let commissionAmount = 0;
-        
-        if ((goingMode === GoingMode.SOLO || packageName !== 'none') && pkg) {
+
+        if (isStandardOrGroup) {
+            const basePrice = Number(venue.tableBookingCharges || 0);
+            const subtotal = basePrice * numberOfGuests;
+            const discountPercent = Number(venue.discountPercentage || 0);
+            const discountAmount = (subtotal * discountPercent) / 100;
+            totalAmount = subtotal - discountAmount;
+            commissionAmount = Math.round(totalAmount * 0.1 * 100) / 100;
+        } else if ((goingMode === GoingMode.SOLO || packageName !== 'none') && pkg) {
             totalAmount = Number(pkg.price);
             commissionAmount = Math.round(totalAmount * 0.1 * 100) / 100;
         }
@@ -143,14 +158,14 @@ export const createBooking = async (req: Request, res: Response) => {
         const booking = await Booking.create({
             userId,
             venueId,
-            bookingDate:    new Date(bookingDate),
+            bookingDate: new Date(bookingDate),
             startTime,
             numberOfGuests: numberOfGuests || (pkg ? pkg.maxGuests : 1),
             totalAmount,
-            depositAmount:  0,
+            depositAmount: 0,
             commissionAmount,
-            goingMode:      goingMode,
-            tablePackage:   packageName,
+            goingMode: goingMode,
+            tablePackage: packageName,
             specialRequests,
             isLargePartyRequest: isLargeParty,
             adminApprovalStatus: isLargeParty ? 'pending' : null,
@@ -159,26 +174,27 @@ export const createBooking = async (req: Request, res: Response) => {
             partyDescription: isLargeParty ? partyDescription : null,
         } as any);
 
-        const venue = await Venue.findByPk(venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
+        // Fetch venue details for the response
+        const venueDetails = await Venue.findByPk(venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
 
         return res.status(201).json({
             success: true,
             message: 'Booking created. Choose your payment method to confirm.',
             data: {
-                bookingId:        booking.id,
-                bookingNumber:    booking.bookingNumber,
-                venue,
+                bookingId: booking.id,
+                bookingNumber: booking.bookingNumber,
+                venue: venueDetails,
                 bookingDate,
                 startTime,
-                tablePackage:     packageName,
-                tableLabel:       pkg?.label,
+                tablePackage: packageName,
+                tableLabel: pkg?.label,
                 tableDescription: pkg?.description,
-                maxGuests:        pkg?.maxGuests,
-                numberOfGuests:   booking.numberOfGuests,
+                maxGuests: pkg?.maxGuests,
+                numberOfGuests: booking.numberOfGuests,
                 totalAmount,
-                status:           booking.status,
-                paymentStatus:    booking.paymentStatus,
-                goingMode:        booking.goingMode,
+                status: booking.status,
+                paymentStatus: booking.paymentStatus,
+                goingMode: booking.goingMode,
             },
         });
     } catch (err: any) {
@@ -201,20 +217,20 @@ export const payNow = async (req: Request, res: Response) => {
 
         // Simulate successful payment
         await Payment.create({
-            bookingId:      id,
-            userId:         userId || booking.userId,
-            amount:         booking.totalAmount,
-            paymentMethod:  PaymentMethod.CARD,
+            bookingId: id,
+            userId: userId || booking.userId,
+            amount: booking.totalAmount,
+            paymentMethod: PaymentMethod.CARD,
             paymentGateway: 'DUMMY_PAY_NOW',
-            status:         TxnStatus.SUCCESSFUL,
+            status: TxnStatus.SUCCESSFUL,
             gatewayResponse: { mode: 'test', simulatedAt: new Date().toISOString() },
         } as any);
 
         const ticketCode = uuidv4();
         await (booking as any).update({
             paymentStatus: PaymentStatus.PAID,
-            paymentMode:   BookingPaymentMode.PAY_NOW,
-            status:        BookingStatus.CONFIRMED,
+            paymentMode: BookingPaymentMode.PAY_NOW,
+            status: BookingStatus.CONFIRMED,
             ticketCode,
         });
 
@@ -248,11 +264,11 @@ export const setupSplitBill = async (req: Request, res: Response) => {
         }
 
         const groupBooking = await GroupBooking.create({
-            bookingId:           id,
-            organizerId:         userId || booking.userId,
-            totalMembers:        members.length,
-            confirmedMembers:    0,
-            paidMembers:         0,
+            bookingId: id,
+            organizerId: userId || booking.userId,
+            totalMembers: members.length,
+            confirmedMembers: 0,
+            paidMembers: 0,
             splitPaymentEnabled: true,
         });
 
@@ -260,17 +276,17 @@ export const setupSplitBill = async (req: Request, res: Response) => {
             members.map((m: { name: string; userId?: string; shareAmount: number }, idx: number) =>
                 BookingMember.create({
                     groupBookingId: groupBooking.id,
-                    userId:         m.userId || undefined,
-                    displayName:    m.name,
-                    shareAmount:    m.shareAmount,
-                    paymentStatus:  MemberPaymentStatus.PENDING,
-                    isOrganizer:    idx === 0,
+                    userId: m.userId || undefined,
+                    displayName: m.name,
+                    shareAmount: m.shareAmount,
+                    paymentStatus: MemberPaymentStatus.PENDING,
+                    isOrganizer: idx === 0,
                 })
             )
         );
 
         await (booking as any).update({
-            paymentMode:    BookingPaymentMode.SPLIT_BILL,
+            paymentMode: BookingPaymentMode.SPLIT_BILL,
             isGroupBooking: true,
         });
 
@@ -280,17 +296,17 @@ export const setupSplitBill = async (req: Request, res: Response) => {
             data: {
                 groupBookingId: groupBooking.id,
                 invitationCode: groupBooking.invitationCode,
-                bookingId:      id,
-                totalAmount:    Number(booking.totalAmount),
+                bookingId: id,
+                totalAmount: Number(booking.totalAmount),
                 totalCollected: 0,
-                totalMembers:   members.length,
-                paidMembers:    0,
+                totalMembers: members.length,
+                paidMembers: 0,
                 members: memberRecords.map(m => ({
-                    id:            m.id,
-                    displayName:   m.displayName,
-                    shareAmount:   Number(m.shareAmount),
+                    id: m.id,
+                    displayName: m.displayName,
+                    shareAmount: Number(m.shareAmount),
                     paymentStatus: m.paymentStatus,
-                    isOrganizer:   m.isOrganizer,
+                    isOrganizer: m.isOrganizer,
                 })),
             },
         });
@@ -318,23 +334,23 @@ export const payMySplit = async (req: Request, res: Response) => {
         }
 
         // Simulate split payment
-        const ts  = Date.now().toString(36).toUpperCase();
+        const ts = Date.now().toString(36).toUpperCase();
         const rnd = Math.random().toString(36).substring(2, 6).toUpperCase();
         const transactionId = `SPLIT${ts}${rnd}`;
 
         await Payment.create({
-            bookingId:      id,
-            userId:         userId || booking.userId,
-            amount:         member.shareAmount,
-            paymentMethod:  PaymentMethod.CARD,
+            bookingId: id,
+            userId: userId || booking.userId,
+            amount: member.shareAmount,
+            paymentMethod: PaymentMethod.CARD,
             paymentGateway: 'DUMMY_SPLIT',
-            status:         TxnStatus.SUCCESSFUL,
+            status: TxnStatus.SUCCESSFUL,
             gatewayResponse: { mode: 'test', memberId, simulatedAt: new Date().toISOString() },
         } as any);
 
         await (member as any).update({
             paymentStatus: MemberPaymentStatus.PAID,
-            paidAt:        new Date(),
+            paidAt: new Date(),
             transactionId,
         });
 
@@ -358,21 +374,21 @@ export const payMySplit = async (req: Request, res: Response) => {
             success: true,
             message: 'Payment successful!',
             data: {
-                memberId:      member.id,
-                displayName:   member.displayName,
-                shareAmount:   Number(member.shareAmount),
+                memberId: member.id,
+                displayName: member.displayName,
+                shareAmount: Number(member.shareAmount),
                 paymentStatus: MemberPaymentStatus.PAID,
                 transactionId,
                 totalCollected,
-                totalAmount:   Number(booking.totalAmount),
-                paidMembers:   groupBooking ? groupBooking.paidMembers + 1 : 1,
-                totalMembers:  groupBooking ? groupBooking.totalMembers : 1,
+                totalAmount: Number(booking.totalAmount),
+                paidMembers: groupBooking ? groupBooking.paidMembers + 1 : 1,
+                totalMembers: groupBooking ? groupBooking.totalMembers : 1,
                 members: allMembers.map(m => ({
-                    id:            m.id,
-                    displayName:   m.displayName,
-                    shareAmount:   Number(m.shareAmount),
+                    id: m.id,
+                    displayName: m.displayName,
+                    shareAmount: Number(m.shareAmount),
                     paymentStatus: m.id === member.id ? MemberPaymentStatus.PAID : m.paymentStatus,
-                    isOrganizer:   m.isOrganizer,
+                    isOrganizer: m.isOrganizer,
                 })),
             },
         });
@@ -392,7 +408,7 @@ export const secureReservation = async (req: Request, res: Response) => {
 
         const ticketCode = (booking as any).ticketCode || uuidv4();
         await (booking as any).update({
-            status:     BookingStatus.CONFIRMED,
+            status: BookingStatus.CONFIRMED,
             ticketCode,
         });
 
@@ -443,17 +459,17 @@ export const addToWallet = async (req: Request, res: Response) => {
 
         await (booking as any).update({
             addedToWallet: true,
-            status:        BookingStatus.COMPLETED,
+            status: BookingStatus.COMPLETED,
         });
 
         return res.json({
             success: true,
             message: 'Booking added to wallet. Your experience begins!',
             data: {
-                bookingId:     id,
+                bookingId: id,
                 bookingNumber: booking.bookingNumber,
                 addedToWallet: true,
-                status:        BookingStatus.COMPLETED,
+                status: BookingStatus.COMPLETED,
             },
         });
     } catch (err: any) {

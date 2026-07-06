@@ -14,9 +14,11 @@ import LargePartyRequests from './pages/LargePartyRequests';
 import { Analytics } from './pages/Analytics';
 import { Compliance } from './pages/Compliance';
 import StrangersMeet from './pages/StrangersMeet';
+import { GroupParties } from './pages/GroupParties';
 import { HelpCenter } from './pages/HelpCenter';
 import { CommunityGuidelines } from './pages/CommunityGuidelines';
 import { LegalTerms } from './pages/LegalTerms';
+import ChatSettings from './pages/ChatSettings';
 import { ThemeProvider, useThemeMode } from './context/ThemeContext';
 
 // Create React Query client
@@ -76,12 +78,14 @@ function AppContent() {
             <Route path="ads" element={<Ads />} />
             <Route path="bookings" element={<Bookings />} />
             <Route path="party-requests" element={<LargePartyRequests />} />
+            <Route path="group-parties" element={<GroupParties />} />
             <Route path="analytics" element={<Analytics />} />
             <Route path="compliance" element={<Compliance />} />
             <Route path="strangers-meet" element={<StrangersMeet />} />
             <Route path="help-center" element={<HelpCenter />} />
             <Route path="community-guidelines" element={<CommunityGuidelines />} />
             <Route path="legal-terms" element={<LegalTerms />} />
+            <Route path="chat-settings" element={<ChatSettings />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

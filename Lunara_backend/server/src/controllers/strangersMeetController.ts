@@ -81,6 +81,11 @@ function formatRequest(r: StrangersMeetRequest) {
         status:           r.status,
         paymentAmount:    r.paymentAmount ?? null,
         paymentStatus:    r.paymentStatus,
+<<<<<<< HEAD
+=======
+        mobileNumber:     r.mobileNumber,
+        alternateMobileNumber: r.alternateMobileNumber ?? null,
+>>>>>>> origin/main
         adminNotes:       r.adminNotes ?? null,
         ticketId:         r.ticketId ?? null,
         createdAt:        r.createdAt,
@@ -114,7 +119,11 @@ function formatRequest(r: StrangersMeetRequest) {
 // ─────────────────────────────────────────────────────────────────────────────
 export const createRequest = async (req: Request, res: Response): Promise<void> => {
     try {
+<<<<<<< HEAD
         const { userId, venueId, subject, tagline, eventDateTime, numberOfPersons } = req.body;
+=======
+        const { userId, venueId, subject, tagline, eventDateTime, numberOfPersons, mobileNumber, alternateMobileNumber } = req.body;
+>>>>>>> origin/main
 
         // Validate required fields
         const errors: Record<string, string> = {};
@@ -158,6 +167,11 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
             tagline:         tagline.trim(),
             eventDateTime:   eventDate,
             numberOfPersons: Number(numberOfPersons),
+<<<<<<< HEAD
+=======
+            mobileNumber:    mobileNumber.trim(),
+            alternateMobileNumber: alternateMobileNumber?.trim() || null,
+>>>>>>> origin/main
         });
 
         res.status(201).json({

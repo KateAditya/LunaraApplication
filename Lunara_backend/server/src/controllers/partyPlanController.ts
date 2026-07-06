@@ -12,6 +12,44 @@ import crypto from 'crypto';
 import { PartyPlanPaymentStatus } from '../models/PartyPlan';
 import PartyPlanRequest, { PartyPlanRequestStatus, PartyPlanJoinerPaymentStatus } from '../models/PartyPlanRequest';
 import { sendMulticastPushNotification } from '../services/fcmService';
+import Conversation from '../models/Conversation';
+import ChatSubscription, { ChatSubscriptionStatus, ChatSubscriptionType } from '../models/ChatSubscription';
+import { getChatSettings } from './chatSubscriptionController';
+
+async function autoOpenChat(hostId: string, joinerId: string) {
+    try {
+        let conv = await Conversation.findOne({
+            where: {
+                [Op.or]: [
+                    { participantOne: hostId, participantTwo: joinerId },
+                    { participantOne: joinerId, participantTwo: hostId }
+                ]
+            }
+        });
+        if (!conv) {
+            conv = await Conversation.create({
+                participantOne: hostId,
+                participantTwo: joinerId
+            });
+        }
+
+        const freeDays = getChatSettings().freeDays;
+        const validUntil = new Date();
+        validUntil.setDate(validUntil.getDate() + freeDays);
+
+        await ChatSubscription.create({
+            conversationId: conv.id,
+            paidById: hostId, // system granted
+            amount: 0,
+            daysGranted: freeDays,
+            validUntil,
+            status: ChatSubscriptionStatus.ACTIVE,
+            subscriptionType: ChatSubscriptionType.FREE,
+        });
+    } catch (err: any) {
+        logger.error('autoOpenChat error:', err);
+    }
+}
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -31,7 +69,7 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
     try {
         const rawVisibility = req.body.visibility || req.body.privacyType || 'public';
         const parsedVisibility = String(rawVisibility).toLowerCase() === 'private' ? PartyPlanVisibility.PRIVATE : PartyPlanVisibility.PUBLIC;
-        const { userId, venueId, message, planDateTime, selectedUsers } = req.body;
+        const { userId, venueId, message, planDateTime, selectedUsers, mobileNumber, optionalMobileNumber } = req.body;
 
         // ── Validate required fields ─────────────────────────────────────────
         const errors: Record<string, string> = {};
@@ -39,6 +77,7 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
         if (!venueId) errors.venueId = 'venueId is required';
         if (!message?.trim()) errors.message = 'Party message is required';
         if (!planDateTime) errors.planDateTime = 'planDateTime is required';
+        if (!mobileNumber?.trim()) errors.mobileNumber = 'mobileNumber is required';
 
         if (parsedVisibility === PartyPlanVisibility.PRIVATE) {
             if (!Array.isArray(selectedUsers) || selectedUsers.length === 0) {
@@ -127,6 +166,8 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             venueId,
             message: message.trim(),
             planDateTime: partyDate,
+            mobileNumber: mobileNumber.trim(),
+            optionalMobileNumber: optionalMobileNumber?.trim(),
             status: PartyPlanStatus.ACTIVE,
             visibility: parsedVisibility,
             selectedUsers: parsedVisibility === PartyPlanVisibility.PRIVATE ? selectedUsers : null,
@@ -179,12 +220,12 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                 const hostName = `${user.firstName} ${user.lastName}`.trim();
                 const venueName = venue.name;
                 const notifTitle = `🎉 New Party Plan at ${venueName}`;
-                const notifBody  = `${hostName} has created a party plan. Tap to view!`;
-                const notifData  = {
-                    type:        'new_party_plan',
+                const notifBody = `${hostName} has created a party plan. Tap to view!`;
+                const notifData = {
+                    type: 'new_party_plan',
                     partyPlanId: partyPlan.id,
-                    venueId:     venueId,
-                    hostId:      userId,
+                    venueId: venueId,
+                    hostId: userId,
                 };
 
                 if (parsedVisibility === PartyPlanVisibility.PRIVATE && Array.isArray(selectedUsers) && selectedUsers.length > 0) {
@@ -200,8 +241,8 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                     if (tokens.length > 0) {
                         await sendMulticastPushNotification(tokens, {
                             title: notifTitle,
-                            body:  notifBody,
-                            data:  notifData,
+                            body: notifBody,
+                            data: notifData,
                         });
                     }
                 }
@@ -265,6 +306,7 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
                     status: PartyPlanStatus.INACTIVE,
                     isLive: false,
                 });
+                await autoOpenChat(plan.userId, activeReq.requesterId);
                 res.json({ success: true, message: 'Both paid! Match Successful & Deposits Refunded 🎉', data: plan });
             } else {
                 res.json({ success: true, message: 'Payment verified. Waiting for joiner payment. ⏳', data: plan });
@@ -386,6 +428,8 @@ export const getAllPartyPlans = async (req: Request, res: Response): Promise<voi
             hostRazorpayOrderId: p.hostRazorpayOrderId,
             isLive: p.isLive,
             depositAmount: p.depositAmount,
+            mobileNumber: p.mobileNumber,
+            optionalMobileNumber: p.optionalMobileNumber,
             expiresAt: p.expiresAt,
             paymentStatus: p.paymentStatus,
             user: buildUserData(p),
@@ -476,6 +520,8 @@ export const getPlansByUser = async (req: Request, res: Response): Promise<void>
             hostRazorpayOrderId: p.hostRazorpayOrderId,
             isLive: p.isLive,
             depositAmount: p.depositAmount,
+            mobileNumber: p.mobileNumber,
+            optionalMobileNumber: p.optionalMobileNumber,
             expiresAt: p.expiresAt,
             paymentStatus: p.paymentStatus,
             user: buildUserData(p),
@@ -551,6 +597,8 @@ export const getPartyPlanById = async (req: Request, res: Response): Promise<voi
                 hostRazorpayOrderId: plan.hostRazorpayOrderId,
                 isLive: plan.isLive,
                 depositAmount: plan.depositAmount,
+                mobileNumber: plan.mobileNumber,
+                optionalMobileNumber: plan.optionalMobileNumber,
                 expiresAt: plan.expiresAt,
                 paymentStatus: plan.paymentStatus,
                 user: buildUserData(plan),
@@ -901,6 +949,7 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
                     status: PartyPlanStatus.INACTIVE,
                     isLive: false,
                 });
+                await autoOpenChat(plan.userId, request.requesterId);
                 res.json({ success: true, message: 'Both paid! Match Successful & Deposits Refunded 🎉', data: request });
             } else {
                 // Joiner paid, wait for host
@@ -1047,6 +1096,8 @@ export const getJoinerRequests = async (req: Request, res: Response): Promise<vo
                     hostRazorpayOrderId: plan.hostRazorpayOrderId,
                     isLive: plan.isLive,
                     depositAmount: plan.depositAmount,
+                    mobileNumber: plan.mobileNumber,
+                    optionalMobileNumber: plan.optionalMobileNumber,
                     expiresAt: plan.expiresAt,
                     paymentStatus: plan.paymentStatus,
                     user: buildUserData(plan),

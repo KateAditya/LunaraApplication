@@ -1,10 +1,11 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../widgets/match_card.dart';
 import 'match_success_dialog.dart';
 import 'match_settings_screen.dart';
 import 'matched_profiles_screen.dart';
+import '../../models/user.dart';
+import '../../services/api_service.dart';
 
 class MatchScreen extends StatefulWidget {
   const MatchScreen({super.key});
@@ -15,45 +16,11 @@ class MatchScreen extends StatefulWidget {
 
 class _MatchScreenState extends State<MatchScreen>
     with TickerProviderStateMixin {
-  final List<Map<String, dynamic>> _allProfiles = [
-    {
-      'name': 'ELARA',
-      'age': 22,
-      'vibe': 'NEON DREAMER',
-      'verified': true,
-      'distance': '0.3 km away',
-      'image': 'assets/images/profiles/elara.png',
-      'isAsset': true,
-      'interests': ['Deep House', 'Cyberpunk', 'Rooftops'],
-      'matchChance': 0.6, // 60% chance of mutual like
-    },
-    {
-      'name': 'ZANE',
-      'age': 25,
-      'vibe': 'TECHNO GLITCH',
-      'verified': false,
-      'distance': '1.2 km away',
-      'image': 'assets/images/profiles/zane.png',
-      'isAsset': true,
-      'interests': ['Techno', 'Afterhours', 'NFTs'],
-      'matchChance': 0.3,
-    },
-    {
-      'name': 'LYRA',
-      'age': 24,
-      'vibe': 'GLAZED BASS',
-      'verified': true,
-      'distance': '0.8 km away',
-      'image': 'assets/images/profiles/lyra.png',
-      'isAsset': true,
-      'interests': ['Bass', 'Festivals', 'Voguing'],
-      'matchChance': 0.9, // Very high match chance for demo
-    },
-  ];
-
-  late List<Map<String, dynamic>> _profiles;
+  List<Map<String, dynamic>> _profiles = [];
   final List<Map<String, dynamic>> _likedProfiles = [];
   final List<Map<String, dynamic>> _matchedProfiles = [];
+  bool _isLoading = true;
+  String _swipeAction = 'like';
 
   // Swipe animation
   double _dragX = 0;
@@ -66,7 +33,6 @@ class _MatchScreenState extends State<MatchScreen>
   @override
   void initState() {
     super.initState();
-    _profiles = List.from(_allProfiles);
     _swipeAnimController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 300),
@@ -76,6 +42,148 @@ class _MatchScreenState extends State<MatchScreen>
         _onSwipeComplete();
       }
     });
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+    try {
+      final me = await ApiService.fetchProfile();
+      final myId = ApiService.currentUserId;
+      final myGender = me?.gender?.toLowerCase();
+      final selectedCity = ApiService.selectedCity;
+
+      // 1. Fetch all raw customers
+      final rawCustomers = await ApiService.fetchCustomers();
+
+      // 2. Fetch all likes and matches
+      final mySwipes = await ApiService.fetchMyLikesAndMatches();
+
+      final Set<String> swipedUserIds = {};
+      final List<Map<String, dynamic>> resolvedLiked = [];
+      final List<Map<String, dynamic>> resolvedMatched = [];
+
+      for (var swipe in mySwipes) {
+        final u1 = swipe['user1Id']?.toString();
+        final u2 = swipe['user2Id']?.toString();
+        if (u1 == myId) {
+          if (u2 != null) {
+            swipedUserIds.add(u2);
+          }
+        }
+      }
+
+      final List<Map<String, dynamic>> discoveryProfiles = [];
+
+      for (var c in rawCustomers) {
+        try {
+          final u = User.fromJson(c);
+          if (myId != null && u.id == myId) continue;
+
+          // Filter by selected city
+          if (selectedCity != null && selectedCity.isNotEmpty) {
+            if (u.city == null ||
+                u.city!.toLowerCase() != selectedCity.toLowerCase()) {
+              continue;
+            }
+          }
+
+          // Filter by opposite gender
+          if (myGender != null && myGender.isNotEmpty) {
+            final uGender = (u.gender ?? '').toLowerCase();
+            if (myGender == 'male' || myGender == 'm') {
+              if (uGender == 'male' || uGender == 'm') continue;
+            } else if (myGender == 'female' || myGender == 'f') {
+              if (uGender == 'female' || uGender == 'f') continue;
+            }
+          }
+
+          // Calculate match percentage dynamically
+          final matchPct = ApiService.calculateMatchPercentage(u);
+
+          final profileMap = {
+            'id': u.id,
+            'name': u.fullName.toUpperCase(),
+            'age': u.age ?? 25,
+            'vibe': (u.occupation ?? 'Night Owl').toUpperCase(),
+            'verified': u.isVerified,
+            'distance': '1.2 km away',
+            'image': u.profilePhoto ?? 'https://picsum.photos/400/600',
+            'isAsset': false,
+            'interests': u.interests,
+            'matchChance': matchPct / 100.0,
+          };
+
+          // Find swipes
+          final outgoingSwipes = mySwipes
+              .where(
+                (s) =>
+                    s['user1Id']?.toString() == myId &&
+                    s['user2Id']?.toString() == u.id,
+              )
+              .toList();
+          final outgoingSwipe = outgoingSwipes.isNotEmpty
+              ? outgoingSwipes.first
+              : null;
+
+          final incomingSwipes = mySwipes
+              .where(
+                (s) =>
+                    s['user2Id']?.toString() == myId &&
+                    s['user1Id']?.toString() == u.id,
+              )
+              .toList();
+          final incomingSwipe = incomingSwipes.isNotEmpty
+              ? incomingSwipes.first
+              : null;
+
+          bool isLiked = false;
+          bool isMatched = false;
+
+          if (outgoingSwipe != null) {
+            final status = outgoingSwipe['status']?.toString().toLowerCase();
+            if (status == 'pending') {
+              isLiked = true;
+            } else if (status == 'connected') {
+              isLiked = true;
+              isMatched = true;
+            }
+          }
+
+          if (incomingSwipe != null) {
+            final status = incomingSwipe['status']?.toString().toLowerCase();
+            if (status == 'connected') {
+              isMatched = true;
+            }
+          }
+
+          if (isMatched) {
+            resolvedMatched.add(profileMap);
+          } else if (isLiked) {
+            resolvedLiked.add(profileMap);
+          }
+
+          if (!swipedUserIds.contains(u.id)) {
+            discoveryProfiles.add(profileMap);
+          }
+        } catch (_) {}
+      }
+
+      if (mounted) {
+        setState(() {
+          _profiles = discoveryProfiles;
+          _likedProfiles.clear();
+          _likedProfiles.addAll(resolvedLiked);
+          _matchedProfiles.clear();
+          _matchedProfiles.addAll(resolvedMatched);
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading Discovery data: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -87,40 +195,42 @@ class _MatchScreenState extends State<MatchScreen>
   void _onSwipeComplete() {
     if (_profiles.isEmpty) return;
 
-    final swiped = _profiles.first;
+    final swiped = _profiles.removeAt(0);
     final swipedRight = _dragX > 0;
+    final action = swipedRight ? _swipeAction : 'nope';
+
+    // Reset default swipe action
+    _swipeAction = 'like';
 
     setState(() {
-      _profiles.removeAt(0);
       _isAnimating = false;
       _dragX = 0;
       _dragY = 0;
       _dragAngle = 0;
     });
 
-    if (swipedRight) {
-      _likedProfiles.add(swiped);
-      // Simulate mutual like based on matchChance
-      final chance = (swiped['matchChance'] as num?)?.toDouble() ?? 0.5;
-      if (Random().nextDouble() < chance) {
-        _matchedProfiles.add(swiped);
-        // Delay dialog so card animation finishes first
-        Future.delayed(const Duration(milliseconds: 400), () {
-          if (mounted) _showMatchDialog(swiped);
-        });
-      }
-    }
-
-    // Reset deck if empty
-    if (_profiles.isEmpty) {
-      Future.delayed(const Duration(milliseconds: 800), () {
-        if (mounted) {
-          setState(() {
-            _profiles = List.from(_allProfiles);
-          });
+    // Make backend swipe call
+    ApiService.swipeUser(targetUserId: swiped['id'], action: action).then((
+      res,
+    ) {
+      if (res != null) {
+        final bool matched = res['matched'] == true;
+        if (matched) {
+          if (mounted) {
+            setState(() {
+              _matchedProfiles.add(swiped);
+            });
+            _showMatchDialog(swiped);
+          }
+        } else if (swipedRight) {
+          if (mounted) {
+            setState(() {
+              _likedProfiles.add(swiped);
+            });
+          }
         }
-      });
-    }
+      }
+    });
   }
 
   void _swipeCard(bool liked) {
@@ -176,7 +286,13 @@ class _MatchScreenState extends State<MatchScreen>
             _buildMatchStats(),
             const SizedBox(height: 20),
             Expanded(
-              child: _profiles.isEmpty
+              child: _isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: LunaraTheme.accentVivid,
+                      ),
+                    )
+                  : _profiles.isEmpty
                   ? _buildEmptyState()
                   : _buildSwipeableCards(),
             ),
@@ -487,20 +603,29 @@ class _MatchScreenState extends State<MatchScreen>
           _interactionButton(
             icon: Icons.close,
             color: LunaraTheme.primaryDeep,
-            onTap: () => _swipeCard(false),
+            onTap: () {
+              _swipeAction = 'nope';
+              _swipeCard(false);
+            },
             label: 'NOPE',
           ),
           _interactionButton(
             icon: Icons.favorite,
             color: LunaraTheme.accentVivid,
-            onTap: () => _swipeCard(true),
+            onTap: () {
+              _swipeAction = 'like';
+              _swipeCard(true);
+            },
             isLarge: true,
             label: 'LIKE',
           ),
           _interactionButton(
             icon: Icons.star,
             color: LunaraTheme.primaryRich,
-            onTap: () => _swipeCard(true), // Super like
+            onTap: () {
+              _swipeAction = 'superlike';
+              _swipeCard(true);
+            },
             label: 'SUPER',
           ),
         ],

@@ -298,13 +298,17 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                         ? LunaraTheme.electricViolet
                         : Colors.grey[100],
                     borderRadius: BorderRadius.circular(16),
-                    boxShadow: isSelected ? [
-                      BoxShadow(
-                        color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 4),
-                      )
-                    ] : [],
+                    boxShadow: isSelected
+                        ? [
+                            BoxShadow(
+                              color: LunaraTheme.electricViolet.withValues(
+                                alpha: 0.3,
+                              ),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            ),
+                          ]
+                        : [],
                   ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -403,7 +407,9 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
               gradient: _selectedTime != null ? LunaraTheme.cardGradient : null,
               color: _selectedTime != null ? null : Colors.grey[50],
               borderRadius: BorderRadius.circular(16),
-              boxShadow: _selectedTime != null ? LunaraTheme.premiumCardShadow : [],
+              boxShadow: _selectedTime != null
+                  ? LunaraTheme.premiumCardShadow
+                  : [],
               border: Border.all(
                 color: _selectedTime != null
                     ? LunaraTheme.electricViolet
@@ -469,7 +475,8 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
 
     if (isSolo) {
       _guestsController.text = '1';
-    } else if (_guestsController.text.isEmpty || _guestsController.text == '1') {
+    } else if (_guestsController.text.isEmpty ||
+        _guestsController.text == '1') {
       _guestsController.text = '2'; // Default for friends
     }
 
@@ -482,6 +489,20 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
           builder: (BuildContext modalCtx, StateSetter setModalState) {
             int guests = int.tryParse(_guestsController.text) ?? 1;
             bool isLargeParty = !isSolo && guests > 20;
+
+            final double basePrice =
+                double.tryParse(
+                  widget.venue['tableBookingCharges']?.toString() ?? '20',
+                ) ??
+                20.0;
+            final double subtotal = basePrice * guests;
+            final double discountPercent =
+                double.tryParse(
+                  widget.venue['discountPercentage']?.toString() ?? '0',
+                ) ??
+                0.0;
+            final double discountAmount = (subtotal * discountPercent) / 100;
+            final double totalPrice = subtotal - discountAmount;
 
             return Container(
               margin: EdgeInsets.only(
@@ -538,7 +559,8 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                 ),
                                 IconButton(
                                   icon: const Icon(Icons.close),
-                                  onPressed: () => Navigator.pop(bottomSheetCtx),
+                                  onPressed: () =>
+                                      Navigator.pop(bottomSheetCtx),
                                 ),
                               ],
                             ),
@@ -622,10 +644,29 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                     const SizedBox(width: 16),
                                     GestureDetector(
                                       onTap: () {
-                                        setModalState(() {
-                                          _guestsController.text = (guests + 1)
-                                              .toString();
-                                        });
+                                        final int maxGuests =
+                                            int.tryParse(
+                                              widget.venue['capacity']
+                                                      ?.toString() ??
+                                                  '20',
+                                            ) ??
+                                            20;
+                                        if (guests < maxGuests) {
+                                          setModalState(() {
+                                            _guestsController.text =
+                                                (guests + 1).toString();
+                                          });
+                                        } else {
+                                          ScaffoldMessenger.of(
+                                            outerContext,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                'Maximum $maxGuests friends allowed.',
+                                              ),
+                                            ),
+                                          );
+                                        }
                                       },
                                       child: Container(
                                         padding: const EdgeInsets.all(8),
@@ -701,9 +742,8 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                   ),
                                   borderRadius: BorderRadius.circular(16),
                                   border: Border.all(
-                                    color: LunaraTheme.electricViolet.withValues(
-                                      alpha: 0.1,
-                                    ),
+                                    color: LunaraTheme.electricViolet
+                                        .withValues(alpha: 0.1),
                                   ),
                                 ),
                                 child: Column(
@@ -718,9 +758,9 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                             color: Colors.black87,
                                           ),
                                         ),
-                                        const Text(
-                                          '₹ 20',
-                                          style: TextStyle(
+                                        Text(
+                                          '₹ ${subtotal.toStringAsFixed(0)}',
+                                          style: const TextStyle(
                                             fontWeight: FontWeight.bold,
                                           ),
                                         ),
@@ -730,14 +770,16 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                     Row(
                                       mainAxisAlignment:
                                           MainAxisAlignment.spaceBetween,
-                                      children: const [
+                                      children: [
                                         Text(
-                                          'Discount (10%)',
-                                          style: TextStyle(color: Colors.black87),
+                                          'Discount (${discountPercent.toStringAsFixed(0)}%)',
+                                          style: const TextStyle(
+                                            color: Colors.black87,
+                                          ),
                                         ),
                                         Text(
-                                          '₹ 0',
-                                          style: TextStyle(
+                                          '₹ ${discountAmount.toStringAsFixed(0)}',
+                                          style: const TextStyle(
                                             color: Colors.teal,
                                             fontWeight: FontWeight.bold,
                                           ),
@@ -750,8 +792,8 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                     Row(
                                       mainAxisAlignment:
                                           MainAxisAlignment.spaceBetween,
-                                      children: const [
-                                        Text(
+                                      children: [
+                                        const Text(
                                           'Total Amount',
                                           style: TextStyle(
                                             fontWeight: FontWeight.bold,
@@ -759,8 +801,8 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                           ),
                                         ),
                                         Text(
-                                          '₹ 20',
-                                          style: TextStyle(
+                                          '₹ ${totalPrice.toStringAsFixed(0)}',
+                                          style: const TextStyle(
                                             fontWeight: FontWeight.bold,
                                             fontSize: 16,
                                             color: LunaraTheme.electricViolet,
@@ -786,7 +828,9 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                       _partyRequirementController.text
                                           .trim()
                                           .isEmpty) {
-                                    ScaffoldMessenger.of(outerContext).showSnackBar(
+                                    ScaffoldMessenger.of(
+                                      outerContext,
+                                    ).showSnackBar(
                                       const SnackBar(
                                         content: Text(
                                           'Please fill out the party subject and requirement.',
@@ -799,7 +843,9 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                   Navigator.pop(bottomSheetCtx); // Close popup
 
                                   // Show loading snackbar
-                                  ScaffoldMessenger.of(outerContext).showSnackBar(
+                                  ScaffoldMessenger.of(
+                                    outerContext,
+                                  ).showSnackBar(
                                     const SnackBar(
                                       content: Text('Submitting request...'),
                                     ),
@@ -820,7 +866,9 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                       );
 
                                   if (!success) {
-                                    ScaffoldMessenger.of(outerContext).showSnackBar(
+                                    ScaffoldMessenger.of(
+                                      outerContext,
+                                    ).showSnackBar(
                                       const SnackBar(
                                         content: Text(
                                           'Failed to submit request. Please try again later.',
@@ -842,7 +890,9 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                           onPressed: () {
                                             Navigator.pop(ctx2); // close dialog
                                             if (mounted) {
-                                              Navigator.pop(outerContext); // Go back from booking process screen
+                                              Navigator.pop(
+                                                outerContext,
+                                              ); // Go back from booking process screen
                                             }
                                           },
                                           child: const Text('OK'),
@@ -853,13 +903,17 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                   return;
                                 }
 
-                                String chargesStr = '20';
+                                String chargesStr = totalPrice.toStringAsFixed(
+                                  0,
+                                );
                                 Navigator.pop(bottomSheetCtx); // close popup
                                 Navigator.push(
                                   outerContext,
                                   MaterialPageRoute(
                                     builder: (_) => PaymentConfirmationScreen(
-                                      venue: Map<String, dynamic>.from(widget.venue),
+                                      venue: Map<String, dynamic>.from(
+                                        widget.venue,
+                                      ),
                                       date:
                                           '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
                                       package: 'Confirmation Charges',

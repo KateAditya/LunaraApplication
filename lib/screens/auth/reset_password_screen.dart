@@ -33,7 +33,12 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   }
 
   void _validatePasswords() {
-    if (_confirmController.text.isNotEmpty &&
+    if (_passwordController.text.isNotEmpty &&
+        _passwordController.text.length < 3) {
+      setState(
+        () => _passwordError = 'Password must contain minimum 3 characters',
+      );
+    } else if (_confirmController.text.isNotEmpty &&
         _passwordController.text != _confirmController.text) {
       setState(() => _passwordError = 'Passwords do not match');
     } else {
@@ -49,17 +54,20 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   }
 
   Future<void> _handleResetPassword() async {
-    if (_passwordController.text.isEmpty) {
+    if (_passwordController.text.isEmpty ||
+        _passwordController.text.length < 3) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a new password')),
+        const SnackBar(
+          content: Text('Password must contain minimum 3 characters'),
+        ),
       );
       return;
     }
 
     if (_passwordController.text != _confirmController.text) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Passwords do not match')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Passwords do not match')));
       return;
     }
 
@@ -88,7 +96,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error), backgroundColor: LunaraTheme.primaryDeep),
+        SnackBar(
+          content: Text(error),
+          backgroundColor: LunaraTheme.primaryDeep,
+        ),
       );
     }
   }
@@ -104,8 +115,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               IconButton(
-                icon: Icon(Icons.arrow_back,
-                    color: Theme.of(context).colorScheme.onSurface),
+                icon: Icon(
+                  Icons.arrow_back,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
                 onPressed: () => Navigator.pop(context),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
@@ -116,10 +129,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                 style: LunaraTheme.bodyStyle.copyWith(
                   fontSize: 12,
                   letterSpacing: 2,
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.45),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.45),
                 ),
               ),
               const SizedBox(height: 8),
@@ -134,10 +146,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
               Text(
                 'Create a new strong password for your account.',
                 style: TextStyle(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.54),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.54),
                   height: 1.5,
                 ),
               ),
@@ -195,7 +206,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
         label,
         style: TextStyle(
           fontSize: 12,
-          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+          color: Theme.of(
+            context,
+          ).colorScheme.onSurface.withValues(alpha: 0.54),
           letterSpacing: 1.5,
           fontWeight: FontWeight.bold,
         ),
@@ -224,10 +237,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: TextStyle(
-              color: Theme.of(context)
-                  .colorScheme
-                  .onSurface
-                  .withValues(alpha: 0.38)),
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.38),
+          ),
           border: InputBorder.none,
           icon: Icon(icon, color: LunaraTheme.primaryRich, size: 20),
           suffixIcon: isPassword
@@ -236,10 +249,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                     _obscurePassword
                         ? Icons.visibility_off_outlined
                         : Icons.visibility_outlined,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.54),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.54),
                     size: 16,
                   ),
                   onPressed: () =>

@@ -16,12 +16,16 @@ class PostDetailScreen extends StatelessWidget {
     final String firstName = post['firstName'] ?? 'Lunara';
     final String lastName = post['lastName'] ?? 'User';
     final String venueName = post['venue'] ?? 'Unknown Venue';
+
     final String content = post['content'] ?? '';
     final String time = post['time'] ?? '';
-    
-    final String? photo = post['profilePhotoUrl'] ?? post['profilePhoto'] ?? post['image'];
-    final bool isMyPost = post['userId']?.toString() == ApiService.currentUserId || 
-                          (post['user'] != null && post['user']['id']?.toString() == ApiService.currentUserId);
+
+    final String? photo =
+        post['profilePhotoUrl'] ?? post['profilePhoto'] ?? post['image'];
+    final bool isMyPost =
+        post['userId']?.toString() == ApiService.currentUserId ||
+        (post['user'] != null &&
+            post['user']['id']?.toString() == ApiService.currentUserId);
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -45,7 +49,7 @@ class PostDetailScreen extends StatelessWidget {
                       height: 1.4,
                     ),
                   ),
-                  
+
                   const SizedBox(height: 40),
                   // Venue Context Card
                   Container(
@@ -70,10 +74,16 @@ class PostDetailScreen extends StatelessWidget {
                             Container(
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                                color: LunaraTheme.electricViolet.withValues(
+                                  alpha: 0.1,
+                                ),
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(Icons.location_on_rounded, color: LunaraTheme.electricViolet, size: 20),
+                              child: const Icon(
+                                Icons.location_on_rounded,
+                                color: LunaraTheme.electricViolet,
+                                size: 20,
+                              ),
                             ),
                             const SizedBox(width: 16),
                             Expanded(
@@ -107,7 +117,8 @@ class PostDetailScreen extends StatelessWidget {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (_) => VenueDetailScreen(venue: venue!),
+                                      builder: (_) =>
+                                          VenueDetailScreen(venue: venue!),
                                     ),
                                   );
                                 }
@@ -126,7 +137,7 @@ class PostDetailScreen extends StatelessWidget {
                       ],
                     ),
                   ),
-                  
+
                   const SizedBox(height: 40),
                 ],
               ),
@@ -135,113 +146,160 @@ class PostDetailScreen extends StatelessWidget {
         ],
       ),
 
-      bottomNavigationBar: isMyPost ? const SizedBox.shrink() : SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-          child: Container(
-            width: double.infinity,
-            height: 60,
-            decoration: BoxDecoration(
-              gradient: LunaraTheme.purpleGradient,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFFb952eb).withValues(alpha: 0.3),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            child: ElevatedButton(
-              onPressed: () async {
-                final success = await ApiService.requestToJoinPartyPlan(post['id']);
-                if (success) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        backgroundColor: Colors.transparent,
-                        elevation: 0,
-                        behavior: SnackBarBehavior.floating,
-                        content: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                          decoration: BoxDecoration(
-                            gradient: LunaraTheme.purpleGradient,
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
-                                blurRadius: 15,
-                                offset: const Offset(0, 8),
-                              ),
-                            ],
-                          ),
-                          child: const Row(
-                            children: [
-                              Icon(Icons.auto_awesome, color: Colors.white, size: 20),
-                              SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  'YOUR REQUEST TO JOIN THE VIBE HAS BEEN SENT!',
-                                  style: TextStyle(
-                                    fontFamily: 'AllroundGothic',
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 0.5,
-                                  ),
+      bottomNavigationBar: isMyPost
+          ? const SizedBox.shrink()
+          : SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                child: Container(
+                  width: double.infinity,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    gradient: LunaraTheme.purpleGradient,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFb952eb).withValues(alpha: 0.3),
+                        blurRadius: 20,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      final success = await ApiService.requestToJoinPartyPlan(
+                        post['id'],
+                      );
+                      if (success) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              backgroundColor: Colors.transparent,
+                              elevation: 0,
+                              behavior: SnackBarBehavior.floating,
+                              content: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 16,
+                                ),
+                                decoration: BoxDecoration(
+                                  gradient: LunaraTheme.purpleGradient,
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: LunaraTheme.electricViolet
+                                          .withValues(alpha: 0.3),
+                                      blurRadius: 15,
+                                      offset: const Offset(0, 8),
+                                    ),
+                                  ],
+                                ),
+                                child: const Row(
+                                  children: [
+                                    Icon(
+                                      Icons.auto_awesome,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                    SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        'YOUR REQUEST TO JOIN THE VIBE HAS BEEN SENT!',
+                                        style: TextStyle(
+                                          fontFamily: 'AllroundGothic',
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 0.5,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ],
+                            ),
+                          );
+                        }
+                      } else {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Failed to send request. You may have already requested.',
+                              ),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.bolt, color: Colors.white),
+                        SizedBox(width: 12),
+                        Text(
+                          'JOIN THE VIBE',
+                          style: TextStyle(
+                            fontFamily: 'AllroundGothic',
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1,
                           ),
                         ),
-                      ),
-                    );
-                  }
-                } else {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Failed to send request. You may have already requested.'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.transparent,
-                shadowColor: Colors.transparent,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              ),
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.bolt, color: Colors.white),
-                  SizedBox(width: 12),
-                  Text(
-                    'JOIN THE VIBE',
-                    style: TextStyle(
-                      fontFamily: 'AllroundGothic',
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1,
+                      ],
                     ),
                   ),
-                ],
+                ),
               ),
             ),
-          ),
-        ),
-      ),
     );
   }
 
-  Widget _buildSliverAppBar(BuildContext context, String firstName, String lastName, String time, String? photo, Map<String, dynamic> post) {
+  Widget _buildSliverAppBar(
+    BuildContext context,
+    String firstName,
+    String lastName,
+    String time,
+    String? photo,
+    Map<String, dynamic> post,
+  ) {
     String? finalPhoto = photo;
-    if (finalPhoto != null && finalPhoto.startsWith('/') && !finalPhoto.startsWith('assets')) {
-      finalPhoto = 'http://103.224.247.35:9076$finalPhoto';
+    if (finalPhoto != null &&
+        finalPhoto.startsWith('/') &&
+        !finalPhoto.startsWith('assets')) {
+      finalPhoto = '${ApiService.baseUrl}$finalPhoto';
     }
+
+    // Age — prefer explicit field, fall back to calculating from dob
+    int? age = post['age'] as int?;
+    if (age == null) {
+      final dobRaw = post['dateOfBirth'] ?? post['dob'];
+      if (dobRaw != null) {
+        final dob = DateTime.tryParse(dobRaw.toString());
+        if (dob != null) {
+          final today = DateTime.now();
+          age =
+              today.year -
+              dob.year -
+              ((today.month < dob.month ||
+                      (today.month == dob.month && today.day < dob.day))
+                  ? 1
+                  : 0);
+        }
+      }
+    }
+
+    final bool isVerified =
+        post['isVerified'] == true || post['verified'] == true;
 
     return SliverAppBar(
       expandedHeight: 450,
@@ -259,7 +317,6 @@ class PostDetailScreen extends StatelessWidget {
         ),
       ),
       actions: [
-
         // Profile view button
         Padding(
           padding: const EdgeInsets.all(8.0),
@@ -277,7 +334,7 @@ class PostDetailScreen extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => ProfileScreen(user: profileUser)
+                    builder: (_) => ProfileScreen(user: profileUser),
                   ),
                 );
               },
@@ -289,20 +346,29 @@ class PostDetailScreen extends StatelessWidget {
         background: Stack(
           fit: StackFit.expand,
           children: [
-            if (finalPhoto != null && finalPhoto.isNotEmpty && finalPhoto.startsWith('http'))
+            if (finalPhoto != null &&
+                finalPhoto.isNotEmpty &&
+                finalPhoto.startsWith('http'))
               Image.network(
                 finalPhoto,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(decoration: const BoxDecoration(gradient: LunaraTheme.deepPurpleGradient)),
+                errorBuilder: (context, error, stackTrace) => Container(
+                  decoration: const BoxDecoration(
+                    gradient: LunaraTheme.deepPurpleGradient,
+                  ),
+                ),
               )
-            else if (finalPhoto != null && finalPhoto.isNotEmpty && finalPhoto.startsWith('assets'))
-              Image.asset(
-                finalPhoto,
-                fit: BoxFit.cover,
-              )
+            else if (finalPhoto != null &&
+                finalPhoto.isNotEmpty &&
+                finalPhoto.startsWith('assets'))
+              Image.asset(finalPhoto, fit: BoxFit.cover)
             else
-              Container(decoration: const BoxDecoration(gradient: LunaraTheme.deepPurpleGradient)),
-            
+              Container(
+                decoration: const BoxDecoration(
+                  gradient: LunaraTheme.deepPurpleGradient,
+                ),
+              ),
+
             Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -317,7 +383,7 @@ class PostDetailScreen extends StatelessWidget {
                 ),
               ),
             ),
-            
+
             Positioned(
               bottom: 30,
               left: 24,
@@ -325,25 +391,61 @@ class PostDetailScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    '$firstName $lastName'.toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 32,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1,
-                      fontFamily: 'AllroundGothic',
-                    ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          '$firstName $lastName'.toUpperCase(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 32,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1,
+                            fontFamily: 'AllroundGothic',
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (age != null) ...[
+                        const SizedBox(width: 8),
+                        Text(
+                          ', $age',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w700,
+                            shadows: [
+                              Shadow(color: Colors.black45, blurRadius: 4),
+                            ],
+                          ),
+                        ),
+                      ],
+                      if (isVerified) ...[
+                        const SizedBox(width: 8),
+                        const Icon(
+                          Icons.verified_rounded,
+                          color: Color(0xFF2196F3), // Blue tick
+                          size: 26,
+                        ),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 8),
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.3),
+                          ),
                         ),
                         child: Text(
                           time,

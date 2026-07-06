@@ -13,11 +13,49 @@ import PartyPlan, { PartyPlanStatus, PartyPlanVisibility } from '../models/Party
 import PartyPlanRequest, { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
 import UserPhoto from '../models/UserPhoto';
 import { logger } from '../config/logger';
+import Conversation from '../models/Conversation';
+import ChatSubscription, { ChatSubscriptionStatus, ChatSubscriptionType } from '../models/ChatSubscription';
+import { getChatSettings } from './chatSubscriptionController';
+
+async function autoOpenChat(hostId: string, joinerId: string) {
+    try {
+        let conv = await Conversation.findOne({
+            where: {
+                [Op.or]: [
+                    { participantOne: hostId, participantTwo: joinerId },
+                    { participantOne: joinerId, participantTwo: hostId }
+                ]
+            }
+        });
+        if (!conv) {
+            conv = await Conversation.create({
+                participantOne: hostId,
+                participantTwo: joinerId
+            });
+        }
+
+        const freeDays = getChatSettings().freeDays;
+        const validUntil = new Date();
+        validUntil.setDate(validUntil.getDate() + freeDays);
+
+        await ChatSubscription.create({
+            conversationId: conv.id,
+            paidById: hostId, // system granted
+            amount: 0,
+            daysGranted: freeDays,
+            validUntil,
+            status: ChatSubscriptionStatus.ACTIVE,
+            subscriptionType: ChatSubscriptionType.FREE,
+        });
+    } catch (err: any) {
+        logger.error('autoOpenChat error:', err);
+    }
+}
 
 // Default packages (same as bookingController, auto-seeded per venue)
 const DEFAULT_PACKAGES = [
-    { name: TablePackageName.SILVER,   label: 'Silver',   description: 'Up to 5 People • 1 Bottle',    price: 500,  maxGuests: 5,  bottlesIncluded: 1 },
-    { name: TablePackageName.GOLD,     label: 'Gold',     description: 'Up to 8 People • 2 Bottles',   price: 900,  maxGuests: 8,  bottlesIncluded: 2 },
+    { name: TablePackageName.SILVER, label: 'Silver', description: 'Up to 5 People • 1 Bottle', price: 500, maxGuests: 5, bottlesIncluded: 1 },
+    { name: TablePackageName.GOLD, label: 'Gold', description: 'Up to 8 People • 2 Bottles', price: 900, maxGuests: 8, bottlesIncluded: 2 },
     { name: TablePackageName.PLATINUM, label: 'Platinum', description: 'VIP Table • Unlimited Mixers', price: 1500, maxGuests: 20, bottlesIncluded: 0 },
 ];
 
@@ -75,12 +113,12 @@ export const postPlan = async (req: Request, res: Response) => {
         const plan = await Plan.create({
             userId,
             venueId,
-            planDate:       new Date(planDate),
+            planDate: new Date(planDate),
             startTime,
-            tablePackage:   packageName,
+            tablePackage: packageName,
             paymentOption,
             totalAmount,
-            maxJoiners:     pkg.maxGuests - 1, // host occupies 1 slot
+            maxJoiners: pkg.maxGuests - 1, // host occupies 1 slot
             description,
             hostPaymentStatus,
             hostTransactionId,
@@ -92,15 +130,15 @@ export const postPlan = async (req: Request, res: Response) => {
             success: true,
             message: 'Plan posted to Live Feed!',
             data: {
-                planId:        plan.id,
+                planId: plan.id,
                 venue,
                 planDate,
                 startTime,
-                tablePackage:  packageName,
+                tablePackage: packageName,
                 paymentOption,
                 totalAmount,
-                maxJoiners:    plan.maxJoiners,
-                status:        plan.status,
+                maxJoiners: plan.maxJoiners,
+                status: plan.status,
                 hostPaymentStatus,
             },
         });
@@ -114,7 +152,7 @@ export const postPlan = async (req: Request, res: Response) => {
 export const getLiveFeed = async (req: Request, res: Response) => {
     try {
         const { viewerId, venueId, date } = req.query;
-        
+
         let myRequests: any[] = [];
         let incomingRequests: any[] = [];
 
@@ -163,7 +201,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
         });
 
         // Query active Party Plans (public, plus user's own private plans)
-        const partyPlansWhere: any = { 
+        const partyPlansWhere: any = {
             status: PartyPlanStatus.ACTIVE,
         };
         if (viewerId) {
@@ -226,27 +264,27 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 : Math.floor(Math.random() * 46) + 50;
 
             return {
-                planId:         p.id,
-                type:           'table_plan',
+                planId: p.id,
+                type: 'table_plan',
                 host: {
-                    id:         host?.id,
-                    name:       host ? `${host.firstName} ${host.lastName?.charAt(0) ?? ''}.` : 'Unknown',
-                    age:        host?.dateOfBirth ? Math.floor((Date.now() - new Date(host.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null,
+                    id: host?.id,
+                    name: host ? `${host.firstName} ${host.lastName?.charAt(0) ?? ''}.` : 'Unknown',
+                    age: host?.dateOfBirth ? Math.floor((Date.now() - new Date(host.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null,
                     occupation: host?.profile?.occupation,
-                    bio:        host?.profile?.bio,
+                    bio: host?.profile?.bio,
                     profileImageUrl: host?.profileImageUrl ?? (host?.photos?.[0]?.filePath ? '/' + host.photos[0].filePath.replace(/\\/g, '/') : null),
                 },
-                venue:          (p as any).venue,
-                planDate:       p.planDate,
-                startTime:      p.startTime,
-                tablePackage:   p.tablePackage,
-                paymentOption:  p.paymentOption,
-                totalAmount:    Number(p.totalAmount),
+                venue: (p as any).venue,
+                planDate: p.planDate,
+                startTime: p.startTime,
+                tablePackage: p.tablePackage,
+                paymentOption: p.paymentOption,
+                totalAmount: Number(p.totalAmount),
                 currentJoiners: p.currentJoiners,
-                maxJoiners:     p.maxJoiners,
-                spotsLeft:      p.maxJoiners - p.currentJoiners,
+                maxJoiners: p.maxJoiners,
+                spotsLeft: p.maxJoiners - p.currentJoiners,
                 matchScore,
-                postedAt:       p.createdAt,
+                postedAt: p.createdAt,
             };
         });
 
@@ -262,28 +300,28 @@ export const getLiveFeed = async (req: Request, res: Response) => {
             const planTimeStr = planDateTime.toTimeString().substring(0, 5); // "hh:mm"
 
             return {
-                planId:         p.id,
-                type:           'party_plan',
+                planId: p.id,
+                type: 'party_plan',
                 host: {
-                    id:         creator?.id,
-                    name:       creator ? `${creator.firstName} ${creator.lastName?.charAt(0) ?? ''}.` : 'Unknown',
-                    age:        creator?.dateOfBirth ? Math.floor((Date.now() - new Date(creator.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null,
+                    id: creator?.id,
+                    name: creator ? `${creator.firstName} ${creator.lastName?.charAt(0) ?? ''}.` : 'Unknown',
+                    age: creator?.dateOfBirth ? Math.floor((Date.now() - new Date(creator.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null,
                     occupation: creator?.profile?.occupation,
-                    bio:        creator?.profile?.bio,
+                    bio: creator?.profile?.bio,
                     profileImageUrl: creator?.profileImageUrl ?? (creator?.photos?.[0]?.filePath ? '/' + creator.photos[0].filePath.replace(/\\/g, '/') : null),
                 },
-                venue:          (p as any).venue,
-                planDate:       p.planDateTime,
-                startTime:      planTimeStr,
-                description:    p.message,
-                visibility:     p.visibility,
-                status:         p.status,
-                paymentStatus:  p.paymentStatus,
+                venue: (p as any).venue,
+                planDate: p.planDateTime,
+                startTime: planTimeStr,
+                description: p.message,
+                visibility: p.visibility,
+                status: p.status,
+                paymentStatus: p.paymentStatus,
                 currentJoiners: 0,
-                maxJoiners:     1,
-                spotsLeft:      1,
+                maxJoiners: 1,
+                spotsLeft: 1,
                 matchScore,
-                postedAt:       p.createdAt,
+                postedAt: p.createdAt,
             };
         });
 
@@ -291,34 +329,34 @@ export const getLiveFeed = async (req: Request, res: Response) => {
         const combinedFeed = [...tableFeed, ...partyFeed].sort((a, b) => {
             return new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime();
         });
-        
+
         if (viewerId) {
             // Fetch my outgoing requests for Table Plans
             const myTableReqs = await PlanJoinRequest.findAll({
                 where: { requesterId: viewerId as string, status: { [Op.ne]: JoinRequestStatus.CANCELLED } },
                 include: [
-                    { 
+                    {
                         model: Plan, as: 'plan',
                         include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }]
                     }
                 ]
             });
-            
+
             // Fetch my outgoing requests for Party Plans
             const myPartyReqs = await PartyPlanRequest.findAll({
                 where: { requesterId: viewerId as string, status: { [Op.ne]: PartyPlanRequestStatus.CANCELLED } },
                 include: [
-                    { 
+                    {
                         model: PartyPlan, as: 'plan',
                         include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }]
                     }
                 ]
             });
-            
+
             // Fetch my Large Party Requests
             const myLargePartyBookings = await Booking.findAll({
-                where: { 
-                    userId: viewerId as string, 
+                where: {
+                    userId: viewerId as string,
                     isLargePartyRequest: true,
                 },
                 include: [
@@ -357,9 +395,9 @@ export const getLiveFeed = async (req: Request, res: Response) => {
             const myTablePlans = await Plan.findAll({ where: { userId: viewerId as string }, attributes: ['id', 'planDate', 'startTime'] });
             if (myTablePlans.length > 0) {
                 const incomingTableReqs = await PlanJoinRequest.findAll({
-                    where: { 
+                    where: {
                         planId: { [Op.in]: myTablePlans.map(p => p.id) },
-                        status: JoinRequestStatus.PENDING 
+                        status: JoinRequestStatus.PENDING
                     },
                     include: [{
                         model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'],
@@ -387,9 +425,9 @@ export const getLiveFeed = async (req: Request, res: Response) => {
             const myPartyPlans = await PartyPlan.findAll({ where: { userId: viewerId as string }, attributes: ['id', 'planDateTime'] });
             if (myPartyPlans.length > 0) {
                 const incomingPartyReqs = await PartyPlanRequest.findAll({
-                    where: { 
+                    where: {
                         planId: { [Op.in]: myPartyPlans.map(p => p.id) },
-                        status: PartyPlanRequestStatus.PENDING 
+                        status: PartyPlanRequestStatus.PENDING
                     },
                     include: [{
                         model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'],
@@ -412,13 +450,13 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                     };
                 }));
             }
-            
+
             incomingRequests.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         }
 
-        return res.json({ 
-            success: true, 
-            count: combinedFeed.length, 
+        return res.json({
+            success: true,
+            count: combinedFeed.length,
             data: combinedFeed,
             myRequests,
             incomingRequests
@@ -460,33 +498,33 @@ export const getPlanDetail = async (req: Request, res: Response) => {
 
         const host = (plan as any).host;
         const matchScore = viewerId ? calcMatchScore(viewerId as string, plan.userId) : 75;
-        const spotsLeft  = plan.maxJoiners - plan.currentJoiners;
+        const spotsLeft = plan.maxJoiners - plan.currentJoiners;
 
         return res.json({
             success: true,
             data: {
-                planId:         plan.id,
-                status:         plan.status,
+                planId: plan.id,
+                status: plan.status,
                 matchScore,
                 spotsLeft,
                 host: {
-                    id:         host?.id,
-                    name:       host ? `${host.firstName} ${host.lastName?.charAt(0) ?? ''}.` : 'Unknown',
-                    age:        host?.dateOfBirth ? Math.floor((Date.now() - new Date(host.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null,
-                    gender:     host?.profile?.gender,
+                    id: host?.id,
+                    name: host ? `${host.firstName} ${host.lastName?.charAt(0) ?? ''}.` : 'Unknown',
+                    age: host?.dateOfBirth ? Math.floor((Date.now() - new Date(host.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null,
+                    gender: host?.profile?.gender,
                     occupation: host?.profile?.occupation,
-                    bio:        host?.profile?.bio,
-                    education:  host?.profile?.education,
-                    city:       host?.profile?.city,
+                    bio: host?.profile?.bio,
+                    education: host?.profile?.education,
+                    city: host?.profile?.city,
                 },
-                venue:          (plan as any).venue,
-                planDate:       plan.planDate,
-                startTime:      plan.startTime,
-                tablePackage:   plan.tablePackage,
-                paymentOption:  plan.paymentOption,
-                totalAmount:    Number(plan.totalAmount),
-                joinRequests:   (plan as any).joinRequests ?? [],
-                description:    plan.description,
+                venue: (plan as any).venue,
+                planDate: plan.planDate,
+                startTime: plan.startTime,
+                tablePackage: plan.tablePackage,
+                paymentOption: plan.paymentOption,
+                totalAmount: Number(plan.totalAmount),
+                joinRequests: (plan as any).joinRequests ?? [],
+                description: plan.description,
             },
         });
     } catch (err: any) {
@@ -524,21 +562,21 @@ export const joinPlan = async (req: Request, res: Response) => {
         }
 
         // Calculate share: totalAmount / (1 host + currentJoiners + 1 new joiner)
-        const participants  = 1 + plan.currentJoiners + 1;
-        const shareAmount   = Math.round((Number(plan.totalAmount) / participants) * 100) / 100;
+        const participants = 1 + plan.currentJoiners + 1;
+        const shareAmount = Math.round((Number(plan.totalAmount) / participants) * 100) / 100;
 
         // Create join request + simulate payment immediately (dummy)
         const ts = Date.now().toString(36).toUpperCase();
         const transactionId = `JOIN${ts}${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
         const joinRequest = await PlanJoinRequest.create({
-            planId:        id,
+            planId: id,
             requesterId,
-            status:        JoinRequestStatus.ACCEPTED, // Auto-accept for dummy flow
+            status: JoinRequestStatus.ACCEPTED, // Auto-accept for dummy flow
             paymentStatus: JoinPaymentStatus.PAID,
             shareAmount,
             transactionId,
-            paidAt:        new Date(),
+            paidAt: new Date(),
             message,
         });
 
@@ -548,6 +586,9 @@ export const joinPlan = async (req: Request, res: Response) => {
             currentJoiners: newCount,
             status: newCount >= plan.maxJoiners ? PlanStatus.FULL : PlanStatus.ACTIVE,
         });
+
+        // Open chat for the joiner and the host
+        await autoOpenChat(plan.userId, requesterId);
 
         // Build split summary for payment screen
         const allRequests = await PlanJoinRequest.findAll({
@@ -563,14 +604,14 @@ export const joinPlan = async (req: Request, res: Response) => {
             success: true,
             message: 'Join request sent and payment simulated. Tap Secure Reservation to get your ticket.',
             data: {
-                joinRequestId:  joinRequest.id,
-                planId:         id,
+                joinRequestId: joinRequest.id,
+                planId: id,
                 shareAmount,
                 transactionId,
-                paymentStatus:  JoinPaymentStatus.PAID,
+                paymentStatus: JoinPaymentStatus.PAID,
                 // Split screen data
                 splitSummary: {
-                    totalAmount:    Number(plan.totalAmount),
+                    totalAmount: Number(plan.totalAmount),
                     totalCollected: totalCollected + hostShare,
                     participants,
                     paidParticipants: allRequests.filter(r => r.paymentStatus === JoinPaymentStatus.PAID).length + 1, // +1 host
@@ -605,18 +646,18 @@ export const getSplitStatus = async (req: Request, res: Response) => {
         const joinRequests = (plan as any).joinRequests ?? [];
         const participants = 1 + joinRequests.length; // host + joiners
         const sharePerPerson = Math.round((Number(plan.totalAmount) / participants) * 100) / 100;
-        const paidJoiners   = joinRequests.filter((r: any) => r.paymentStatus === JoinPaymentStatus.PAID).length;
-        const hostPaid      = plan.hostPaymentStatus === 'paid';
-        const totalPaid     = (hostPaid ? 1 : 0) + paidJoiners;
+        const paidJoiners = joinRequests.filter((r: any) => r.paymentStatus === JoinPaymentStatus.PAID).length;
+        const hostPaid = plan.hostPaymentStatus === 'paid';
+        const totalPaid = (hostPaid ? 1 : 0) + paidJoiners;
         const totalCollected = totalPaid * sharePerPerson;
 
         const memberList = [
             { role: 'host', paymentStatus: plan.hostPaymentStatus, shareAmount: sharePerPerson },
             ...joinRequests.map((r: any) => ({
-                role:          'joiner',
+                role: 'joiner',
                 joinRequestId: r.id,
-                name:          r.requester ? `${r.requester.firstName} ${r.requester.lastName?.charAt(0)}.` : 'Guest',
-                shareAmount:   Number(r.shareAmount),
+                name: r.requester ? `${r.requester.firstName} ${r.requester.lastName?.charAt(0)}.` : 'Guest',
+                shareAmount: Number(r.shareAmount),
                 paymentStatus: r.paymentStatus,
             })),
         ];
@@ -624,16 +665,16 @@ export const getSplitStatus = async (req: Request, res: Response) => {
         return res.json({
             success: true,
             data: {
-                planId:        plan.id,
-                venue:         (plan as any).venue,
-                planDate:      plan.planDate,
-                startTime:     plan.startTime,
-                totalAmount:   Number(plan.totalAmount),
+                planId: plan.id,
+                venue: (plan as any).venue,
+                planDate: plan.planDate,
+                startTime: plan.startTime,
+                totalAmount: Number(plan.totalAmount),
                 totalCollected,
                 participants,
-                paidCount:     totalPaid,
-                pendingCount:  participants - totalPaid,
-                members:       memberList,
+                paidCount: totalPaid,
+                pendingCount: participants - totalPaid,
+                members: memberList,
             },
         });
     } catch (err: any) {
@@ -671,32 +712,32 @@ export const securePlanReservation = async (req: Request, res: Response) => {
         const ticketCode = uuidv4();
 
         const booking = await Booking.create({
-            userId:         plan.userId, // host owns the booking
-            venueId:        plan.venueId,
-            bookingDate:    plan.planDate,
-            startTime:      plan.startTime,
+            userId: plan.userId, // host owns the booking
+            venueId: plan.venueId,
+            bookingDate: plan.planDate,
+            startTime: plan.startTime,
             numberOfGuests: plan.currentJoiners + 1,
-            totalAmount:    plan.totalAmount,
-            depositAmount:  0,
+            totalAmount: plan.totalAmount,
+            depositAmount: 0,
             commissionAmount,
-            goingMode:      GoingMode.PLAN,
-            tablePackage:   plan.tablePackage,
-            paymentMode:    plan.paymentOption === PlanPaymentOption.FULL
-                                ? BookingPaymentMode.PAY_NOW
-                                : BookingPaymentMode.SPLIT_BILL,
+            goingMode: GoingMode.PLAN,
+            tablePackage: plan.tablePackage,
+            paymentMode: plan.paymentOption === PlanPaymentOption.FULL
+                ? BookingPaymentMode.PAY_NOW
+                : BookingPaymentMode.SPLIT_BILL,
             ticketCode,
-            status:         BookingStatus.CONFIRMED,
-            paymentStatus:  PaymentStatus.PAID,
+            status: BookingStatus.CONFIRMED,
+            paymentStatus: PaymentStatus.PAID,
         } as any);
 
         // Simulate a consolidated payment record
         await Payment.create({
-            bookingId:       booking.id,
-            userId:          userId || plan.userId,
-            amount:          plan.totalAmount,
-            paymentMethod:   PaymentMethod.CARD,
-            paymentGateway:  'DUMMY_PLAN',
-            status:          TxnStatus.SUCCESSFUL,
+            bookingId: booking.id,
+            userId: userId || plan.userId,
+            amount: plan.totalAmount,
+            paymentMethod: PaymentMethod.CARD,
+            paymentGateway: 'DUMMY_PLAN',
+            status: TxnStatus.SUCCESSFUL,
             gatewayResponse: { mode: 'test', planId: id, simulatedAt: new Date().toISOString() },
         } as any);
 
@@ -811,18 +852,18 @@ export const getMyJoins = async (req: Request, res: Response) => {
 // ─── Helper ───────────────────────────────────────────────────────────────────
 function buildPlanTicket(booking: Booking, venue: any) {
     return {
-        bookingId:      booking.id,
-        bookingNumber:  booking.bookingNumber,
-        ticketCode:     (booking as any).ticketCode,
+        bookingId: booking.id,
+        bookingNumber: booking.bookingNumber,
+        ticketCode: (booking as any).ticketCode,
         venue,
-        bookingDate:    booking.bookingDate,
-        startTime:      booking.startTime,
-        tablePackage:   booking.tablePackage,
+        bookingDate: booking.bookingDate,
+        startTime: booking.startTime,
+        tablePackage: booking.tablePackage,
         numberOfGuests: booking.numberOfGuests,
-        status:         booking.status,
-        paymentStatus:  booking.paymentStatus,
-        goingMode:      booking.goingMode,
-        addedToWallet:  (booking as any).addedToWallet ?? false,
+        status: booking.status,
+        paymentStatus: booking.paymentStatus,
+        goingMode: booking.goingMode,
+        addedToWallet: (booking as any).addedToWallet ?? false,
     };
 }
 

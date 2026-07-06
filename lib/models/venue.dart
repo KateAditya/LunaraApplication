@@ -1,3 +1,5 @@
+import '../services/api_service.dart';
+
 class VenueAmenities {
   final bool hasAC;
   final bool hasDJ;
@@ -100,6 +102,7 @@ class Venue {
   final String? tagline;
   final double? coverChargeMale;
   final double? coverChargeFemale;
+  final int? capacity;
 
   Venue({
     required this.id,
@@ -127,6 +130,7 @@ class Venue {
     this.tagline,
     this.coverChargeMale,
     this.coverChargeFemale,
+    this.capacity,
   });
 
   factory Venue.fromJson(Map<String, dynamic> json) {
@@ -139,9 +143,9 @@ class Venue {
       }
       final cleanPath = pathStr.replaceAll('\\', '/');
       if (cleanPath.startsWith('/')) {
-        return 'http://103.224.247.35:9076$cleanPath';
+        return '${ApiService.baseUrl}$cleanPath';
       }
-      return 'http://103.224.247.35:9076/$cleanPath';
+      return '${ApiService.baseUrl}/$cleanPath';
     }
 
     String? img;
@@ -152,16 +156,15 @@ class Venue {
       if (url.isEmpty) return;
       final exists = imageList.any((item) => item['url'] == url);
       if (!exists) {
-        imageList.add({
-          'url': url,
-          'type': type,
-        });
+        imageList.add({'url': url, 'type': type});
       }
     }
 
     // Parse new API coverImage
     if (json['coverImage'] != null && json['coverImage'] is Map) {
-      final coverUrl = normalizeUrl(json['coverImage']['url'] ?? json['coverImage']['filePath']);
+      final coverUrl = normalizeUrl(
+        json['coverImage']['url'] ?? json['coverImage']['filePath'],
+      );
       if (coverUrl.isNotEmpty) {
         img = coverUrl;
         addImage(coverUrl, 'interior');
@@ -257,16 +260,29 @@ class Venue {
       longitude: double.tryParse(json['longitude']?.toString() ?? ''),
       images: imageList.isNotEmpty ? imageList : null,
       videoUrl: video,
-      amenities: json['amenities'] != null ? VenueAmenities.fromJson(json['amenities']) : null,
-      tableBookingCharges: double.tryParse(json['tableBookingCharges']?.toString() ?? ''),
-      discountPercentage: double.tryParse(json['discountPercentage']?.toString() ?? ''),
-      description:json['description'],
+      amenities: json['amenities'] != null
+          ? VenueAmenities.fromJson(json['amenities'])
+          : null,
+      tableBookingCharges: double.tryParse(
+        json['tableBookingCharges']?.toString() ?? '',
+      ),
+      discountPercentage: double.tryParse(
+        json['discountPercentage']?.toString() ?? '',
+      ),
+      description: json['description'],
       openingTime: json['openingTime']?.toString(),
       closingTime: json['closingTime']?.toString(),
       daysOpen: json['daysOpen'] is List ? json['daysOpen'] as List : null,
       tagline: json['tagline']?.toString(),
-      coverChargeMale: double.tryParse(json['coverChargeMale']?.toString() ?? ''),
-      coverChargeFemale: double.tryParse(json['coverChargeFemale']?.toString() ?? ''),    
+      coverChargeMale: double.tryParse(
+        json['coverChargeMale']?.toString() ?? '',
+      ),
+      coverChargeFemale: double.tryParse(
+        json['coverChargeFemale']?.toString() ?? '',
+      ),
+      capacity: json['capacity'] != null
+          ? int.tryParse(json['capacity'].toString())
+          : null,
     );
   }
 
@@ -291,13 +307,14 @@ class Venue {
       'amenities': amenities?.toMap(),
       'tableBookingCharges': tableBookingCharges,
       'discountPercentage': discountPercentage,
-      'description':description,
+      'description': description,
       'openingTime': openingTime,
       'closingTime': closingTime,
       'daysOpen': daysOpen,
       'tagline': tagline,
       'coverChargeMale': coverChargeMale,
-      'coverChargeFemale': coverChargeFemale, 
+      'coverChargeFemale': coverChargeFemale,
+      'capacity': capacity,
     };
   }
 }

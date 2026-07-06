@@ -16,10 +16,13 @@ class PaymentConfirmationScreen extends StatefulWidget {
   final String? totalPrice;
   final bool showSplitBill;
   final Future<void> Function()? onPaymentSuccess;
-  final Future<void> Function(String paymentId, String signature)? onRazorpayPaymentSuccess;
+  final Future<void> Function(String paymentId, String signature)?
+  onRazorpayPaymentSuccess;
   final String? razorpayOrderId;
   final int? razorpayAmount;
   final String? razorpayKeyId;
+  final String? mobileNumber;
+  final String? optionalMobileNumber;
 
   const PaymentConfirmationScreen({
     super.key,
@@ -36,10 +39,13 @@ class PaymentConfirmationScreen extends StatefulWidget {
     this.razorpayOrderId,
     this.razorpayAmount,
     this.razorpayKeyId,
+    this.mobileNumber,
+    this.optionalMobileNumber,
   });
 
   @override
-  State<PaymentConfirmationScreen> createState() => _PaymentConfirmationScreenState();
+  State<PaymentConfirmationScreen> createState() =>
+      _PaymentConfirmationScreenState();
 }
 
 class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
@@ -62,22 +68,23 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
 
   void _handlePaymentSuccess(PaymentSuccessResponse response) async {
     Navigator.pop(context); // Close dialog if open
-    
+
     if (widget.onRazorpayPaymentSuccess != null) {
-      await widget.onRazorpayPaymentSuccess!(response.paymentId ?? 'rzp_test_T1rwVokR7tFger', response.signature ?? 'mock_signature');
+      await widget.onRazorpayPaymentSuccess!(
+        response.paymentId ?? 'rzp_test_T1rwVokR7tFger',
+        response.signature ?? 'mock_signature',
+      );
     } else if (widget.onPaymentSuccess != null) {
       await widget.onPaymentSuccess!();
     }
-    
+
     if (!mounted) return;
     if (widget.package == 'Party Plan Safety Deposit') {
       Navigator.pop(context);
     } else {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(
-          builder: (context) => const DigitalTicketScreen(),
-        ),
+        MaterialPageRoute(builder: (context) => const DigitalTicketScreen()),
       );
     }
   }
@@ -92,7 +99,9 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
   void _handleExternalWallet(ExternalWalletResponse response) {
     Navigator.pop(context); // Close dialog if open
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('External Wallet selected: ${response.walletName}')),
+      SnackBar(
+        content: Text('External Wallet selected: ${response.walletName}'),
+      ),
     );
   }
 
@@ -115,7 +124,6 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
                     const SizedBox(height: 32),
                     _buildWarningSection(),
                     const SizedBox(height: 32),
-                    _buildPaymentMethodsSection(),
                   ],
                 ),
               ),
@@ -140,7 +148,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
             child: Center(
               child: Text(
                 'PAYMENT',
-                style: TextStyle( 
+                style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 4,
@@ -168,7 +176,9 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
             offset: const Offset(0, 12),
           ),
         ],
-        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.05)),
+        border: Border.all(
+          color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -218,7 +228,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
                     ),
                     Text(
                       widget.totalPrice!,
-                      style: const TextStyle( 
+                      style: const TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.w900,
                         color: Colors.black,
@@ -280,13 +290,13 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
-        color: isSafetyDeposit 
-            ? LunaraTheme.electricViolet.withValues(alpha: 0.05) 
+        color: isSafetyDeposit
+            ? LunaraTheme.electricViolet.withValues(alpha: 0.05)
             : Colors.amber.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isSafetyDeposit 
-              ? LunaraTheme.electricViolet.withValues(alpha: 0.15) 
+          color: isSafetyDeposit
+              ? LunaraTheme.electricViolet.withValues(alpha: 0.15)
               : Colors.amber.withValues(alpha: 0.15),
         ),
       ),
@@ -294,8 +304,12 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
-            isSafetyDeposit ? Icons.verified_user_outlined : Icons.info_outline_rounded,
-            color: isSafetyDeposit ? LunaraTheme.electricViolet : Colors.amber[700],
+            isSafetyDeposit
+                ? Icons.verified_user_outlined
+                : Icons.info_outline_rounded,
+            color: isSafetyDeposit
+                ? LunaraTheme.electricViolet
+                : Colors.amber[700],
             size: 20,
           ),
           const SizedBox(width: 14),
@@ -305,137 +319,15 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
                   ? 'This safety deposit of ₹99 per head is refundable. Both parties must pay within 30 minutes. Refund will execute 3 hours after party time once both check in successfully (geolocation match). 2 no-show violations will restrict your profile for life.'
                   : 'Booking charges are non-refundable. Please review all details before confirming payment.',
               style: TextStyle(
-                color: isSafetyDeposit ? LunaraTheme.electricViolet : Colors.amber[900],
+                color: isSafetyDeposit
+                    ? LunaraTheme.electricViolet
+                    : Colors.amber[900],
                 fontSize: 12,
                 height: 1.4,
                 fontWeight: FontWeight.w500,
               ),
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPaymentMethodsSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'SELECT PAYMENT METHOD',
-          style: TextStyle( 
-            color: Colors.black,
-            fontSize: 13,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1.5,
-          ),
-        ),
-        const SizedBox(height: 20),
-        _paymentCard(Icons.apple, 'Apple Pay', 'Default Method', true),
-        const SizedBox(height: 12),
-        _paymentCard(Icons.credit_card_rounded, 'Mastercard', '•••• 8899', false),
-        const SizedBox(height: 20),
-        GestureDetector(
-          onTap: () {},
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.add,
-                  color: LunaraTheme.electricViolet,
-                  size: 16,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Text(
-                'Add New Payment Method',
-                style: TextStyle(
-                  color: LunaraTheme.electricViolet,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _paymentCard(
-    IconData icon,
-    String title,
-    String subtitle,
-    bool isSelected,
-  ) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: isSelected ? LunaraTheme.cardGradient : null,
-        color: isSelected ? null : Colors.grey[50],
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: isSelected
-            ? [
-                BoxShadow(
-                  color: LunaraTheme.electricViolet.withValues(alpha: 0.08),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8),
-                )
-              ]
-            : [],
-        border: Border.all(
-          color: isSelected ? LunaraTheme.electricViolet : Colors.grey[100]!,
-          width: 1.5,
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: isSelected ? LunaraTheme.electricViolet.withValues(alpha: 0.1) : Colors.white,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              icon,
-              color: isSelected ? LunaraTheme.electricViolet : Colors.grey[400],
-              size: 24,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    color: Colors.black,
-                    fontWeight: isSelected ? FontWeight.w900 : FontWeight.w700,
-                    fontSize: 15,
-                  ),
-                ),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    color: Colors.grey[500],
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (isSelected)
-            const Icon(
-              Icons.check_circle_rounded,
-              color: LunaraTheme.electricViolet,
-              size: 24,
-            ),
         ],
       ),
     );
@@ -477,7 +369,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
                 ),
                 child: const Text(
                   'SPLIT BILL',
-                  style: TextStyle( 
+                  style: TextStyle(
                     fontWeight: FontWeight.w900,
                     fontSize: 13,
                     letterSpacing: 1,
@@ -520,7 +412,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
               SizedBox(height: 24),
               Text(
                 'PROCESSING',
-                style: TextStyle( 
+                style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 3,
@@ -548,14 +440,11 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
       'amount': widget.razorpayAmount ?? amountInPaise,
       'name': 'Lunara',
       'description': widget.package,
-      'prefill': {
-        'contact': '8888888888',
-        'email': 'test@razorpay.com'
-      }
+      'prefill': {'contact': '8888888888', 'email': 'test@razorpay.com'},
     };
-    
-    if (widget.razorpayOrderId != null && 
-        widget.razorpayOrderId!.isNotEmpty && 
+
+    if (widget.razorpayOrderId != null &&
+        widget.razorpayOrderId!.isNotEmpty &&
         !widget.razorpayOrderId!.startsWith('mock_') &&
         !widget.razorpayOrderId!.startsWith('order_mock_') &&
         !widget.razorpayOrderId!.contains('mock')) {
@@ -567,20 +456,25 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
       _razorpay.open(options);
       razorpayOpened = true;
     } catch (e) {
-      debugPrint('Error opening Razorpay, falling back to simulated payment: $e');
+      debugPrint(
+        'Error opening Razorpay, falling back to simulated payment: $e',
+      );
     }
 
     if (!razorpayOpened) {
       // Simulated payment for fallback
       Future.delayed(const Duration(seconds: 2), () async {
         if (!context.mounted) return;
-        
+
         if (widget.onRazorpayPaymentSuccess != null) {
-          await widget.onRazorpayPaymentSuccess!('mock_payment', 'mock_signature');
+          await widget.onRazorpayPaymentSuccess!(
+            'mock_payment',
+            'mock_signature',
+          );
         } else if (widget.onPaymentSuccess != null) {
           await widget.onPaymentSuccess!();
         }
-        
+
         if (!context.mounted) return;
         Navigator.pop(context); // Close dialog
         if (widget.package == 'Party Plan Safety Deposit') {

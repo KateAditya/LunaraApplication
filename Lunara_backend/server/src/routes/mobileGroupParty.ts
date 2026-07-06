@@ -22,6 +22,10 @@ router.post(
         body('venueId').notEmpty().isUUID().withMessage('venueId must be a valid UUID'),
         body('numberOfFriends').isInt({ min: 1, max: 20 }).withMessage('numberOfFriends must be between 1 and 20'),
         body('partyDate').isISO8601().withMessage('partyDate must be a valid date'),
+<<<<<<< HEAD
+=======
+        body('mobileNumber').notEmpty().withMessage('mobileNumber is required'),
+>>>>>>> origin/main
         validate,
     ],
     createGroupParty

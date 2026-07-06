@@ -1,0 +1,25 @@
+Account ID
+746f3c51037cbfbf2a3bc2998ce90938
+
+
+Your API Token
+cfat_Swf7Y90ixlTK4Z1amG8LC45aC9DRZN4eMlsy0Zgo85e62463
+
+
+
+Access Key ID
+e0a5193b8d7f6650f87c71c39ef0bb67
+
+Secret Access Key
+25b5168b0ed1841c26a15139eb05299f0f75ac5a31747ea0a794878b83b493f8
+
+S3 API endpoint
+https://746f3c51037cbfbf2a3bc2998ce90938.r2.cloudflarestorage.com
+
+Example Usage
+curl -X GET "https://api.cloudflare.com/client/v4/accounts/746f3c51037cbfbf2a3bc2998ce90938/tokens/verify" \
+     -H "Authorization: Bearer cfat_Swf7Y90ixlTK4Z1amG8LC45aC9DRZN4eMlsy0Zgo85e62463"
+
+
+Public Development URL
+https://pub-16c75d8a04cc458a84a4ed73d584d21c.r2.dev

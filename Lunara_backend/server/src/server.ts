@@ -47,8 +47,8 @@ app.use(morgan('combined', { stream: { write: (message) => logger.info(message.t
 // Rate limiting
 const limiter = rateLimit({
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'),
-    max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100'),
-    message: 'Too many requests from this IP, please try again later.',
+    max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '10000'),
+    message: { success: false, message: 'Too many requests from this IP, please try again later.' },
 });
 app.use('/api/', limiter);
 
@@ -56,11 +56,16 @@ app.get('/health', (_req, res) => {
     res.status(200).json({
         status: 'OK',
         timestamp: new Date().toISOString(),
-});
+    });
 });
 
 // Serve static files from uploads directory
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
+// Fallback for missing images in /uploads to prevent 404 errors in the mobile app during dev
+app.use('/uploads', (_req, res) => {
+    res.redirect('https://placehold.co/600x400/2a1b38/e0a0ff.png?text=Image+Not+Found');
+});
 
 // API Routes
 import authRoutes from './routes/auth';
@@ -83,6 +88,7 @@ import mobileStrangersMeetRoutes from './routes/mobileStrangersMeet';
 import adminStrangersMeetRoutes from './routes/adminStrangersMeet';
 import mobileCityRoutes from './routes/mobileCity';
 import adminBookingsRoutes from './routes/adminBookings';
+import { getAdminChatSettings, updateAdminChatSettings } from './controllers/chatSubscriptionController';
 
 app.get('/api', (_req, res) => {
     res.json({
@@ -90,14 +96,14 @@ app.get('/api', (_req, res) => {
         version: '1.0.0',
         status: 'Running',
         endpoints: {
-            auth:           '/api/auth',
-            mobileAuth:     '/api/mobile/auth',
+            auth: '/api/auth',
+            mobileAuth: '/api/mobile/auth',
             mobileBookings: '/api/mobile/bookings',
-            mobilePlans:    '/api/mobile/plans',
-            mobileChat:     '/api/mobile/chat',
+            mobilePlans: '/api/mobile/plans',
+            mobileChat: '/api/mobile/chat',
             mobileGroupParty: '/api/mobile/group-parties',
-            health:         '/health',
-            dashboard:      '/api/dashboard',
+            health: '/health',
+            dashboard: '/api/dashboard',
         },
     });
 });
@@ -124,6 +130,10 @@ app.use('/api/admin/strangers-meet', adminStrangersMeetRoutes);
 app.use('/api/admin/bookings', adminBookingsRoutes);   // Strangers Meet (Admin)
 app.use('/api/mobile/cities', mobileCityRoutes);                   // Cities (Mobile App)
 
+// Admin — chat subscription settings
+app.get('/api/admin/settings/chat', getAdminChatSettings);
+app.put('/api/admin/settings/chat', updateAdminChatSettings);
+
 // TODO: Import and use other route modules
 // app.use('/api/bookings', bookingRoutes);
 // app.use('/api/payments', paymentRoutes);
@@ -136,11 +146,11 @@ io.on('connection', (socket) => {
         socket.join(`user_${userId}`);
         (socket as any).userId = userId;
         logger.info(`Socket ${socket.id} joined user room user_${userId}`);
-        
+
         try {
             await User.update({ isOnline: true, lastActiveAt: new Date() }, { where: { id: userId } });
             io.emit('user_status_changed', { userId, isOnline: true, lastActiveAt: new Date() });
-            
+
             const convs = await Conversation.findAll({
                 where: {
                     [Op.or]: [{ participantOne: userId }, { participantTwo: userId }]
@@ -150,12 +160,12 @@ io.on('connection', (socket) => {
             if (convIds.length > 0) {
                 await Message.update(
                     { status: MessageStatus.DELIVERED },
-                    { 
-                        where: { 
+                    {
+                        where: {
                             conversationId: { [Op.in]: convIds },
                             senderId: { [Op.ne]: userId },
-                            status: MessageStatus.SENT 
-                        } 
+                            status: MessageStatus.SENT
+                        }
                     }
                 );
                 for (const conv of convs) {

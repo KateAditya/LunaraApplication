@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../widgets/glass_card.dart';
 import '../discovery/split_payment_screen.dart';
+import '../../services/api_service.dart';
 
 class PosterProfileScreen extends StatefulWidget {
   final Map<String, dynamic> poster;
@@ -200,7 +201,7 @@ class _PosterProfileScreenState extends State<PosterProfileScreen>
 
   Widget _buildBottomPanel(BuildContext context) {
     final poster = widget.poster;
-    final matchPct = poster['matchPct'] ?? 78;
+    final matchPct = ApiService.calculateMatchPercentage(poster);
     final name = poster['name'] ?? 'Unknown';
     final profession = poster['profession'] ?? 'Product Designer';
     final education = poster['education'] ?? 'IIT Pune';
@@ -404,7 +405,10 @@ class _PosterProfileScreenState extends State<PosterProfileScreen>
                     icon: const Icon(Icons.bolt, size: 18),
                     label: const Text(
                       'JOIN & PAY',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.transparent,

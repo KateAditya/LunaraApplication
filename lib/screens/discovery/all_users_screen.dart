@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../widgets/lunara_profile_image.dart';
+import '../../models/user.dart';
+import '../profile/profile_screen.dart';
 
 class AllUsersScreen extends StatefulWidget {
   final List<dynamic> users;
@@ -16,6 +18,18 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
   String _searchQuery = '';
   late List<dynamic> _filteredUsers;
 
+  String _selectedGender = 'All';
+  String _selectedAgeRange = 'All Ages';
+
+  final List<String> _genders = ['All', 'Male', 'Female', 'Other'];
+  final List<String> _ageRanges = [
+    'All Ages',
+    '18-24',
+    '25-34',
+    '35-44',
+    '45+',
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -28,20 +42,70 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
     super.dispose();
   }
 
-  void _onSearchChanged(String query) {
+  void _applyFilters() {
     setState(() {
-      _searchQuery = query;
-      if (_searchQuery.isEmpty) {
-        _filteredUsers = widget.users;
-      } else {
-        _filteredUsers = widget.users.where((user) {
-          final String name = (user['firstName'] ?? user['fullName'] ?? user['name'] ?? 'User').toString().toLowerCase();
-          final String userName = (user['userName'] ?? '').toString().toLowerCase();
-          final q = _searchQuery.toLowerCase();
-          return name.contains(q) || userName.contains(q);
-        }).toList();
-      }
+      _filteredUsers = widget.users.where((user) {
+        // Search
+        final String name =
+            (user['firstName'] ?? user['fullName'] ?? user['name'] ?? 'User')
+                .toString()
+                .toLowerCase();
+        final String userName = (user['userName'] ?? '')
+            .toString()
+            .toLowerCase();
+        final q = _searchQuery.toLowerCase();
+        final bool matchesSearch =
+            q.isEmpty || name.contains(q) || userName.contains(q);
+        if (!matchesSearch) return false;
+
+        // Gender filter
+        if (_selectedGender != 'All') {
+          String userGender = '';
+          if (user['profile'] != null && user['profile']['gender'] != null) {
+            userGender = user['profile']['gender'].toString().toLowerCase();
+          } else if (user['gender'] != null) {
+            userGender = user['gender'].toString().toLowerCase();
+          }
+
+          if (_selectedGender == 'Other') {
+            if (userGender == 'male' || userGender == 'female') return false;
+          } else if (userGender != _selectedGender.toLowerCase()) {
+            return false;
+          }
+        }
+
+        // Age filter
+        if (_selectedAgeRange != 'All Ages') {
+          int? age;
+          if (user['age'] != null) {
+            age = int.tryParse(user['age'].toString());
+          }
+          if (age == null && user['dateOfBirth'] != null) {
+            try {
+              final dob = DateTime.parse(user['dateOfBirth'].toString());
+              age = DateTime.now().year - dob.year;
+            } catch (_) {}
+          }
+
+          if (age == null) return false;
+
+          if (_selectedAgeRange == '18-24' && (age < 18 || age > 24))
+            return false;
+          if (_selectedAgeRange == '25-34' && (age < 25 || age > 34))
+            return false;
+          if (_selectedAgeRange == '35-44' && (age < 35 || age > 44))
+            return false;
+          if (_selectedAgeRange == '45+' && age < 45) return false;
+        }
+
+        return true;
+      }).toList();
     });
+  }
+
+  void _onSearchChanged(String query) {
+    _searchQuery = query;
+    _applyFilters();
   }
 
   @override
@@ -71,7 +135,10 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
               child: TextField(
                 controller: _searchController,
                 onChanged: _onSearchChanged,
-                style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.bold,
+                ),
                 decoration: InputDecoration(
                   hintText: 'Search users...',
                   hintStyle: TextStyle(
@@ -88,52 +155,181 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
                             _onSearchChanged('');
                           },
                         )
-                      : const Icon(Icons.search, color: LunaraTheme.electricViolet),
+                      : const Icon(
+                          Icons.search,
+                          color: LunaraTheme.electricViolet,
+                        ),
                 ),
               ),
             ),
           ),
+
+          // Filters UI
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 4),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  child: Row(
+                    children: _genders.map((gender) {
+                      final isSelected = _selectedGender == gender;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: ChoiceChip(
+                          label: Text(gender),
+                          selected: isSelected,
+                          onSelected: (selected) {
+                            if (selected) {
+                              _selectedGender = gender;
+                              _applyFilters();
+                            }
+                          },
+                          selectedColor: LunaraTheme.electricViolet.withValues(
+                            alpha: 0.2,
+                          ),
+                          backgroundColor: Colors.grey[100],
+                          labelStyle: TextStyle(
+                            color: isSelected
+                                ? LunaraTheme.electricViolet
+                                : Colors.black87,
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                            fontSize: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                            side: BorderSide(
+                              color: isSelected
+                                  ? LunaraTheme.electricViolet
+                                  : Colors.transparent,
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  child: Row(
+                    children: _ageRanges.map((ageRange) {
+                      final isSelected = _selectedAgeRange == ageRange;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: ChoiceChip(
+                          label: Text(ageRange),
+                          selected: isSelected,
+                          onSelected: (selected) {
+                            if (selected) {
+                              _selectedAgeRange = ageRange;
+                              _applyFilters();
+                            }
+                          },
+                          selectedColor: LunaraTheme.electricViolet.withValues(
+                            alpha: 0.2,
+                          ),
+                          backgroundColor: Colors.grey[100],
+                          labelStyle: TextStyle(
+                            color: isSelected
+                                ? LunaraTheme.electricViolet
+                                : Colors.black87,
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                            fontSize: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                            side: BorderSide(
+                              color: isSelected
+                                  ? LunaraTheme.electricViolet
+                                  : Colors.transparent,
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+            ),
+          ),
+
           Expanded(
             child: _filteredUsers.isEmpty
                 ? const Center(
                     child: Text(
                       'No users found.',
-                      style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   )
                 : GridView.builder(
                     padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      crossAxisSpacing: 16,
-                      mainAxisSpacing: 24,
-                      childAspectRatio: 0.7,
-                    ),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          crossAxisSpacing: 16,
+                          mainAxisSpacing: 24,
+                          childAspectRatio: 0.7,
+                        ),
                     itemCount: _filteredUsers.length,
                     itemBuilder: (context, index) {
                       final user = _filteredUsers[index];
-                      final String name = (user['firstName'] ?? user['fullName'] ?? user['name'] ?? 'User').toString();
-                      
-                      return Column(
-                        children: [
-                          LunaraProfileImage(
-                            userData: user,
-                            radius: 40,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            name,
-                            style: const TextStyle(
-                              fontSize: 13, 
-                              fontWeight: FontWeight.w600, 
-                              color: Colors.black,
-                              letterSpacing: 0.2,
+                      final String name =
+                          (user['firstName'] ??
+                                  user['fullName'] ??
+                                  user['name'] ??
+                                  'User')
+                              .toString();
+
+                      return GestureDetector(
+                        onTap: () {
+                          try {
+                            final resolvedUser = User.fromJson(user);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    ProfileScreen(user: resolvedUser),
+                              ),
+                            );
+                          } catch (e) {
+                            debugPrint('Error navigating to user profile: $e');
+                          }
+                        },
+                        child: Column(
+                          children: [
+                            LunaraProfileImage(
+                              userData: user,
+                              radius: 40,
+                              isInteractive: false,
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
+                            const SizedBox(height: 12),
+                            Text(
+                              name,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black,
+                                letterSpacing: 0.2,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
                       );
                     },
                   ),

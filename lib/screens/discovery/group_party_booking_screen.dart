@@ -11,7 +11,8 @@ class GroupPartyBookingScreen extends StatefulWidget {
   const GroupPartyBookingScreen({super.key});
 
   @override
-  State<GroupPartyBookingScreen> createState() => _GroupPartyBookingScreenState();
+  State<GroupPartyBookingScreen> createState() =>
+      _GroupPartyBookingScreenState();
 }
 
 class _GroupPartyBookingScreenState extends State<GroupPartyBookingScreen> {
@@ -29,7 +30,9 @@ class _GroupPartyBookingScreenState extends State<GroupPartyBookingScreen> {
       final venues = await ApiService.fetchVenues();
       if (mounted) {
         setState(() {
-          _venues = venues.where((v) => v.status?.toLowerCase() == 'live').toList();
+          _venues = venues
+              .where((v) => v.status?.toLowerCase() == 'live')
+              .toList();
           _isLoading = false;
         });
       }
@@ -53,19 +56,21 @@ class _GroupPartyBookingScreenState extends State<GroupPartyBookingScreen> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        title: const Text('GROUP PARTIES', style: TextStyle( letterSpacing: 2)),
+        title: const Text('GROUP PARTIES', style: TextStyle(letterSpacing: 2)),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () => Navigator.pop(context),
         ),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: LunaraTheme.electricViolet))
+          ? const Center(
+              child: CircularProgressIndicator(
+                color: LunaraTheme.electricViolet,
+              ),
+            )
           : CustomScrollView(
               slivers: [
-                SliverToBoxAdapter(
-                  child: _buildPromotionalBanner(),
-                ),
+                SliverToBoxAdapter(child: _buildPromotionalBanner()),
                 SliverToBoxAdapter(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -74,7 +79,11 @@ class _GroupPartyBookingScreenState extends State<GroupPartyBookingScreen> {
                         padding: EdgeInsets.fromLTRB(24, 24, 24, 16),
                         child: Text(
                           'POPULAR PUBS',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1),
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1,
+                          ),
                         ),
                       ),
                       SizedBox(
@@ -155,11 +164,16 @@ class _GroupPartyBookingScreenState extends State<GroupPartyBookingScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.3),
+                      ),
                     ),
                     child: const Text(
                       'LIMITED OFFER',
@@ -234,24 +248,30 @@ class _GroupPartyBookingScreenState extends State<GroupPartyBookingScreen> {
           gradient: const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Color(0xFFF3EEFF),
-              Color(0xFFF8F4FF),
-              Color(0xFFEEE6FF),
-            ],
+            colors: [Color(0xFFF3EEFF), Color(0xFFF8F4FF), Color(0xFFEEE6FF)],
           ),
           borderRadius: BorderRadius.circular(24),
           border: Border.all(color: const Color(0x1A7F00FF), width: 1.2),
           boxShadow: [
-            BoxShadow(color: const Color(0x0D7F00FF), blurRadius: 24, offset: const Offset(0, 10)),
-            BoxShadow(color: const Color(0x0A7F00FF), blurRadius: 8, offset: const Offset(0, 4)),
+            BoxShadow(
+              color: const Color(0x0D7F00FF),
+              blurRadius: 24,
+              offset: const Offset(0, 10),
+            ),
+            BoxShadow(
+              color: const Color(0x0A7F00FF),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
           ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
               child: Stack(
                 children: [
                   Image.network(
@@ -270,7 +290,9 @@ class _GroupPartyBookingScreenState extends State<GroupPartyBookingScreen> {
                       return Container(
                         height: 160,
                         color: Colors.grey[50],
-                        child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                        child: const Center(
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
                       );
                     },
                   ),
@@ -278,18 +300,28 @@ class _GroupPartyBookingScreenState extends State<GroupPartyBookingScreen> {
                     top: 16,
                     right: 16,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.amber[50],
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.star_rounded, color: Colors.amber, size: 14),
+                          const Icon(
+                            Icons.star_rounded,
+                            color: Colors.amber,
+                            size: 14,
+                          ),
                           const SizedBox(width: 4),
                           Text(
                             venue.averageRating.toString(),
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
                           ),
                         ],
                       ),
@@ -309,7 +341,11 @@ class _GroupPartyBookingScreenState extends State<GroupPartyBookingScreen> {
                       Expanded(
                         child: Text(
                           venue.name.toUpperCase(),
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1,
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -319,16 +355,29 @@ class _GroupPartyBookingScreenState extends State<GroupPartyBookingScreen> {
                   const SizedBox(height: 8),
                   Text(
                     (venue.type ?? 'Venue').toUpperCase(),
-                    style: const TextStyle(color: LunaraTheme.electricViolet, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 2),
+                    style: const TextStyle(
+                      color: LunaraTheme.electricViolet,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 2,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Row(
                     children: [
-                      const Icon(Icons.location_on_rounded, color: Colors.grey, size: 14),
+                      const Icon(
+                        Icons.location_on_rounded,
+                        color: Colors.grey,
+                        size: 14,
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         venue.city,
-                        style: TextStyle(color: Colors.grey[600], fontSize: 12, fontWeight: FontWeight.w600),
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ],
                   ),
@@ -362,7 +411,11 @@ class _BookingDetailsModal extends StatefulWidget {
 
 class _BookingDetailsModalState extends State<_BookingDetailsModal> {
   int _noOfFriends = 1;
-  late final TextEditingController _friendsController = TextEditingController(text: _noOfFriends.toString());
+  late final TextEditingController _friendsController = TextEditingController(
+    text: _noOfFriends.toString(),
+  );
+  final TextEditingController _mobileController = TextEditingController();
+  final TextEditingController _optMobileController = TextEditingController();
 
   @override
   void initState() {
@@ -375,6 +428,8 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
   @override
   void dispose() {
     _friendsController.dispose();
+    _mobileController.dispose();
+    _optMobileController.dispose();
     super.dispose();
   }
 
@@ -387,7 +442,9 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
     final double totalPrice = subtotal - discountAmount;
 
     return Container(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
@@ -397,7 +454,14 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(height: 12),
-            Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
+            Container(
+              width: 40,
+              height: 5,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
             const SizedBox(height: 24),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -406,7 +470,11 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                   Expanded(
                     child: Text(
                       'BOOKING AT ${widget.venue.name.toUpperCase()}',
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1,
+                      ),
                     ),
                   ),
                   IconButton(
@@ -425,12 +493,20 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                   // No of Friends Selector
                   const Text(
                     'NUMBER OF FRIENDS',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 1.5, color: Colors.black54),
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.5,
+                      color: Colors.black54,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Container(
                     key: AppTourService.groupPartyFriendsKey,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.grey[50],
                       borderRadius: BorderRadius.circular(16),
@@ -439,43 +515,68 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Icon(Icons.people_alt_rounded, color: LunaraTheme.electricViolet),
+                        const Icon(
+                          Icons.people_alt_rounded,
+                          color: LunaraTheme.electricViolet,
+                        ),
                         Row(
                           children: [
                             _buildCounterButton(Icons.remove, () {
                               if (_noOfFriends > 1) {
                                 setState(() {
                                   _noOfFriends--;
-                                  _friendsController.text = _noOfFriends.toString();
+                                  _friendsController.text = _noOfFriends
+                                      .toString();
                                 });
                               }
                             }),
                             Container(
                               width: 60,
-                              margin: const EdgeInsets.symmetric(horizontal: 12),
+                              margin: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
                               child: TextField(
                                 controller: _friendsController,
                                 keyboardType: TextInputType.number,
                                 textAlign: TextAlign.center,
-                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
                                 decoration: const InputDecoration(
                                   isDense: true,
-                                  contentPadding: EdgeInsets.symmetric(vertical: 8),
+                                  contentPadding: EdgeInsets.symmetric(
+                                    vertical: 8,
+                                  ),
                                   border: InputBorder.none,
                                 ),
-                                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                ],
                                 onChanged: (value) {
                                   if (value.isNotEmpty) {
                                     int parsed = int.tryParse(value) ?? 1;
-                                    if (parsed > 20) {
-                                      parsed = 20;
-                                      _friendsController.text = '20';
-                                      _friendsController.selection = TextSelection.fromPosition(
-                                        const TextPosition(offset: 2),
-                                      );
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Maximum 20 friends allowed'),
+                                    final int maxGuests =
+                                        widget.venue.capacity ?? 20;
+                                    if (parsed > maxGuests) {
+                                      parsed = maxGuests;
+                                      _friendsController.text = maxGuests
+                                          .toString();
+                                      _friendsController.selection =
+                                          TextSelection.fromPosition(
+                                            TextPosition(
+                                              offset: maxGuests
+                                                  .toString()
+                                                  .length,
+                                            ),
+                                          );
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Maximum $maxGuests friends allowed',
+                                          ),
                                         ),
                                       );
                                     }
@@ -487,15 +588,19 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                               ),
                             ),
                             _buildCounterButton(Icons.add, () {
-                              if (_noOfFriends < 20) {
+                              final int maxGuests = widget.venue.capacity ?? 20;
+                              if (_noOfFriends < maxGuests) {
                                 setState(() {
                                   _noOfFriends++;
-                                  _friendsController.text = _noOfFriends.toString();
+                                  _friendsController.text = _noOfFriends
+                                      .toString();
                                 });
                               } else {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Maximum 20 friends allowed'),
+                                  SnackBar(
+                                    content: Text(
+                                      'Maximum $maxGuests friends allowed',
+                                    ),
                                   ),
                                 );
                               }
@@ -505,11 +610,84 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'CONTACT DETAILS',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.5,
+                      color: Colors.black54,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey[50],
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.grey[200]!),
+                    ),
+                    child: TextField(
+                      controller: _mobileController,
+                      keyboardType: TextInputType.phone,
+                      decoration: InputDecoration(
+                        hintText: 'Mobile Number *',
+                        hintStyle: TextStyle(
+                          color: Colors.grey[400],
+                          fontSize: 13,
+                        ),
+                        prefixIcon: const Icon(
+                          Icons.phone,
+                          color: LunaraTheme.electricViolet,
+                          size: 20,
+                        ),
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey[50],
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.grey[200]!),
+                    ),
+                    child: TextField(
+                      controller: _optMobileController,
+                      keyboardType: TextInputType.phone,
+                      decoration: InputDecoration(
+                        hintText: 'Optional Mobile Number',
+                        hintStyle: TextStyle(
+                          color: Colors.grey[400],
+                          fontSize: 13,
+                        ),
+                        prefixIcon: const Icon(
+                          Icons.phone_android,
+                          color: LunaraTheme.electricViolet,
+                          size: 20,
+                        ),
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 32),
                   // Price Details Section
                   const Text(
                     'PRICING DETAILS',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 1.5, color: Colors.black54),
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.5,
+                      color: Colors.black54,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Container(
@@ -518,23 +696,42 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                       gradient: const LinearGradient(
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
-                        colors: [Color(0xFFF3EEFF), Color(0xFFF8F4FF), Color(0xFFEEE6FF)],
+                        colors: [
+                          Color(0xFFF3EEFF),
+                          Color(0xFFF8F4FF),
+                          Color(0xFFEEE6FF),
+                        ],
                       ),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0x1A7F00FF), width: 1.2),
+                      border: Border.all(
+                        color: const Color(0x1A7F00FF),
+                        width: 1.2,
+                      ),
                     ),
                     child: Column(
                       children: [
-                        _buildPriceRow('Table Booking Charges ($_noOfFriends)', subtotal, icon: Icons.person_rounded),
+                        _buildPriceRow(
+                          'Table Booking Charges ($_noOfFriends)',
+                          subtotal,
+                          icon: Icons.person_rounded,
+                        ),
                         if (discountPercent > 0) ...[
                           const SizedBox(height: 12),
-                          _buildPriceRow('Discount ($discountPercent%)', -discountAmount, isDiscount: true),
+                          _buildPriceRow(
+                            'Discount ($discountPercent%)',
+                            -discountAmount,
+                            isDiscount: true,
+                          ),
                         ],
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 16),
                           child: Divider(height: 1),
                         ),
-                        _buildPriceRow('Total Amount', totalPrice, isTotal: true),
+                        _buildPriceRow(
+                          'Total Amount',
+                          totalPrice,
+                          isTotal: true,
+                        ),
                       ],
                     ),
                   ),
@@ -547,20 +744,37 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                         final parsed = int.tryParse(_friendsController.text);
                         if (parsed == null || parsed < 1) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Please enter a valid number of friends.')),
+                            const SnackBar(
+                              content: Text(
+                                'Please enter a valid number of friends.',
+                              ),
+                            ),
                           );
                           return;
                         }
-                        if (parsed > 20) {
+                        final int maxGuests = widget.venue.capacity ?? 20;
+                        if (parsed > maxGuests) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Maximum 20 friends allowed.')),
+                            SnackBar(
+                              content: Text(
+                                'Maximum $maxGuests friends allowed.',
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+                        if (_mobileController.text.trim().isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Mobile number is required.'),
+                            ),
                           );
                           return;
                         }
                         setState(() {
                           _noOfFriends = parsed;
                         });
-                        
+
                         final parentContext = context;
                         Navigator.pop(context);
                         Navigator.push(
@@ -568,13 +782,17 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                           MaterialPageRoute(
                             builder: (_) => PaymentConfirmationScreen(
                               venue: widget.venue.toMap(),
-                              date: '${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}',
+                              date:
+                                  '${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}',
                               package: 'Group Party Booking',
                               time: '10:30 PM',
                               table: 'Group Party',
                               guests: '$parsed Friends',
                               totalPrice: '₹${totalPrice.toStringAsFixed(0)}',
                               showSplitBill: false,
+                              mobileNumber: _mobileController.text.trim(),
+                              optionalMobileNumber: _optMobileController.text
+                                  .trim(),
                             ),
                           ),
                         );
@@ -582,10 +800,20 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: LunaraTheme.electricViolet,
                         padding: const EdgeInsets.symmetric(vertical: 18),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
                         elevation: 0,
                       ),
-                      child: const Text('PROCEED TO PAYMENT', style: TextStyle(color: Colors.white, fontSize: 14, letterSpacing: 1.5, fontWeight: FontWeight.bold)),
+                      child: const Text(
+                        'PROCEED TO PAYMENT',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          letterSpacing: 1.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -607,7 +835,11 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: Colors.grey[300]!),
           boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4, offset: const Offset(0, 2)),
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
           ],
         ),
         child: Icon(icon, size: 18, color: LunaraTheme.electricViolet),
@@ -615,7 +847,13 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
     );
   }
 
-  Widget _buildPriceRow(String label, double amount, {bool isDiscount = false, bool isTotal = false, IconData? icon}) {
+  Widget _buildPriceRow(
+    String label,
+    double amount, {
+    bool isDiscount = false,
+    bool isTotal = false,
+    IconData? icon,
+  }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -631,7 +869,11 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
             ),
             if (icon != null) ...[
               const SizedBox(width: 4),
-              Icon(icon, size: 14, color: isTotal ? LunaraTheme.electricViolet : Colors.black54),
+              Icon(
+                icon,
+                size: 14,
+                color: isTotal ? LunaraTheme.electricViolet : Colors.black54,
+              ),
             ],
           ],
         ),
@@ -640,7 +882,9 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
           style: TextStyle(
             fontSize: isTotal ? 20 : 16,
             fontWeight: FontWeight.w700,
-            color: isDiscount ? const Color(0xFF10B981) : (isTotal ? LunaraTheme.electricViolet : Colors.black),
+            color: isDiscount
+                ? const Color(0xFF10B981)
+                : (isTotal ? LunaraTheme.electricViolet : Colors.black),
           ),
         ),
       ],

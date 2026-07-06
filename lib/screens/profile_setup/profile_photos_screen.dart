@@ -66,7 +66,9 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
               ),
               backgroundColor: LunaraTheme.primaryDeep,
               behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
           );
         }
@@ -114,22 +116,32 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
               ),
               if (isSelfieSlot)
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 8,
+                  ),
                   child: Text(
                     'Take a clear selfie so we can verify your identity.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.54),
                       fontSize: 12,
                     ),
                   ),
                 ),
               const SizedBox(height: 16),
               ListTile(
-                leading: const Icon(Icons.camera_alt_outlined, color: LunaraTheme.accentVivid),
+                leading: const Icon(
+                  Icons.camera_alt_outlined,
+                  color: LunaraTheme.accentVivid,
+                ),
                 title: Text(
                   isSelfieSlot ? 'Take a Selfie' : 'Take a Photo',
-                  style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
                 ),
                 onTap: () {
                   Navigator.pop(context);
@@ -138,10 +150,15 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
               ),
               if (!isSelfieSlot)
                 ListTile(
-                  leading: const Icon(Icons.photo_library_outlined, color: LunaraTheme.accentVivid),
+                  leading: const Icon(
+                    Icons.photo_library_outlined,
+                    color: LunaraTheme.accentVivid,
+                  ),
                   title: Text(
                     'Choose from Gallery',
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
                   ),
                   onTap: () {
                     Navigator.pop(context);
@@ -150,15 +167,22 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
                 ),
               if (isSelfieSlot)
                 ListTile(
-                  leading: const Icon(Icons.photo_library_outlined, color: LunaraTheme.accentVivid),
+                  leading: const Icon(
+                    Icons.photo_library_outlined,
+                    color: LunaraTheme.accentVivid,
+                  ),
                   title: Text(
                     'Choose from Gallery',
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
                   ),
                   subtitle: Text(
                     'Must be a clear face photo',
                     style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.38),
                       fontSize: 11,
                     ),
                   ),
@@ -169,8 +193,14 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
                 ),
               if (_photos[index] != null)
                 ListTile(
-                  leading: const Icon(Icons.delete_outline, color: LunaraTheme.primaryDeep),
-                  title: const Text('Remove Photo', style: TextStyle(color: LunaraTheme.primaryDeep)),
+                  leading: const Icon(
+                    Icons.delete_outline,
+                    color: LunaraTheme.primaryDeep,
+                  ),
+                  title: const Text(
+                    'Remove Photo',
+                    style: TextStyle(color: LunaraTheme.primaryDeep),
+                  ),
                   onTap: () {
                     setState(() {
                       _photos[index] = null;
@@ -192,7 +222,9 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: BoxDecoration(color: Theme.of(context).scaffoldBackgroundColor),
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+        ),
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(24.0),
@@ -222,7 +254,9 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
                 Text(
                   'First slot = selfie for verification. Add at least 1 photo.',
                   style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.54),
                     height: 1.5,
                     fontSize: 13,
                   ),
@@ -257,7 +291,9 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const CircularProgressIndicator(color: LunaraTheme.accentVivid),
+                                const CircularProgressIndicator(
+                                  color: LunaraTheme.accentVivid,
+                                ),
                                 const SizedBox(height: 16),
                                 Text(
                                   'Detecting face...',
@@ -280,22 +316,36 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
                       ? () async {
                           if (_photos[0] == null || _photos[1] == null) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Please upload both a selfie (Slot 1) and a profile photo (Slot 2)')),
+                              const SnackBar(
+                                content: Text(
+                                  'Please upload both a selfie (Slot 1) and a profile photo (Slot 2)',
+                                ),
+                              ),
                             );
                             return;
                           }
 
                           setState(() => _isProcessing = true);
-                          final selfieBytes = await File(_photos[0]!).readAsBytes();
-                          final profileBytes = await File(_photos[1]!).readAsBytes();
-                          final result = await ApiService.verifyFace(profileBytes, selfieBytes);
+                          final selfieBytes = await File(
+                            _photos[0]!,
+                          ).readAsBytes();
+                          final profileBytes = await File(
+                            _photos[1]!,
+                          ).readAsBytes();
+                          final result = await ApiService.verifyFace(
+                            profileBytes,
+                            selfieBytes,
+                          );
                           setState(() => _isProcessing = false);
 
                           if (result == null || result['success'] != true) {
                             if (mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text(result?['message'] ?? 'Face verification failed. Please try again.'),
+                                  content: Text(
+                                    result?['message'] ??
+                                        'Face verification failed. Please try again.',
+                                  ),
                                   backgroundColor: LunaraTheme.primaryDeep,
                                 ),
                               );
@@ -327,7 +377,9 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
                       child: Text(
                         'Add a selfie (slot 1) and profile photo (slot 2) to continue',
                         style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.38),
                           fontSize: 12,
                         ),
                       ),
@@ -350,9 +402,13 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.15),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.15),
               ),
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.05),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -360,7 +416,9 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
                 Icon(
                   Icons.face_outlined,
                   size: 14,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.38),
                 ),
                 const SizedBox(width: 6),
                 Text(
@@ -368,7 +426,9 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
                   style: TextStyle(
                     fontSize: 10,
                     letterSpacing: 0.8,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.38),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -397,9 +457,13 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                _selfieVerified ? Icons.verified_user : Icons.warning_amber_rounded,
+                _selfieVerified
+                    ? Icons.verified_user
+                    : Icons.warning_amber_rounded,
                 size: 14,
-                color: _selfieVerified ? const Color(0xFF4CAF50) : LunaraTheme.primaryDeep,
+                color: _selfieVerified
+                    ? const Color(0xFF4CAF50)
+                    : LunaraTheme.primaryDeep,
               ),
               const SizedBox(width: 6),
               Text(
@@ -407,7 +471,9 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
                 style: TextStyle(
                   fontSize: 10,
                   letterSpacing: 0.8,
-                  color: _selfieVerified ? const Color(0xFF4CAF50) : LunaraTheme.primaryDeep,
+                  color: _selfieVerified
+                      ? const Color(0xFF4CAF50)
+                      : LunaraTheme.primaryDeep,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -423,7 +489,10 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         IconButton(
-          icon: Icon(Icons.arrow_back, color: Theme.of(context).colorScheme.onSurface),
+          icon: Icon(
+            Icons.arrow_back,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
           onPressed: () => Navigator.pop(context),
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(),
@@ -447,7 +516,9 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
             'SKIP',
             style: LunaraTheme.bodyStyle.copyWith(
               fontSize: 12,
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.38),
               letterSpacing: 1,
             ),
           ),
@@ -467,7 +538,9 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
             decoration: BoxDecoration(
               color: active
                   ? LunaraTheme.accentVivid
-                  : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1),
+                  : Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(2),
               boxShadow: active
                   ? [
@@ -493,8 +566,8 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
       borderRadius: BorderRadius.circular(16),
       borderColor: isSelfieSlot
           ? (_selfieVerified
-              ? const Color(0xFF4CAF50).withValues(alpha: 0.6)
-              : LunaraTheme.accentVivid.withValues(alpha: 0.5))
+                ? const Color(0xFF4CAF50).withValues(alpha: 0.6)
+                : LunaraTheme.accentVivid.withValues(alpha: 0.5))
           : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1),
       child: Stack(
         fit: StackFit.expand,
@@ -512,10 +585,14 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    isSelfieSlot ? Icons.face_retouching_natural : Icons.add_a_photo_outlined,
+                    isSelfieSlot
+                        ? Icons.face_retouching_natural
+                        : Icons.add_a_photo_outlined,
                     color: isSelfieSlot
                         ? LunaraTheme.accentVivid
-                        : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
+                        : Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.24),
                     size: 26,
                   ),
                   if (isSelfieSlot) ...[
@@ -541,7 +618,9 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
                 color: isSelfieSlot
-                    ? (_selfieVerified ? const Color(0xFF4CAF50) : LunaraTheme.accentVivid)
+                    ? (_selfieVerified
+                          ? const Color(0xFF4CAF50)
+                          : LunaraTheme.accentVivid)
                     : Colors.black.withValues(alpha: 0.4),
                 borderRadius: BorderRadius.circular(4),
               ),

@@ -30,6 +30,10 @@ import StrangersMeetRequest from './StrangersMeetRequest';
 import PartyPlanRequest from './PartyPlanRequest';
 import UserPenalty from './UserPenalty';
 import City from './City';
+<<<<<<< HEAD
+=======
+import ChatSubscription from './ChatSubscription';
+>>>>>>> origin/main
 
 // ============================================================================
 // User Associations
@@ -388,6 +392,17 @@ Message.belongsTo(User, { foreignKey: 'senderId', as: 'sender' });
 User.hasMany(Message, { foreignKey: 'senderId', as: 'sentMessages' });
 
 // ============================================================================
+<<<<<<< HEAD
+=======
+// ChatSubscription Associations
+// ============================================================================
+
+Conversation.hasMany(ChatSubscription, { foreignKey: 'conversationId', as: 'chatSubscriptions' });
+ChatSubscription.belongsTo(Conversation, { foreignKey: 'conversationId', as: 'conversation' });
+ChatSubscription.belongsTo(User, { foreignKey: 'paidById', as: 'paidBy' });
+
+// ============================================================================
+>>>>>>> origin/main
 // Exports
 // ============================================================================
 
@@ -425,6 +440,10 @@ export {
     PartyPlanRequest,
     UserPenalty,
     City,
+<<<<<<< HEAD
+=======
+    ChatSubscription,
+>>>>>>> origin/main
 };
 
 // Export sync function
@@ -463,6 +482,10 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
         await PartyPlanRequest.sync(options);
         await UserPenalty.sync(options);
         await City.sync(options);
+<<<<<<< HEAD
+=======
+        await ChatSubscription.sync(options);
+>>>>>>> origin/main
 
         console.log('✅ All models synchronized successfully');
     } catch (error) {
@@ -504,5 +527,9 @@ export default {
     PartyPlanRequest,
     UserPenalty,
     City,
+<<<<<<< HEAD
+=======
+    ChatSubscription,
+>>>>>>> origin/main
     syncModels,
 };

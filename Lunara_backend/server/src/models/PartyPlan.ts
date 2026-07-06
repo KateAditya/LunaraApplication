@@ -36,6 +36,11 @@ export interface PartyPlanAttributes {
     expiresAt?: Date;
     hostLatLangCheckIn: boolean;
     paymentStatus: string;
+<<<<<<< HEAD
+=======
+    mobileNumber: string;
+    optionalMobileNumber?: string;
+>>>>>>> origin/main
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -43,7 +48,11 @@ export interface PartyPlanAttributes {
 export interface PartyPlanCreationAttributes
     extends Optional<
         PartyPlanAttributes,
+<<<<<<< HEAD
         'id' | 'status' | 'visibility' | 'createdAt' | 'updatedAt' | 'selectedUsers' | 'depositAmount' | 'hostPaymentStatus' | 'isLive' | 'expiresAt' | 'hostLatLangCheckIn' | 'paymentStatus'
+=======
+        'id' | 'status' | 'visibility' | 'createdAt' | 'updatedAt' | 'selectedUsers' | 'depositAmount' | 'hostPaymentStatus' | 'isLive' | 'expiresAt' | 'hostLatLangCheckIn' | 'paymentStatus' | 'optionalMobileNumber'
+>>>>>>> origin/main
     > {}
 
 class PartyPlan
@@ -65,6 +74,11 @@ class PartyPlan
     public expiresAt?: Date;
     public hostLatLangCheckIn!: boolean;
     public paymentStatus!: string;
+<<<<<<< HEAD
+=======
+    public mobileNumber!: string;
+    public optionalMobileNumber?: string;
+>>>>>>> origin/main
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 }
@@ -164,6 +178,19 @@ PartyPlan.init(
             defaultValue: 'pending',
             field: 'payment_status',
         },
+<<<<<<< HEAD
+=======
+        mobileNumber: {
+            type: DataTypes.STRING,
+            allowNull: false,
+            field: 'mobile_number',
+        },
+        optionalMobileNumber: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            field: 'optional_mobile_number',
+        },
+>>>>>>> origin/main
     },
     {
         sequelize,

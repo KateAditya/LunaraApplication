@@ -3,17 +3,19 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import sharp from 'sharp';
-import { UserProfile, UserPreference, UserPhoto } from '../models';
+import { UserProfile, UserPreference, UserPhoto, UserMatch } from '../models';
 import User, { UserRole } from '../models/User';
 import { verifyFaces, verifySingleFace } from '../services/faceVerificationService';
 import { logger } from '../config/logger';
 import { Op } from 'sequelize';
 import { getUserGalleryDir } from '../middleware/upload';
+import SocialConnection, { ConnectionStatus } from '../models/SocialConnection';
+import UserPenalty from '../models/UserPenalty';
 
 // ─── Image compression constants ──────────────────────────────────────────────
-const PHOTO_MAX_WIDTH  = 1080;   // px
+const PHOTO_MAX_WIDTH = 1080;   // px
 const PHOTO_MAX_HEIGHT = 1080;   // px
-const PHOTO_QUALITY    = 80;     // JPEG quality (0-100)
+const PHOTO_QUALITY = 80;     // JPEG quality (0-100)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/mobile/user/photos
@@ -48,16 +50,16 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
             }
 
             // ── Compress with sharp ──────────────────────────────────────────
-            const randomHex   = crypto.randomBytes(8).toString('hex');
-            const filename     = `${Date.now()}_${randomHex}.jpg`;
+            const randomHex = crypto.randomBytes(8).toString('hex');
+            const filename = `${Date.now()}_${randomHex}.jpg`;
             const absolutePath = path.join(galleryDir, filename);
 
             const compressedBuffer = await sharp(fileBuffer)
                 .rotate() // Auto-rotates image based on EXIF orientation data
                 .resize({
-                    width:  PHOTO_MAX_WIDTH,
+                    width: PHOTO_MAX_WIDTH,
                     height: PHOTO_MAX_HEIGHT,
-                    fit:    'inside',          // preserve aspect ratio, never upscale beyond box
+                    fit: 'inside',          // preserve aspect ratio, never upscale beyond box
                     withoutEnlargement: true,  // skip resize if image is already smaller
                 })
                 .jpeg({ quality: PHOTO_QUALITY, progressive: true })
@@ -66,17 +68,17 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
             fs.writeFileSync(absolutePath, compressedBuffer);
 
             // Store relative path (forward-slash, no leading slash) in DB
-            const uploadsBase  = process.env.UPLOAD_DIR || 'uploads';
+            const uploadsBase = process.env.UPLOAD_DIR || 'uploads';
             const relativePath = path
                 .join(uploadsBase, 'users', userId, 'gallery', filename)
                 .replace(/\\/g, '/');
 
             const photo = await UserPhoto.create({
                 userId,
-                filePath:     relativePath,
-                fileSize:     compressedBuffer.length,   // compressed size, not original
-                mimeType:     'image/jpeg',
-                isPrimary:    i === 0,
+                filePath: relativePath,
+                fileSize: compressedBuffer.length,   // compressed size, not original
+                mimeType: 'image/jpeg',
+                isPrimary: i === 0,
                 displayOrder: i,
             });
 
@@ -92,11 +94,11 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
             message: 'Photos uploaded successfully',
             data: {
                 photos: createdPhotos.map(p => ({
-                    id:           p.id,
-                    url:          p.getUrl(),
-                    isPrimary:    p.isPrimary,
+                    id: p.id,
+                    url: p.getUrl(),
+                    isPrimary: p.isPrimary,
                     displayOrder: p.displayOrder,
-                    sizeKb:       Math.round(p.fileSize / 1024),  // handy for debugging
+                    sizeKb: Math.round(p.fileSize / 1024),  // handy for debugging
                 }))
             }
         });
@@ -223,9 +225,9 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
         const photoRecord = await UserPhoto.findOne({
             where: { userId },
             order: [
-                ['isPrimary',    'DESC'],
+                ['isPrimary', 'DESC'],
                 ['displayOrder', 'ASC'],
-                ['uploadedAt',   'DESC'],
+                ['uploadedAt', 'DESC'],
             ],
             attributes: ['id', 'filePath', 'isPrimary', 'displayOrder', 'uploadedAt'],
         });
@@ -234,9 +236,9 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
         const allPhotos = await UserPhoto.findAll({
             where: { userId },
             order: [
-                ['isPrimary',    'DESC'],
+                ['isPrimary', 'DESC'],
                 ['displayOrder', 'ASC'],
-                ['uploadedAt',   'DESC'],
+                ['uploadedAt', 'DESC'],
             ],
             attributes: ['id', 'filePath', 'fileSize', 'mimeType', 'isPrimary', 'displayOrder', 'uploadedAt'],
         });
@@ -247,7 +249,7 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
 
         if (photoRecord) {
             profilePhotoPath = photoRecord.filePath;
-            profilePhotoUrl  = '/' + photoRecord.filePath.replace(/\\/g, '/');
+            profilePhotoUrl = '/' + photoRecord.filePath.replace(/\\/g, '/');
         } else if (user.profileImageUrl) {
             profilePhotoUrl = user.profileImageUrl;
         }
@@ -257,40 +259,40 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
             ? Math.floor(
                 (Date.now() - new Date((user as any).dateOfBirth).getTime()) /
                 (365.25 * 24 * 60 * 60 * 1000)
-              )
+            )
             : null;
 
         // Map gallery photos to URL-ready objects
         const photos = allPhotos.map(p => ({
-            id:           p.id,
-            url:          '/' + p.filePath.replace(/\\/g, '/'),
-            filePath:     p.filePath,
-            fileSize:     p.fileSize,
-            mimeType:     p.mimeType,
-            isPrimary:    p.isPrimary,
+            id: p.id,
+            url: '/' + p.filePath.replace(/\\/g, '/'),
+            filePath: p.filePath,
+            fileSize: p.fileSize,
+            mimeType: p.mimeType,
+            isPrimary: p.isPrimary,
             displayOrder: p.displayOrder,
-            uploadedAt:   p.uploadedAt,
+            uploadedAt: p.uploadedAt,
         }));
 
         return res.status(200).json({
             success: true,
             data: {
                 // ── Core user fields ─────────────────────────────────────────
-                id:               user.id,
-                firstName:        user.firstName,
-                lastName:         user.lastName,
-                fullName:         `${user.firstName} ${user.lastName}`,
-                email:            user.email,
-                phone:            user.phone,
-                role:             user.role,
-                isVerified:       user.isVerified,
-                isActive:         user.isActive,
-                mfaEnabled:       user.mfaEnabled,
-                dateOfBirth:      (user as any).dateOfBirth ?? null,
+                id: user.id,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                fullName: `${user.firstName} ${user.lastName}`,
+                email: user.email,
+                phone: user.phone,
+                role: user.role,
+                isVerified: user.isVerified,
+                isActive: user.isActive,
+                mfaEnabled: user.mfaEnabled,
+                dateOfBirth: (user as any).dateOfBirth ?? null,
                 age,
-                createdAt:        user.createdAt,
-                updatedAt:        user.updatedAt,
-                lastLoginAt:      (user as any).lastLoginAt ?? null,
+                createdAt: user.createdAt,
+                updatedAt: user.updatedAt,
+                lastLoginAt: (user as any).lastLoginAt ?? null,
 
                 // ── Profile photo (primary / best) ────────────────────────────
                 profilePhotoUrl,
@@ -304,46 +306,46 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
 
                 // ── Extended profile ──────────────────────────────────────────
                 profile: profile ? {
-                    id:                   profile.id,
-                    displayName:          profile.displayName ?? null,
-                    bio:                  profile.bio ?? null,
-                    gender:               profile.gender ?? null,
-                    city:                 profile.city ?? null,
-                    occupation:           profile.occupation ?? null,
-                    company:              profile.company ?? null,
-                    education:            profile.education ?? null,
-                    relationshipStatus:   profile.relationshipStatus ?? null,
-                    lookingFor:           profile.lookingFor ?? [],
-                    nightlifePreference:  profile.nightlifePreference ?? [],
-                    interests:            profile.interests ?? [],
-                    instagramHandle:      profile.instagramHandle ?? null,
-                    spotifyProfile:       profile.spotifyProfile ?? null,
+                    id: profile.id,
+                    displayName: profile.displayName ?? null,
+                    bio: profile.bio ?? null,
+                    gender: profile.gender ?? null,
+                    city: profile.city ?? null,
+                    occupation: profile.occupation ?? null,
+                    company: profile.company ?? null,
+                    education: profile.education ?? null,
+                    relationshipStatus: profile.relationshipStatus ?? null,
+                    lookingFor: profile.lookingFor ?? [],
+                    nightlifePreference: profile.nightlifePreference ?? [],
+                    interests: profile.interests ?? [],
+                    instagramHandle: profile.instagramHandle ?? null,
+                    spotifyProfile: profile.spotifyProfile ?? null,
                     profileCompletionPct: profile.getCompletionPercentage(),
-                    isProfileComplete:    profile.isProfileComplete(),
-                    createdAt:            profile.createdAt,
-                    updatedAt:            profile.updatedAt,
+                    isProfileComplete: profile.isProfileComplete(),
+                    createdAt: profile.createdAt,
+                    updatedAt: profile.updatedAt,
                 } : null,
 
                 // ── Preferences ───────────────────────────────────────────────
                 preferences: preferences ? {
-                    id:                   preferences.id,
-                    preferredVenues:      preferences.preferredVenues ?? [],
-                    preferredCrowdSize:   preferences.preferredCrowdSize ?? null,
-                    musicPreference:      preferences.musicPreference ?? [],
-                    drinkPreference:      preferences.drinkPreference ?? [],
-                    smokingPreference:    preferences.smokingPreference ?? null,
-                    preferredGenders:     preferences.preferredGenders ?? [],
-                    minAgePreference:     preferences.minAgePreference ?? null,
-                    maxAgePreference:     preferences.maxAgePreference ?? null,
-                    budgetRange:          preferences.budgetRange ?? null,
-                    partyTimePreference:  preferences.partyTimePreference ?? null,
-                    groupSizePreference:  preferences.groupSizePreference ?? null,
-                    matchDistanceKm:      preferences.matchDistanceKm,
-                    showMeInMatching:     preferences.showMeInMatching,
+                    id: preferences.id,
+                    preferredVenues: preferences.preferredVenues ?? [],
+                    preferredCrowdSize: preferences.preferredCrowdSize ?? null,
+                    musicPreference: preferences.musicPreference ?? [],
+                    drinkPreference: preferences.drinkPreference ?? [],
+                    smokingPreference: preferences.smokingPreference ?? null,
+                    preferredGenders: preferences.preferredGenders ?? [],
+                    minAgePreference: preferences.minAgePreference ?? null,
+                    maxAgePreference: preferences.maxAgePreference ?? null,
+                    budgetRange: preferences.budgetRange ?? null,
+                    partyTimePreference: preferences.partyTimePreference ?? null,
+                    groupSizePreference: preferences.groupSizePreference ?? null,
+                    matchDistanceKm: preferences.matchDistanceKm,
+                    showMeInMatching: preferences.showMeInMatching,
                     bookingAlertsEnabled: preferences.bookingAlertsEnabled,
-                    isConfigured:         preferences.isConfigured(),
-                    createdAt:            preferences.createdAt,
-                    updatedAt:            preferences.updatedAt,
+                    isConfigured: preferences.isConfigured(),
+                    createdAt: preferences.createdAt,
+                    updatedAt: preferences.updatedAt,
                 } : null,
             },
         });
@@ -364,20 +366,20 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
 // ─────────────────────────────────────────────────────────────────────────────
 export const getAllCustomers = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const page   = Math.max(1, parseInt(req.query.page   as string) || 1);
-        const limit  = Math.min(100, parseInt(req.query.limit as string) || 20);
+        const page = Math.max(1, parseInt(req.query.page as string) || 1);
+        const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
         const offset = (page - 1) * limit;
         const search = (req.query.search as string)?.trim();
-        const city   = (req.query.city   as string)?.trim();
+        const city = (req.query.city as string)?.trim();
 
         // Build User-level where clause
         const userWhere: any = { role: UserRole.CUSTOMER, isActive: true };
         if (search) {
             userWhere[Op.or] = [
                 { firstName: { [Op.iLike]: `%${search}%` } },
-                { lastName:  { [Op.iLike]: `%${search}%` } },
-                { email:     { [Op.iLike]: `%${search}%` } },
-                { phone:     { [Op.iLike]: `%${search}%` } },
+                { lastName: { [Op.iLike]: `%${search}%` } },
+                { email: { [Op.iLike]: `%${search}%` } },
+                { phone: { [Op.iLike]: `%${search}%` } },
             ];
         }
 
@@ -415,6 +417,7 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                         'showMeInMatching', 'matchDistanceKm', 'bookingAlertsEnabled',
                     ],
                     required: false,
+                    where: { showMeInMatching: { [Op.ne]: false } }, // Exclude hidden profiles, but allow those without preference records or with true
                 },
                 {
                     model: UserPhoto,
@@ -424,7 +427,7 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                     where: { isPrimary: true },   // Only fetch primary photo for list
                 },
             ],
-            order:  [['createdAt', 'DESC']],
+            order: [['createdAt', 'DESC']],
             limit,
             offset,
             distinct: true,   // Needed for correct count with includes
@@ -440,34 +443,34 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                 : null;
 
             // Build photo URL
-            const photo     = u.photos?.[0];
-            const photoUrl  = photo
+            const photo = u.photos?.[0];
+            const photoUrl = photo
                 ? '/' + photo.filePath.replace(/\\/g, '/')
                 : (user.profileImageUrl ?? null);
 
             return {
-                id:            user.id,
-                firstName:     user.firstName,
-                lastName:      user.lastName,
-                fullName:      `${user.firstName} ${user.lastName}`.trim(),
-                email:         user.email,
-                phone:         user.phone,
+                id: user.id,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                fullName: `${user.firstName} ${user.lastName}`.trim(),
+                email: user.email,
+                phone: user.phone,
                 age,
-                dateOfBirth:   user.dateOfBirth,
-                role:          user.role,
-                isVerified:    user.isVerified,
-                isActive:      user.isActive,
+                dateOfBirth: user.dateOfBirth,
+                role: user.role,
+                isVerified: user.isVerified,
+                isActive: user.isActive,
                 profilePhotoUrl: photoUrl,
-                createdAt:     user.createdAt,
-                lastLoginAt:   (user as any).lastLoginAt ?? null,
-                profile:       u.profile   ?? null,
-                preferences:   u.preferences ?? null,
+                createdAt: user.createdAt,
+                lastLoginAt: (user as any).lastLoginAt ?? null,
+                profile: u.profile ?? null,
+                preferences: u.preferences ?? null,
             };
         });
 
         return res.status(200).json({
-            success:    true,
-            total:      count,
+            success: true,
+            total: count,
             page,
             limit,
             totalPages,
@@ -562,7 +565,7 @@ export const verifyFace = async (req: Request, res: Response): Promise<Response>
 
             // Using Google Cloud Vision API to verify both images contain valid faces
             const similarity = await verifyFaces(profileBuffer, selfieBuffer);
-            
+
             if (profilePhoto.path && fs.existsSync(profilePhoto.path)) fs.unlinkSync(profilePhoto.path);
             if (selfiePhoto.path && fs.existsSync(selfiePhoto.path)) fs.unlinkSync(selfiePhoto.path);
 
@@ -583,4 +586,315 @@ export const verifyFace = async (req: Request, res: Response): Promise<Response>
     }
 };
 
-export default { uploadPhotos, completeProfileSetup, getMyProfile, getAllCustomers, getUserStatus, registerFcmToken, verifyFace };
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/user/block
+// ─────────────────────────────────────────────────────────────────────────────
+export const blockUser = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const userId = req.body.userId || req.user?.id;
+        const targetUserId = req.body.targetUserId;
+
+        if (!userId || !targetUserId) return res.status(400).json({ success: false, message: 'userId and targetUserId required' });
+
+        let conn = await SocialConnection.findOne({
+            where: {
+                [Op.or]: [
+                    { requesterId: userId, receiverId: targetUserId },
+                    { requesterId: targetUserId, receiverId: userId },
+                ]
+            }
+        });
+
+        if (conn) {
+            conn.status = ConnectionStatus.BLOCKED;
+            await conn.save();
+        } else {
+            await SocialConnection.create({
+                requesterId: userId,
+                receiverId: targetUserId,
+                status: ConnectionStatus.BLOCKED
+            });
+        }
+
+        return res.status(200).json({ success: true, message: 'User blocked' });
+    } catch (error: any) {
+        logger.error('[MobileUser] blockUser error:', error);
+        return res.status(500).json({ success: false, message: 'Failed to block user' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/user/unblock
+// ─────────────────────────────────────────────────────────────────────────────
+export const unblockUser = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const userId = req.body.userId || req.user?.id;
+        const targetUserId = req.body.targetUserId;
+
+        if (!userId || !targetUserId) return res.status(400).json({ success: false, message: 'userId and targetUserId required' });
+
+        const conn = await SocialConnection.findOne({
+            where: {
+                status: ConnectionStatus.BLOCKED,
+                [Op.or]: [
+                    { requesterId: userId, receiverId: targetUserId },
+                    { requesterId: targetUserId, receiverId: userId },
+                ]
+            }
+        });
+
+        if (conn) {
+            await conn.destroy();
+        }
+
+        return res.status(200).json({ success: true, message: 'User unblocked' });
+    } catch (error: any) {
+        logger.error('[MobileUser] unblockUser error:', error);
+        return res.status(500).json({ success: false, message: 'Failed to unblock user' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/user/report
+// ─────────────────────────────────────────────────────────────────────────────
+export const reportUser = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const userId = req.body.userId || req.user?.id;
+        const targetUserId = req.body.targetUserId;
+        const reason = req.body.reason || 'No reason provided';
+
+        if (!userId || !targetUserId) return res.status(400).json({ success: false, message: 'userId and targetUserId required' });
+
+        await UserPenalty.create({
+            userId: targetUserId,
+            reason: `Reported by ${userId}: ${reason}`
+        });
+
+        let conn = await SocialConnection.findOne({
+            where: {
+                [Op.or]: [
+                    { requesterId: userId, receiverId: targetUserId },
+                    { requesterId: targetUserId, receiverId: userId },
+                ]
+            }
+        });
+
+        if (conn) {
+            conn.status = ConnectionStatus.BLOCKED;
+            await conn.save();
+        } else {
+            await SocialConnection.create({
+                requesterId: userId,
+                receiverId: targetUserId,
+                status: ConnectionStatus.BLOCKED
+            });
+        }
+
+        return res.status(200).json({ success: true, message: 'User reported and blocked' });
+    } catch (error: any) {
+        logger.error('[MobileUser] reportUser error:', error);
+        return res.status(500).json({ success: false, message: 'Failed to report user' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/mobile/user/blocks
+// ─────────────────────────────────────────────────────────────────────────────
+export const getBlockedUsers = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const userId = (req.query.userId as string) || req.user?.id;
+        if (!userId) return res.status(401).json({ success: false, message: 'userId query param required' });
+
+        const blocks = await SocialConnection.findAll({
+            where: {
+                status: ConnectionStatus.BLOCKED,
+                [Op.or]: [
+                    { requesterId: userId },
+                    { receiverId: userId },
+                ]
+            }
+        });
+
+        const blockedUserIds = blocks.map(b => b.requesterId === userId ? b.receiverId : b.requesterId);
+
+        return res.status(200).json({ success: true, data: blockedUserIds });
+    } catch (error: any) {
+        logger.error('[MobileUser] getBlockedUsers error:', error);
+        return res.status(500).json({ success: false, message: 'Failed to get blocks' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/user/swipe
+// Processes a user swipe (like, superlike, nope) and handles mutual matching
+// ─────────────────────────────────────────────────────────────────────────────
+export const swipeUser = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { userId, targetUserId, action } = req.body;
+        if (!userId || !targetUserId || !action) {
+            return res.status(400).json({ success: false, message: 'userId, targetUserId, and action are required' });
+        }
+
+        if (action !== 'like' && action !== 'superlike' && action !== 'nope') {
+            return res.status(400).json({ success: false, message: 'Invalid action. Must be like, superlike, or nope' });
+        }
+
+        // Check if there is already a swipe from the target user back to this user
+        const existingOppositeSwipe = await UserMatch.findOne({
+            where: {
+                user1Id: targetUserId,
+                user2Id: userId,
+            }
+        });
+
+        if (action === 'nope') {
+            // Create a declined match record
+            const match = await UserMatch.create({
+                user1Id: userId,
+                user2Id: targetUserId,
+                compatibilityScore: 0,
+                status: 'declined' as any,
+                expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+            });
+            return res.status(200).json({ success: true, data: match, matched: false });
+        }
+
+        // If the opposite user has liked or superliked this user, we have a mutual match!
+        if (existingOppositeSwipe && (existingOppositeSwipe.status === 'pending' || existingOppositeSwipe.status === 'connected')) {
+            existingOppositeSwipe.status = 'connected' as any;
+            if (action === 'superlike') {
+                existingOppositeSwipe.matchReason = 'superlike';
+            }
+            await existingOppositeSwipe.save();
+
+            // Also ensure we create/update the reverse record for easy querying
+            const mySwipe = await UserMatch.create({
+                user1Id: userId,
+                user2Id: targetUserId,
+                compatibilityScore: existingOppositeSwipe.compatibilityScore || 85,
+                status: 'connected' as any,
+                matchReason: action === 'superlike' ? 'superlike' : undefined,
+                expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+            });
+
+            // ── Auto-init free chat subscription on mutual match ──────────────
+            try {
+                const { getChatSettings } = await import('./chatSubscriptionController');
+                const { Conversation: Conv, ChatSubscription: ChatSub } = await import('../models');
+                const ChatSubscriptionModel = ChatSub as any;
+                const ConversationModel = Conv as any;
+
+                // Find or create a conversation between both users
+                let conversation = await ConversationModel.findOne({
+                    where: {
+                        [Op.or]: [
+                            { participantOne: userId, participantTwo: targetUserId },
+                            { participantOne: targetUserId, participantTwo: userId },
+                        ]
+                    }
+                });
+
+                if (!conversation) {
+                    conversation = await ConversationModel.create({
+                        participantOne: userId,
+                        participantTwo: targetUserId,
+                        contextType: 'match',
+                    });
+                }
+
+                // Only create free subscription if one doesn't already exist
+                const existingFreeSub = await ChatSubscriptionModel.findOne({
+                    where: { conversationId: conversation.id, subscriptionType: 'free' }
+                });
+
+                if (!existingFreeSub) {
+                    const settings = getChatSettings();
+                    const freeDays = settings.freeDays;
+                    const validUntil = new Date();
+                    validUntil.setDate(validUntil.getDate() + freeDays);
+
+                    await ChatSubscriptionModel.create({
+                        conversationId: conversation.id,
+                        paidById: userId,
+                        amount: 0,
+                        daysGranted: freeDays,
+                        validUntil,
+                        status: 'active',
+                        subscriptionType: 'free',
+                    });
+                }
+
+                return res.status(200).json({
+                    success: true,
+                    data: mySwipe,
+                    matched: true,
+                    conversationId: conversation.id,
+                });
+            } catch (chatErr) {
+                logger.error('[swipeUser] Failed to init free chat, but match still created:', chatErr);
+            }
+
+            return res.status(200).json({ success: true, data: mySwipe, matched: true });
+        }
+
+        // Otherwise, create a pending match record
+        const score = action === 'superlike' ? 95 : 75;
+        const match = await UserMatch.create({
+            user1Id: userId,
+            user2Id: targetUserId,
+            compatibilityScore: score,
+            status: 'pending' as any,
+            matchReason: action === 'superlike' ? 'superlike' : undefined,
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+        });
+
+        return res.status(200).json({ success: true, data: match, matched: false });
+
+    } catch (error: any) {
+        logger.error('[MobileUser] Error processing swipe:', error);
+        return res.status(500).json({ success: false, message: 'Failed to process swipe' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/mobile/user/likes-matches
+// Returns a list of swipes/matches involving this user
+// ─────────────────────────────────────────────────────────────────────────────
+export const getMyLikesAndMatches = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { userId } = req.query;
+        if (!userId) {
+            return res.status(400).json({ success: false, message: 'userId is required' });
+        }
+
+        const matches = await UserMatch.findAll({
+            where: {
+                [Op.or]: [
+                    { user1Id: userId as string },
+                    { user2Id: userId as string }
+                ]
+            }
+        });
+
+        return res.status(200).json({ success: true, data: matches });
+    } catch (error: any) {
+        logger.error('[MobileUser] Error fetching matches:', error);
+        return res.status(500).json({ success: false, message: 'Failed to fetch matches' });
+    }
+};
+
+export default {
+    uploadPhotos,
+    completeProfileSetup,
+    getMyProfile,
+    getAllCustomers,
+    getUserStatus,
+    registerFcmToken,
+    verifyFace,
+    blockUser,
+    unblockUser,
+    reportUser,
+    getBlockedUsers,
+    swipeUser,
+    getMyLikesAndMatches
+};

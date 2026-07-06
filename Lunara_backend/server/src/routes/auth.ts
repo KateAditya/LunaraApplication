@@ -10,7 +10,11 @@ const router = express.Router();
 const registerValidation = [
     body('email').isEmail().withMessage('Valid email is required'),
     body('phone').matches(/^[6-9]\d{9}$/).withMessage('Valid Indian phone number is required'),
+<<<<<<< HEAD
     body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
+=======
+    body('password').isLength({ min: 3 }).withMessage('Password must be at least 3 characters'),
+>>>>>>> origin/main
     body('firstName').trim().isLength({ min: 2 }).withMessage('First name is required'),
     body('lastName').trim().isLength({ min: 2 }).withMessage('Last name is required'),
     body('dateOfBirth').isISO8601().toDate().withMessage('Valid date of birth is required'),
@@ -35,13 +39,21 @@ const verifyEmailValidation = [
 
 const resetPasswordValidation = [
     body('token').notEmpty().withMessage('Reset token is required'),
+<<<<<<< HEAD
     body('newPassword').isLength({ min: 8 }).withMessage('New password must be at least 8 characters'),
+=======
+    body('newPassword').isLength({ min: 3 }).withMessage('New password must be at least 3 characters'),
+>>>>>>> origin/main
     validate,
 ];
 
 const changePasswordValidation = [
     body('currentPassword').notEmpty().withMessage('Current password is required'),
+<<<<<<< HEAD
     body('newPassword').isLength({ min: 8 }).withMessage('New password must be at least 8 characters'),
+=======
+    body('newPassword').isLength({ min: 3 }).withMessage('New password must be at least 3 characters'),
+>>>>>>> origin/main
     validate,
 ];
 

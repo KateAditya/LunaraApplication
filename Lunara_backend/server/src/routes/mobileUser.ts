@@ -103,4 +103,146 @@ router.post(
     mobileUserController.registerFcmToken
 );
 
+<<<<<<< HEAD
+=======
+/**
+ * POST /api/mobile/user/block
+ */
+router.post('/block', [
+    body('userId').optional().isUUID(),
+    body('targetUserId').notEmpty().isUUID(),
+    validate
+], mobileUserController.blockUser);
+
+/**
+ * POST /api/mobile/user/unblock
+ */
+router.post('/unblock', [
+    body('userId').optional().isUUID(),
+    body('targetUserId').notEmpty().isUUID(),
+    validate
+], mobileUserController.unblockUser);
+
+/**
+ * POST /api/mobile/user/report
+ */
+router.post('/report', [
+    body('userId').optional().isUUID(),
+    body('targetUserId').notEmpty().isUUID(),
+    body('reason').optional().isString(),
+    validate
+], mobileUserController.reportUser);
+
+/**
+ * GET /api/mobile/user/blocks
+ */
+router.get('/blocks', mobileUserController.getBlockedUsers);
+
+/**
+ * GET /api/mobile/user/notifications
+ * Returns a list of notifications for the user
+ */
+router.get('/notifications', async (req, res) => {
+    try {
+        const { userId } = req.query;
+        if (!userId) return res.status(400).json({ success: false, message: 'userId required' });
+        
+        // Mock notifications for demonstration
+        const notifications = [
+            {
+                id: 'notif_1',
+                title: 'Like',
+                body: 'Elara Velvet liked your profile ❤️',
+                createdAt: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
+                read: false,
+            },
+            {
+                id: 'notif_2',
+                title: 'Payment Successful',
+                body: 'Payment of ₹99 confirmed for joining Party Plan at Ultra Club',
+                createdAt: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
+                read: true,
+            },
+            {
+                id: 'notif_3',
+                title: 'Profile Visit',
+                body: 'Sarah J. viewed your profile',
+                createdAt: new Date(Date.now() - 172800000).toISOString(), // 2 days ago
+                read: true,
+            },
+            {
+                id: 'notif_4',
+                title: 'Plan Request Accepted',
+                body: 'Your plan request was accepted by Alex. Pay to confirm.',
+                createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
+                read: false,
+            }
+        ];
+        
+        return res.json({ success: true, data: notifications });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Failed to fetch notifications' });
+    }
+});
+
+/**
+ * PATCH /api/mobile/user/notifications/:id/read
+ */
+router.patch('/notifications/:id/read', async (_req, res) => {
+    return res.json({ success: true, message: 'Notification marked as read' });
+});
+
+/**
+ * GET /api/mobile/user/badge-counts
+ */
+router.get('/badge-counts', async (req, res) => {
+    try {
+        const { userId } = req.query;
+        if (!userId) return res.status(400).json({ success: false, message: 'userId required' });
+        
+        // Mock values: 2 unread notifications/live feed, 5 unread chats
+        return res.json({ 
+            success: true, 
+            data: {
+                liveFeedCount: 2,
+                chatCount: 5,
+                totalCount: 7
+            }
+        });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Failed to fetch badge counts' });
+    }
+});
+
+/**
+ * POST /api/mobile/user/swipe
+ * Processes a profile swipe (like, superlike, nope)
+ */
+router.post('/swipe', mobileUserController.swipeUser);
+
+/**
+ * GET /api/mobile/user/likes-matches
+ * Fetch all likes/matches for a user
+ */
+router.get('/likes-matches', mobileUserController.getMyLikesAndMatches);
+
+// ── Chat Subscription Routes ──────────────────────────────────────────────────
+import * as chatSubCtrl from '../controllers/chatSubscriptionController';
+
+/** GET /api/mobile/chat/session-status/:conversationId */
+router.get('/chat/session-status/:conversationId', chatSubCtrl.getSessionStatus);
+
+/** POST /api/mobile/chat/init-free */
+router.post('/chat/init-free', chatSubCtrl.initFreeChat);
+
+/** POST /api/mobile/chat/extend */
+router.post('/chat/extend', chatSubCtrl.extendChat);
+
+/** POST /api/mobile/chat/request-extension */
+router.post('/chat/request-extension', chatSubCtrl.requestExtension);
+
+/** POST /api/mobile/chat/accept-extension-request */
+router.post('/chat/accept-extension-request', chatSubCtrl.acceptExtensionRequest);
+
+>>>>>>> origin/main
 export default router;

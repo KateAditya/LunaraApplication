@@ -324,10 +324,10 @@ export async function resetPassword(req: Request, res: Response) {
         }
 
         // Validate password strength
-        if (newPassword.length < 8) {
+        if (newPassword.length < 3) {
             return res.status(400).json({
                 success: false,
-                message: 'Password must be at least 8 characters long',
+                message: 'Password must be at least 3 characters long',
             });
         }
 
@@ -395,10 +395,10 @@ export async function changePassword(req: Request, res: Response) {
         }
 
         // Validate new password
-        if (newPassword.length < 8) {
+        if (newPassword.length < 3) {
             return res.status(400).json({
                 success: false,
-                message: 'New password must be at least 8 characters long',
+                message: 'New password must be at least 3 characters long',
             });
         }
 

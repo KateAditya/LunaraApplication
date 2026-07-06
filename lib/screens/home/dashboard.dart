@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_app_badger/flutter_app_badger.dart';
 import '../../core/theme.dart';
 import '../profile/profile_hub_screen.dart';
 import '../profile/vip_membership_screen.dart';
@@ -22,11 +24,47 @@ class Dashboard extends StatefulWidget {
 class _DashboardState extends State<Dashboard> {
   int _currentIndex = 0;
   User? _currentUser;
+  Timer? _badgeTimer;
+  int _liveFeedCount = 0;
+  int _chatCount = 0;
 
   @override
   void initState() {
     super.initState();
     _loadProfile();
+    _fetchBadges();
+    _badgeTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => _fetchBadges(),
+    );
+  }
+
+  Future<void> _fetchBadges() async {
+    final counts = await ApiService.fetchBadgeCounts();
+    if (mounted) {
+      setState(() {
+        _liveFeedCount = counts['liveFeedCount'] ?? 0;
+        _chatCount = counts['chatCount'] ?? 0;
+      });
+      final total = counts['totalCount'] ?? 0;
+      try {
+        if (await FlutterAppBadger.isAppBadgeSupported()) {
+          if (total > 0) {
+            FlutterAppBadger.updateBadgeCount(total);
+          } else {
+            FlutterAppBadger.removeBadge();
+          }
+        }
+      } catch (e) {
+        debugPrint('FlutterAppBadger error: $e');
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _badgeTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadProfile() async {
@@ -48,13 +86,11 @@ class _DashboardState extends State<Dashboard> {
 
   final List<Widget> _screens = [
     const DiscoveryScreen(),
-    const LiveFeedScreen(),
+    const LiveFeedScreen(isTab: true),
     const SizedBox.shrink(), // Placeholder for center button
     const MessagesScreen(),
     const ProfileHubScreen(),
   ];
-
-
 
   @override
   Widget build(BuildContext context) {
@@ -72,7 +108,12 @@ class _DashboardState extends State<Dashboard> {
             child: GestureDetector(
               key: AppTourService.vipUpgradeKey,
               onTap: () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const VIPMembershipScreen()));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const VIPMembershipScreen(),
+                  ),
+                );
               },
               child: Container(
                 height: 43,
@@ -91,7 +132,11 @@ class _DashboardState extends State<Dashboard> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.workspace_premium_rounded, color: Colors.white, size: 18),
+                    const Icon(
+                      Icons.workspace_premium_rounded,
+                      color: Colors.white,
+                      size: 18,
+                    ),
                     const SizedBox(width: 6),
                     const Text(
                       'UPGRADE',
@@ -120,10 +165,16 @@ class _DashboardState extends State<Dashboard> {
                 pageBuilder: (_, __, ___) => const PlanHubScreen(),
                 transitionsBuilder: (_, anim, __, child) {
                   return SlideTransition(
-                    position: Tween<Offset>(
-                      begin: const Offset(0, 1),
-                      end: Offset.zero,
-                    ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+                    position:
+                        Tween<Offset>(
+                          begin: const Offset(0, 1),
+                          end: Offset.zero,
+                        ).animate(
+                          CurvedAnimation(
+                            parent: anim,
+                            curve: Curves.easeOutCubic,
+                          ),
+                        ),
                     child: child,
                   );
                 },
@@ -147,8 +198,23 @@ class _DashboardState extends State<Dashboard> {
             label: 'Home',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.favorite_outline, key: AppTourService.matchesTabKey),
-            activeIcon: const Icon(Icons.favorite),
+            icon: Badge(
+              isLabelVisible: _liveFeedCount > 0,
+              label: Text(
+                _liveFeedCount > 99 ? '99+' : _liveFeedCount.toString(),
+              ),
+              child: Icon(
+                Icons.favorite_outline,
+                key: AppTourService.matchesTabKey,
+              ),
+            ),
+            activeIcon: Badge(
+              isLabelVisible: _liveFeedCount > 0,
+              label: Text(
+                _liveFeedCount > 99 ? '99+' : _liveFeedCount.toString(),
+              ),
+              child: const Icon(Icons.favorite),
+            ),
             label: 'Live Feed',
           ),
           BottomNavigationBarItem(
@@ -169,8 +235,19 @@ class _DashboardState extends State<Dashboard> {
             label: 'Post',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.chat_bubble_outline, key: AppTourService.messagesTabKey),
-            activeIcon: const Icon(Icons.chat_bubble),
+            icon: Badge(
+              isLabelVisible: _chatCount > 0,
+              label: Text(_chatCount > 99 ? '99+' : _chatCount.toString()),
+              child: Icon(
+                Icons.chat_bubble_outline,
+                key: AppTourService.messagesTabKey,
+              ),
+            ),
+            activeIcon: Badge(
+              isLabelVisible: _chatCount > 0,
+              label: Text(_chatCount > 99 ? '99+' : _chatCount.toString()),
+              child: const Icon(Icons.chat_bubble),
+            ),
             label: 'Messages',
           ),
           BottomNavigationBarItem(
@@ -190,9 +267,9 @@ class _DashboardState extends State<Dashboard> {
       height: 28,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: isActive 
-          ? Border.all(color: LunaraTheme.electricViolet, width: 2)
-          : Border.all(color: Colors.transparent, width: 2),
+        border: isActive
+            ? Border.all(color: LunaraTheme.electricViolet, width: 2)
+            : Border.all(color: Colors.transparent, width: 2),
       ),
       child: Center(
         child: LunaraProfileImage(

@@ -10,6 +10,8 @@ interface SMRequest {
   status: 'pending' | 'approved' | 'rejected';
   paymentAmount: number | null;
   paymentStatus: 'unpaid' | 'paid';
+  mobileNumber: string;
+  alternateMobileNumber: string | null;
   adminNotes: string | null;
   ticketId: string | null;
   createdAt: string;
@@ -38,26 +40,26 @@ interface Counts { pending: number; approved: number; rejected: number; }
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://103.224.247.35:9076';
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  pending:  { bg: 'rgba(245, 158, 11, 0.12)', text: '#d97706',  border: 'rgba(245,158,11,0.3)' },
-  approved: { bg: 'rgba(16, 185, 129, 0.12)', text: '#059669',  border: 'rgba(16,185,129,0.3)' },
-  rejected: { bg: 'rgba(239, 68, 68, 0.12)',  text: '#dc2626',  border: 'rgba(239,68,68,0.3)'  },
+  pending: { bg: 'rgba(245, 158, 11, 0.12)', text: '#d97706', border: 'rgba(245,158,11,0.3)' },
+  approved: { bg: 'rgba(16, 185, 129, 0.12)', text: '#059669', border: 'rgba(16,185,129,0.3)' },
+  rejected: { bg: 'rgba(239, 68, 68, 0.12)', text: '#dc2626', border: 'rgba(239,68,68,0.3)' },
 };
 
 export const StrangersMeet: React.FC = () => {
   const { accessToken } = useAuthStore();
   const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
-  const [requests, setRequests]   = useState<SMRequest[]>([]);
-  const [counts, setCounts]       = useState<Counts>({ pending: 0, approved: 0, rejected: 0 });
-  const [loading, setLoading]     = useState(false);
-  const [error, setError]         = useState<string | null>(null);
+  const [requests, setRequests] = useState<SMRequest[]>([]);
+  const [counts, setCounts] = useState<Counts>({ pending: 0, approved: 0, rejected: 0 });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Modal state
-  const [selected, setSelected]       = useState<SMRequest | null>(null);
+  const [selected, setSelected] = useState<SMRequest | null>(null);
   const [modalAction, setModalAction] = useState<'approve' | 'reject' | 'view' | null>(null);
-  const [payAmount, setPayAmount]     = useState('');
-  const [adminNote, setAdminNote]     = useState('');
-  const [submitting, setSubmitting]   = useState(false);
-  const [successMsg, setSuccessMsg]   = useState<string | null>(null);
+  const [payAmount, setPayAmount] = useState('');
+  const [adminNote, setAdminNote] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` };
 
@@ -66,7 +68,7 @@ export const StrangersMeet: React.FC = () => {
     setError(null);
     try {
       const statusParam = activeTab === 'all' ? '' : `?status=${activeTab}`;
-      const res  = await fetch(`${BASE_URL}/api/admin/strangers-meet${statusParam}`, { headers });
+      const res = await fetch(`${BASE_URL}/api/admin/strangers-meet${statusParam}`, { headers });
       const data = await res.json();
       if (data.success) {
         setRequests(data.data);
@@ -108,7 +110,7 @@ export const StrangersMeet: React.FC = () => {
     }
     setSubmitting(true);
     try {
-      const res  = await fetch(`${BASE_URL}/api/admin/strangers-meet/${selected.id}/approve`, {
+      const res = await fetch(`${BASE_URL}/api/admin/strangers-meet/${selected.id}/approve`, {
         method: 'PATCH',
         headers,
         body: JSON.stringify({ paymentAmount: amount, adminNotes: adminNote || undefined }),
@@ -130,7 +132,7 @@ export const StrangersMeet: React.FC = () => {
     if (!selected) return;
     setSubmitting(true);
     try {
-      const res  = await fetch(`${BASE_URL}/api/admin/strangers-meet/${selected.id}/reject`, {
+      const res = await fetch(`${BASE_URL}/api/admin/strangers-meet/${selected.id}/reject`, {
         method: 'PATCH',
         headers,
         body: JSON.stringify({ adminNotes: adminNote || undefined }),
@@ -152,10 +154,10 @@ export const StrangersMeet: React.FC = () => {
     new Date(dt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
   const tabs = [
-    { key: 'pending',  label: 'Pending',  count: counts.pending },
+    { key: 'pending', label: 'Pending', count: counts.pending },
     { key: 'approved', label: 'Approved', count: counts.approved },
     { key: 'rejected', label: 'Rejected', count: counts.rejected },
-    { key: 'all',      label: 'All',      count: counts.pending + counts.approved + counts.rejected },
+    { key: 'all', label: 'All', count: counts.pending + counts.approved + counts.rejected },
   ] as const;
 
   return (
@@ -259,6 +261,8 @@ export const StrangersMeet: React.FC = () => {
                     <span>🏛️ <b>{req.venue?.name ?? '—'}</b>, {req.venue?.city}</span>
                     <span>📅 {fmt(req.eventDateTime)}</span>
                     <span>👥 {req.numberOfPersons} persons</span>
+                    <span>📞 {req.mobileNumber}</span>
+                    {req.alternateMobileNumber && <span>📞 {req.alternateMobileNumber} (Alt)</span>}
                     {req.user && <span>👤 {req.user.firstName} {req.user.lastName}</span>}
                     {req.paymentAmount && <span>💰 ₹{Number(req.paymentAmount).toFixed(0)}</span>}
                   </div>
@@ -320,6 +324,8 @@ export const StrangersMeet: React.FC = () => {
                     <span>🌆 {selected.venue?.city}</span>
                     <span>📅 {fmt(selected.eventDateTime)}</span>
                     <span>👥 {selected.numberOfPersons} persons</span>
+                    <span>📞 {selected.mobileNumber}</span>
+                    {selected.alternateMobileNumber && <span>📞 {selected.alternateMobileNumber} (Alt)</span>}
                     <span>👤 {selected.user?.firstName} {selected.user?.lastName}</span>
                     <span>📧 {selected.user?.email}</span>
                   </div>

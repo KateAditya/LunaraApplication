@@ -20,6 +20,7 @@ import {
     BiFile,
     BiImage,
     BiUserPin,
+    BiChat,
 } from 'react-icons/bi';
 import { useAuthStore } from '../store/authStore';
 import { useThemeMode } from '../context/ThemeContext';
@@ -51,7 +52,9 @@ const navGroups: NavGroup[] = [
             { text: 'Ads Management', icon: <BiImage />, path: '/ads' },
             { text: 'Bookings', icon: <BiCalendarEvent />, path: '/bookings' },
             { text: 'Party Requests', icon: <BiGroup />, path: '/party-requests' },
+            { text: 'Group Parties', icon: <BiGroup />, path: '/group-parties' },
             { text: 'Strangers Meet', icon: <BiUserPin />, path: '/strangers-meet' },
+            { text: 'Chat Settings', icon: <BiChat />, path: '/chat-settings' },
         ],
     },
     {

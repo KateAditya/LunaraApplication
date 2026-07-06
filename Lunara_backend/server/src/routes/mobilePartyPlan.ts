@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import { Router } from 'express';
+=======
+import { Router, Request, Response } from 'express';
+>>>>>>> origin/main
 import { body, param } from 'express-validator';
 import { validate } from '../middleware/validate';
 import {
@@ -241,4 +245,55 @@ router.post(
     verifyJoinerPayment
 );
 
+<<<<<<< HEAD
+=======
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/party-plans/requests/:reqId/reject
+// Reject request
+// ─────────────────────────────────────────────────────────────────────────────
+router.post(
+    '/requests/:reqId/reject',
+    [
+        param('reqId').isUUID().withMessage('reqId must be a valid UUID'),
+        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
+        validate,
+    ],
+    async (req: Request, res: Response) => {
+        try {
+            const { reqId } = req.params;
+            // A simple patch to set status to cancelled
+            const { PartyPlanRequest } = require('../../models');
+            const request = await PartyPlanRequest.findByPk(reqId);
+            if (!request) return res.status(404).json({ success: false, message: 'Request not found' });
+            request.status = 'cancelled';
+            await request.save();
+            return res.json({ success: true, message: 'Request rejected/cancelled' });
+        } catch (error) {
+            return res.status(500).json({ success: false, message: 'Error rejecting request', error });
+        }
+    }
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/party-plans/requests/:reqId/initiate-joiner-payment
+// Initiate Joiner Payment
+// ─────────────────────────────────────────────────────────────────────────────
+router.post(
+    '/requests/:reqId/initiate-joiner-payment',
+    [
+        param('reqId').isUUID().withMessage('reqId must be a valid UUID'),
+        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
+        validate,
+    ],
+    async (_req: Request, res: Response) => {
+        try {
+            // Return a mock amount of 99 for testing
+            return res.json({ success: true, amount: 99 });
+        } catch (error) {
+            return res.status(500).json({ success: false, message: 'Error initiating payment', error });
+        }
+    }
+);
+
+>>>>>>> origin/main
 export default router;
