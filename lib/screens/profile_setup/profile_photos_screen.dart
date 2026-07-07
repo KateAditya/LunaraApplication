@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
+
 import '../../core/theme.dart';
 import '../../widgets/glass_card.dart';
 import '../../widgets/glass_card.dart';
@@ -23,7 +23,7 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
   final List<String?> _photos = List.generate(6, (index) => null);
   final ImagePicker _picker = ImagePicker();
   bool _isProcessing = false;
-  bool _selfieVerified = false; // true when face detected in slot 0
+
 
   Future<void> _pickImage(int index, ImageSource source) async {
     try {
@@ -37,49 +37,10 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
 
       setState(() => _isProcessing = true);
 
-      // Run face detection — mandatory for selfie slot (index 0)
-      try {
-        final inputImage = InputImage.fromFilePath(image.path);
-        final faceDetector = FaceDetector(
-          options: FaceDetectorOptions(
-            enableContours: false,
-            enableClassification: false,
-          ),
-        );
-
-        final List<Face> faces = await faceDetector.processImage(inputImage);
-        await faceDetector.close();
-
-        setState(() {
-          _isProcessing = false;
-          _photos[index] = image.path;
-          if (index == 0) {
-            _selfieVerified = faces.isNotEmpty;
-          }
-        });
-
-        if (index == 0 && faces.isEmpty && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text(
-                '⚠️ No face detected. Use a clear selfie for verification.',
-              ),
-              backgroundColor: LunaraTheme.primaryDeep,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          );
-        }
-      } catch (e) {
-        setState(() {
-          _isProcessing = false;
-          _photos[index] = image.path;
-          if (index == 0) _selfieVerified = false;
-        });
-        debugPrint('Face detection error: $e, accepting photo anyway.');
-      }
+      setState(() {
+        _isProcessing = false;
+        _photos[index] = image.path;
+      });
     } catch (e) {
       setState(() => _isProcessing = false);
       if (mounted) {
@@ -204,7 +165,6 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
                   onTap: () {
                     setState(() {
                       _photos[index] = null;
-                      if (index == 0) _selfieVerified = false;
                     });
                     Navigator.pop(context);
                   },
@@ -262,8 +222,6 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                // Selfie verification status chip
-                _buildVerificationBadge(),
                 const SizedBox(height: 20),
                 Expanded(
                   child: Stack(
@@ -325,40 +283,11 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
                             return;
                           }
 
-                          setState(() => _isProcessing = true);
-                          final selfieBytes = await File(
-                            _photos[0]!,
-                          ).readAsBytes();
-                          final profileBytes = await File(
-                            _photos[1]!,
-                          ).readAsBytes();
-                          final result = await ApiService.verifyFace(
-                            profileBytes,
-                            selfieBytes,
-                          );
-                          setState(() => _isProcessing = false);
-
-                          if (result == null || result['success'] != true) {
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    result?['message'] ??
-                                        'Face verification failed. Please try again.',
-                                  ),
-                                  backgroundColor: LunaraTheme.primaryDeep,
-                                ),
-                              );
-                            }
-                            return;
-                          }
-
                           final data = widget.collectedData != null
                               ? Map<String, dynamic>.from(widget.collectedData!)
                               : <String, dynamic>{};
 
                           data['photos'] = _photos.whereType<String>().toList();
-                          data['selfieVerified'] = true; // Verified by backend
 
                           Navigator.push(
                             context,
@@ -393,97 +322,6 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
     );
   }
 
-  Widget _buildVerificationBadge() {
-    if (_photos[0] == null) {
-      return Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: Theme.of(
-                  context,
-                ).colorScheme.onSurface.withValues(alpha: 0.15),
-              ),
-              color: Theme.of(
-                context,
-              ).colorScheme.onSurface.withValues(alpha: 0.05),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.face_outlined,
-                  size: 14,
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.onSurface.withValues(alpha: 0.38),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  'SELFIE NOT UPLOADED',
-                  style: TextStyle(
-                    fontSize: 10,
-                    letterSpacing: 0.8,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.38),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      );
-    }
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: _selfieVerified
-                  ? const Color(0xFF4CAF50).withValues(alpha: 0.5)
-                  : LunaraTheme.primaryDeep.withValues(alpha: 0.5),
-            ),
-            color: _selfieVerified
-                ? const Color(0xFF4CAF50).withValues(alpha: 0.1)
-                : LunaraTheme.primaryDeep.withValues(alpha: 0.1),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                _selfieVerified
-                    ? Icons.verified_user
-                    : Icons.warning_amber_rounded,
-                size: 14,
-                color: _selfieVerified
-                    ? const Color(0xFF4CAF50)
-                    : LunaraTheme.primaryDeep,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                _selfieVerified ? 'SELFIE VERIFIED ✓' : 'FACE NOT DETECTED',
-                style: TextStyle(
-                  fontSize: 10,
-                  letterSpacing: 0.8,
-                  color: _selfieVerified
-                      ? const Color(0xFF4CAF50)
-                      : LunaraTheme.primaryDeep,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildHeader() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -504,7 +342,6 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
                 ? Map<String, dynamic>.from(widget.collectedData!)
                 : <String, dynamic>{};
             data['photos'] = <String>[];
-            data['selfieVerified'] = false;
             Navigator.push(
               context,
               MaterialPageRoute(
@@ -565,9 +402,7 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
       padding: EdgeInsets.zero,
       borderRadius: BorderRadius.circular(16),
       borderColor: isSelfieSlot
-          ? (_selfieVerified
-                ? const Color(0xFF4CAF50).withValues(alpha: 0.6)
-                : LunaraTheme.accentVivid.withValues(alpha: 0.5))
+          ? LunaraTheme.accentVivid.withValues(alpha: 0.5)
           : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1),
       child: Stack(
         fit: StackFit.expand,
@@ -618,15 +453,13 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
                 color: isSelfieSlot
-                    ? (_selfieVerified
-                          ? const Color(0xFF4CAF50)
-                          : LunaraTheme.accentVivid)
+                    ? LunaraTheme.accentVivid
                     : Colors.black.withValues(alpha: 0.4),
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
                 isSelfieSlot
-                    ? (_selfieVerified ? '✓ ID' : 'SELFIE')
+                    ? 'SELFIE'
                     : '${index + 1}',
                 style: const TextStyle(
                   fontSize: 8,

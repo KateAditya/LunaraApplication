@@ -921,52 +921,6 @@ class ApiService {
     return false;
   }
 
-  static Future<Map<String, dynamic>?> verifyFace(
-    Uint8List profileBytes,
-    Uint8List selfieBytes,
-  ) async {
-    try {
-      if (currentUserId == null) return null;
-
-      final files = <http.MultipartFile>[
-        http.MultipartFile.fromBytes(
-          'profilePhoto',
-          profileBytes,
-          filename: 'profile.jpg',
-          contentType: MediaType('image', 'jpeg'),
-        ),
-        http.MultipartFile.fromBytes(
-          'selfiePhoto',
-          selfieBytes,
-          filename: 'selfie.jpg',
-          contentType: MediaType('image', 'jpeg'),
-        ),
-      ];
-
-      final response = await postMultipart(
-        '/api/mobile/user/verify-face',
-        fields: {'userId': currentUserId!},
-        files: files,
-      );
-
-      debugPrint('verifyFace status: ${response.statusCode}');
-      debugPrint('verifyFace body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data;
-      } else {
-        final data = jsonDecode(response.body);
-        return {
-          'success': false,
-          'message': data['message'] ?? 'Verification failed',
-        };
-      }
-    } catch (e) {
-      debugPrint('verifyFace error: $e');
-      return {'success': false, 'message': e.toString()};
-    }
-  }
 
   static Future<bool> deleteProfilePhoto(String photoId) async {
     try {

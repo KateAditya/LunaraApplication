@@ -36,15 +36,10 @@ const profileSetupValidation = [
  * 
  * Public/Testing — userId must be provided in body.
  * Upload multiple photos (multipart/form-data) under the field "photos".
+ */
 router.post('/photos', uploadTempPhotos.array('photos', 6), mobileUserController.uploadPhotos);
 
-/**
- * POST /api/mobile/user/verify-face
- * 
- * Verifies a live selfie against a profile photo using face recognition.
- * Expects: profilePhoto (file), selfiePhoto (file), userId (string)
- */
-router.post('/verify-face', uploadTempPhotos.fields([{ name: 'profilePhoto', maxCount: 1 }, { name: 'selfiePhoto', maxCount: 1 }]), mobileUserController.verifyFace);
+
 
 /**
  * PUT /api/mobile/user/profile-setup

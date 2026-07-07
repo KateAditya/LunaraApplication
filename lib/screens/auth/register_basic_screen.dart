@@ -29,12 +29,7 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
   String _selectedCity = 'Mumbai';
   String _selectedGender = 'MALE';
 
-  List<String> _indianCities = [
-    'Mumbai', 'Delhi', 'Bangalore', 'Hyderabad', 'Ahmedabad',
-    'Chennai', 'Kolkata', 'Surat', 'Pune', 'Jaipur',
-    'Lucknow', 'Kanpur', 'Nagpur', 'Indore', 'Thane',
-    'Bhopal', 'Visakhapatnam', 'Pimpri-Chinchwad', 'Patna', 'Vadodara',
-  ];
+  List<String> _indianCities = ['Pune'];
 
   @override
   void initState() {
@@ -94,7 +89,9 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                         style: TextStyle(
                           color: isSelected
                               ? LunaraTheme.primaryRich
-                              : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
+                              : Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.87),
                           fontWeight: isSelected
                               ? FontWeight.bold
                               : FontWeight.normal,
@@ -140,7 +137,9 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                 style: LunaraTheme.bodyStyle.copyWith(
                   fontSize: 12,
                   letterSpacing: 2,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.45),
                   height: 1.5,
                 ),
               ),
@@ -255,7 +254,9 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                       text: TextSpan(
                         text: 'I accept the ',
                         style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.8),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.8),
                           fontSize: 14,
                         ),
                         children: [
@@ -270,7 +271,9 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                               ..onTap = () {
                                 Navigator.push(
                                   context,
-                                  MaterialPageRoute(builder: (context) => const TermsScreen()),
+                                  MaterialPageRoute(
+                                    builder: (context) => const TermsScreen(),
+                                  ),
                                 );
                               },
                           ),
@@ -295,7 +298,8 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                           errorMessage = 'Please enter your first name';
                         } else if (_lastNameController.text.trim().isEmpty) {
                           errorMessage = 'Please enter your last name';
-                        } else if (_emailController.text.trim().isEmpty || !_emailController.text.contains('@')) {
+                        } else if (_emailController.text.trim().isEmpty ||
+                            !_emailController.text.contains('@')) {
                           errorMessage = 'Please enter a valid email address';
                         } else if (_phoneController.text.trim().isEmpty) {
                           errorMessage = 'Please enter your phone number';
@@ -306,7 +310,8 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                         } else if (_selectedCity.isEmpty) {
                           errorMessage = 'Please select your city';
                         } else if (!_acceptedTerms) {
-                          errorMessage = 'Please accept the Terms and Conditions';
+                          errorMessage =
+                              'Please accept the Terms and Conditions';
                         }
 
                         if (errorMessage != null) {
@@ -320,8 +325,10 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                         }
 
                         setState(() => _isLoading = true);
-                        
-                        final emailError = await AuthService.checkEmail(_emailController.text.trim());
+
+                        final emailError = await AuthService.checkEmail(
+                          _emailController.text.trim(),
+                        );
                         if (emailError != null) {
                           if (!mounted) return;
                           setState(() => _isLoading = false);
@@ -392,7 +399,10 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
 
   Widget _buildHeader(BuildContext context) {
     return IconButton(
-      icon: Icon(Icons.arrow_back, color: Theme.of(context).colorScheme.onSurface),
+      icon: Icon(
+        Icons.arrow_back,
+        color: Theme.of(context).colorScheme.onSurface,
+      ),
       onPressed: () => Navigator.pop(context),
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(),
@@ -419,9 +429,7 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
           Container(
             height: 4,
             decoration: BoxDecoration(
-              color: active
-                  ? LunaraTheme.primaryRich
-                  : LunaraTheme.lightBorder,
+              color: active ? LunaraTheme.primaryRich : LunaraTheme.lightBorder,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -431,7 +439,11 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.bold,
-              color: active ? LunaraTheme.primaryRich : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+              color: active
+                  ? LunaraTheme.primaryRich
+                  : Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.38),
               letterSpacing: 1,
             ),
           ),
@@ -448,7 +460,9 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
           text: label,
           style: TextStyle(
             fontSize: 12,
-            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.54),
             letterSpacing: 1.5,
             fontWeight: FontWeight.bold,
           ),
@@ -490,9 +504,18 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
         decoration: InputDecoration(
           hintText: hint,
           prefixText: prefixText,
-          prefixStyle: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87), fontSize: 16),
+          prefixStyle: TextStyle(
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.87),
+            fontSize: 16,
+          ),
           counterText: '',
-          hintStyle: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38)),
+          hintStyle: TextStyle(
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.38),
+          ),
           border: InputBorder.none,
           icon: Icon(icon, color: LunaraTheme.primaryRich, size: 20),
         ),
@@ -506,28 +529,37 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: LunaraTheme.lightBorder),
-        boxShadow: LunaraTheme.premiumShadow,
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.location_city_outlined,
-            color: LunaraTheme.primaryRich,
-            size: 20,
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Text(
-              _selectedCity,
-              style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: LunaraTheme.lightBorder),
+          boxShadow: LunaraTheme.premiumShadow,
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.location_city_outlined,
+              color: LunaraTheme.primaryRich,
+              size: 20,
             ),
-          ),
-          Icon(Icons.keyboard_arrow_down, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
-        ],
-      ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                _selectedCity,
+                style: TextStyle(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.87),
+                ),
+              ),
+            ),
+            Icon(
+              Icons.keyboard_arrow_down,
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.54),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -566,7 +598,11 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
             children: [
               Icon(
                 icon,
-                color: isSelected ? LunaraTheme.primaryRich : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+                color: isSelected
+                    ? LunaraTheme.primaryRich
+                    : Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.38),
                 size: 24,
               ),
               const SizedBox(height: 8),
@@ -577,7 +613,9 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                   fontWeight: FontWeight.bold,
                   color: isSelected
                       ? LunaraTheme.primaryRich
-                      : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+                      : Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.38),
                 ),
               ),
             ],

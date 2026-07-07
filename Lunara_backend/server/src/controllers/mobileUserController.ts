@@ -5,7 +5,7 @@ import crypto from 'crypto';
 import sharp from 'sharp';
 import { UserProfile, UserPreference, UserPhoto, UserMatch } from '../models';
 import User, { UserRole } from '../models/User';
-import { verifyFaces, verifySingleFace } from '../services/faceVerificationService';
+
 import { logger } from '../config/logger';
 import { Op } from 'sequelize';
 import { getUserGalleryDir } from '../middleware/upload';
@@ -41,13 +41,7 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
 
             const fileBuffer = file.buffer || fs.readFileSync(file.path);
 
-            if (i === 0) {
-                // Verify that the primary photo has a valid face
-                const hasFace = await verifySingleFace(fileBuffer);
-                if (!hasFace) {
-                    return res.status(400).json({ success: false, message: 'No face detected in the primary profile photo. Please upload a clear photo of yourself.' });
-                }
-            }
+
 
             // ── Compress with sharp ──────────────────────────────────────────
             const randomHex = crypto.randomBytes(8).toString('hex');
@@ -540,51 +534,6 @@ export const registerFcmToken = async (req: Request, res: Response): Promise<Res
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /api/mobile/user/verify-face
-// Verifies live selfie against profile photo
-// ─────────────────────────────────────────────────────────────────────────────
-export const verifyFace = async (req: Request, res: Response): Promise<Response> => {
-    try {
-        const userId = req.body.userId;
-        if (!userId) {
-            return res.status(400).json({ success: false, message: 'userId is required' });
-        }
-
-        const files = req.files as { [fieldname: string]: Express.Multer.File[] };
-        if (!files || !files.profilePhoto || !files.selfiePhoto) {
-            return res.status(400).json({ success: false, message: 'Both profilePhoto and selfiePhoto are required' });
-        }
-
-        const profilePhoto = files.profilePhoto[0];
-        const selfiePhoto = files.selfiePhoto[0];
-
-        try {
-            const profileBuffer = profilePhoto.buffer || fs.readFileSync(profilePhoto.path);
-            const selfieBuffer = selfiePhoto.buffer || fs.readFileSync(selfiePhoto.path);
-
-            // Using Google Cloud Vision API to verify both images contain valid faces
-            const similarity = await verifyFaces(profileBuffer, selfieBuffer);
-
-            if (profilePhoto.path && fs.existsSync(profilePhoto.path)) fs.unlinkSync(profilePhoto.path);
-            if (selfiePhoto.path && fs.existsSync(selfiePhoto.path)) fs.unlinkSync(selfiePhoto.path);
-
-            if (similarity === 100) {
-                return res.status(200).json({ success: true, message: 'Faces verified successfully in both images', similarity });
-            } else {
-                return res.status(400).json({ success: false, message: 'Face verification failed. Please ensure your face is clearly visible.' });
-            }
-        } catch (error: any) {
-            if (profilePhoto.path && fs.existsSync(profilePhoto.path)) fs.unlinkSync(profilePhoto.path);
-            if (selfiePhoto.path && fs.existsSync(selfiePhoto.path)) fs.unlinkSync(selfiePhoto.path);
-            logger.error('[MobileUser] Face verification processing error:', error);
-            return res.status(400).json({ success: false, message: error.message || 'Face verification failed' });
-        }
-    } catch (error: any) {
-        logger.error('[MobileUser] Error verifying face:', error);
-        return res.status(500).json({ success: false, message: 'Failed to verify face' });
-    }
-};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/mobile/user/block
@@ -890,7 +839,7 @@ export default {
     getAllCustomers,
     getUserStatus,
     registerFcmToken,
-    verifyFace,
+
     blockUser,
     unblockUser,
     reportUser,

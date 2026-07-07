@@ -59,61 +59,65 @@ class _WelcomeCarouselState extends State<WelcomeCarousel> {
         itemCount: _slides.length,
         itemBuilder: (context, index) {
           final slide = _slides[index];
-          return WelcomeBackground(
-            backgroundImage: slide['bg'] ?? 'assets/images/welcome_bg.png',
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.only(left: 24, right: 24, bottom: 24),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Text(
-                        slide['tagline'] ?? '',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        slide['subtitle'] ?? '',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Colors.white,
-                          height: 1.4,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      GestureDetector(
-                        onTap: _handleNext,
-                        child: Container(
-                          width: 72,
-                          height: 72,
-                          decoration: BoxDecoration(
+          return GestureDetector(
+            onTap: _handleNext,
+            behavior: HitTestBehavior.opaque,
+            child: WelcomeBackground(
+              backgroundImage: slide['bg'] ?? 'assets/images/welcome_bg.png',
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 24, right: 24, bottom: 24),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Text(
+                          slide['tagline'] ?? '',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 20,
                             color: Colors.white,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Colors.grey.withOpacity(0.5),
-                              width: 6,
-                            ),
+                            fontWeight: FontWeight.bold,
                           ),
-                          child: Transform.rotate(
-                            angle: 0, // Rotate send icon slightly right
-                            child: const Icon(
-                              Icons.send,
-                              color: LunaraTheme.electricViolet,
-                              size: 30,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          slide['subtitle'] ?? '',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.white,
+                            height: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        GestureDetector(
+                          onTap: _handleNext,
+                          child: Container(
+                            width: 72,
+                            height: 72,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.grey.withOpacity(0.5),
+                                width: 6,
+                              ),
+                            ),
+                            child: Transform.rotate(
+                              angle: 0, // Rotate send icon slightly right
+                              child: const Icon(
+                                Icons.send,
+                                color: LunaraTheme.electricViolet,
+                                size: 30,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),

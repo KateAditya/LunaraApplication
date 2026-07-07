@@ -835,7 +835,6 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // Backtrack button with label
         Opacity(
           opacity: widget.canBacktrack ? 1.0 : 0.4,
           child: Column(
@@ -846,30 +845,14 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                 height: 48,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: widget.canBacktrack
-                      ? LunaraTheme.amberGlow
-                      : LinearGradient(
-                          colors: isDark
-                              ? [Colors.grey.shade800, Colors.grey.shade900]
-                              : [Colors.grey.shade200, Colors.grey.shade300],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                  border: Border.all(
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.05)
-                        : Colors.grey.shade300,
-                    width: 1.5,
-                  ),
-                  boxShadow: widget.canBacktrack
-                      ? [
-                          BoxShadow(
-                            color: Colors.amber.withValues(alpha: 0.25),
-                            blurRadius: 10,
-                            spreadRadius: 1,
-                          ),
-                        ]
-                      : null,
+                  gradient: LunaraTheme.amberGlow,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.amber.withValues(alpha: isDark ? 0.35 : 0.15),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
                 child: IconButton(
                   icon: const Icon(Icons.undo_rounded, color: Colors.white),
