@@ -12,7 +12,7 @@ import '../models/help_article.dart';
 import '../models/community_guideline.dart';
 import '../models/legal_document.dart';
 import '../models/strangers_meet_request.dart';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:socket_io_client/socket_io_client.dart' as socket_io;
 import 'notification_navigator.dart';
 import '../screens/auth/autoblocked_warning_screen.dart';
 
@@ -1259,7 +1259,7 @@ class ApiService {
       final params = <String, String>{
         'userId': userId,
         'limit': limit.toString(),
-        'before': ?before,
+        if (before != null) 'before': before,
       };
       final response = await get(
         '/api/mobile/chat/conversations/$conversationId/messages',
@@ -1751,7 +1751,7 @@ class ApiService {
         body: {
           'conversationId': conversationId,
           'userId': currentUserId,
-          'paymentId': ?paymentId,
+          if (paymentId != null) 'paymentId': paymentId,
         },
       );
       if (response.statusCode == 200) {
@@ -1798,8 +1798,8 @@ class ApiService {
         body: {
           'conversationId': conversationId,
           'userId': currentUserId,
-          'requestedById': ?requestedById,
-          'paymentId': ?paymentId,
+          if (requestedById != null) 'requestedById': requestedById,
+          if (paymentId != null) 'paymentId': paymentId,
         },
       );
       if (response.statusCode == 200) {

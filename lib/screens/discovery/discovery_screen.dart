@@ -387,7 +387,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             edgeOffset: fixedTopPadding,
             onRefresh: () async {
               await _loadVenues();
-              await _loadRequestCount();
             },
             child: SingleChildScrollView(
               controller: _scrollController,
