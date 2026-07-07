@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import sharp from 'sharp';
-import { UserProfile, UserPreference, UserPhoto, UserMatch } from '../models';
+import { UserProfile, UserPreference, UserPhoto, UserMatch, PartyPlan } from '../models';
 import User, { UserRole } from '../models/User';
 
 import { logger } from '../config/logger';
@@ -268,11 +268,29 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
             uploadedAt: p.uploadedAt,
         }));
 
+        // Fetch actual superLikesCount and plansCount
+        const superLikesCount = await UserMatch.count({
+            where: {
+                user2Id: userId,
+                matchReason: 'superlike',
+                status: { [Op.in]: ['pending', 'connected'] }
+            }
+        });
+
+        const plansCount = await PartyPlan.count({
+            where: {
+                userId,
+                status: 'active'
+            }
+        });
+
         return res.status(200).json({
             success: true,
             data: {
                 // ── Core user fields ─────────────────────────────────────────
                 id: user.id,
+                superLikesCount,
+                plansCount,
                 firstName: user.firstName,
                 lastName: user.lastName,
                 fullName: `${user.firstName} ${user.lastName}`,
@@ -366,8 +384,35 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
         const search = (req.query.search as string)?.trim();
         const city = (req.query.city as string)?.trim();
 
+        const currentUserId = req.user?.id || (req.query.currentUserId as string) || (req.query.userId as string);
+
         // Build User-level where clause
         const userWhere: any = { role: UserRole.CUSTOMER, isActive: true };
+
+        const excludeUserIds: string[] = [];
+        if (currentUserId) {
+            excludeUserIds.push(currentUserId);
+            const blocks = await SocialConnection.findAll({
+                where: {
+                    status: ConnectionStatus.BLOCKED,
+                    [Op.or]: [
+                        { requesterId: currentUserId },
+                        { receiverId: currentUserId }
+                    ]
+                }
+            });
+            blocks.forEach(b => {
+                if (b.requesterId === currentUserId) {
+                    excludeUserIds.push(b.receiverId);
+                } else {
+                    excludeUserIds.push(b.requesterId);
+                }
+            });
+        }
+
+        if (excludeUserIds.length > 0) {
+            userWhere.id = { [Op.notIn]: excludeUserIds };
+        }
         if (search) {
             userWhere[Op.or] = [
                 { firstName: { [Op.iLike]: `%${search}%` } },
@@ -429,7 +474,7 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
 
         const totalPages = Math.ceil(count / limit);
 
-        const data = rows.map(user => {
+        const data = await Promise.all(rows.map(async user => {
             const u = user as any;
             // Compute age from dateOfBirth
             const age = user.dateOfBirth
@@ -441,6 +486,22 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
             const photoUrl = photo
                 ? '/' + photo.filePath.replace(/\\/g, '/')
                 : (user.profileImageUrl ?? null);
+
+            // Fetch actual superLikesCount and plansCount
+            const superLikesCount = await UserMatch.count({
+                where: {
+                    user2Id: user.id,
+                    matchReason: 'superlike',
+                    status: { [Op.in]: ['pending', 'connected'] }
+                }
+            });
+
+            const plansCount = await PartyPlan.count({
+                where: {
+                    userId: user.id,
+                    status: 'active'
+                }
+            });
 
             return {
                 id: user.id,
@@ -459,8 +520,10 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                 lastLoginAt: (user as any).lastLoginAt ?? null,
                 profile: u.profile ?? null,
                 preferences: u.preferences ?? null,
+                superLikesCount,
+                plansCount,
             };
-        });
+        }));
 
         return res.status(200).json({
             success: true,
@@ -545,7 +608,8 @@ export const blockUser = async (req: Request, res: Response): Promise<Response> 
 
         if (!userId || !targetUserId) return res.status(400).json({ success: false, message: 'userId and targetUserId required' });
 
-        let conn = await SocialConnection.findOne({
+        // Destroy any existing connection first to ensure clean block state
+        await SocialConnection.destroy({
             where: {
                 [Op.or]: [
                     { requesterId: userId, receiverId: targetUserId },
@@ -554,15 +618,43 @@ export const blockUser = async (req: Request, res: Response): Promise<Response> 
             }
         });
 
-        if (conn) {
-            conn.status = ConnectionStatus.BLOCKED;
-            await conn.save();
-        } else {
-            await SocialConnection.create({
-                requesterId: userId,
+        // Create the block connection (Blocker is requester, Blocked is receiver)
+        await SocialConnection.create({
+            requesterId: userId,
+            receiverId: targetUserId,
+            status: ConnectionStatus.BLOCKED
+        });
+
+        // Recalculate block count
+        const count = await SocialConnection.count({
+            where: {
                 receiverId: targetUserId,
                 status: ConnectionStatus.BLOCKED
-            });
+            }
+        });
+
+        const targetUser = await User.findByPk(targetUserId);
+        if (targetUser) {
+            targetUser.blockCount = count;
+            if (count >= 10) {
+                targetUser.isAutoblocked = true;
+                targetUser.autoblockedReason = `Autoblocked due to receiving ${count} blocks from other users.`;
+                targetUser.isActive = false;
+            }
+            await targetUser.save();
+
+            // Emit socket to log out target user immediately
+            if (targetUser.isAutoblocked) {
+                try {
+                    const { io } = require('../server');
+                    io.to(`user_${targetUserId}`).emit('user_autoblocked', {
+                        userId: targetUserId,
+                        reason: targetUser.autoblockedReason,
+                    });
+                } catch (socketErr) {
+                    logger.warn('[MobileUser] Could not emit user_autoblocked socket event:', socketErr);
+                }
+            }
         }
 
         return res.status(200).json({ success: true, message: 'User blocked' });
@@ -585,15 +677,27 @@ export const unblockUser = async (req: Request, res: Response): Promise<Response
         const conn = await SocialConnection.findOne({
             where: {
                 status: ConnectionStatus.BLOCKED,
-                [Op.or]: [
-                    { requesterId: userId, receiverId: targetUserId },
-                    { requesterId: targetUserId, receiverId: userId },
-                ]
+                requesterId: userId,
+                receiverId: targetUserId
             }
         });
 
         if (conn) {
             await conn.destroy();
+        }
+
+        // Recalculate block count
+        const count = await SocialConnection.count({
+            where: {
+                receiverId: targetUserId,
+                status: ConnectionStatus.BLOCKED
+            }
+        });
+
+        const targetUser = await User.findByPk(targetUserId);
+        if (targetUser) {
+            targetUser.blockCount = count;
+            await targetUser.save();
         }
 
         return res.status(200).json({ success: true, message: 'User unblocked' });
@@ -619,7 +723,8 @@ export const reportUser = async (req: Request, res: Response): Promise<Response>
             reason: `Reported by ${userId}: ${reason}`
         });
 
-        let conn = await SocialConnection.findOne({
+        // Destroy any existing connection first
+        await SocialConnection.destroy({
             where: {
                 [Op.or]: [
                     { requesterId: userId, receiverId: targetUserId },
@@ -628,15 +733,43 @@ export const reportUser = async (req: Request, res: Response): Promise<Response>
             }
         });
 
-        if (conn) {
-            conn.status = ConnectionStatus.BLOCKED;
-            await conn.save();
-        } else {
-            await SocialConnection.create({
-                requesterId: userId,
+        // Create the block connection
+        await SocialConnection.create({
+            requesterId: userId,
+            receiverId: targetUserId,
+            status: ConnectionStatus.BLOCKED
+        });
+
+        // Recalculate block count
+        const count = await SocialConnection.count({
+            where: {
                 receiverId: targetUserId,
                 status: ConnectionStatus.BLOCKED
-            });
+            }
+        });
+
+        const targetUser = await User.findByPk(targetUserId);
+        if (targetUser) {
+            targetUser.blockCount = count;
+            if (count >= 10) {
+                targetUser.isAutoblocked = true;
+                targetUser.autoblockedReason = `Autoblocked due to receiving ${count} blocks from other users.`;
+                targetUser.isActive = false;
+            }
+            await targetUser.save();
+
+            // Emit socket to log out target user immediately
+            if (targetUser.isAutoblocked) {
+                try {
+                    const { io } = require('../server');
+                    io.to(`user_${targetUserId}`).emit('user_autoblocked', {
+                        userId: targetUserId,
+                        reason: targetUser.autoblockedReason,
+                    });
+                } catch (socketErr) {
+                    logger.warn('[MobileUser] Could not emit user_autoblocked socket event:', socketErr);
+                }
+            }
         }
 
         return res.status(200).json({ success: true, message: 'User reported and blocked' });
@@ -670,6 +803,40 @@ export const getBlockedUsers = async (req: Request, res: Response): Promise<Resp
     } catch (error: any) {
         logger.error('[MobileUser] getBlockedUsers error:', error);
         return res.status(500).json({ success: false, message: 'Failed to get blocks' });
+    }
+};
+
+export const getBlockedUsersDetails = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const userId = (req.query.userId as string) || req.user?.id;
+        if (!userId) return res.status(401).json({ success: false, message: 'userId required' });
+
+        // Retrieve connections where the current user blocked the receiver user
+        const blocks = await SocialConnection.findAll({
+            where: {
+                status: ConnectionStatus.BLOCKED,
+                requesterId: userId
+            }
+        });
+
+        const blockedUserIds = blocks.map(b => b.receiverId);
+        if (blockedUserIds.length === 0) {
+            return res.status(200).json({ success: true, data: [] });
+        }
+
+        const users = await User.findAll({
+            where: {
+                id: {
+                    [Op.in]: blockedUserIds
+                }
+            },
+            attributes: ['id', 'firstName', 'lastName', 'profileImageUrl']
+        });
+
+        return res.status(200).json({ success: true, data: users });
+    } catch (error: any) {
+        logger.error('[MobileUser] getBlockedUsersDetails error:', error);
+        return res.status(500).json({ success: false, message: 'Failed to get blocked contacts details' });
     }
 };
 
@@ -844,6 +1011,7 @@ export default {
     unblockUser,
     reportUser,
     getBlockedUsers,
+    getBlockedUsersDetails,
     swipeUser,
     getMyLikesAndMatches
 };

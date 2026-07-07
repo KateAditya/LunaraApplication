@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:flutter/foundation.dart'; // For debugPrint
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/venue.dart';
 import '../models/user.dart';
@@ -11,15 +12,22 @@ import '../models/help_article.dart';
 import '../models/community_guideline.dart';
 import '../models/legal_document.dart';
 import '../models/strangers_meet_request.dart';
-import 'package:socket_io_client/socket_io_client.dart' as socket_io;
+import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'notification_navigator.dart';
+import '../screens/auth/autoblocked_warning_screen.dart';
 
 class ApiService {
   // Toggle this to true to use your local backend, false for production
-  static const bool isLocal = false;
+  static const bool isLocal = true;
 
-  // Uses your machine's local IP (192.168.0.155) for local dev on a real device
-  static String get baseUrl =>
-      isLocal ? 'http://192.168.0.155:9076' : 'http://103.224.247.35:9076';
+  // Uses your machine's local IP (192.168.0.169) for local dev on a real device
+  static String get baseUrl {
+    if (!isLocal) return 'http://103.224.247.35:9076';
+    if (kIsWeb) {
+      return 'http://localhost:9076';
+    }
+    return 'http://192.168.0.169:9076';
+  }
 
   static String? _authToken;
   static String? selectedCity;
@@ -193,9 +201,25 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['venues'] != null) {
-          return (data['venues'] as List)
+          final list = (data['venues'] as List)
               .map((json) => Venue.fromJson(json))
               .toList();
+          if (list.isNotEmpty) {
+            return list;
+          }
+        }
+      }
+      // Fallback: if we queried a specific city and got no venues, try fetching all venues
+      if (targetCity != null && targetCity.isNotEmpty) {
+        debugPrint('fetchVenues: No venues found for $targetCity, falling back to all venues.');
+        final fallbackResponse = await get('/api/venues');
+        if (fallbackResponse.statusCode == 200) {
+          final data = jsonDecode(fallbackResponse.body);
+          if (data['success'] == true && data['venues'] != null) {
+            return (data['venues'] as List)
+                .map((json) => Venue.fromJson(json))
+                .toList();
+          }
         }
       }
       return [];
@@ -322,6 +346,8 @@ class ApiService {
     required String subject,
     required String requirement,
     required String description,
+    required String mobileNumber,
+    String? optionalMobileNumber,
   }) async {
     final userId = currentUserId;
     if (userId == null) return false;
@@ -340,6 +366,9 @@ class ApiService {
           'partySubject': subject,
           'partyRequirement': requirement,
           'partyDescription': description,
+          'mobileNumber': mobileNumber.trim(),
+          if (optionalMobileNumber != null && optionalMobileNumber.trim().isNotEmpty)
+            'optionalMobileNumber': optionalMobileNumber.trim(),
         },
       );
 
@@ -559,6 +588,21 @@ class ApiService {
     return [];
   }
 
+  static Future<List<Map<String, dynamic>>> fetchUserPartyPlans(String userId) async {
+    try {
+      final response = await get('/api/mobile/party-plans/user/$userId');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return List<Map<String, dynamic>>.from(data['data']);
+        }
+      }
+    } catch (e) {
+      debugPrint('fetchUserPartyPlans error: $e');
+    }
+    return [];
+  }
+
   static Future<Map<String, dynamic>?> acceptPartyPlanRequest(
     String reqId,
   ) async {
@@ -652,6 +696,7 @@ class ApiService {
     required String tagline,
     required String eventDateTime,
     required int numberOfPersons,
+    required double chargesPerHead,
     required String mobileNumber,
     String? alternateMobileNumber,
   }) async {
@@ -668,6 +713,7 @@ class ApiService {
           'tagline': tagline,
           'eventDateTime': eventDateTime,
           'numberOfPersons': numberOfPersons,
+          'chargesPerHead': chargesPerHead,
           'mobileNumber': mobileNumber,
           if (alternateMobileNumber != null && alternateMobileNumber.isNotEmpty)
             'alternateMobileNumber': alternateMobileNumber,
@@ -782,6 +828,79 @@ class ApiService {
     return null;
   }
 
+  static Future<Map<String, dynamic>?> initiateStrangersMeetJoinPayment(
+    String id,
+  ) async {
+    final userId = currentUserId;
+    if (userId == null) return null;
+
+    try {
+      final response = await post(
+        '/api/mobile/strangers-meet/$id/join/initiate-payment',
+        body: {'userId': userId},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return data;
+        }
+      }
+    } catch (e) {
+      debugPrint('initiateStrangersMeetJoinPayment error: $e');
+    }
+    return null;
+  }
+
+  static Future<Map<String, dynamic>?> payStrangersMeetJoin(
+    String id,
+    String razorpayOrderId,
+    String paymentId,
+    String signature,
+  ) async {
+    final userId = currentUserId;
+    if (userId == null) return null;
+
+    try {
+      final response = await post(
+        '/api/mobile/strangers-meet/$id/join/confirm',
+        body: {
+          'userId': userId,
+          'razorpay_order_id': razorpayOrderId,
+          'razorpay_payment_id': paymentId,
+          'razorpay_signature': signature,
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return data['data'];
+        }
+      }
+    } catch (e) {
+      debugPrint('payStrangersMeetJoin error: $e');
+    }
+    return null;
+  }
+
+  static Future<bool> completeStrangersMeet(String id) async {
+    final userId = currentUserId;
+    if (userId == null) return false;
+
+    try {
+      final response = await patch(
+        '/api/mobile/strangers-meet/$id/complete',
+        body: {'userId': userId},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      debugPrint('completeStrangersMeet error: $e');
+    }
+    return false;
+  }
+
   // ───────────────────────────────────────────────────────────────────────────
 
   static Future<List<HelpArticle>> fetchHelpCenterArticles() async {
@@ -844,6 +963,33 @@ class ApiService {
     }
   }
 
+  static void _checkAutoblockedResponse(http.Response response) {
+    if (response.statusCode == 403) {
+      try {
+        final data = jsonDecode(response.body);
+        if (data is Map && data['code'] == 'USER_AUTOBLOCKED') {
+          final reason = data['autoblockedReason'] ?? data['message'] ?? 'Suspended due to safety reports.';
+          
+          // Log out immediately
+          clearAuthToken();
+          
+          // Navigate immediately to AutoblockedWarningScreen
+          final nav = NotificationNavigator.navigator;
+          if (nav != null) {
+            nav.pushAndRemoveUntil(
+              MaterialPageRoute(
+                builder: (context) => AutoblockedWarningScreen(reason: reason),
+              ),
+              (route) => false,
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('Error parsing error response: $e');
+      }
+    }
+  }
+
   static Future<http.Response> get(
     String endpoint, {
     Map<String, String>? queryParameters,
@@ -858,15 +1004,19 @@ class ApiService {
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
 
+    http.Response response;
     if (body != null) {
       final request = http.Request('GET', uri);
       request.headers.addAll(headers);
       request.body = jsonEncode(body);
       final streamedResponse = await request.send();
-      return await http.Response.fromStream(streamedResponse);
+      response = await http.Response.fromStream(streamedResponse);
+    } else {
+      response = await http.get(uri, headers: headers);
     }
 
-    return await http.get(uri, headers: headers);
+    _checkAutoblockedResponse(response);
+    return response;
   }
 
   static Future<bool> updateProfile(Map<String, dynamic> data) async {
@@ -920,7 +1070,6 @@ class ApiService {
     return false;
   }
 
-
   static Future<bool> deleteProfilePhoto(String photoId) async {
     try {
       final response = await delete('/api/profile/photos/$photoId');
@@ -969,7 +1118,9 @@ class ApiService {
       'Content-Type': 'application/json',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
-    return await http.put(uri, headers: headers, body: jsonEncode(body));
+    final response = await http.put(uri, headers: headers, body: jsonEncode(body));
+    _checkAutoblockedResponse(response);
+    return response;
   }
 
   static Future<http.Response> post(
@@ -982,7 +1133,9 @@ class ApiService {
       'Content-Type': 'application/json',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
-    return await http.post(uri, headers: headers, body: jsonEncode(body));
+    final response = await http.post(uri, headers: headers, body: jsonEncode(body));
+    _checkAutoblockedResponse(response);
+    return response;
   }
 
   static Future<http.Response> patch(
@@ -995,7 +1148,9 @@ class ApiService {
       'Content-Type': 'application/json',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
-    return await http.patch(uri, headers: headers, body: jsonEncode(body));
+    final response = await http.patch(uri, headers: headers, body: jsonEncode(body));
+    _checkAutoblockedResponse(response);
+    return response;
   }
 
   static Future<http.Response> delete(
@@ -1012,7 +1167,9 @@ class ApiService {
     request.headers.addAll(headers);
     if (body != null) request.body = jsonEncode(body);
     final streamed = await request.send();
-    return await http.Response.fromStream(streamed);
+    final response = await http.Response.fromStream(streamed);
+    _checkAutoblockedResponse(response);
+    return response;
   }
 
   // ─── Chat Module ───────────────────────────────────────────────────────────
@@ -1346,6 +1503,23 @@ class ApiService {
     return [];
   }
 
+  static Future<List<Map<String, dynamic>>> getBlockedUsersDetails() async {
+    try {
+      final userId = currentUserId;
+      if (userId == null) return [];
+      final response = await get('/api/mobile/user/blocks/details?userId=$userId');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return List<Map<String, dynamic>>.from(data['data']);
+        }
+      }
+    } catch (e) {
+      debugPrint('getBlockedUsersDetails error: $e');
+    }
+    return [];
+  }
+
   static Future<bool> updateUserPreferences({
     required bool showMeInMatching,
   }) async {
@@ -1451,6 +1625,34 @@ class ApiService {
       await patch('/api/mobile/user/notifications/$notificationId/read');
     } catch (e) {
       debugPrint('markNotificationRead error: $e');
+    }
+  }
+
+  /// Clear all notifications (mark as cleared persistently)
+  static Future<bool> clearAllNotifications() async {
+    final userId = currentUserId;
+    if (userId == null) return false;
+    try {
+      final response = await post(
+        '/api/mobile/user/notifications/clear-all',
+        body: {'userId': userId},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      debugPrint('clearAllNotifications error: $e');
+    }
+    return false;
+  }
+
+  /// Mark an incoming join request as read
+  static Future<void> markRequestRead(String reqId) async {
+    try {
+      await patch('/api/mobile/user/requests/$reqId/read');
+    } catch (e) {
+      debugPrint('markRequestRead error: $e');
     }
   }
 

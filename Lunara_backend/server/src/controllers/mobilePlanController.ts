@@ -203,6 +203,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
         // Query active Party Plans (public, plus user's own private plans)
         const partyPlansWhere: any = {
             status: PartyPlanStatus.ACTIVE,
+            isLive: true,
         };
         if (viewerId) {
             partyPlansWhere[Op.or] = [
@@ -379,6 +380,9 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                     requestType: 'party_plan',
                     status: r.status,
                     createdAt: r.createdAt,
+                    paymentTimeoutAt: r.paymentTimeoutAt,
+                    joinerPaymentStatus: r.joinerPaymentStatus,
+                    joinerRazorpayOrderId: r.joinerRazorpayOrderId,
                     plan: r.plan
                 })),
                 ...myLargePartyBookings.map((b: any) => ({
@@ -422,12 +426,15 @@ export const getLiveFeed = async (req: Request, res: Response) => {
             }
 
             // Fetch incoming requests for my Party Plans
-            const myPartyPlans = await PartyPlan.findAll({ where: { userId: viewerId as string }, attributes: ['id', 'planDateTime'] });
+            const myPartyPlans = await PartyPlan.findAll({
+                where: { userId: viewerId as string },
+                include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }]
+            });
             if (myPartyPlans.length > 0) {
                 const incomingPartyReqs = await PartyPlanRequest.findAll({
                     where: {
                         planId: { [Op.in]: myPartyPlans.map(p => p.id) },
-                        status: PartyPlanRequestStatus.PENDING
+                        status: { [Op.in]: [PartyPlanRequestStatus.PENDING, PartyPlanRequestStatus.PAYMENT_PENDING, PartyPlanRequestStatus.ACCEPTED] }
                     },
                     include: [{
                         model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'],
@@ -445,6 +452,9 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                         planId: r.planId,
                         status: r.status,
                         createdAt: r.createdAt,
+                        paymentTimeoutAt: r.paymentTimeoutAt,
+                        joinerPaymentStatus: r.joinerPaymentStatus,
+                        joinerRazorpayOrderId: r.joinerRazorpayOrderId,
                         requester: { ...reqUser?.toJSON(), profileImageUrl },
                         planDetails: plan
                     };

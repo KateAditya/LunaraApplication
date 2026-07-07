@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
     BiX, BiCalendar, BiPhone, BiEnvelope,
     BiShield, BiCheck, BiShieldQuarter, BiUser,
-    BiIdCard
+    BiIdCard, BiBlock
 } from 'react-icons/bi';
 import type { User } from '../types/user';
 
@@ -80,6 +80,7 @@ export const UserDetails: React.FC<UserDetailsProps> = ({ user, onClose }) => {
                     <div style={{ display: 'flex', gap: '0.375rem', marginTop: '0.25rem', flexWrap: 'wrap' }}>
                         <Badge label={user.role.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())} color={rBadge.color} bg={rBadge.bg} />
                         {user.isActive ? <Badge label="● Active" color="var(--vz-success)" bg="rgba(var(--vz-success-rgb), 0.08)" /> : <Badge label="○ Inactive" color="var(--vz-danger)" bg="rgba(var(--vz-danger-rgb), 0.08)" />}
+                        {user.isAutoblocked && <Badge label="⚠ Autoblocked" color="#ffffff" bg="#e6533c" />}
                     </div>
                 </div>
             </div>
@@ -88,6 +89,8 @@ export const UserDetails: React.FC<UserDetailsProps> = ({ user, onClose }) => {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
                 <DetailRow icon={<BiEnvelope />} label="Email" value={user.email} />
                 <DetailRow icon={<BiPhone />} label="Phone" value={user.phone} />
+                <DetailRow icon={<BiBlock />} label="Block Count" value={user.blockCount ?? 0} />
+                {user.isAutoblocked && <DetailRow icon={<BiShield />} label="Autoblock Reason" value={user.autoblockedReason || 'safety reports/guidelines violation'} />}
             </div>
 
             {/* Verification Flags */}

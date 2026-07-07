@@ -44,13 +44,15 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 app.use(morgan('combined', { stream: { write: (message) => logger.info(message.trim()) } }));
 
-// Rate limiting
-const limiter = rateLimit({
-    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'),
-    max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '10000'),
-    message: { success: false, message: 'Too many requests from this IP, please try again later.' },
-});
-app.use('/api/', limiter);
+// Rate limiting (only in production/staging)
+if (process.env.NODE_ENV !== 'development') {
+    const limiter = rateLimit({
+        windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'),
+        max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '10000'),
+        message: { success: false, message: 'Too many requests from this IP, please try again later.' },
+    });
+    app.use('/api/', limiter);
+}
 
 app.get('/health', (_req, res) => {
     res.status(200).json({

@@ -196,8 +196,16 @@ export async function login(req: Request, res: Response) {
             });
         }
 
-        // Check if account is active
-        if (!user.isActive) {
+        // Check if account is active or auto-blocked
+        if (!user.isActive || user.isAutoblocked) {
+            if (user.isAutoblocked) {
+                return res.status(403).json({
+                    success: false,
+                    code: 'USER_AUTOBLOCKED',
+                    message: `You are autoblocked due to: ${user.autoblockedReason || 'safety reports/guidelines violation'}.`,
+                    autoblockedReason: user.autoblockedReason || 'safety reports/guidelines violation',
+                });
+            }
             return res.status(403).json({
                 success: false,
                 message: 'Account is deactivated. Please contact support.',

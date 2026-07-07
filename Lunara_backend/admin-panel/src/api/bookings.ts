@@ -94,6 +94,14 @@ export const bookingsApi = {
     approveLargePartyRequest: (id: string, status: 'approved' | 'rejected', totalAmount?: number): Promise<{ success: boolean; data: any }> => {
         return apiClient.post(`/api/admin/bookings/${id}/approve-party-request`, { status, totalAmount });
     },
+
+    sendPaymentLink: (id: string, paymentLink: string, paymentAmount: number): Promise<{ success: boolean; data: any }> => {
+        return apiClient.post(`/api/admin/bookings/${id}/send-payment-link`, { paymentLink, paymentAmount });
+    },
+
+    markPaymentDone: (id: string): Promise<{ success: boolean; data: any }> => {
+        return apiClient.post(`/api/admin/bookings/${id}/mark-payment-done`);
+    },
 };
 
 export default bookingsApi;

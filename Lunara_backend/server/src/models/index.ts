@@ -27,6 +27,7 @@ import PartyPlan from './PartyPlan';
 import Ad from './Ad';
 import GroupParty from './GroupParty';
 import StrangersMeetRequest from './StrangersMeetRequest';
+import StrangersMeetJoiner from './StrangersMeetJoiner';
 import PartyPlanRequest from './PartyPlanRequest';
 import UserPenalty from './UserPenalty';
 import City from './City';
@@ -358,7 +359,7 @@ Venue.hasMany(GroupParty, { foreignKey: 'venueId', as: 'groupParties', onDelete:
 GroupParty.belongsTo(Venue, { foreignKey: 'venueId', as: 'venue' });
 
 // ============================================================================
-// Strangers Meet Request Associations
+// Strangers Meet Request & Joiner Associations
 // ============================================================================
 
 User.hasMany(StrangersMeetRequest, { foreignKey: 'userId', as: 'strangersMeetRequests' });
@@ -366,6 +367,12 @@ StrangersMeetRequest.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
 Venue.hasMany(StrangersMeetRequest, { foreignKey: 'venueId', as: 'strangersMeetRequests', onDelete: 'CASCADE' });
 StrangersMeetRequest.belongsTo(Venue, { foreignKey: 'venueId', as: 'venue' });
+
+StrangersMeetRequest.hasMany(StrangersMeetJoiner, { foreignKey: 'strangersMeetRequestId', as: 'joiners', onDelete: 'CASCADE' });
+StrangersMeetJoiner.belongsTo(StrangersMeetRequest, { foreignKey: 'strangersMeetRequestId', as: 'strangersMeetRequest' });
+
+User.hasMany(StrangersMeetJoiner, { foreignKey: 'userId', as: 'joinedStrangersMeets', onDelete: 'CASCADE' });
+StrangersMeetJoiner.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
 Plan.hasMany(PlanJoinRequest, { foreignKey: 'planId', as: 'joinRequests' });
 PlanJoinRequest.belongsTo(Plan, { foreignKey: 'planId', as: 'plan' });
@@ -431,6 +438,7 @@ export {
     Ad,
     GroupParty,
     StrangersMeetRequest,
+    StrangersMeetJoiner,
     PartyPlanRequest,
     UserPenalty,
     City,
@@ -470,6 +478,7 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
         await Ad.sync(options);
         await GroupParty.sync(options);
         await StrangersMeetRequest.sync(options);
+        await StrangersMeetJoiner.sync(options);
         await PartyPlanRequest.sync(options);
         await UserPenalty.sync(options);
         await City.sync(options);
@@ -512,6 +521,7 @@ export default {
     Ad,
     GroupParty,
     StrangersMeetRequest,
+    StrangersMeetJoiner,
     PartyPlanRequest,
     UserPenalty,
     City,

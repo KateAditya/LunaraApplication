@@ -102,6 +102,8 @@ export const createBooking = async (req: Request, res: Response) => {
             partySubject,
             partyRequirement,
             partyDescription,
+            mobileNumber,
+            optionalMobileNumber,
         } = req.body;
 
         if (!userId || !venueId || !bookingDate || !startTime || !packageName) {
@@ -172,6 +174,8 @@ export const createBooking = async (req: Request, res: Response) => {
             partySubject: isLargeParty ? partySubject : null,
             partyRequirement: isLargeParty ? partyRequirement : null,
             partyDescription: isLargeParty ? partyDescription : null,
+            mobileNumber: isLargeParty ? (mobileNumber?.trim() || null) : null,
+            optionalMobileNumber: isLargeParty ? (optionalMobileNumber?.trim() || null) : null,
         } as any);
 
         // Fetch venue details for the response

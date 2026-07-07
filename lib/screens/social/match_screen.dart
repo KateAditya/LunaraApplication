@@ -18,6 +18,7 @@ class _MatchScreenState extends State<MatchScreen>
     with TickerProviderStateMixin {
   List<Map<String, dynamic>> _profiles = [];
   final List<Map<String, dynamic>> _likedProfiles = [];
+  final List<Map<String, dynamic>> _superLikedProfiles = [];
   final List<Map<String, dynamic>> _matchedProfiles = [];
   bool _isLoading = true;
   String _swipeAction = 'like';
@@ -62,6 +63,7 @@ class _MatchScreenState extends State<MatchScreen>
 
       final Set<String> swipedUserIds = {};
       final List<Map<String, dynamic>> resolvedLiked = [];
+      final List<Map<String, dynamic>> resolvedSuperLiked = [];
       final List<Map<String, dynamic>> resolvedMatched = [];
 
       for (var swipe in mySwipes) {
@@ -139,27 +141,45 @@ class _MatchScreenState extends State<MatchScreen>
               : null;
 
           bool isLiked = false;
+          bool isSuperLiked = false;
           bool isMatched = false;
 
           if (outgoingSwipe != null) {
             final status = outgoingSwipe['status']?.toString().toLowerCase();
+            final reason = outgoingSwipe['matchReason']?.toString().toLowerCase();
+            final isSuper = reason == 'superlike';
+
             if (status == 'pending') {
-              isLiked = true;
+              if (isSuper) {
+                isSuperLiked = true;
+              } else {
+                isLiked = true;
+              }
             } else if (status == 'connected') {
               isLiked = true;
               isMatched = true;
+              if (isSuper) {
+                isSuperLiked = true;
+              }
             }
           }
 
           if (incomingSwipe != null) {
             final status = incomingSwipe['status']?.toString().toLowerCase();
+            final reason = incomingSwipe['matchReason']?.toString().toLowerCase();
+            final isSuper = reason == 'superlike';
             if (status == 'connected') {
               isMatched = true;
+              if (isSuper) {
+                isSuperLiked = true;
+              }
             }
           }
 
           if (isMatched) {
             resolvedMatched.add(profileMap);
+          } else if (isSuperLiked) {
+            resolvedSuperLiked.add(profileMap);
           } else if (isLiked) {
             resolvedLiked.add(profileMap);
           }
@@ -175,6 +195,8 @@ class _MatchScreenState extends State<MatchScreen>
           _profiles = discoveryProfiles;
           _likedProfiles.clear();
           _likedProfiles.addAll(resolvedLiked);
+          _superLikedProfiles.clear();
+          _superLikedProfiles.addAll(resolvedSuperLiked);
           _matchedProfiles.clear();
           _matchedProfiles.addAll(resolvedMatched);
           _isLoading = false;
@@ -225,7 +247,11 @@ class _MatchScreenState extends State<MatchScreen>
         } else if (swipedRight) {
           if (mounted) {
             setState(() {
-              _likedProfiles.add(swiped);
+              if (action == 'superlike') {
+                _superLikedProfiles.add(swiped);
+              } else {
+                _likedProfiles.add(swiped);
+              }
             });
           }
         }
@@ -306,7 +332,7 @@ class _MatchScreenState extends State<MatchScreen>
 
   Widget _buildMatchStats() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -327,7 +353,25 @@ class _MatchScreenState extends State<MatchScreen>
               );
             },
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 8),
+          _statChip(
+            icon: Icons.star,
+            label: '${_superLikedProfiles.length} Super',
+            color: LunaraTheme.primaryRich,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => MatchedProfilesScreen(
+                    matchedProfiles: _superLikedProfiles,
+                    title: 'SUPER LIKED PROFILES',
+                    subtitle: 'people you super liked',
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(width: 8),
           _statChip(
             icon: Icons.bolt,
             label: '${_matchedProfiles.length} Matches',

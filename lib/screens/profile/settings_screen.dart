@@ -474,33 +474,289 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showBlockedContactsSheet() {
-    _showFormSheet(
-      title: 'BLOCKED CONTACTS',
-      children: [
-        const SizedBox(height: 40),
-        Center(
-          child: Icon(Icons.block_flipped, color: Colors.grey[200], size: 64),
-        ),
-        const SizedBox(height: 24),
-        const Center(
-          child: Text(
-            'No blocked contacts',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-              color: Colors.black,
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Center(
-          child: Text(
-            'Blocked users will appear here',
-            style: TextStyle(color: Colors.black, fontSize: 13),
-          ),
-        ),
-        const SizedBox(height: 40),
-      ],
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+      ),
+      isScrollControlled: true,
+      builder: (ctx) {
+        List<Map<String, dynamic>>? blockedUsers;
+        bool isError = false;
+
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            if (blockedUsers == null && !isError) {
+              ApiService.getBlockedUsersDetails().then((list) {
+                setModalState(() {
+                  blockedUsers = list;
+                });
+              }).catchError((e) {
+                setModalState(() {
+                  isError = true;
+                });
+              });
+            }
+
+            Widget content;
+            if (isError) {
+              content = Padding(
+                padding: const EdgeInsets.symmetric(vertical: 40.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.redAccent, size: 48),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Failed to load blocked contacts',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: () {
+                        setModalState(() {
+                          isError = false;
+                          blockedUsers = null;
+                        });
+                      },
+                      child: const Text(
+                        'RETRY',
+                        style: TextStyle(
+                          color: LunaraTheme.electricViolet,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    )
+                  ],
+                ),
+              );
+            } else if (blockedUsers == null) {
+              content = const Padding(
+                padding: EdgeInsets.symmetric(vertical: 80.0),
+                child: Center(
+                  child: CircularProgressIndicator(
+                    color: LunaraTheme.electricViolet,
+                  ),
+                ),
+              );
+            } else if (blockedUsers!.isEmpty) {
+              content = Padding(
+                padding: const EdgeInsets.symmetric(vertical: 40.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Center(
+                      child: Icon(
+                        Icons.block_flipped,
+                        color: Colors.grey[200],
+                        size: 64,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    const Center(
+                      child: Text(
+                        'No blocked contacts',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.black,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Center(
+                      child: Text(
+                        'Blocked users will appear here',
+                        style: TextStyle(color: Colors.black54, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            } else {
+              content = ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.5,
+                ),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.only(top: 8, bottom: 24),
+                  itemCount: blockedUsers!.length,
+                  itemBuilder: (context, index) {
+                    final user = blockedUsers![index];
+                    final userId = user['id']?.toString() ?? '';
+                    final firstName = user['firstName']?.toString() ?? '';
+                    final lastName = user['lastName']?.toString() ?? '';
+                    final fullName = '$firstName $lastName'.trim();
+                    final profileImageUrl = user['profileImageUrl']?.toString() ?? '';
+
+                    bool isUnblocking = false;
+
+                    String getFullPhotoUrl(String path) {
+                      if (path.isEmpty) return '';
+                      if (path.startsWith('http')) return path;
+                      if (path.startsWith('/')) return '${ApiService.baseUrl}$path';
+                      return '${ApiService.baseUrl}/$path';
+                    }
+
+                    final photoUrl = getFullPhotoUrl(profileImageUrl);
+
+                    return StatefulBuilder(
+                      builder: (context, tileState) {
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            gradient: LunaraTheme.cardGradient,
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: LunaraTheme.premiumCardShadow,
+                            border: Border.all(
+                              color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 24,
+                                backgroundColor: Colors.grey[100],
+                                backgroundImage: photoUrl.isNotEmpty
+                                    ? NetworkImage(photoUrl)
+                                    : null,
+                                child: photoUrl.isEmpty
+                                    ? const Icon(Icons.person, color: Colors.grey)
+                                    : null,
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Text(
+                                  fullName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                              isUnblocking
+                                  ? const SizedBox(
+                                      width: 24,
+                                      height: 24,
+                                      child: CircularProgressIndicator(
+                                        color: LunaraTheme.electricViolet,
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.white,
+                                        foregroundColor: LunaraTheme.electricViolet,
+                                        elevation: 0,
+                                        side: const BorderSide(
+                                          color: LunaraTheme.electricViolet,
+                                          width: 1.5,
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 8,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(16),
+                                        ),
+                                      ),
+                                      onPressed: () async {
+                                        tileState(() {
+                                          isUnblocking = true;
+                                        });
+
+                                        final success = await ApiService.unblockUser(userId);
+
+                                        if (success) {
+                                          setModalState(() {
+                                            blockedUsers!.removeAt(index);
+                                          });
+                                          if (mounted) {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              SnackBar(
+                                                content: Text('$fullName unblocked successfully'),
+                                                backgroundColor: Colors.green,
+                                              ),
+                                            );
+                                          }
+                                        } else {
+                                          tileState(() {
+                                            isUnblocking = false;
+                                          });
+                                          if (mounted) {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              const SnackBar(
+                                                content: Text('Failed to unblock user'),
+                                                backgroundColor: Colors.red,
+                                              ),
+                                            );
+                                          }
+                                        }
+                                      },
+                                      child: const Text(
+                                        'UNBLOCK',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: 1,
+                                        ),
+                                      ),
+                                    ),
+                            ],
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              );
+            }
+
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                24,
+                24,
+                24,
+                MediaQuery.of(ctx).viewInsets.bottom + 40,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[200],
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  const Text(
+                    'BLOCKED CONTACTS',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 2,
+                      color: Colors.black,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  content,
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 

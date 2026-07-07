@@ -21,22 +21,41 @@ class Dashboard extends StatefulWidget {
   State<Dashboard> createState() => _DashboardState();
 }
 
-class _DashboardState extends State<Dashboard> {
+class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   int _currentIndex = 0;
   User? _currentUser;
   Timer? _badgeTimer;
   int _liveFeedCount = 0;
   int _chatCount = 0;
 
+  bool _isInitialized = false;
+
   @override
   void initState() {
     super.initState();
-    _loadProfile();
-    _fetchBadges();
+    WidgetsBinding.instance.addObserver(this);
+    _initApp();
     _badgeTimer = Timer.periodic(
       const Duration(seconds: 15),
       (_) => _fetchBadges(),
     );
+  }
+
+  Future<void> _initApp() async {
+    try {
+      await Future.wait([
+        _loadProfile(),
+        _fetchBadges(),
+      ]);
+    } catch (e) {
+      debugPrint('Error during dashboard initialization: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isInitialized = true;
+        });
+      }
+    }
   }
 
   Future<void> _fetchBadges() async {
@@ -63,8 +82,14 @@ class _DashboardState extends State<Dashboard> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _badgeTimer?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // No location check needed on app resume
   }
 
   Future<void> _loadProfile() async {
@@ -94,6 +119,16 @@ class _DashboardState extends State<Dashboard> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_isInitialized) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF0F001E),
+        body: Center(
+          child: CircularProgressIndicator(
+            color: LunaraTheme.cyberCyan,
+          ),
+        ),
+      );
+    }
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Stack(

@@ -50,6 +50,9 @@ async function initializeDatabase() {
         last_login_at TIMESTAMP,
         is_online BOOLEAN DEFAULT FALSE,
         last_active_at TIMESTAMP,
+        block_count INTEGER DEFAULT 0,
+        is_autoblocked BOOLEAN DEFAULT FALSE,
+        autoblocked_reason TEXT,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       );

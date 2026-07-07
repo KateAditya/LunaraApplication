@@ -31,11 +31,15 @@ export interface UserAttributes {
     lastActiveAt?: Date;
     noShowCount: number;
     fcmToken?: string | null;
+    clearedNotificationsAt?: Date | null;
+    blockCount: number;
+    isAutoblocked: boolean;
+    autoblockedReason?: string | null;
 }
 
 // Creation attributes (optional fields)
 export interface UserCreationAttributes
-    extends Optional<UserAttributes, 'id' | 'isVerified' | 'isActive' | 'isOnline' | 'mfaEnabled' | 'mfaSecret' | 'profileImageUrl' | 'createdAt' | 'updatedAt' | 'lastLoginAt' | 'lastActiveAt' | 'noShowCount' | 'fcmToken'> { }
+    extends Optional<UserAttributes, 'id' | 'isVerified' | 'isActive' | 'isOnline' | 'mfaEnabled' | 'mfaSecret' | 'profileImageUrl' | 'createdAt' | 'updatedAt' | 'lastLoginAt' | 'lastActiveAt' | 'noShowCount' | 'fcmToken' | 'clearedNotificationsAt' | 'blockCount' | 'isAutoblocked' | 'autoblockedReason'> { }
 
 // User model class
 class User extends Model<UserAttributes, UserCreationAttributes> implements UserAttributes {
@@ -59,6 +63,10 @@ class User extends Model<UserAttributes, UserCreationAttributes> implements User
     public lastActiveAt?: Date;
     public noShowCount!: number;
     public fcmToken?: string | null;
+    public clearedNotificationsAt?: Date | null;
+    public blockCount!: number;
+    public isAutoblocked!: boolean;
+    public autoblockedReason?: string | null;
 
     // Instance methods
     public async comparePassword(password: string): Promise<boolean> {
@@ -213,6 +221,27 @@ User.init(
             type: DataTypes.STRING(500),
             allowNull: true,
             field: 'fcm_token',
+        },
+        clearedNotificationsAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            defaultValue: null,
+            field: 'cleared_notifications_at',
+        },
+        blockCount: {
+            type: DataTypes.INTEGER,
+            defaultValue: 0,
+            field: 'block_count',
+        },
+        isAutoblocked: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            field: 'is_autoblocked',
+        },
+        autoblockedReason: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+            field: 'autoblocked_reason',
         },
     },
     {

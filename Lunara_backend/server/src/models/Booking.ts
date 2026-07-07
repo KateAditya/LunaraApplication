@@ -28,6 +28,8 @@ export enum AdminApprovalStatus {
     PENDING = 'pending',
     APPROVED = 'approved',
     REJECTED = 'rejected',
+    PAYMENT_SENT = 'payment_sent',
+    PAYMENT_DONE = 'payment_done',
 }
 
 export enum BookingPaymentMode {
@@ -66,6 +68,12 @@ export interface BookingAttributes {
     partyDescription?: string;
     isLargePartyRequest?: boolean;
     adminApprovalStatus?: AdminApprovalStatus;
+    // Contact details for large party
+    mobileNumber?: string;
+    optionalMobileNumber?: string;
+    // Admin-sent payment link
+    adminPaymentLink?: string;
+    adminPaymentAmount?: number;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -93,6 +101,10 @@ export interface BookingCreationAttributes
         | 'partyDescription'
         | 'isLargePartyRequest'
         | 'adminApprovalStatus'
+        | 'mobileNumber'
+        | 'optionalMobileNumber'
+        | 'adminPaymentLink'
+        | 'adminPaymentAmount'
         | 'createdAt'
         | 'updatedAt'
     > { }
@@ -127,6 +139,10 @@ class Booking extends Model<BookingAttributes, BookingCreationAttributes> implem
     public partyDescription?: string;
     public isLargePartyRequest?: boolean;
     public adminApprovalStatus?: AdminApprovalStatus;
+    public mobileNumber?: string;
+    public optionalMobileNumber?: string;
+    public adminPaymentLink?: string;
+    public adminPaymentAmount?: number;
     
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
@@ -315,6 +331,26 @@ Booking.init(
             type: DataTypes.ENUM(...Object.values(AdminApprovalStatus)),
             allowNull: true,
             field: 'admin_approval_status',
+        },
+        mobileNumber: {
+            type: DataTypes.STRING(20),
+            allowNull: true,
+            field: 'mobile_number',
+        },
+        optionalMobileNumber: {
+            type: DataTypes.STRING(20),
+            allowNull: true,
+            field: 'optional_mobile_number',
+        },
+        adminPaymentLink: {
+            type: DataTypes.STRING(500),
+            allowNull: true,
+            field: 'admin_payment_link',
+        },
+        adminPaymentAmount: {
+            type: DataTypes.DECIMAL(10, 2),
+            allowNull: true,
+            field: 'admin_payment_amount',
         },
     },
     {

@@ -32,6 +32,17 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
 
         const token = authHeader.substring(7); // Remove 'Bearer ' prefix
 
+        // If in development mode and using demo-access-token, bypass verification and use a mock admin user
+        if (process.env.NODE_ENV === 'development' && token === 'demo-access-token') {
+            const adminUser = await User.findOne({ where: { role: UserRole.ADMIN } });
+            req.user = {
+                id: adminUser?.id || 'demo-admin-001',
+                email: adminUser?.email || 'admin@lunara.com',
+                role: (adminUser?.role as UserRole) || UserRole.ADMIN,
+            };
+            return next();
+        }
+
         // Verify token
         const decoded = verifyAccessToken(token);
 
@@ -44,8 +55,16 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
             });
         }
 
-        // Check if user is active
-        if (!user.isActive) {
+        // Check if user is active or auto-blocked
+        if (!user.isActive || user.isAutoblocked) {
+            if (user.isAutoblocked) {
+                return res.status(403).json({
+                    success: false,
+                    code: 'USER_AUTOBLOCKED',
+                    message: `You are autoblocked due to: ${user.autoblockedReason || 'safety reports/guidelines violation'}.`,
+                    autoblockedReason: user.autoblockedReason || 'safety reports/guidelines violation',
+                });
+            }
             return res.status(403).json({
                 success: false,
                 message: 'Account is deactivated. Please contact support.',

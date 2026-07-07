@@ -5,17 +5,19 @@ import { mobileRegister, mobileSendOTP, mobileVerifyOTP, mobileForgotPassword, m
 const router = Router();
 
 // ── Stricter rate limit for auth endpoints (prevent brute-force / bot abuse) ──
-const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,   // 15 minutes
-    max:      20,                 // max 20 registration attempts per window per IP
-    message: {
-        success: false,
-        code:    'RATE_LIMIT_EXCEEDED',
-        message: 'Too many requests. Please try again after 15 minutes.',
-    },
-    standardHeaders: true,
-    legacyHeaders:   false,
-});
+const authLimiter = process.env.NODE_ENV === 'development'
+    ? (_req: any, _res: any, next: any) => next()
+    : rateLimit({
+        windowMs: 15 * 60 * 1000,   // 15 minutes
+        max:      20,                 // max 20 registration attempts per window per IP
+        message: {
+            success: false,
+            code:    'RATE_LIMIT_EXCEEDED',
+            message: 'Too many requests. Please try again after 15 minutes.',
+        },
+        standardHeaders: true,
+        legacyHeaders:   false,
+    });
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 

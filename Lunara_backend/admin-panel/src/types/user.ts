@@ -105,6 +105,9 @@ export interface User {
     preferences?: UserPreference;
     security: UserSecurity;
     history: UserHistory;
+    blockCount?: number;
+    isAutoblocked?: boolean;
+    autoblockedReason?: string | null;
 }
 
 export const INTERESTS_OPTIONS = [

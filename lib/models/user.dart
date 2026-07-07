@@ -37,6 +37,8 @@ class User {
   final bool bookingAlertsEnabled;
   final String? dateOfBirth;
   final bool isVerified;
+  final int superLikesCount;
+  final int plansCount;
 
   User({
     required this.id,
@@ -73,6 +75,8 @@ class User {
     this.bookingAlertsEnabled = true,
     this.dateOfBirth,
     this.isVerified = false,
+    this.superLikesCount = 0,
+    this.plansCount = 0,
   });
 
   String get fullName => '$firstName $lastName';
@@ -208,6 +212,16 @@ class User {
       dateOfBirth:
           profile['dateOfBirth']?.toString() ?? data['dateOfBirth']?.toString(),
       isVerified: data['isVerified'] == true,
+      superLikesCount: json['superLikesCount'] != null
+          ? int.tryParse(json['superLikesCount'].toString()) ?? 0
+          : (data['superLikesCount'] != null
+              ? int.tryParse(data['superLikesCount'].toString()) ?? 0
+              : 0),
+      plansCount: json['plansCount'] != null
+          ? int.tryParse(json['plansCount'].toString()) ?? 0
+          : (data['plansCount'] != null
+              ? int.tryParse(data['plansCount'].toString()) ?? 0
+              : 0),
     );
   }
 

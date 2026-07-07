@@ -1,8 +1,12 @@
 import { Request, Response } from 'express';
+import { Op } from 'sequelize';
 import StrangersMeetRequest, {
     StrangersMeetStatus,
     StrangersMeetPaymentStatus,
 } from '../models/StrangersMeetRequest';
+import StrangersMeetJoiner, {
+    StrangersMeetJoinerPaymentStatus,
+} from '../models/StrangersMeetJoiner';
 import User from '../models/User';
 import Venue from '../models/Venue';
 import UserProfile from '../models/UserProfile';
@@ -54,12 +58,28 @@ function buildIncludes() {
                 },
             ],
         },
+        {
+            model: StrangersMeetJoiner,
+            as: 'joiners',
+            required: false,
+            include: [
+                {
+                    model: User,
+                    as: 'user',
+                    attributes: USER_ATTRS,
+                    include: [
+                        { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary'], required: false }
+                    ]
+                }
+            ]
+        }
     ];
 }
 
 function formatRequest(r: StrangersMeetRequest) {
     const user = (r as any).user;
     const venue = (r as any).venue;
+    const joiners = (r as any).joiners || [];
 
     let userPhotoUrl = user?.profileImageUrl ?? null;
     if (user?.photos?.length > 0) {
@@ -78,6 +98,8 @@ function formatRequest(r: StrangersMeetRequest) {
         tagline: r.tagline,
         eventDateTime: r.eventDateTime,
         numberOfPersons: r.numberOfPersons,
+        chargesPerHead: Number(r.chargesPerHead || 0),
+        slotsFilled: Number(r.slotsFilled || 0),
         status: r.status,
         paymentAmount: r.paymentAmount ?? null,
         paymentStatus: r.paymentStatus,
@@ -107,6 +129,26 @@ function formatRequest(r: StrangersMeetRequest) {
             phone: venue.phone,
             imageUrl: venueImageUrl,
         } : null,
+        joiners: joiners.map((j: any) => {
+            const ju = j.user;
+            let juPhotoUrl = ju?.profileImageUrl ?? null;
+            if (ju?.photos?.length > 0) {
+                const primary = ju.photos.find((p: any) => p.isPrimary) || ju.photos[0];
+                if (primary?.filePath) juPhotoUrl = '/' + primary.filePath.replace(/\\/g, '/');
+            }
+            return {
+                id: j.id,
+                userId: j.userId,
+                paymentStatus: j.paymentStatus,
+                paymentAmount: Number(j.paymentAmount || 0),
+                user: ju ? {
+                    id: ju.id,
+                    firstName: ju.firstName,
+                    lastName: ju.lastName,
+                    photoUrl: juPhotoUrl,
+                } : null
+            };
+        })
     };
 }
 
@@ -116,7 +158,7 @@ function formatRequest(r: StrangersMeetRequest) {
 // ─────────────────────────────────────────────────────────────────────────────
 export const createRequest = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { userId, venueId, subject, tagline, eventDateTime, numberOfPersons, mobileNumber, alternateMobileNumber } = req.body;
+        const { userId, venueId, subject, tagline, eventDateTime, numberOfPersons, chargesPerHead, mobileNumber, alternateMobileNumber } = req.body;
 
         // Validate required fields
         const errors: Record<string, string> = {};
@@ -129,6 +171,11 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
             errors.numberOfPersons = 'numberOfPersons is required';
         else if (numberOfPersons < 21 || numberOfPersons > 50)
             errors.numberOfPersons = 'numberOfPersons must be between 21 and 50';
+
+        const parsedCharges = Number(chargesPerHead || 0);
+        if (isNaN(parsedCharges) || parsedCharges < 0) {
+            errors.chargesPerHead = 'chargesPerHead must be a positive number';
+        }
 
         if (Object.keys(errors).length > 0) {
             res.status(400).json({ success: false, message: 'Validation failed', errors });
@@ -160,6 +207,7 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
             tagline: tagline.trim(),
             eventDateTime: eventDate,
             numberOfPersons: Number(numberOfPersons),
+            chargesPerHead: parsedCharges,
             mobileNumber: mobileNumber.trim(),
             alternateMobileNumber: alternateMobileNumber?.trim() || null,
         });
@@ -171,6 +219,7 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
                 id: request.id,
                 status: request.status,
                 paymentStatus: request.paymentStatus,
+                chargesPerHead: request.chargesPerHead,
                 createdAt: request.createdAt,
             },
         });
@@ -434,6 +483,7 @@ export const getFeedRequests = async (req: Request, res: Response): Promise<void
             where: {
                 status: StrangersMeetStatus.APPROVED,
                 paymentStatus: StrangersMeetPaymentStatus.PAID,
+                eventDateTime: { [Op.gte]: new Date() },
             },
             include: buildIncludes(),
             order: [['createdAt', 'DESC']],
@@ -533,5 +583,235 @@ export const rejectRequest = async (req: Request, res: Response): Promise<void> 
     } catch (err: any) {
         logger.error('rejectStrangersMeetRequest error:', err);
         res.status(500).json({ success: false, message: 'Failed to reject request', error: err.message });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/strangers-meet/:id/join/initiate-payment
+// Initiate payment order to join a Strangers Meet
+// ─────────────────────────────────────────────────────────────────────────────
+export const initiateJoinPayment = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { userId } = req.body;
+
+        if (!userId) {
+            res.status(400).json({ success: false, message: 'userId is required' });
+            return;
+        }
+
+        const request = await StrangersMeetRequest.findByPk(id);
+        if (!request) {
+            res.status(404).json({ success: false, message: 'Strangers meet request not found' });
+            return;
+        }
+
+        if (request.userId === userId) {
+            res.status(400).json({ success: false, message: 'Host cannot join their own meet' });
+            return;
+        }
+
+        if (request.status !== StrangersMeetStatus.APPROVED || request.paymentStatus !== StrangersMeetPaymentStatus.PAID) {
+            res.status(400).json({ success: false, message: 'This strangers meet is not active' });
+            return;
+        }
+
+        if (request.slotsFilled >= request.numberOfPersons) {
+            res.status(400).json({ success: false, message: 'This strangers meet is full' });
+            return;
+        }
+
+        // Check if already a paid joiner
+        const existingPaidJoiner = await StrangersMeetJoiner.findOne({
+            where: {
+                strangersMeetRequestId: id,
+                userId,
+                paymentStatus: StrangersMeetJoinerPaymentStatus.PAID,
+            }
+        });
+        if (existingPaidJoiner) {
+            res.status(400).json({ success: false, message: 'You have already joined this strangers meet' });
+            return;
+        }
+
+        const chargesPerHead = Number(request.chargesPerHead || 0);
+        const orderAmount = chargesPerHead > 0 ? Math.round(chargesPerHead * 100) : 0;
+
+        let orderId = `order_mock_join_${Date.now()}`;
+        if (orderAmount > 0 && process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id') {
+            try {
+                const options = {
+                    amount: orderAmount,
+                    currency: 'INR',
+                    receipt: `smjoin_${Date.now()}`
+                };
+                const order = await razorpay.orders.create(options);
+                orderId = order.id;
+            } catch (err: any) {
+                logger.warn('Razorpay order failed, using mock: ' + err.message);
+            }
+        }
+
+        let joiner = await StrangersMeetJoiner.findOne({
+            where: { strangersMeetRequestId: id, userId }
+        });
+
+        if (joiner) {
+            await joiner.update({
+                paymentStatus: StrangersMeetJoinerPaymentStatus.PENDING,
+                paymentAmount: chargesPerHead,
+                razorpayOrderId: orderId,
+            });
+        } else {
+            joiner = await StrangersMeetJoiner.create({
+                strangersMeetRequestId: id,
+                userId,
+                paymentStatus: StrangersMeetJoinerPaymentStatus.PENDING,
+                paymentAmount: chargesPerHead,
+                razorpayOrderId: orderId,
+            });
+        }
+
+        res.json({
+            success: true,
+            razorpayOrderId: orderId,
+            amount: orderAmount,
+            currency: 'INR',
+            razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_123'
+        });
+    } catch (err: any) {
+        logger.error('initiateJoinPayment error:', err);
+        res.status(500).json({ success: false, message: 'Failed to initiate join payment', error: err.message });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/strangers-meet/:id/join/confirm
+// Confirm payment and join the Strangers Meet
+// ─────────────────────────────────────────────────────────────────────────────
+export const confirmJoinPayment = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { userId, razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+
+        if (!userId) {
+            res.status(400).json({ success: false, message: 'userId is required' });
+            return;
+        }
+
+        const request = await StrangersMeetRequest.findByPk(id);
+        if (!request) {
+            res.status(404).json({ success: false, message: 'Strangers meet request not found' });
+            return;
+        }
+
+        const joiner = await StrangersMeetJoiner.findOne({
+            where: { strangersMeetRequestId: id, userId }
+        });
+
+        if (!joiner) {
+            res.status(404).json({ success: false, message: 'Join request not found' });
+            return;
+        }
+
+        if (joiner.paymentStatus === StrangersMeetJoinerPaymentStatus.PAID) {
+            res.status(400).json({ success: false, message: 'Already joined' });
+            return;
+        }
+
+        const chargesPerHead = Number(request.chargesPerHead || 0);
+
+        if (chargesPerHead > 0) {
+            if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+                res.status(400).json({ success: false, message: 'Razorpay signatures are required' });
+                return;
+            }
+
+            if (joiner.razorpayOrderId !== razorpay_order_id && !razorpay_order_id.startsWith('order_mock_')) {
+                res.status(400).json({ success: false, message: 'Invalid order ID' });
+                return;
+            }
+
+            const hmac = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || 'secret123');
+            hmac.update(razorpay_order_id + '|' + razorpay_payment_id);
+            const generatedSignature = hmac.digest('hex');
+
+            if (generatedSignature !== razorpay_signature && razorpay_signature !== 'mock_signature') {
+                res.status(400).json({ success: false, message: 'Invalid signature' });
+                return;
+            }
+        }
+
+        await joiner.update({
+            paymentStatus: StrangersMeetJoinerPaymentStatus.PAID,
+            razorpayPaymentId: razorpay_payment_id || 'free_or_mock',
+            razorpaySignature: razorpay_signature || 'free_or_mock',
+        });
+
+        await request.increment('slotsFilled', { by: 1 });
+        await request.reload();
+
+        res.json({
+            success: true,
+            message: 'Successfully joined strangers meet! 🎉',
+            data: {
+                id: request.id,
+                slotsFilled: request.slotsFilled,
+                numberOfPersons: request.numberOfPersons,
+            }
+        });
+    } catch (err: any) {
+        logger.error('confirmJoinPayment error:', err);
+        res.status(500).json({ success: false, message: 'Failed to confirm join payment', error: err.message });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/mobile/strangers-meet/:id/complete
+// Host marks the strangers meet as successfully completed
+// ─────────────────────────────────────────────────────────────────────────────
+export const completeMeet = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { userId } = req.body;
+
+        if (!userId) {
+            res.status(400).json({ success: false, message: 'userId is required' });
+            return;
+        }
+
+        const request = await StrangersMeetRequest.findByPk(id);
+        if (!request) {
+            res.status(404).json({ success: false, message: 'Strangers meet request not found' });
+            return;
+        }
+
+        if (request.userId !== userId) {
+            res.status(403).json({ success: false, message: 'Unauthorized' });
+            return;
+        }
+
+        const now = new Date();
+        const eventTime = new Date(request.eventDateTime);
+        if (now < eventTime) {
+            res.status(400).json({ success: false, message: 'Cannot mark completed before event time ends' });
+            return;
+        }
+
+        await request.update({
+            status: StrangersMeetStatus.COMPLETED,
+        });
+
+        res.json({
+            success: true,
+            message: 'Strangers meet completed successfully! 🏆',
+            data: {
+                id: request.id,
+                status: request.status,
+            }
+        });
+    } catch (err: any) {
+        logger.error('completeMeet error:', err);
+        res.status(500).json({ success: false, message: 'Failed to complete strangers meet', error: err.message });
     }
 };

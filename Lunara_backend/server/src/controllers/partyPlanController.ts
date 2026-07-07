@@ -291,25 +291,39 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
             await (plan as any).update({
                 hostPaymentStatus: PartyPlanPaymentStatus.PAID,
                 hostRazorpayPaymentId: razorpay_payment_id,
-                isLive: activeReq ? false : true,
+                isLive: false, // Once host pays, it is reserved/waiting for joiner
             });
 
-            if (activeReq && activeReq.joinerPaymentStatus === PartyPlanJoinerPaymentStatus.PAID) {
-                // Both parties have paid within 30 minutes!
-                // Case 3 — Match Success: Refund both deposits, mark plan inactive
+            if (activeReq) {
+                // Host has paid! Now start the 30-minute timer for the Joiner.
+                const timeout = new Date();
+                timeout.setMinutes(timeout.getMinutes() + 30);
+                
                 await activeReq.update({
-                    status: PartyPlanRequestStatus.ACCEPTED,
-                    joinerPaymentStatus: PartyPlanJoinerPaymentStatus.REFUNDED,
+                    paymentTimeoutAt: timeout,
                 });
-                await plan.update({
-                    hostPaymentStatus: PartyPlanPaymentStatus.REFUNDED,
-                    status: PartyPlanStatus.INACTIVE,
-                    isLive: false,
-                });
-                await autoOpenChat(plan.userId, activeReq.requesterId);
-                res.json({ success: true, message: 'Both paid! Match Successful & Deposits Refunded 🎉', data: plan });
+
+                if (activeReq.joinerPaymentStatus === PartyPlanJoinerPaymentStatus.PAID) {
+                    // Both parties have paid! Match success. Keep statuses as PAID (not refunded)
+                    await activeReq.update({
+                        status: PartyPlanRequestStatus.ACCEPTED,
+                        joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
+                    });
+                    await plan.update({
+                        hostPaymentStatus: PartyPlanPaymentStatus.PAID,
+                        status: PartyPlanStatus.INACTIVE,
+                        isLive: false,
+                    });
+                    await autoOpenChat(plan.userId, activeReq.requesterId);
+                    res.json({ success: true, message: 'Both paid! Match Successful & Chat Opened 🎉', data: plan });
+                    return;
+                } else {
+                    res.json({ success: true, message: 'Host payment verified. Joiner 30-minute payment window starts now. ⏳', data: plan });
+                    return;
+                }
             } else {
-                res.json({ success: true, message: 'Payment verified. Waiting for joiner payment. ⏳', data: plan });
+                res.json({ success: true, message: 'Payment verified. No active join requests currently.', data: plan });
+                return;
             }
         } else {
             res.status(400).json({ success: false, message: 'Invalid payment signature' });
@@ -337,6 +351,9 @@ export const getAllPartyPlans = async (req: Request, res: Response): Promise<voi
                 return;
             }
             where.status = status;
+        }
+        if (status === 'active') {
+            where.planDateTime = { [Op.gte]: new Date() };
         }
         if (venueId) where.venueId = venueId;
 
@@ -476,6 +493,9 @@ export const getPlansByUser = async (req: Request, res: Response): Promise<void>
                 return;
             }
             where.status = status;
+        }
+        if (status === 'active') {
+            where.planDateTime = { [Op.gte]: new Date() };
         }
 
         const plans = await PartyPlan.findAll({
@@ -825,6 +845,8 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
             return;
         }
 
+        const hostAlreadyPaid = plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID;
+
         // Generate Razorpay Order for the Joiner
         const joinerOptions = {
             amount: Math.round(plan.depositAmount * 100),
@@ -840,37 +862,42 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
             }
         }
 
-        // Generate Razorpay Order for the Host
-        const hostOptions = {
-            amount: Math.round(plan.depositAmount * 100),
-            currency: 'INR',
-            receipt: `pphost_${Date.now()}`
-        };
-        let hostOrder: any = { id: `order_mock_${Date.now()}`, amount: hostOptions.amount, currency: hostOptions.currency };
-        if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id') {
-            try {
-                hostOrder = await razorpay.orders.create(hostOptions);
-            } catch (err: any) {
-                logger.warn('Razorpay host order failed, using mock: ' + err.message);
+        let hostOrder: any = null;
+        if (!hostAlreadyPaid) {
+            // Generate Razorpay Order for the Host since they haven't paid yet
+            const hostOptions = {
+                amount: Math.round(plan.depositAmount * 100),
+                currency: 'INR',
+                receipt: `pphost_${Date.now()}`
+            };
+            hostOrder = { id: `order_mock_${Date.now()}`, amount: hostOptions.amount, currency: hostOptions.currency };
+            if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id') {
+                try {
+                    hostOrder = await razorpay.orders.create(hostOptions);
+                } catch (err: any) {
+                    logger.warn('Razorpay host order failed, using mock: ' + err.message);
+                }
             }
         }
 
-        // Mark request as payment pending with 30 min timeout
         const timeout = new Date();
         timeout.setMinutes(timeout.getMinutes() + 30);
 
+        // Mark request as payment pending.
+        // If host has already paid, start joiner's timer immediately.
+        // If host hasn't paid, the timer acts as host's window to pay.
         await request.update({
             status: PartyPlanRequestStatus.PAYMENT_PENDING,
             joinerRazorpayOrderId: joinerOrder.id,
-            paymentTimeoutAt: timeout,
+            paymentTimeoutAt: timeout, // This will be reset for Joiner when Host pays
             joinerPaymentStatus: PartyPlanJoinerPaymentStatus.UNPAID,
         });
 
-        // Make plan inactive/reserved while waiting for payment, set host payment status to unpaid
+        // Reserve the plan while waiting for payment
         await plan.update({
             isLive: false,
-            hostPaymentStatus: PartyPlanPaymentStatus.UNPAID,
-            hostRazorpayOrderId: hostOrder.id,
+            hostPaymentStatus: hostAlreadyPaid ? PartyPlanPaymentStatus.PAID : PartyPlanPaymentStatus.UNPAID,
+            hostRazorpayOrderId: hostOrder ? hostOrder.id : plan.hostRazorpayOrderId,
         });
 
         // Remove/reject all other pending requests immediately
@@ -887,12 +914,14 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
 
         res.json({
             success: true,
-            message: 'Request accepted. Reserved. Both host and joiner have 30 minutes to pay deposits.',
+            message: hostAlreadyPaid 
+                ? 'Request accepted. Plan reserved. Joiner has 30 minutes to pay deposit.' 
+                : 'Request accepted. Plan reserved. Host must pay deposit first within 30 minutes.',
             data: {
                 request,
-                hostRazorpayOrderId: hostOrder.id,
-                hostAmount: hostOrder.amount,
-                hostCurrency: hostOrder.currency,
+                hostRazorpayOrderId: hostOrder ? hostOrder.id : null,
+                hostAmount: hostOrder ? hostOrder.amount : null,
+                hostCurrency: hostOrder ? hostOrder.currency : null,
                 joinerRazorpayOrderId: joinerOrder.id,
                 joinerAmount: joinerOrder.amount,
                 joinerCurrency: joinerOrder.currency,
@@ -938,21 +967,20 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
             const hostPaid = plan && plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID;
 
             if (hostPaid) {
-                // Both parties have paid within 30 minutes!
-                // Case 3 — Match Success: Refund both deposits, mark plan inactive
+                // Both parties have paid within 30 minutes! Keep both as PAID (not refunded)
                 await request.update({
                     status: PartyPlanRequestStatus.ACCEPTED,
-                    joinerPaymentStatus: PartyPlanJoinerPaymentStatus.REFUNDED,
+                    joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
                 });
                 await plan.update({
-                    hostPaymentStatus: PartyPlanPaymentStatus.REFUNDED,
+                    hostPaymentStatus: PartyPlanPaymentStatus.PAID,
                     status: PartyPlanStatus.INACTIVE,
                     isLive: false,
                 });
                 await autoOpenChat(plan.userId, request.requesterId);
-                res.json({ success: true, message: 'Both paid! Match Successful & Deposits Refunded 🎉', data: request });
+                res.json({ success: true, message: 'Both paid! Match Successful & Chat Opened 🎉', data: request });
             } else {
-                // Joiner paid, wait for host
+                // Joiner paid, wait for host (though in flow Host should pay first)
                 await request.update({
                     status: PartyPlanRequestStatus.PAYMENT_PENDING,
                 });

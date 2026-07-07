@@ -74,22 +74,7 @@ class _LoginHubState extends State<LoginHub> {
     }
   }
 
-  void _handleSocialLogin(BuildContext context, String provider) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => const Center(child: CircularProgressIndicator(color: LunaraTheme.electricViolet)),
-    );
 
-    Future.delayed(const Duration(seconds: 2), () {
-      if (!context.mounted) return;
-      Navigator.pop(context);
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const Dashboard()),
-      );
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -152,19 +137,7 @@ class _LoginHubState extends State<LoginHub> {
                   isLoading: _isLoading,
                   onPressed: _handleLogin,
                 ),
-                const SizedBox(height: 32),
-                const Text('OR CONTINUE WITH', style: TextStyle(fontFamily: 'AllroundGothic', color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
-                const SizedBox(height: 24),
-                Row(
-                  children: [
-                    Expanded(child: _socialButton(icon: Icons.apple, label: 'APPLE', onTap: () => _handleSocialLogin(context, 'APPLE'))),
-                    const SizedBox(width: 12),
-                    Expanded(child: _socialButton(icon: Icons.g_mobiledata, label: 'GOOGLE', onTap: () => _handleSocialLogin(context, 'GOOGLE'))),
-                    const SizedBox(width: 12),
-                    Expanded(child: _socialButton(icon: Icons.phone, label: 'PHONE', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PhoneLoginScreen())))),
-                  ],
-                ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 48),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -239,28 +212,6 @@ class _LoginHubState extends State<LoginHub> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _socialButton({required IconData icon, required String label, required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.6),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 20),
-            const SizedBox(width: 8),
-            Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 1)),
-          ],
-        ),
-      ),
     );
   }
 }
