@@ -298,7 +298,7 @@ class PushNotificationService {
           ? senderName.split(' ').sublist(1).join(' ')
           : '',
       'image': senderImage ?? '',
-      if (conversationId != null) 'conversationId': conversationId,
+      'conversationId': ?conversationId,
     };
 
     navigator.push(

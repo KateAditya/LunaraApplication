@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
-import '../lib/models/user.dart';
+import 'package:lunara_app/models/user.dart';
 
 void main() async {
   final client = HttpClient();

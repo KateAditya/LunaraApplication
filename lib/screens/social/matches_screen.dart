@@ -188,8 +188,8 @@ class _MatchesScreenState extends State<MatchesScreen> {
                       Expanded(
                         child: Container(
                           height: 1,
-                          color: Colors.grey.withOpacity(
-                            0.2,
+                          color: Colors.grey.withValues(
+                            alpha: 0.2,
                           ), // Lighter divider
                         ),
                       ),
@@ -210,7 +210,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
                   // List of Cards
                   ...(_plans ?? [])
                       .map((plan) => _buildPlanCard(plan))
-                      .toList(),
+                      ,
                   const SizedBox(height: 32), // Bottom padding
                 ],
               ),
@@ -250,12 +250,12 @@ class _MatchesScreenState extends State<MatchesScreen> {
         color: Colors.white, // White card background
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: matchColor.withOpacity(0.3), // Slightly softer border
+          color: matchColor.withValues(alpha: 0.3), // Slightly softer border
           width: 1.0,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04), // Subtle premium shadow
+            color: Colors.black.withValues(alpha: 0.04), // Subtle premium shadow
             blurRadius: 15,
             offset: const Offset(0, 8),
           ),
@@ -360,8 +360,8 @@ class _MatchesScreenState extends State<MatchesScreen> {
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: matchColor.withOpacity(
-                    0.1,
+                  color: matchColor.withValues(
+                    alpha: 0.1,
                   ), // Lighter badge background
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -392,7 +392,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
           const SizedBox(height: 16),
           // Divider
           Divider(
-            color: Colors.grey.withOpacity(0.1),
+            color: Colors.grey.withValues(alpha: 0.1),
             height: 1,
           ), // Darker divider for light theme
           const SizedBox(height: 16),
@@ -454,10 +454,10 @@ class _MatchesScreenState extends State<MatchesScreen> {
                     foregroundColor: LunaraTheme
                         .electricViolet, // deepBlue for better light theme contrast
                     side: BorderSide(
-                      color: LunaraTheme.electricViolet.withOpacity(0.5),
+                      color: LunaraTheme.electricViolet.withValues(alpha: 0.5),
                     ),
-                    backgroundColor: LunaraTheme.electricViolet.withOpacity(
-                      0.05,
+                    backgroundColor: LunaraTheme.electricViolet.withValues(
+                      alpha: 0.05,
                     ),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(

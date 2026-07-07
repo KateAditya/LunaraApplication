@@ -339,7 +339,7 @@ class _RateSafetyScreenState extends State<RateSafetyScreen> {
         children: [
           const Text(
             'TELL US MORE',
-            style: const TextStyle(
+            style: TextStyle(
               color: Colors.black,
               fontSize: 11,
               fontWeight: FontWeight.w900,
@@ -435,7 +435,7 @@ class _RateSafetyScreenState extends State<RateSafetyScreen> {
                   value: false,
                   onChanged: (_) {},
                   activeTrackColor: Colors.amber.withValues(alpha: 0.3),
-                  activeColor: Colors.amber,
+                  activeThumbColor: Colors.amber,
                 ),
               ],
             ),

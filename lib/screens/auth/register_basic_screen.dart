@@ -17,7 +17,6 @@ class RegisterBasicScreen extends StatefulWidget {
 
 class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
   bool _isLoading = false;
-  bool _isCitiesLoading = true;
   bool _acceptedTerms = false;
   final _firstNameController = TextEditingController();
   final _lastNameController = TextEditingController();
@@ -46,13 +45,10 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
           if (!_indianCities.contains(_selectedCity)) {
             _selectedCity = _indianCities.first;
           }
-          _isCitiesLoading = false;
         });
       } else {
-        if (mounted) setState(() => _isCitiesLoading = false);
       }
     } catch (_) {
-      if (mounted) setState(() => _isCitiesLoading = false);
     }
   }
 

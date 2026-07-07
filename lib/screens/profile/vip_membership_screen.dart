@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../core/theme.dart';
 import '../../widgets/action_button.dart';
 
 class VIPMembershipScreen extends StatelessWidget {

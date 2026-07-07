@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../widgets/action_button.dart';
 import '../../services/auth_service.dart';
-import '../home/dashboard.dart';
 import 'password_setup_screen.dart';
 import 'reset_password_screen.dart';
 

@@ -14,6 +14,7 @@ class AppTourService {
 
   // Discovery Keys
   static final GlobalKey searchBarKey = GlobalKey();
+  static final GlobalKey upcomingNightsKey = GlobalKey();
 
   // Plan Hub Keys
   static final GlobalKey createPlanKey = GlobalKey();
@@ -216,16 +217,18 @@ class AppTourService {
 
     final targets = [
       TargetFocus(
-        identify: "search_bar",
-        keyTarget: searchBarKey,
+        identify: "upcoming_nights",
+        keyTarget: upcomingNightsKey,
+        shape: ShapeLightFocus.RRect,
+        radius: 12,
         alignSkip: Alignment.bottomRight,
         contents: [
           TargetContent(
             align: ContentAlign.bottom,
             builder: (context, controller) {
               return AppTourTooltip(
-                title: 'Search',
-                description: 'Find specific clubs, lounges, or bars.',
+                title: 'Upcoming Nights',
+                description: 'Discover the hottest upcoming events and parties.',
                 currentStep: 1,
                 totalSteps: 1,
                 onNext: controller.next,
