@@ -4,9 +4,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../discovery/group_party_booking_screen.dart';
 import '../discovery/all_users_screen.dart';
-import 'package:lunara_app/screens/social/strangers_meet_requests_screen.dart';
-import 'package:lunara_app/screens/social/party_plan_requests_screen.dart';
-import 'package:lunara_app/screens/social/host_party_plan_manager_screen.dart';
+
 import '../../models/venue.dart';
 import '../../services/api_service.dart';
 import '../../models/user.dart';
@@ -169,51 +167,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
             ],
           ),
           const Spacer(),
-          PopupMenuButton<String>(
-            icon: const Icon(
-              Icons.list_alt_rounded,
-              color: LunaraTheme.electricViolet,
-            ),
-            tooltip: 'My Plans & Requests',
-            onSelected: (value) {
-              if (value == 'manage_plans') {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const HostPartyPlanManagerScreen(),
-                  ),
-                );
-              } else if (value == 'party_plan_requests') {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const PartyPlanRequestsScreen(),
-                  ),
-                );
-              } else if (value == 'strangers_meet_requests') {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const StrangersMeetRequestsScreen(),
-                  ),
-                );
-              }
-            },
-            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-              const PopupMenuItem<String>(
-                value: 'manage_plans',
-                child: Text('Manage Posted Plans'),
-              ),
-              const PopupMenuItem<String>(
-                value: 'party_plan_requests',
-                child: Text('Party Plan Requests'),
-              ),
-              const PopupMenuItem<String>(
-                value: 'strangers_meet_requests',
-                child: Text('Strangers Meet Requests'),
-              ),
-            ],
-          ),
+
           _currentUser != null
               ? LunaraProfileImage(
                   user: _currentUser,

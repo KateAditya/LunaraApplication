@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_app_badger/flutter_app_badger.dart';
 import '../../core/theme.dart';
@@ -48,7 +49,7 @@ class _DashboardState extends State<Dashboard> {
       });
       final total = counts['totalCount'] ?? 0;
       try {
-        if (await FlutterAppBadger.isAppBadgeSupported()) {
+        if (!kIsWeb && await FlutterAppBadger.isAppBadgeSupported()) {
           if (total > 0) {
             FlutterAppBadger.updateBadgeCount(total);
           } else {
@@ -102,43 +103,7 @@ class _DashboardState extends State<Dashboard> {
             index: _currentIndex == 2 ? 0 : _currentIndex,
             children: _screens,
           ),
-          Positioned(
-            left: 16,
-            bottom: 16,
-            child: GestureDetector(
-              key: AppTourService.vipUpgradeKey,
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const VIPMembershipScreen(),
-                  ),
-                );
-              },
-              child: Container(
-                height: 48,
-                width: 48,
-                decoration: BoxDecoration(
-                  color: Colors.amber,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.amber.withValues(alpha: 0.35),
-                      blurRadius: 12,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: const Center(
-                  child: Icon(
-                    Icons.workspace_premium_rounded,
-                    color: Colors.white,
-                    size: 24,
-                  ),
-                ),
-              ),
-            ),
-          ),
+
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
