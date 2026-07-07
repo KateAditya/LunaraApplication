@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import '../../core/theme.dart';
@@ -6,7 +7,7 @@ import 'booking_process_screen.dart';
 import '../../widgets/venue_video_player.dart';
 import '../../services/google_places_service.dart';
 import 'package:geolocator/geolocator.dart';
-import '../../widgets/light_map_view.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../services/app_tour_service.dart';
 
 
@@ -20,7 +21,7 @@ class VenueDetailScreen extends StatefulWidget {
   State<VenueDetailScreen> createState() => _VenueDetailScreenState();
 }
 
-class _VenueDetailScreenState extends State<VenueDetailScreen> {
+class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindingObserver {
   Map<String, dynamic> get venue => widget.venue;
   int _currentCarouselIndex = 0;
   double? _googleRating;
@@ -28,11 +29,31 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> {
   bool _isLoadingRating = true;
   Position? _currentPosition;
 
+  StreamSubscription<ServiceStatus>? _serviceStatusSubscription;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadGoogleRating();
-    _determinePosition();
+    _checkLocationAndForce(requestIfNeeded: false);
+    _serviceStatusSubscription = Geolocator.getServiceStatusStream().listen((status) {
+      _checkLocationAndForce(requestIfNeeded: false);
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkLocationAndForce(requestIfNeeded: false);
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _serviceStatusSubscription?.cancel();
+    super.dispose();
   }
 
   @override
@@ -43,30 +64,42 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> {
     });
   }
 
-  Future<void> _determinePosition() async {
-    bool serviceEnabled;
-    LocationPermission permission;
-
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return;
-
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) return;
+  Future<void> _checkLocationAndForce({bool requestIfNeeded = false, bool showLoader = false}) async {
+    if (showLoader && mounted) {
+      await Future.delayed(const Duration(milliseconds: 600));
     }
-    
-    if (permission == LocationPermission.deniedForever) return;
-
     try {
-      final position = await Geolocator.getCurrentPosition();
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        return;
+      }
+
+      LocationPermission permission;
+      try {
+        permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied && requestIfNeeded) {
+          permission = await Geolocator.requestPermission();
+        }
+      } catch (e) {
+        debugPrint('Permission check error: $e');
+        permission = LocationPermission.denied;
+      }
+
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        return;
+      }
+
+      // If location is enabled and permission is granted:
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      );
       if (mounted) {
         setState(() {
           _currentPosition = position;
         });
       }
     } catch (e) {
-      debugPrint("Error getting location: $e");
+      debugPrint('Error in _checkLocationAndForce: $e');
     }
   }
 
@@ -93,48 +126,81 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> {
     final double? lat = double.tryParse(venue['latitude']?.toString() ?? '');
     final double? lng = double.tryParse(venue['longitude']?.toString() ?? '');
 
-    if (lat == null || lng == null) {
+    if (lat == null || lng == null || lat == 0.0 || lng == 0.0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Venue location coordinates are not available.')),
       );
       return;
     }
 
-    if (_currentPosition == null) {
-      await _determinePosition();
-    }
+    // Show a loading overlay/indicator dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(color: LunaraTheme.cyberCyan),
+      ),
+    );
 
-    if (mounted) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => Scaffold(
-            appBar: AppBar(
-              backgroundColor: Colors.white,
-              elevation: 0,
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black),
-                onPressed: () => Navigator.pop(context),
-              ),
-              title: Text(
-                '${venue['name']?.toString().toUpperCase() ?? 'VENUE'} DIRECTIONS',
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            body: LightMapView(
-              venues: [venue],
-              directionToVenue: venue,
-              userPosition: _currentPosition,
-            ),
-          ),
-        ),
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!mounted) return;
+      if (!serviceEnabled) {
+        Navigator.pop(context); // Dismiss dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please enable location services to get directions.')),
+        );
+        await Geolocator.openLocationSettings();
+        return;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (!mounted) return;
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        Navigator.pop(context); // Dismiss dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location permission is required for directions.')),
+        );
+        if (permission == LocationPermission.deniedForever) {
+          await Geolocator.openAppSettings();
+        }
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
       );
+      if (!mounted) return;
+      Navigator.pop(context); // Dismiss dialog
+
+      final Uri googleMapsUrl = Uri.parse(
+        "https://www.google.com/maps/dir/?api=1&origin=${position.latitude},${position.longitude}&destination=$lat,$lng&travelmode=driving"
+      );
+
+      final bool canLaunch = await canLaunchUrl(googleMapsUrl);
+      if (!mounted) return;
+      if (canLaunch) {
+        await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not launch Google Maps.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Dismiss dialog
+        debugPrint('Error launching maps: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error getting directions: $e')),
+        );
+      }
     }
   }
+
+
 
   String _formatTime(String? timeStr) {
     if (timeStr == null || timeStr.isEmpty) return '';
@@ -396,11 +462,6 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> {
       } else {
         distanceText = '${(distanceInMeters / 1000).toStringAsFixed(1)} km';
       }
-    } else {
-      final String idStr = venue['id']?.toString() ?? '0';
-      int code = idStr.split('').fold(0, (prev, char) => prev + char.codeUnitAt(0));
-      double dummyDistance = 1.2 + ((code % 5) * 0.7);
-      distanceText = '${dummyDistance.toStringAsFixed(1)} km';
     }
 
     return Scaffold(
@@ -585,6 +646,38 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> {
                                             ),
                                           ),
                                         ],
+                                      ),
+                                    ] else ...[
+                                      const SizedBox(height: 6),
+                                      GestureDetector(
+                                        onTap: () => _checkLocationAndForce(requestIfNeeded: true, showLoader: true),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(alpha: 0.15),
+                                            borderRadius: BorderRadius.circular(12),
+                                            border: Border.all(
+                                              color: Colors.white.withValues(alpha: 0.25),
+                                              width: 1,
+                                            ),
+                                          ),
+                                          child: const Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(Icons.my_location_rounded, color: Colors.white, size: 12),
+                                              SizedBox(width: 6),
+                                              Text(
+                                                'GET DISTANCE',
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w900,
+                                                  letterSpacing: 0.5,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
                                       ),
                                     ],
                                     if (venue['coverChargeMale'] != null || venue['coverChargeFemale'] != null) ...[

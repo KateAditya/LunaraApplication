@@ -14,7 +14,7 @@ class BookingProcessScreen extends StatefulWidget {
 }
 
 class _BookingProcessScreenState extends State<BookingProcessScreen> {
-  DateTime _selectedDate = DateTime.now();
+  late DateTime _selectedDate;
   String? _selectedTime;
   bool _isGoingSolo = true;
   final TextEditingController _guestsController = TextEditingController();
@@ -23,6 +23,72 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
       TextEditingController();
   final TextEditingController _partyDescriptionController =
       TextEditingController();
+  final TextEditingController _partyMobileController = TextEditingController();
+  final TextEditingController _partyOptMobileController =
+      TextEditingController();
+
+  bool _isVenueOpenOnDate(DateTime date) {
+    final daysOpen = widget.venue['daysOpen'];
+    if (daysOpen == null || daysOpen is! List || daysOpen.isEmpty) {
+      return true; // default to open
+    }
+    final weekdaysMap = {
+      1: 'Monday',
+      2: 'Tuesday',
+      3: 'Wednesday',
+      4: 'Thursday',
+      5: 'Friday',
+      6: 'Saturday',
+      7: 'Sunday',
+    };
+    final weekdayName = weekdaysMap[date.weekday];
+    return daysOpen.any((d) => d.toString().trim().toLowerCase() == weekdayName?.toLowerCase());
+  }
+
+  bool _isTimeWithinVenueHours(TimeOfDay time, String? openingStr, String? closingStr) {
+    if (openingStr == null || openingStr.isEmpty || closingStr == null || closingStr.isEmpty) {
+      return true; // no timing constraint
+    }
+
+    final openParts = openingStr.split(':');
+    if (openParts.length < 2) return true;
+    final openHour = int.tryParse(openParts[0]) ?? 0;
+    final openMin = int.tryParse(openParts[1]) ?? 0;
+
+    final closeParts = closingStr.split(':');
+    if (closeParts.length < 2) return true;
+    final closeHour = int.tryParse(closeParts[0]) ?? 0;
+    final closeMin = int.tryParse(closeParts[1]) ?? 0;
+
+    final selectedMinutes = time.hour * 60 + time.minute;
+    final openMinutes = openHour * 60 + openMin;
+    final closeMinutes = closeHour * 60 + closeMin;
+
+    if (closeMinutes < openMinutes) {
+      // Overlap past midnight, e.g. 12:00 PM to 01:30 AM next day
+      return selectedMinutes >= openMinutes || selectedMinutes <= closeMinutes;
+    } else {
+      // Normal hours, e.g. 10:00 AM to 11:00 PM
+      return selectedMinutes >= openMinutes && selectedMinutes <= closeMinutes;
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _guestsController.text = '1';
+
+    // Find the first open date in the next 7 days
+    DateTime initialDate = DateTime.now();
+    for (int i = 0; i < 7; i++) {
+      final d = DateTime.now().add(Duration(days: i));
+      if (_isVenueOpenOnDate(d)) {
+        initialDate = d;
+        break;
+      }
+    }
+    _selectedDate = initialDate;
+  }
 
   @override
   void dispose() {
@@ -30,6 +96,8 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
     _partySubjectController.dispose();
     _partyRequirementController.dispose();
     _partyDescriptionController.dispose();
+    _partyMobileController.dispose();
+    _partyOptMobileController.dispose();
     super.dispose();
   }
 
@@ -286,19 +354,46 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
               final isSelected =
                   _selectedDate.day == date.day &&
                   _selectedDate.month == date.month;
+              final isOpen = _isVenueOpenOnDate(date);
+
               return GestureDetector(
-                onTap: () => setState(() {
-                  _selectedDate = date;
-                }),
+                onTap: () {
+                  if (!isOpen) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('The venue is closed (holiday) on ${[
+                          'Monday',
+                          'Tuesday',
+                          'Wednesday',
+                          'Thursday',
+                          'Friday',
+                          'Saturday',
+                          'Sunday'
+                        ][date.weekday - 1]}.'),
+                        backgroundColor: Colors.redAccent,
+                      ),
+                    );
+                    return;
+                  }
+                  setState(() {
+                    _selectedDate = date;
+                    _selectedTime = null; // reset selected time to force new validation
+                  });
+                },
                 child: Container(
                   width: 66,
                   margin: const EdgeInsets.only(right: 12),
                   decoration: BoxDecoration(
-                    color: isSelected
-                        ? LunaraTheme.electricViolet
-                        : Colors.grey[100],
+                    color: !isOpen
+                        ? Colors.grey[200]?.withValues(alpha: 0.5)
+                        : isSelected
+                            ? LunaraTheme.electricViolet
+                            : Colors.grey[100],
                     borderRadius: BorderRadius.circular(16),
-                    boxShadow: isSelected
+                    border: !isOpen
+                        ? Border.all(color: Colors.grey[300]!, width: 1)
+                        : null,
+                    boxShadow: isSelected && isOpen
                         ? [
                             BoxShadow(
                               color: LunaraTheme.electricViolet.withValues(
@@ -310,35 +405,49 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                           ]
                         : [],
                   ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        [
-                          'MON',
-                          'TUE',
-                          'WED',
-                          'THU',
-                          'FRI',
-                          'SAT',
-                          'SUN',
-                        ][date.weekday - 1],
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w900,
-                          color: isSelected ? Colors.white70 : Colors.grey[500],
+                  child: Opacity(
+                    opacity: isOpen ? 1.0 : 0.4,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          [
+                            'MON',
+                            'TUE',
+                            'WED',
+                            'THU',
+                            'FRI',
+                            'SAT',
+                            'SUN',
+                          ][date.weekday - 1],
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            color: isSelected ? Colors.white70 : Colors.grey[500],
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        date.day.toString(),
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900,
-                          color: isSelected ? Colors.white : Colors.black,
+                        const SizedBox(height: 4),
+                        Text(
+                          date.day.toString(),
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            color: isSelected ? Colors.white : Colors.black,
+                          ),
                         ),
-                      ),
-                    ],
+                        if (!isOpen) ...[
+                          const SizedBox(height: 2),
+                          const Text(
+                            'CLOSED',
+                            style: TextStyle(
+                              fontSize: 7,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.redAccent,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -395,6 +504,41 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
               },
             );
             if (picked != null) {
+              final selectedDateTime = DateTime(
+                _selectedDate.year,
+                _selectedDate.month,
+                _selectedDate.day,
+                picked.hour,
+                picked.minute,
+              );
+              final minAllowedDateTime = DateTime.now().add(const Duration(hours: 1));
+
+              if (selectedDateTime.isBefore(minAllowedDateTime)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please select a time slot at least 1 hour from now.'),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+                return;
+              }
+
+              // Validate venue working hours
+              final String? openingTime = widget.venue['openingTime'];
+              final String? closingTime = widget.venue['closingTime'];
+
+              if (!_isTimeWithinVenueHours(picked, openingTime, closingTime)) {
+                final openStr = _formatTimeOfBooking(openingTime);
+                final closeStr = _formatTimeOfBooking(closingTime);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Venue is closed at this time. Working hours: $openStr - $closeStr'),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+                return;
+              }
+
               setState(() {
                 _selectedTime =
                     '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
@@ -429,7 +573,9 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                 ),
                 const SizedBox(width: 12),
                 Text(
-                  _selectedTime ?? 'TAP TO SELECT TIME',
+                  _selectedTime != null
+                      ? _formatTimeOfBooking(_selectedTime)
+                      : 'TAP TO SELECT TIME',
                   style: TextStyle(
                     color: _selectedTime != null
                         ? Colors.black
@@ -705,20 +851,59 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                               const SizedBox(height: 12),
                               TextField(
                                 controller: _partySubjectController,
-                                decoration: _inputDecoration('Party Subject'),
+                                decoration:
+                                    _inputDecoration('Party Subject *'),
                               ),
                               const SizedBox(height: 12),
                               TextField(
                                 controller: _partyRequirementController,
                                 decoration: _inputDecoration(
-                                  'Party Requirement',
+                                  'Party Requirement *',
                                 ),
                               ),
                               const SizedBox(height: 12),
                               TextField(
                                 controller: _partyDescriptionController,
                                 maxLines: 3,
-                                decoration: _inputDecoration('Description'),
+                                decoration:
+                                    _inputDecoration('Description (optional)'),
+                              ),
+                              const SizedBox(height: 12),
+                              // ── Contact Details ─────────────────────
+                              const Text(
+                                'CONTACT DETAILS',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black54,
+                                  letterSpacing: 1,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              TextField(
+                                controller: _partyMobileController,
+                                keyboardType: TextInputType.phone,
+                                decoration: _inputDecoration(
+                                    'Mobile Number *').copyWith(
+                                  prefixIcon: const Icon(
+                                    Icons.phone_rounded,
+                                    color: LunaraTheme.electricViolet,
+                                    size: 20,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              TextField(
+                                controller: _partyOptMobileController,
+                                keyboardType: TextInputType.phone,
+                                decoration: _inputDecoration(
+                                    'Additional Mobile (optional)').copyWith(
+                                  prefixIcon: const Icon(
+                                    Icons.phone_android_rounded,
+                                    color: LunaraTheme.electricViolet,
+                                    size: 20,
+                                  ),
+                                ),
                               ),
                               const SizedBox(height: 32),
                             ],
@@ -839,6 +1024,21 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                     );
                                     return;
                                   }
+                                  if (_partyMobileController.text
+                                          .trim()
+                                          .isEmpty) {
+                                    ScaffoldMessenger.of(
+                                      outerContext,
+                                    ).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Mobile number is required for a large party request.',
+                                        ),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                    return;
+                                  }
 
                                   Navigator.pop(bottomSheetCtx); // Close popup
 
@@ -863,6 +1063,15 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                             _partyRequirementController.text,
                                         description:
                                             _partyDescriptionController.text,
+                                        mobileNumber:
+                                            _partyMobileController.text.trim(),
+                                        optionalMobileNumber:
+                                            _partyOptMobileController.text
+                                                    .trim()
+                                                    .isEmpty
+                                                ? null
+                                                : _partyOptMobileController.text
+                                                    .trim(),
                                       );
 
                                   if (!success) {

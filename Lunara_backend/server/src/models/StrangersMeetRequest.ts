@@ -5,6 +5,7 @@ export enum StrangersMeetStatus {
     PENDING = 'pending',
     APPROVED = 'approved',
     REJECTED = 'rejected',
+    COMPLETED = 'completed',
 }
 
 export enum StrangersMeetPaymentStatus {
@@ -20,8 +21,10 @@ export interface StrangersMeetRequestAttributes {
     tagline: string;
     eventDateTime: Date;
     numberOfPersons: number;
+    chargesPerHead: number;          // Set by user on creation
+    slotsFilled: number;             // Number of joined users
     status: StrangersMeetStatus;
-    paymentAmount?: number;          // Set by admin on approval
+    paymentAmount?: number;          // Set by admin on approval (deposit request)
     paymentStatus: StrangersMeetPaymentStatus;
     mobileNumber: string;
     alternateMobileNumber?: string;
@@ -39,6 +42,7 @@ export interface StrangersMeetRequestCreationAttributes
         StrangersMeetRequestAttributes,
         | 'id'
         | 'status'
+        | 'slotsFilled'
         | 'paymentAmount'
         | 'paymentStatus'
         | 'alternateMobileNumber'
@@ -58,6 +62,8 @@ class StrangersMeetRequest
     public tagline!: string;
     public eventDateTime!: Date;
     public numberOfPersons!: number;
+    public chargesPerHead!: number;
+    public slotsFilled!: number;
     public status!: StrangersMeetStatus;
     public paymentAmount?: number;
     public paymentStatus!: StrangersMeetPaymentStatus;
@@ -121,6 +127,18 @@ StrangersMeetRequest.init(
                 min: { args: [21], msg: 'Minimum 21 persons required' },
                 max: { args: [50], msg: 'Maximum 50 persons allowed' },
             },
+        },
+        chargesPerHead: {
+            type: DataTypes.DECIMAL(10, 2),
+            allowNull: false,
+            defaultValue: 0.0,
+            field: 'charges_per_head',
+        },
+        slotsFilled: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            defaultValue: 0,
+            field: 'slots_filled',
         },
         status: {
             type: DataTypes.ENUM(...Object.values(StrangersMeetStatus)),

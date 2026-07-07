@@ -8,6 +8,9 @@ import {
     confirmPayment,
     initiatePayment,
     getFeedRequests,
+    initiateJoinPayment,
+    confirmJoinPayment,
+    completeMeet,
 } from '../controllers/strangersMeetController';
 
 const router = Router();
@@ -92,6 +95,48 @@ router.post(
         validate,
     ],
     confirmPayment
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/strangers-meet/:id/join/initiate-payment
+// Initiate payment order to join a Strangers Meet
+// ─────────────────────────────────────────────────────────────────────────────
+router.post(
+    '/:id/join/initiate-payment',
+    [
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
+        validate,
+    ],
+    initiateJoinPayment
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/strangers-meet/:id/join/confirm
+// Confirm payment and join the Strangers Meet
+// ─────────────────────────────────────────────────────────────────────────────
+router.post(
+    '/:id/join/confirm',
+    [
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
+        validate,
+    ],
+    confirmJoinPayment
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/mobile/strangers-meet/:id/complete
+// Host marks the strangers meet as successfully completed
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch(
+    '/:id/complete',
+    [
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
+        validate,
+    ],
+    completeMeet
 );
 
 export default router;

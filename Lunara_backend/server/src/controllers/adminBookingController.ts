@@ -56,3 +56,70 @@ export const approveLargePartyRequest = async (req: Request, res: Response) => {
         return res.status(500).json({ success: false, message: err.message });
     }
 };
+
+// POST /api/admin/bookings/:id/send-payment-link
+// Admin attaches a Razorpay/custom payment link so the user can pay from the Live Feed
+export const sendPaymentLink = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const { paymentLink, paymentAmount } = req.body;
+
+        if (!paymentLink || !paymentLink.startsWith('http')) {
+            return res.status(400).json({ success: false, message: 'A valid payment link URL is required' });
+        }
+        if (!paymentAmount || isNaN(Number(paymentAmount)) || Number(paymentAmount) <= 0) {
+            return res.status(400).json({ success: false, message: 'A valid paymentAmount > 0 is required' });
+        }
+
+        const booking = await Booking.findByPk(id);
+        if (!booking) {
+            return res.status(404).json({ success: false, message: 'Booking not found' });
+        }
+        if (!booking.isLargePartyRequest) {
+            return res.status(400).json({ success: false, message: 'Not a large party request' });
+        }
+
+        await (booking as any).update({
+            adminPaymentLink: paymentLink.trim(),
+            adminPaymentAmount: Number(paymentAmount),
+            adminApprovalStatus: AdminApprovalStatus.PAYMENT_SENT,
+        });
+
+        return res.json({
+            success: true,
+            message: 'Payment link sent to user. It will appear in their Live Feed.',
+            data: {
+                id: booking.id,
+                adminPaymentLink: paymentLink.trim(),
+                adminPaymentAmount: Number(paymentAmount),
+                adminApprovalStatus: AdminApprovalStatus.PAYMENT_SENT,
+            },
+        });
+    } catch (err: any) {
+        logger.error('sendPaymentLink:', err);
+        return res.status(500).json({ success: false, message: err.message });
+    }
+};
+
+// POST /api/admin/bookings/:id/mark-payment-done
+// Admin marks payment as completed manually
+export const markPaymentDone = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+
+        const booking = await Booking.findByPk(id);
+        if (!booking) {
+            return res.status(404).json({ success: false, message: 'Booking not found' });
+        }
+
+        await (booking as any).update({
+            adminApprovalStatus: AdminApprovalStatus.PAYMENT_DONE,
+        });
+
+        return res.json({ success: true, message: 'Payment marked as done', data: booking });
+    } catch (err: any) {
+        logger.error('markPaymentDone:', err);
+        return res.status(500).json({ success: false, message: err.message });
+    }
+};
+

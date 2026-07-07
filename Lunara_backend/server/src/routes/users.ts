@@ -6,6 +6,21 @@ import { UserRole } from '../models/User';
 const router = express.Router();
 
 /**
+ * Param validator to ensure :id is a valid UUID
+ */
+router.param('id', (_req, res, next, id) => {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+        res.status(400).json({
+            success: false,
+            message: 'Invalid ID format. Must be a valid UUID.'
+        });
+        return;
+    }
+    next();
+});
+
+/**
  * All routes in this file require Authentication and Admin Role
  */
 router.use(authenticate);
@@ -17,6 +32,20 @@ router.use(authorize(UserRole.ADMIN));
  * @access  Private (Admin)
  */
 router.get('/', userController.getUsers);
+
+/**
+ * @route   GET /api/users/autoblocked
+ * @desc    Get all autoblocked users
+ * @access  Private (Admin)
+ */
+router.get('/autoblocked', userController.getAutoblockedUsers);
+
+/**
+ * @route   POST /api/users/:id/unblock
+ * @desc    Unblock an autoblocked user
+ * @access  Private (Admin)
+ */
+router.post('/:id/unblock', userController.unblockUserByAdmin);
 
 /**
  * @route   GET /api/users/:id

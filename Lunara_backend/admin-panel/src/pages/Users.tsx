@@ -176,6 +176,7 @@ export const Users: React.FC = () => {
                                     <th>Email</th>
                                     <th>Phone</th>
                                     <th>Status</th>
+                                    <th>Blocks</th>
                                     <th>Role</th>
                                     <th style={{ width: 80 }}>Actions</th>
                                 </tr>
@@ -183,14 +184,14 @@ export const Users: React.FC = () => {
                             <tbody>
                                 {loading ? (
                                     <tr>
-                                        <td colSpan={7} style={{ textAlign: 'center', padding: '3rem', color: 'var(--vz-text-muted)' }}>
+                                        <td colSpan={8} style={{ textAlign: 'center', padding: '3rem', color: 'var(--vz-text-muted)' }}>
                                             <BiLoaderAlt className="vz-spin" style={{ fontSize: '1.5rem', marginBottom: '0.5rem', color: 'var(--vz-primary)' }} />
                                             <div>Loading users...</div>
                                         </td>
                                     </tr>
                                 ) : users.length === 0 ? (
                                     <tr>
-                                        <td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: 'var(--vz-text-muted)' }}>
+                                        <td colSpan={8} style={{ textAlign: 'center', padding: '2rem', color: 'var(--vz-text-muted)' }}>
                                             No users found
                                         </td>
                                     </tr>
@@ -231,6 +232,21 @@ export const Users: React.FC = () => {
                                                 <span className={`vz-badge ${getStatusBadge(user)}`}>
                                                     {getStatusText(user)}
                                                 </span>
+                                            </td>
+                                            <td>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                                                    <span style={{ fontWeight: 600 }}>{user.blockCount ?? 0}</span>
+                                                    {user.isAutoblocked && (
+                                                        <span style={{
+                                                            fontSize: '0.625rem',
+                                                            background: 'rgba(230, 83, 60, 0.1)',
+                                                            color: 'rgb(230, 83, 60)',
+                                                            padding: '2px 6px',
+                                                            borderRadius: '4px',
+                                                            fontWeight: 600
+                                                        }}>Autoblocked</span>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td style={{ color: 'var(--vz-text-muted)' }}>{user.role || 'User'}</td>
                                             <td>

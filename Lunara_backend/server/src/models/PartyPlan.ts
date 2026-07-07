@@ -170,7 +170,8 @@ PartyPlan.init(
         },
         mobileNumber: {
             type: DataTypes.STRING,
-            allowNull: false,
+            allowNull: true,
+            defaultValue: '',
             field: 'mobile_number',
         },
         optionalMobileNumber: {

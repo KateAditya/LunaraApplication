@@ -7,7 +7,7 @@ npm run build
 
 # Copy dist files to server
 Write-Host "Copying dist files to server..." -ForegroundColor Yellow
-$sourceDist = "D:\Softwares\Lunara_backend\server\dist"
+$sourceDist = "$PSScriptRoot\dist"
 $destDist = "\\103.224.247.22\C$\inetpub\vhosts\lunara_backend\server\dist"
 
 if (Test-Path $sourceDist) {
@@ -19,7 +19,7 @@ if (Test-Path $sourceDist) {
 
 # Copy web.config to server
 Write-Host "Copying web.config to server..." -ForegroundColor Yellow
-$sourceConfig = "D:\Softwares\Lunara_backend\server\web.config"
+$sourceConfig = "$PSScriptRoot\web.config"
 $destConfig = "\\103.224.247.22\C$\inetpub\vhosts\lunara_backend\server\web.config"
 
 if (Test-Path $sourceConfig) {
@@ -31,7 +31,7 @@ if (Test-Path $sourceConfig) {
 
 # Copy package.json for dependencies
 Write-Host "Copying package.json to server..." -ForegroundColor Yellow
-$sourcePackage = "D:\Softwares\Lunara_backend\server\package.json"
+$sourcePackage = "$PSScriptRoot\package.json"
 $destPackage = "\\103.224.247.22\C$\inetpub\vhosts\lunara_backend\server\package.json"
 
 if (Test-Path $sourcePackage) {
@@ -43,7 +43,7 @@ if (Test-Path $sourcePackage) {
 
 # Copy package-lock.json for dependencies
 Write-Host "Copying package-lock.json to server..." -ForegroundColor Yellow
-$sourceLock = "D:\Softwares\Lunara_backend\server\package-lock.json"
+$sourceLock = "$PSScriptRoot\package-lock.json"
 $destLock = "\\103.224.247.22\C$\inetpub\vhosts\lunara_backend\server\package-lock.json"
 
 if (Test-Path $sourceLock) {
@@ -55,7 +55,7 @@ if (Test-Path $sourceLock) {
 
 # Copy .env file
 Write-Host "Copying .env to server..." -ForegroundColor Yellow
-$sourceEnv = "D:\Softwares\Lunara_backend\server\.env"
+$sourceEnv = "$PSScriptRoot\.env"
 $destEnv = "\\103.224.247.22\C$\inetpub\vhosts\lunara_backend\server\.env"
 
 if (Test-Path $sourceEnv) {
@@ -67,7 +67,7 @@ if (Test-Path $sourceEnv) {
 
 # Copy test script
 Write-Host "Copying test script to server..." -ForegroundColor Yellow
-$sourceTest = "D:\Softwares\Lunara_backend\server\test-env-server.js"
+$sourceTest = "$PSScriptRoot\test-env-server.js"
 $destTest = "\\103.224.247.22\C$\inetpub\vhosts\lunara_backend\server\test-env-server.js"
 
 if (Test-Path $sourceTest) {

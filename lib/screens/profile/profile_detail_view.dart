@@ -5,6 +5,8 @@ import 'package:lunara_app/models/user.dart';
 import 'settings_screen.dart';
 import 'edit_profile_screen.dart';
 import '../../services/block_service.dart';
+import '../../services/api_service.dart';
+import 'package:intl/intl.dart';
 
 class ProfileDetailView extends StatefulWidget {
   final User user;
@@ -383,6 +385,10 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                 children: [
                   const SizedBox(height: 32),
                   _buildActionButtons(),
+                  if (!widget.isMe) ...[
+                    const SizedBox(height: 24),
+                    _buildViewPlansButton(),
+                  ],
                   _buildDetailsSection(),
                   const SizedBox(height: 32),
                   _buildPhotoGridLabel(),
@@ -1389,6 +1395,497 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                 ),
               ),
             ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildViewPlansButton() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: GestureDetector(
+        onTap: _showActivePlansPopup,
+        child: Container(
+          height: 56,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [LunaraTheme.electricViolet, LunaraTheme.cyberCyan],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                blurRadius: 15,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.calendar_month_rounded, color: Colors.white),
+              SizedBox(width: 10),
+              Text(
+                'VIEW PLANS',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 14,
+                  letterSpacing: 1.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showActivePlansPopup() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext context) {
+        return _ActivePlansBottomSheet(
+          targetUserId: widget.user.id,
+          targetUserName: widget.user.fullName,
+        );
+      },
+    );
+  }
+}
+
+class _ActivePlansBottomSheet extends StatefulWidget {
+  final String targetUserId;
+  final String targetUserName;
+
+  const _ActivePlansBottomSheet({
+    required this.targetUserId,
+    required this.targetUserName,
+  });
+
+  @override
+  State<_ActivePlansBottomSheet> createState() => _ActivePlansBottomSheetState();
+}
+
+class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
+  bool _isLoading = true;
+  List<Map<String, dynamic>> _plans = [];
+  Set<String> _requestedPlanIds = {};
+  Set<String> _joiningPlanIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPlans();
+  }
+
+  Future<void> _loadPlans() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final results = await Future.wait([
+        ApiService.fetchUserPartyPlans(widget.targetUserId),
+        ApiService.fetchMyPartyPlanRequests(),
+      ]);
+
+      final List<Map<String, dynamic>> allPlans = results[0];
+      final List<Map<String, dynamic>> myRequests = results[1];
+
+      // Filter only active plans
+      final activePlans = allPlans.where((plan) {
+        final status = (plan['status'] ?? 'active').toString().toLowerCase();
+        return status == 'active';
+      }).toList();
+
+      // Collect plan IDs that current user has already requested to join
+      final requestedIds = <String>{};
+      for (final req in myRequests) {
+        final planId = req['partyPlanId']?.toString() ?? req['planId']?.toString();
+        if (planId != null) {
+          requestedIds.add(planId);
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _plans = activePlans;
+          _requestedPlanIds = requestedIds;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading plans in bottom sheet: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  String _formatDateTime(dynamic raw) {
+    if (raw == null) return 'TBD';
+    try {
+      final dt = DateTime.parse(raw.toString()).toLocal();
+      return DateFormat('EEE, dd MMM yyyy • hh:mm a').format(dt);
+    } catch (_) {
+      return raw.toString();
+    }
+  }
+
+  Future<void> _sendJoinRequest(String planId) async {
+    if (_joiningPlanIds.contains(planId)) return;
+
+    setState(() {
+      _joiningPlanIds.add(planId);
+    });
+
+    try {
+      final success = await ApiService.requestToJoinPartyPlan(planId);
+      if (success) {
+        setState(() {
+          _requestedPlanIds.add(planId);
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              behavior: SnackBarBehavior.floating,
+              content: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                decoration: BoxDecoration(
+                  gradient: LunaraTheme.purpleGradient,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                      blurRadius: 15,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.auto_awesome, color: Colors.white, size: 20),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'JOIN REQUEST SENT! THE HOST WILL REVIEW IT.',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to send request. You may have already requested.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _joiningPlanIds.remove(planId);
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.6,
+      minChildSize: 0.4,
+      maxChildSize: 0.9,
+      builder: (context, scrollController) {
+        return Container(
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF0F001E) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 20,
+                spreadRadius: 5,
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 12),
+              // Drag Indicator
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.white24 : Colors.black12,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Header
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'ACTIVE PLANS',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                              color: isDark ? Colors.white : Colors.black,
+                              letterSpacing: 1.5,
+                              fontFamily: 'AllroundGothic',
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'PLANS BY ${widget.targetUserName.toUpperCase()}',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              color: isDark ? LunaraTheme.cyberCyan : LunaraTheme.electricViolet,
+                              letterSpacing: 1,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.close_rounded, color: isDark ? Colors.white70 : Colors.black54),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Divider(color: isDark ? Colors.white10 : Colors.black12),
+              Expanded(
+                child: _isLoading
+                    ? const Center(
+                        child: CircularProgressIndicator(
+                          color: LunaraTheme.electricViolet,
+                        ),
+                      )
+                    : _plans.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.calendar_today_outlined,
+                                  size: 64,
+                                  color: isDark ? Colors.white24 : Colors.black26,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'NO ACTIVE PLANS CURRENTLY',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w800,
+                                    color: isDark ? Colors.white54 : Colors.black54,
+                                    letterSpacing: 1,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: scrollController,
+                            padding: const EdgeInsets.fromLTRB(20, 10, 20, 30),
+                            itemCount: _plans.length,
+                            itemBuilder: (context, index) {
+                              final plan = _plans[index];
+                              final planId = plan['id']?.toString() ?? plan['planId']?.toString() ?? '';
+                              final venue = plan['venue'] as Map<String, dynamic>? ?? {};
+                              final venueName = venue['name'] as String? ?? 'Venue';
+                              final description = plan['description'] as String? ?? '';
+                              final formattedDate = _formatDateTime(plan['planDate'] ?? plan['planDateTime']);
+                              final hasRequested = _requestedPlanIds.contains(planId);
+                              final isJoining = _joiningPlanIds.contains(planId);
+
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 16),
+                                padding: const EdgeInsets.all(18),
+                                decoration: BoxDecoration(
+                                  color: isDark ? Colors.white.withValues(alpha: 0.04) : Colors.grey[50],
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.05),
+                                    width: 1.5,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.02),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(10),
+                                          decoration: BoxDecoration(
+                                            color: LunaraTheme.electricViolet.withValues(alpha: 0.15),
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: const Icon(
+                                            Icons.nightlife_rounded,
+                                            color: LunaraTheme.electricViolet,
+                                            size: 20,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 14),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                venueName.toUpperCase(),
+                                                style: TextStyle(
+                                                  color: isDark ? Colors.white : Colors.black,
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.w900,
+                                                  letterSpacing: 0.5,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                formattedDate,
+                                                style: TextStyle(
+                                                  color: isDark ? Colors.white60 : Colors.black54,
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    if (description.isNotEmpty) ...[
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        description,
+                                        style: TextStyle(
+                                          color: isDark ? Colors.white70 : Colors.black87,
+                                          fontSize: 13,
+                                          height: 1.4,
+                                        ),
+                                        maxLines: 3,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                    const SizedBox(height: 16),
+                                    // Button
+                                    SizedBox(
+                                      width: double.infinity,
+                                      height: 46,
+                                      child: hasRequested
+                                          ? Container(
+                                              alignment: Alignment.center,
+                                              decoration: BoxDecoration(
+                                                color: Colors.green.withValues(alpha: 0.15),
+                                                borderRadius: BorderRadius.circular(14),
+                                                border: Border.all(
+                                                  color: Colors.green.withValues(alpha: 0.4),
+                                                ),
+                                              ),
+                                              child: const Row(
+                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                children: [
+                                                  Icon(Icons.check_circle_rounded, color: Colors.green, size: 18),
+                                                  SizedBox(width: 8),
+                                                  Text(
+                                                    'REQUEST SENT',
+                                                    style: TextStyle(
+                                                      color: Colors.green,
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 12,
+                                                      letterSpacing: 1,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            )
+                                          : ElevatedButton.icon(
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: LunaraTheme.electricViolet,
+                                                foregroundColor: Colors.white,
+                                                elevation: 0,
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius: BorderRadius.circular(14),
+                                                ),
+                                              ),
+                                              onPressed: isJoining ? null : () => _sendJoinRequest(planId),
+                                              icon: isJoining
+                                                  ? const SizedBox(
+                                                      width: 16,
+                                                      height: 16,
+                                                      child: CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                        color: Colors.white,
+                                                      ),
+                                                    )
+                                                  : const Icon(Icons.add_circle_outline_rounded, size: 18),
+                                              label: Text(
+                                                isJoining ? 'SENDING...' : 'REQUEST TO JOIN',
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w900,
+                                                  fontSize: 12,
+                                                  letterSpacing: 1,
+                                                ),
+                                              ),
+                                            ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+              ),
+            ],
           ),
         );
       },

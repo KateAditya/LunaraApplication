@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
-import { User, UserProfile, UserPreference, UserRole } from '../models';
+import { User, UserProfile, UserPreference, UserRole, SocialConnection } from '../models';
+import { ConnectionStatus } from '../models/SocialConnection';
 import bcrypt from 'bcryptjs';
 
 /**
@@ -228,3 +229,94 @@ export const deleteUser = async (req: Request, res: Response): Promise<void | Re
         });
     }
 };
+
+/**
+ * @desc    Get all autoblocked users (Admin only)
+ * @route   GET /api/users/autoblocked
+ * @access  Private/Admin
+ */
+export const getAutoblockedUsers = async (req: Request, res: Response): Promise<void | Response> => {
+    try {
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 50;
+        const offset = (page - 1) * limit;
+
+        const { count, rows } = await User.findAndCountAll({
+            where: { isAutoblocked: true },
+            attributes: { exclude: ['passwordHash', 'mfaSecret'] },
+            include: [
+                { model: UserProfile, as: 'profile' },
+                { model: UserPreference, as: 'preferences' }
+            ],
+            limit,
+            offset,
+            order: [['createdAt', 'DESC']],
+        });
+
+        res.status(200).json({
+            success: true,
+            count,
+            totalPages: Math.ceil(count / limit),
+            currentPage: page,
+            users: rows,
+        });
+    } catch (error) {
+        console.error('Error fetching autoblocked users:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server Error fetching autoblocked users',
+        });
+    }
+};
+
+/**
+ * @desc    Unblock an autoblocked user (Admin only)
+ * @route   POST /api/users/:id/unblock
+ * @access  Private/Admin
+ */
+export const unblockUserByAdmin = async (req: Request, res: Response): Promise<void | Response> => {
+    try {
+        const user = await User.findByPk(req.params.id);
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found',
+            });
+        }
+
+        // Reset auto block fields and activate user
+        user.isAutoblocked = false;
+        user.autoblockedReason = null;
+        user.blockCount = 0;
+        user.isActive = true;
+        await user.save();
+
+        // Clear all incoming blocks for this user so they don't start with previous blocks count
+        await SocialConnection.destroy({
+            where: {
+                receiverId: user.id,
+                status: ConnectionStatus.BLOCKED
+            }
+        });
+
+        res.status(200).json({
+            success: true,
+            message: 'User unblocked successfully by admin',
+            user: {
+                id: user.id,
+                email: user.email,
+                isAutoblocked: user.isAutoblocked,
+                isActive: user.isActive,
+                blockCount: user.blockCount
+            }
+        });
+    } catch (error) {
+        console.error('Error unblocking user by admin:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server Error unblocking user',
+        });
+    }
+};
+

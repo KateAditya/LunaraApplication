@@ -26,7 +26,9 @@ class _HomeTabState extends State<HomeTab> {
       final venues = await ApiService.fetchVenues();
       if (mounted) {
         setState(() {
-          _allVenues = venues;
+          _allVenues = venues
+              .where((v) => v.status?.toLowerCase() == 'live')
+              .toList();
           _isLoading = false;
         });
       }

@@ -65,7 +65,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   void initState() {
     super.initState();
     _loadVenues();
-    _determinePosition();
+    _determinePosition(requestIfNeeded: false);
     _loadRequestCount();
   }
 
@@ -84,7 +84,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     });
   }
 
-  Future<void> _determinePosition() async {
+  Future<void> _determinePosition({bool requestIfNeeded = false}) async {
     bool serviceEnabled;
     LocationPermission permission;
 
@@ -93,8 +93,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
     permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) return;
+      if (requestIfNeeded) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return;
+      } else {
+        return;
+      }
     }
 
     if (permission == LocationPermission.deniedForever) return;
@@ -268,11 +272,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
           final fetchedCities = _allVenues.map((v) => v.city).toSet().toList();
           final fallbackCities = [
-            'Pune',
-            'Mumbai',
-            'Delhi',
-            'Bengaluru',
-            'Goa',
+            'Pune'
           ];
           _availableCities = {...fetchedCities, ...fallbackCities}.toList();
           if (_availableCities.isNotEmpty) {
@@ -287,7 +287,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               );
             }
           } else if (ApiService.selectedCity == null) {
-            ApiService.setSelectedCity(_currentUser?.city ?? 'Mumbai');
+            ApiService.setSelectedCity(_currentUser?.city ?? 'Pune');
           }
           _availableAreas =
               _allVenues
@@ -398,153 +398,203 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       body: Stack(
         children: [
           // Main Scrollable Content
-          SingleChildScrollView(
-            controller: _scrollController,
-            physics: const BouncingScrollPhysics(),
-            padding: EdgeInsets.only(top: fixedTopPadding + 10, bottom: 40),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 1. Ads Carousel
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: _buildAdBanner(),
-                ),
-                const SizedBox(height: 24),
-
-                // 2. Upcoming Nights
-                if (_upcomingNights.isNotEmpty) ...[
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(24, 8, 24, 12),
+          RefreshIndicator(
+            color: LunaraTheme.electricViolet,
+            backgroundColor: Colors.white,
+            edgeOffset: fixedTopPadding,
+            onRefresh: () async {
+              await _loadVenues();
+              await _loadRequestCount();
+            },
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              physics: const AlwaysScrollableScrollPhysics(
+                parent: BouncingScrollPhysics(),
+              ),
+              padding: EdgeInsets.only(top: fixedTopPadding + 10, bottom: 40),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 1. Ads Carousel
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: _buildAdBanner(),
+                  ),
+                  const SizedBox(height: 24),
+  
+                  // 2. Upcoming Nights
+                  if (_upcomingNights.isNotEmpty) ...[
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(24, 8, 24, 12),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'UPCOMING NIGHTS',
+                            style: TextStyle(
+                              fontFamily: 'AllroundGothic',
+                              letterSpacing: 2,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _buildUpcomingNights(),
+                    const SizedBox(height: 24),
+                  ],
+  
+                  // 3. Featured Venues
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          'UPCOMING NIGHTS',
+                        Row(
+                          children: [
+                            const Text(
+                              'FEATURED VENUES',
+                              style: TextStyle(
+                                fontFamily: 'AllroundGothic',
+                                letterSpacing: 2,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black,
+                                fontSize: 15,
+                              ),
+                            ),
+                            if (_currentPosition == null) ...[
+                              const SizedBox(width: 8),
+                              GestureDetector(
+                                onTap: () => _determinePosition(requestIfNeeded: true),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
+                                    ),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.my_location_rounded,
+                                        color: LunaraTheme.electricViolet,
+                                        size: 12,
+                                      ),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        'NEAR ME',
+                                        style: TextStyle(
+                                          color: LunaraTheme.electricViolet,
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        GestureDetector(
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => AllVenuesScreen(venues: _allVenues),
+                            ),
+                          ),
+                          child: const Text(
+                            'SEE ALL',
+                            style: TextStyle(
+                              fontFamily: 'AllroundGothic',
+                              letterSpacing: 1,
+                              fontWeight: FontWeight.bold,
+                              color: LunaraTheme.electricViolet,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: _buildSearchBox(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Area filter chips
+                  if (_availableAreas.isNotEmpty) ...[
+                    _buildAreaFilter(),
+                    const SizedBox(height: 12),
+                  ],
+                  _buildVenueList(),
+                  const SizedBox(height: 32),
+  
+                  // 4. Recent Posts
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'RECENT POSTS',
                           style: TextStyle(
-                            fontFamily: 'AllroundGothic',
                             letterSpacing: 2,
                             fontWeight: FontWeight.bold,
                             color: Colors.black,
                             fontSize: 15,
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                  _buildUpcomingNights(),
-                  const SizedBox(height: 24),
-                ],
-
-                // 3. Featured Venues
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'FEATURED VENUES',
-                        style: TextStyle(
-                          fontFamily: 'AllroundGothic',
-                          letterSpacing: 2,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black,
-                          fontSize: 15,
-                        ),
-                      ),
-                      GestureDetector(
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => AllVenuesScreen(venues: _allVenues),
-                          ),
-                        ),
-                        child: const Text(
-                          'SEE ALL',
-                          style: TextStyle(
-                            fontFamily: 'AllroundGothic',
-                            letterSpacing: 1,
-                            fontWeight: FontWeight.bold,
-                            color: LunaraTheme.electricViolet,
-                            fontSize: 15,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.grey[100],
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.05),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: _buildSearchBox(),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                // Area filter chips
-                if (_availableAreas.isNotEmpty) ...[
-                  _buildAreaFilter(),
-                  const SizedBox(height: 12),
-                ],
-                _buildVenueList(),
-                const SizedBox(height: 32),
-
-                // 4. Recent Posts
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'RECENT POSTS',
-                        style: TextStyle(
-                          letterSpacing: 2,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black,
-                          fontSize: 15,
-                        ),
-                      ),
-                      GestureDetector(
-                        onTap: () {
-                          final displayFeeds = _filteredPartyPlans;
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => AllPostsScreen(
-                                posts: displayFeeds,
-                                venues: _allVenues,
+                        GestureDetector(
+                          onTap: () {
+                            final displayFeeds = _filteredPartyPlans;
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => AllPostsScreen(
+                                  posts: displayFeeds,
+                                  venues: _allVenues,
+                                ),
                               ),
+                            );
+                          },
+                          child: const Text(
+                            'SEE ALL',
+                            style: TextStyle(
+                              letterSpacing: 1,
+                              fontWeight: FontWeight.bold,
+                              color: LunaraTheme.electricViolet,
+                              fontSize: 15,
                             ),
-                          );
-                        },
-                        child: const Text(
-                          'SEE ALL',
-                          style: TextStyle(
-                            letterSpacing: 1,
-                            fontWeight: FontWeight.bold,
-                            color: LunaraTheme.electricViolet,
-                            fontSize: 15,
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                _buildRecentFeeds(),
-
-                // 5. Top Profiles
-                _buildTopProfiles(),
-              ],
+                  _buildRecentFeeds(),
+  
+                  // 5. Top Profiles
+                  _buildTopProfiles(),
+                ],
+              ),
             ),
           ),
 
@@ -1273,10 +1323,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               distanceText =
                   '${(distanceInMeters / 1000).toStringAsFixed(1)} km';
             }
-          } else {
-            // Fallback dummy distance for venues missing coordinates in the database or if location is unavailable
-            double dummyDistance = 1.2 + (index * 0.7);
-            distanceText = '${dummyDistance.toStringAsFixed(1)} km';
           }
 
           return RepaintBoundary(
@@ -1425,20 +1471,53 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              const Icon(
-                                Icons.directions_run_rounded,
-                                color: Colors.grey,
-                                size: 14,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                distanceText,
-                                style: const TextStyle(
-                                  color: Colors.black54,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
+                              if (distanceText != null) ...[
+                                const Icon(
+                                  Icons.directions_run_rounded,
+                                  color: Colors.grey,
+                                  size: 14,
                                 ),
-                              ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  distanceText,
+                                  style: const TextStyle(
+                                    color: Colors.black54,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ] else ...[
+                                InkWell(
+                                  onTap: () => _determinePosition(requestIfNeeded: true),
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.my_location_rounded,
+                                          color: LunaraTheme.electricViolet,
+                                          size: 11,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        const Text(
+                                          'DISTANCE',
+                                          style: TextStyle(
+                                            color: LunaraTheme.electricViolet,
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                         ],
@@ -1594,7 +1673,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                         image: NetworkImage(coverImageUrl),
                         fit: BoxFit.cover,
                         colorFilter: ColorFilter.mode(
-                          Colors.black.withOpacity(0.6),
+                          Colors.black.withValues(alpha: 0.6),
                           BlendMode.darken,
                         ),
                       )
@@ -1824,6 +1903,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       return isNotMe;
     }).toList();
 
+    final List<dynamic> allUsers = _filteredUsers.where((u) {
+      return u['id']?.toString() != _currentUser?.id;
+    }).toList();
+
     final displayUsers = users.take(10).toList();
 
     return Column(
@@ -1850,7 +1933,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => AllUsersScreen(users: users),
+                        builder: (_) => AllUsersScreen(users: allUsers),
                       ),
                     );
                   },

@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../discovery/payment_confirmation_screen.dart';
+import 'party_plan_ticket_screen.dart';
 
 class HostPartyPlanManagerScreen extends StatefulWidget {
   const HostPartyPlanManagerScreen({super.key});
@@ -69,11 +70,28 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
             try {
               final orderId = plan['hostRazorpayOrderId'] ?? 'mock_order';
               final success = await ApiService.verifyHostPayment(planId, orderId, paymentId, signature);
+              if (!mounted) return;
               if (success) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Payment Successful!'), backgroundColor: Colors.green),
+                await _loadData();
+                // After host pays, if there's an accepted request, open ticket
+                final reqs = _planRequests[planId] ?? [];
+                final confirmedReq = reqs.firstWhere(
+                  (r) => r['status'] == 'accepted' || 
+                         (r['joinerPaymentStatus'] == 'paid' && plan['hostPaymentStatus'] == 'paid'),
+                  orElse: () => {},
                 );
-                _loadData();
+                if (confirmedReq.isNotEmpty && mounted) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PartyPlanTicketScreen(
+                        request: confirmedReq,
+                        plan: plan,
+                        isHost: true,
+                      ),
+                    ),
+                  );
+                }
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Payment Verification Failed.'), backgroundColor: Colors.red),
@@ -87,11 +105,27 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
             try {
               final orderId = plan['hostRazorpayOrderId'] ?? 'mock_order';
               final success = await ApiService.verifyHostPayment(planId, orderId, 'mock_payment', 'mock_signature');
+              if (!mounted) return;
               if (success) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Payment Successful!'), backgroundColor: Colors.green),
+                await _loadData();
+                final reqs = _planRequests[planId] ?? [];
+                final confirmedReq = reqs.firstWhere(
+                  (r) => r['status'] == 'accepted' ||
+                         (r['joinerPaymentStatus'] == 'paid' && plan['hostPaymentStatus'] == 'paid'),
+                  orElse: () => {},
                 );
-                _loadData();
+                if (confirmedReq.isNotEmpty && mounted) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PartyPlanTicketScreen(
+                        request: confirmedReq,
+                        plan: plan,
+                        isHost: true,
+                      ),
+                    ),
+                  );
+                }
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Payment Verification Failed.'), backgroundColor: Colors.red),
@@ -135,6 +169,7 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
 
   void _onAcceptRequest(String reqId, String planId) async {
     final result = await ApiService.acceptPartyPlanRequest(reqId);
+    if (!mounted) return;
     if (result != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Request Accepted! Complete your deposit to lock match.')),
@@ -149,6 +184,7 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
 
   void _onCancelPlan(String planId) async {
     final success = await ApiService.cancelPartyPlan(planId);
+    if (!mounted) return;
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Plan Cancelled successfully.')),
@@ -225,10 +261,10 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: LunaraTheme.electricViolet.withOpacity(0.1), width: 1.2),
+        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.1), width: 1.2),
         boxShadow: [
           BoxShadow(
-            color: LunaraTheme.electricViolet.withOpacity(0.05),
+            color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
             blurRadius: 16,
             offset: const Offset(0, 6),
           ),
@@ -257,7 +293,7 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: isLive ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
+                        color: isLive ? Colors.green.withValues(alpha: 0.1) : Colors.orange.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
@@ -361,10 +397,10 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: LunaraTheme.electricViolet.withOpacity(0.1), width: 1.2),
+                        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.1), width: 1.2),
                         boxShadow: [
                           BoxShadow(
-                            color: LunaraTheme.electricViolet.withOpacity(0.05),
+                            color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
                             blurRadius: 10,
                             offset: const Offset(0, 4),
                           ),
@@ -394,10 +430,58 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                                     const Text('Please pay your ₹99 deposit to lock match.', style: TextStyle(color: Colors.red, fontSize: 11, fontWeight: FontWeight.bold))
                                   else if (hostPaid && !joinerPaid)
                                     Text('Waiting for joiner payment... ($timerText)', style: TextStyle(color: Colors.blue, fontSize: 11, fontWeight: FontWeight.bold))
-                                  else if (hostPaid && joinerPaid)
-                                    const Text('Match Successful! Booking Confirmed 🎉', style: TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.bold))
-                                ] else if (status == 'accepted')
-                                  const Text('Match Successful! Booking Confirmed 🎉', style: TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.bold))
+                                  else if (hostPaid && joinerPaid) ...[
+                                    const Text('Match Successful! Booking Confirmed 🎉', style: TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.bold)),
+                                    const SizedBox(height: 6),
+                                    ElevatedButton.icon(
+                                      onPressed: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => PartyPlanTicketScreen(
+                                              request: req,
+                                              plan: plan,
+                                              isHost: true,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                      icon: const Icon(Icons.qr_code_rounded, size: 14, color: Colors.white),
+                                      label: const Text('VIEW TICKET', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: LunaraTheme.electricViolet,
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                        minimumSize: const Size(0, 32),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      ),
+                                    ),
+                                  ]
+                                ] else if (status == 'accepted') ...[
+                                  const Text('Match Successful! Booking Confirmed 🎉', style: TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.bold)),
+                                  const SizedBox(height: 6),
+                                  ElevatedButton.icon(
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => PartyPlanTicketScreen(
+                                            request: req,
+                                            plan: plan,
+                                            isHost: true,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.qr_code_rounded, size: 14, color: Colors.white),
+                                    label: const Text('VIEW TICKET', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: LunaraTheme.electricViolet,
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                      minimumSize: const Size(0, 32),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    ),
+                                  ),
+                                ]
                                 else if (status == 'payment_failed')
                                   const Text('Payment timeout or failed', style: TextStyle(color: Colors.grey, fontSize: 11))
                                 else if (status == 'rejected')

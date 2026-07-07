@@ -35,35 +35,47 @@ export const startPartyPlanCron = () => {
                 const hostPaid = plan.hostPaymentStatus === 'paid';
                 const joinerPaid = request.joinerPaymentStatus === 'paid';
 
-                if (!joinerPaid) {
-                    // Case 1 — Interested Person does NOT pay:
-                    // Refund interested person if pre-authorized (marked payment failed)
+                if (!hostPaid) {
+                    // Host did not pay within their 30 min acceptance window:
                     await request.update({ status: PartyPlanRequestStatus.PAYMENT_FAILED });
-                    // Re-list the post publicly, no penalty to host (keep their deposit status)
-                    await plan.update({ isLive: true });
-                    logger.info(`Plan ${plan.id} is live again because joiner (req ${request.id}) did not pay within 30m.`);
-                } else if (joinerPaid && !hostPaid) {
-                    // Case 2 — Host does NOT pay:
-                    // Refund the interested person
-                    await request.update({ 
-                        status: PartyPlanRequestStatus.PAYMENT_FAILED,
-                        joinerPaymentStatus: 'refunded' as any
-                    });
-                    // Flag/cancel the post per business rule
                     await plan.update({ status: PartyPlanStatus.CANCELLED, isLive: false });
-                    logger.warn(`Plan ${plan.id} cancelled/flagged because host failed to pay within 30m.`);
+                    logger.warn(`Plan ${plan.id} cancelled because host failed to pay deposit within 30m.`);
+                } else if (hostPaid && !joinerPaid) {
+                    // Joiner did not pay within their 30 min window (starts after host paid):
+                    await request.update({ status: PartyPlanRequestStatus.PAYMENT_FAILED });
+                    // Host remains paid, and plan goes back live publicly!
+                    await plan.update({ isLive: true });
+                    logger.info(`Plan ${plan.id} is live again because joiner (req ${request.id}) did not pay within 30m. Host is already paid.`);
+
+                    // Send push notification to host
+                    try {
+                        const hostUser = await User.findByPk(plan.userId);
+                        if (hostUser && hostUser.fcmToken) {
+                            const { sendMulticastPushNotification } = require('../services/fcmService');
+                            await sendMulticastPushNotification([hostUser.fcmToken], {
+                                title: '⚡ Plan Live Again',
+                                body: 'The joiner did not complete payment within 30 minutes. Your party plan is live again with no payment requirements!',
+                                data: {
+                                    type: 'party_plan_timeout_relist',
+                                    partyPlanId: plan.id,
+                                },
+                            });
+                        }
+                    } catch (pushErr: any) {
+                        logger.warn('Failed to send timeout relist push notification:', pushErr.message);
+                    }
                 } else {
-                    // Fallback for Case 3 (both paid but somehow cron run first)
+                    // Fallback: both paid. Mark accepted and inactive.
                     await request.update({ 
                         status: PartyPlanRequestStatus.ACCEPTED,
-                        joinerPaymentStatus: 'refunded' as any
+                        joinerPaymentStatus: 'paid' as any
                     });
                     await plan.update({ 
-                        hostPaymentStatus: 'refunded' as any,
+                        hostPaymentStatus: 'paid' as any,
                         status: PartyPlanStatus.INACTIVE,
                         isLive: false
                     });
-                    logger.info(`Match Success (cron fallback) for plan ${plan.id}. Refunded both.`);
+                    logger.info(`Match Success (cron fallback) for plan ${plan.id}.`);
                 }
             }
 

@@ -62,15 +62,18 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
         if (_selectedGender != 'All') {
           String userGender = '';
           if (user['profile'] != null && user['profile']['gender'] != null) {
-            userGender = user['profile']['gender'].toString().toLowerCase();
+            userGender = user['profile']['gender'].toString().toLowerCase().trim();
           } else if (user['gender'] != null) {
-            userGender = user['gender'].toString().toLowerCase();
+            userGender = user['gender'].toString().toLowerCase().trim();
           }
 
-          if (_selectedGender == 'Other') {
-            if (userGender == 'male' || userGender == 'female') return false;
-          } else if (userGender != _selectedGender.toLowerCase()) {
-            return false;
+          final targetGender = _selectedGender.toLowerCase();
+          if (targetGender == 'male') {
+            if (userGender != 'male' && userGender != 'm') return false;
+          } else if (targetGender == 'female') {
+            if (userGender != 'female' && userGender != 'f') return false;
+          } else if (targetGender == 'other') {
+            if (userGender == 'male' || userGender == 'm' || userGender == 'female' || userGender == 'f') return false;
           }
         }
 

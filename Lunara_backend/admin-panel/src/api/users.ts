@@ -69,6 +69,14 @@ export const usersApi = {
     verifyEmail: (id: string): Promise<{ success: boolean; data: User }> => {
         return apiClient.post(`/api/users/${id}/verify-email`);
     },
+
+    getAutoblockedUsers: (params?: { page?: number; limit?: number }): Promise<any> => {
+        return apiClient.get('/api/users/autoblocked', { params });
+    },
+
+    unblockUser: (id: string): Promise<{ success: boolean; message: string; user?: any }> => {
+        return apiClient.post(`/api/users/${id}/unblock`);
+    },
 };
 
 export default usersApi;

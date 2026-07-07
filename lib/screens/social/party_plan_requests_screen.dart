@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../discovery/payment_confirmation_screen.dart';
+import 'party_plan_ticket_screen.dart';
 
 class PartyPlanRequestsScreen extends StatefulWidget {
   const PartyPlanRequestsScreen({super.key});
@@ -303,34 +304,59 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
             
             // Actions
             if (isPaymentPending && !joinerPaid) ...[
-              const SizedBox(height: 16),
-              const Divider(),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+              if (!hostPaid) ...[
+                const SizedBox(height: 16),
+                const Divider(),
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text('Deposit Required ($timerText)', style: TextStyle(color: Colors.red[400], fontSize: 11, fontWeight: FontWeight.bold)),
-                      const Text(
-                        '₹99',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black),
+                      Icon(Icons.hourglass_empty_rounded, color: Colors.orange, size: 16),
+                      SizedBox(width: 8),
+                      Text(
+                        'AWAITING HOST DEPOSIT PAYMENT',
+                        style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 11),
                       ),
                     ],
                   ),
-                  ElevatedButton(
-                    onPressed: () => _onProceedToPayment(req),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: LunaraTheme.electricViolet,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                ),
+              ] else ...[
+                const SizedBox(height: 16),
+                const Divider(),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Deposit Required ($timerText)', style: TextStyle(color: Colors.red[400], fontSize: 11, fontWeight: FontWeight.bold)),
+                        const Text(
+                          '₹99',
+                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black),
+                        ),
+                      ],
                     ),
-                    child: const Text('PAY DEPOSIT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                  ),
-                ],
-              ),
+                    ElevatedButton(
+                      onPressed: () => _onProceedToPayment(req),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: LunaraTheme.electricViolet,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      ),
+                      child: const Text('PAY DEPOSIT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                    ),
+                  ],
+                ),
+              ],
             ],
 
             if (isPaymentPending && joinerPaid && !hostPaid) ...[
@@ -373,14 +399,46 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
                   color: Colors.green.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                child: Column(
                   children: [
-                    Icon(Icons.check_circle, color: Colors.green, size: 18),
-                    SizedBox(width: 8),
-                    Text(
-                      'BOOKING CONFIRMED & DEPOSITS REFUNDED',
-                      style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 11),
+                    const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.check_circle, color: Colors.green, size: 18),
+                        SizedBox(width: 8),
+                        Text(
+                          'BOOKING CONFIRMED',
+                          style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 40,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => PartyPlanTicketScreen(
+                                request: req,
+                                plan: plan,
+                                isHost: false,
+                              ),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.qr_code_rounded, size: 16, color: Colors.white),
+                        label: const Text(
+                          'VIEW TICKET',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: LunaraTheme.electricViolet,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
                     ),
                   ],
                 ),

@@ -141,6 +141,8 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
         tagline: widget.request.tagline,
         eventDateTime: widget.request.eventDateTime,
         numberOfPersons: widget.request.numberOfPersons,
+        chargesPerHead: widget.request.chargesPerHead,
+        slotsFilled: widget.request.slotsFilled,
         status: widget.request.status,
         paymentAmount: widget.request.paymentAmount,
         paymentStatus: 'paid',
@@ -149,6 +151,7 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
         createdAt: widget.request.createdAt,
         user: widget.request.user,
         venue: widget.request.venue,
+        joiners: widget.request.joiners,
       );
 
       // Replace current screen with Ticket Screen
@@ -279,7 +282,7 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
                 color: Colors.white,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 20,
                     offset: const Offset(0, -5),
                   ),
