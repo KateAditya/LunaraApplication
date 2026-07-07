@@ -56,6 +56,7 @@ dependencies:
   local_auth: any
   flutter_app_badger: ^1.5.0
 
+  http_parser: any
 dev_dependencies:
   flutter_test:
     sdk: flutter

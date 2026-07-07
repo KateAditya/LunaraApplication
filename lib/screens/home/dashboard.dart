@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_app_badger/flutter_app_badger.dart';
 import '../../core/theme.dart';
 import '../profile/profile_hub_screen.dart';
-import '../profile/vip_membership_screen.dart';
 import '../discovery/discovery_screen.dart';
 import '../social/live_feed_screen.dart';
 import '../social/messages_screen.dart';
@@ -113,8 +112,8 @@ class _DashboardState extends State<Dashboard> {
             Navigator.push(
               context,
               PageRouteBuilder(
-                pageBuilder: (_, __, ___) => const PlanHubScreen(),
-                transitionsBuilder: (_, anim, __, child) {
+                pageBuilder: (_, _, _) => const PlanHubScreen(),
+                transitionsBuilder: (_, anim, _, child) {
                   return SlideTransition(
                     position:
                         Tween<Offset>(

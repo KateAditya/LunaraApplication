@@ -175,12 +175,12 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: LunaraTheme.electricViolet.withOpacity(0.1),
+          color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
           width: 1.2,
         ),
         boxShadow: [
           BoxShadow(
-            color: LunaraTheme.electricViolet.withOpacity(0.05),
+            color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
             blurRadius: 16,
             offset: const Offset(0, 6),
           ),
@@ -230,7 +230,7 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
+                  color: Colors.orange.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
@@ -310,18 +310,18 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
     String label = status.toUpperCase();
 
     if (status == 'pending') {
-      bg = Colors.orange.withOpacity(0.1);
+      bg = Colors.orange.withValues(alpha: 0.1);
       text = Colors.orange;
     } else if (status == 'rejected') {
-      bg = Colors.red.withOpacity(0.1);
+      bg = Colors.red.withValues(alpha: 0.1);
       text = Colors.red;
     } else {
       if (paymentStatus == 'paid') {
-        bg = Colors.green.withOpacity(0.1);
+        bg = Colors.green.withValues(alpha: 0.1);
         text = Colors.green;
         label = 'PAID';
       } else {
-        bg = LunaraTheme.electricViolet.withOpacity(0.1);
+        bg = LunaraTheme.electricViolet.withValues(alpha: 0.1);
         text = LunaraTheme.electricViolet;
         label = 'APPROVED';
       }

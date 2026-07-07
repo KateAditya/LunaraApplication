@@ -7,8 +7,6 @@ import 'profile_screen.dart';
 import 'safety_check_screen.dart';
 import '../post_booking/ticket_pocket_screen.dart';
 import '../post_booking/booking_history_screen.dart';
-import '../post_booking/rate_venue_screen.dart';
-import '../post_booking/rate_safety_screen.dart';
 import '../onboarding/welcome_carousel.dart';
 import '../../services/api_service.dart';
 import '../../models/user.dart';

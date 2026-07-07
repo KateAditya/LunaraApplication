@@ -225,10 +225,10 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: LunaraTheme.electricViolet.withOpacity(0.1), width: 1.2),
+        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.1), width: 1.2),
         boxShadow: [
           BoxShadow(
-            color: LunaraTheme.electricViolet.withOpacity(0.05),
+            color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
             blurRadius: 16,
             offset: const Offset(0, 6),
           ),
@@ -257,7 +257,7 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: isLive ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
+                        color: isLive ? Colors.green.withValues(alpha: 0.1) : Colors.orange.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
@@ -361,10 +361,10 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: LunaraTheme.electricViolet.withOpacity(0.1), width: 1.2),
+                        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.1), width: 1.2),
                         boxShadow: [
                           BoxShadow(
-                            color: LunaraTheme.electricViolet.withOpacity(0.05),
+                            color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
                             blurRadius: 10,
                             offset: const Offset(0, 4),
                           ),

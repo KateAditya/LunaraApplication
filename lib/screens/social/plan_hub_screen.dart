@@ -630,10 +630,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                         person['firstName'] ??
                         person['first_name'] ??
                         'User';
-                    final photo =
-                        person['profilePhotoUrl'] ??
-                        person['profilePhoto'] ??
-                        person['avatar'];
+
                     final vibe = person['gender'] ?? person['vibe'] ?? 'Party';
 
                     return Container(
@@ -1504,7 +1501,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         context,
                                       ); // Close bottom sheet
 
-                                      if (!this.mounted) return;
+                                      if (!mounted) return;
                                       ScaffoldMessenger.of(
                                         this.context,
                                       ).showSnackBar(
@@ -2014,8 +2011,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                       .trim(),
                                 );
 
-                            if (context.mounted)
+                            if (context.mounted) {
                               Navigator.pop(context); // Close loading dialog
+                            }
 
                             if (success) {
                               if (context.mounted) {
@@ -2333,9 +2331,9 @@ class _PlanManagerSimulationScreenState
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.04),
+        color: Colors.black.withValues(alpha: 0.04),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.black.withOpacity(0.06)),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

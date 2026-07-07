@@ -77,8 +77,8 @@ class _SplashScreenState extends State<SplashScreen> {
       Navigator.pushReplacement(
         context,
         PageRouteBuilder(
-          pageBuilder: (_, __, ___) => const Dashboard(),
-          transitionsBuilder: (_, a, __, child) =>
+          pageBuilder: (_, _, _) => const Dashboard(),
+          transitionsBuilder: (_, a, _, child) =>
               FadeTransition(opacity: a, child: child),
           transitionDuration: const Duration(milliseconds: 400),
         ),
@@ -87,8 +87,8 @@ class _SplashScreenState extends State<SplashScreen> {
       Navigator.pushReplacement(
         context,
         PageRouteBuilder(
-          pageBuilder: (_, __, ___) => const WelcomeCarousel(),
-          transitionsBuilder: (_, a, __, child) =>
+          pageBuilder: (_, _, _) => const WelcomeCarousel(),
+          transitionsBuilder: (_, a, _, child) =>
               FadeTransition(opacity: a, child: child),
           transitionDuration: const Duration(milliseconds: 400),
         ),

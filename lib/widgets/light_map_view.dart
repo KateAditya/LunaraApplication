@@ -43,9 +43,7 @@ class _LightMapViewState extends State<LightMapView> {
       _markers.clear();
       _polylines.clear();
       _initMarkers();
-      if (_controller != null) {
-        _animateCameraToFitFallback();
-      }
+      _animateCameraToFitFallback();
     }
   }
 
@@ -111,9 +109,7 @@ class _LightMapViewState extends State<LightMapView> {
               );
             });
 
-            if (_controller != null) {
-              _animateCameraToFitPolyline(routePoints);
-            }
+            _animateCameraToFitPolyline(routePoints);
           }
         });
       }

@@ -16,7 +16,6 @@ import '../social/post_detail_screen.dart';
 import '../social/chat_screen.dart';
 import '../profile/profile_screen.dart';
 import '../../services/app_tour_service.dart';
-import '../social/plan_hub_screen.dart';
 import '../../widgets/vip_upgrade_button.dart';
 
 class DiscoveryScreen extends StatefulWidget {
@@ -45,29 +44,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  int _requestCount = 0;
-
-  Future<void> _loadRequestCount() async {
-    try {
-      final requests = await ApiService.fetchMyPartyPlanRequests();
-      if (mounted) {
-        setState(() {
-          _requestCount = requests
-              .where((r) => r['status'] == 'pending')
-              .length;
-        });
-      }
-    } catch (e) {
-      debugPrint('Error loading request count: $e');
-    }
-  }
 
   @override
   void initState() {
     super.initState();
     _loadVenues();
     _determinePosition();
-    _loadRequestCount();
   }
 
   @override
@@ -1560,7 +1542,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                         image: NetworkImage(coverImageUrl),
                         fit: BoxFit.cover,
                         colorFilter: ColorFilter.mode(
-                          Colors.black.withOpacity(0.6),
+                          Colors.black.withValues(alpha: 0.6),
                           BlendMode.darken,
                         ),
                       )

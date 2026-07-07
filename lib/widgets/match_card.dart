@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../core/theme.dart';
 
 class MatchCard extends StatelessWidget {
   final Map<String, dynamic> profile;

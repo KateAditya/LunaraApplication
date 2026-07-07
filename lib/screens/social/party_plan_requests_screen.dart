@@ -239,7 +239,7 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
     final planDateTime = plan['planDateTime'] != null ? DateTime.parse(plan['planDateTime']).toLocal() : DateTime.now();
     final hostName = '${host['firstName'] ?? ''} ${host['lastName'] ?? ''}'.trim();
 
-    final isPending = status == 'pending';
+
     final isPaymentPending = status == 'payment_pending';
     final isAccepted = status == 'accepted';
     
@@ -254,12 +254,12 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: LunaraTheme.electricViolet.withOpacity(0.1),
+          color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
           width: 1.2,
         ),
         boxShadow: [
           BoxShadow(
-            color: LunaraTheme.electricViolet.withOpacity(0.05),
+            color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
             blurRadius: 16,
             offset: const Offset(0, 6),
           ),
@@ -341,7 +341,7 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
+                  color: Colors.blue.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
@@ -370,7 +370,7 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.1),
+                  color: Colors.green.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Row(
@@ -398,24 +398,24 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
     String label = status.toUpperCase();
 
     if (status == 'pending') {
-      bg = Colors.orange.withOpacity(0.1);
+      bg = Colors.orange.withValues(alpha: 0.1);
       text = Colors.orange;
     } else if (status == 'rejected' || status == 'payment_failed') {
-      bg = Colors.red.withOpacity(0.1);
+      bg = Colors.red.withValues(alpha: 0.1);
       text = Colors.red;
       label = status == 'payment_failed' ? 'FAILED' : 'REJECTED';
     } else if (status == 'payment_pending') {
       if (paymentStatus == 'paid' || paymentStatus == 'refunded') {
-        bg = Colors.blue.withOpacity(0.1);
+        bg = Colors.blue.withValues(alpha: 0.1);
         text = Colors.blue;
         label = 'WAITING HOST';
       } else {
-        bg = LunaraTheme.electricViolet.withOpacity(0.1);
+        bg = LunaraTheme.electricViolet.withValues(alpha: 0.1);
         text = LunaraTheme.electricViolet;
         label = 'PAY DEPOSIT';
       }
     } else {
-      bg = Colors.green.withOpacity(0.1);
+      bg = Colors.green.withValues(alpha: 0.1);
       text = Colors.green;
       label = 'CONFIRMED';
     }

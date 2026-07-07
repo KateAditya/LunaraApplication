@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../../core/theme.dart';
-import 'poster_profile_screen.dart';
 import 'package:intl/intl.dart';
 import '../../services/api_service.dart';
 import '../../widgets/lunara_profile_image.dart';
-import 'post_detail_screen.dart';
 import '../discovery/payment_confirmation_screen.dart';
-import '../../widgets/action_button.dart';
 
 class LiveFeedScreen extends StatefulWidget {
   final bool isTab;
@@ -287,10 +284,12 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
               itemCount: strangerItems.length,
               itemBuilder: (context, index) {
                 final item = strangerItems[index];
-                if (item['type'] == 'incoming_request')
+                if (item['type'] == 'incoming_request') {
                   return _buildIncomingRequestCard(item);
-                if (item['type'] == 'my_request')
+                }
+                if (item['type'] == 'my_request') {
                   return _buildMyRequestCard(item);
+                }
                 return _buildPlanCard(item); // default fallback
               },
             ),
@@ -315,12 +314,15 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
               itemCount: partyItems.length,
               itemBuilder: (context, index) {
                 final item = partyItems[index];
-                if (item['type'] == 'party_plan')
+                if (item['type'] == 'party_plan') {
                   return _buildPartyPlanCard(item);
-                if (item['type'] == 'incoming_request')
+                }
+                if (item['type'] == 'incoming_request') {
                   return _buildIncomingRequestCard(item);
-                if (item['type'] == 'my_request')
+                }
+                if (item['type'] == 'my_request') {
                   return _buildMyRequestCard(item);
+                }
                 return const SizedBox.shrink();
               },
             ),
@@ -362,7 +364,6 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     final formattedDate = _formatPlanDate(post['planDate']);
     final timeAgo = _formatTimeAgo(post['postedAt']);
     final planTime = post['startTime'] ?? '21:00';
-    final matchPct = post['matchScore'] as int? ?? 80;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),

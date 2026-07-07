@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../home/dashboard.dart';
 import '../../widgets/action_button.dart';
-import 'dart:ui';
 
 class AppTourScreen extends StatefulWidget {
   const AppTourScreen({super.key});

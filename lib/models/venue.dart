@@ -203,9 +203,7 @@ class Venue {
         if (item is Map) {
           final url = normalizeUrl(item['url'] ?? item['filePath']);
           if (url.isNotEmpty) {
-            if (video == null) {
-              video = url;
-            }
+            video ??= url;
             addImage(url, 'video');
           }
         }
