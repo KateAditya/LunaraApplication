@@ -177,7 +177,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final u = widget.user;
     _firstNameController = TextEditingController(text: u.firstName);
     _lastNameController = TextEditingController(text: u.lastName);
-    _phoneController = TextEditingController(text: u.phone ?? '');
+    _phoneController = TextEditingController(text: u.phone);
     _dobController = TextEditingController(text: u.dateOfBirth ?? '');
     _genderController = TextEditingController(text: u.gender ?? '');
     _cityController = TextEditingController(text: u.city ?? '');
@@ -297,7 +297,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       title: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
       value: value,
       onChanged: onChanged,
-      activeColor: LunaraTheme.electricViolet,
+      activeThumbColor: LunaraTheme.electricViolet,
       contentPadding: EdgeInsets.zero,
     );
   }
@@ -320,9 +320,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             onTap: () => _pickAndUploadPhoto(isMainProfilePhoto: false),
             child: Container(
               decoration: BoxDecoration(
-                color: LunaraTheme.electricViolet.withOpacity(0.1),
+                color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: LunaraTheme.electricViolet.withOpacity(0.3), width: 1.5),
+                border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.3), width: 1.5),
               ),
               child: const Center(
                 child: Icon(Icons.add_a_photo, color: LunaraTheme.electricViolet),
@@ -383,7 +383,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     children: [
                       CircleAvatar(
                         radius: 60,
-                        backgroundColor: LunaraTheme.electricViolet.withOpacity(0.1),
+                        backgroundColor: LunaraTheme.electricViolet.withValues(alpha: 0.1),
                         backgroundImage: _localProfilePhotoBytes != null
                             ? MemoryImage(_localProfilePhotoBytes!)
                             : (!_photoDeleted && widget.user.profilePhoto != null

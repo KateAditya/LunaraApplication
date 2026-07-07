@@ -440,10 +440,12 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
               itemCount: strangerItems.length,
               itemBuilder: (context, index) {
                 final item = strangerItems[index];
-                if (item['type'] == 'incoming_request')
+                if (item['type'] == 'incoming_request') {
                   return _buildIncomingRequestCard(item);
-                if (item['type'] == 'my_request')
+                }
+                if (item['type'] == 'my_request') {
                   return _buildMyRequestCard(item);
+                }
                 return _buildPlanCard(item); // default fallback
               },
             ),
@@ -487,12 +489,15 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
               itemCount: partyItems.length,
               itemBuilder: (context, index) {
                 final item = partyItems[index];
-                if (item['type'] == 'party_plan')
+                if (item['type'] == 'party_plan') {
                   return _buildPartyPlanCard(item);
-                if (item['type'] == 'incoming_request')
+                }
+                if (item['type'] == 'incoming_request') {
                   return _buildIncomingRequestCard(item);
-                if (item['type'] == 'my_request')
+                }
+                if (item['type'] == 'my_request') {
                   return _buildMyRequestCard(item);
+                }
                 return const SizedBox.shrink();
               },
             ),
@@ -568,7 +573,6 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     final formattedDate = _formatPlanDate(post['planDate']);
     final timeAgo = _formatTimeAgo(post['postedAt']);
     final planTime = post['startTime'] ?? '21:00';
-    final matchPct = post['matchScore'] as int? ?? 80;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),

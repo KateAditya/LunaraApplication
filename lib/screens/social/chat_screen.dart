@@ -467,10 +467,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 'Inappropriate behavior',
               );
               _checkBlockStatus();
-              if (mounted)
+              if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('User reported and blocked')),
                 );
+              }
             },
             child: const Text('Report', style: TextStyle(color: Colors.red)),
           ),
@@ -661,11 +662,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       }
     } catch (e) {
       debugPrint('_fetchMessages error: $e');
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isLoading = false;
           _isLoadingMore = false;
         });
+      }
     }
   }
 
@@ -760,8 +762,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('_sendMessage error: $e');
       // Roll back optimistic
-      if (mounted)
+      if (mounted) {
         setState(() => _messages.removeWhere((m) => m['id'] == tempId));
+      }
     } finally {
       if (mounted) setState(() => _isSending = false);
     }
@@ -809,8 +812,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       }
     } catch (e) {
       debugPrint('_sendImageMessage error: $e');
-      if (mounted)
+      if (mounted) {
         setState(() => _messages.removeWhere((m) => m['id'] == tempId));
+      }
     } finally {
       if (mounted) setState(() => _isSending = false);
     }
@@ -963,8 +967,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       }
     } catch (e) {
       debugPrint('_stopAndSendRecording error: $e');
-      if (mounted)
+      if (mounted) {
         setState(() => _messages.removeWhere((m) => m['id'] == tempId));
+      }
     } finally {
       if (mounted) setState(() => _isSending = false);
     }
@@ -1032,11 +1037,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (ok && mounted) {
       setState(() {
         final idx = _messages.indexWhere((m) => m['id'] == messageId);
-        if (idx != -1)
+        if (idx != -1) {
           _messages[idx] = {
             ..._messages[idx],
             'invitationStatus': action == 'accept' ? 'accepted' : 'declined',
           };
+        }
       });
     }
   }
@@ -1076,12 +1082,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (ok && mounted) {
       setState(() {
         final idx = _messages.indexWhere((m) => m['id'] == messageId);
-        if (idx != -1)
+        if (idx != -1) {
           _messages[idx] = {
             ..._messages[idx],
             'isDeleted': true,
             'text': '[Message deleted]',
           };
+        }
       });
     }
   }

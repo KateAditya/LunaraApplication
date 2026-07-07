@@ -16,7 +16,7 @@ import '../social/post_detail_screen.dart';
 import '../social/chat_screen.dart';
 import '../profile/profile_screen.dart';
 import '../../services/app_tour_service.dart';
-import '../social/plan_hub_screen.dart';
+import '../../widgets/vip_upgrade_button.dart';
 
 class DiscoveryScreen extends StatefulWidget {
   final int? initialFilterIndex;
@@ -44,29 +44,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  int _requestCount = 0;
-
-  Future<void> _loadRequestCount() async {
-    try {
-      final requests = await ApiService.fetchMyPartyPlanRequests();
-      if (mounted) {
-        setState(() {
-          _requestCount = requests
-              .where((r) => r['status'] == 'pending')
-              .length;
-        });
-      }
-    } catch (e) {
-      debugPrint('Error loading request count: $e');
-    }
-  }
 
   @override
   void initState() {
     super.initState();
     _loadVenues();
-    _determinePosition(requestIfNeeded: false);
-    _loadRequestCount();
+    _determinePosition();
   }
 
   @override
@@ -145,7 +128,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                         : '${ApiService.baseUrl}${ad['imagePath']}')
                   : '';
 
-              String dateStr = ad['fromDate'] ?? ad['toDate'] ?? '';
+              String dateStr = ad['toDate'] ?? ad['fromDate'] ?? '';
               if (dateStr.isNotEmpty) {
                 try {
                   final dt = DateTime.parse(dateStr);
@@ -653,47 +636,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                             ),
                           ),
                         ),
-                        GestureDetector(
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const PlanHubScreen(),
-                              ),
-                            );
-                          },
-                          child: Container(
-                            margin: const EdgeInsets.only(right: 12),
-                            child: Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                const Icon(
-                                  Icons.notifications_none_rounded,
-                                  color: Colors.black87,
-                                  size: 28,
-                                ),
-                                if (_requestCount > 0)
-                                  Positioned(
-                                    right: -2,
-                                    top: 0,
-                                    child: Container(
-                                      padding: const EdgeInsets.all(4),
-                                      decoration: const BoxDecoration(
-                                        color: Colors.red,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: Text(
-                                        '$_requestCount',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 9,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
+                        Container(
+                          margin: const EdgeInsets.only(right: 12),
+                          child: VIPUpgradeButton(
+                            key: AppTourService.vipUpgradeKey,
+                            size: 36,
                           ),
                         ),
                         LunaraProfileImage(
@@ -1081,6 +1028,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   Widget _buildUpcomingNights() {
     return SizedBox(
+      key: AppTourService.upcomingNightsKey,
       height: 250,
       child: ListView.builder(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

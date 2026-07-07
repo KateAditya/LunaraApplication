@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
-import '../../widgets/welcome_background.dart';
 import '../../widgets/action_button.dart';
 import '../../services/auth_service.dart';
 import '../home/dashboard.dart';

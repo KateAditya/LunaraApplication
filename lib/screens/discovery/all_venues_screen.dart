@@ -22,9 +22,6 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
   
   // Filter criteria
   Set<String> _selectedVibes = {'TECHNO', 'ROOFTOP'};
-  double _priceLevel = 2.0; // medium
-  double _radius = 5.0;
-  String? _selectedCrowdDensity;
   String _selectedCategory = 'ALL';
   late List<String> _categories;
 
@@ -204,9 +201,6 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
                 // Update filters from AdvancedFiltersScreen
                 setState(() {
                   _selectedVibes = Set<String>.from(result['vibes'] ?? []);
-                  _priceLevel = (result['priceLevel'] as num?)?.toDouble() ?? 2.0;
-                  _radius = (result['radius'] as num?)?.toDouble() ?? 5.0;
-                  _selectedCrowdDensity = result['crowdDensity'] as String?;
                 });
                 _applyFilters();
               }

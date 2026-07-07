@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../widgets/welcome_background.dart';
@@ -102,7 +101,7 @@ class _WelcomeCarouselState extends State<WelcomeCarousel> {
                               color: Colors.white,
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: Colors.grey.withOpacity(0.5),
+                                color: Colors.grey.withValues(alpha: 0.5),
                                 width: 6,
                               ),
                             ),

@@ -92,12 +92,15 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
 
           if (age == null) return false;
 
-          if (_selectedAgeRange == '18-24' && (age < 18 || age > 24))
+          if (_selectedAgeRange == '18-24' && (age < 18 || age > 24)) {
             return false;
-          if (_selectedAgeRange == '25-34' && (age < 25 || age > 34))
+          }
+          if (_selectedAgeRange == '25-34' && (age < 25 || age > 34)) {
             return false;
-          if (_selectedAgeRange == '35-44' && (age < 35 || age > 44))
+          }
+          if (_selectedAgeRange == '35-44' && (age < 35 || age > 44)) {
             return false;
+          }
           if (_selectedAgeRange == '45+' && age < 45) return false;
         }
 

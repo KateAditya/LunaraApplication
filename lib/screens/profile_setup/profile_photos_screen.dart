@@ -5,10 +5,8 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../core/theme.dart';
 import '../../widgets/glass_card.dart';
-import '../../widgets/glass_card.dart';
 import '../../widgets/action_button.dart';
 import 'profile_details_screen.dart';
-import '../../services/api_service.dart';
 
 class ProfilePhotosScreen extends StatefulWidget {
   final Map<String, dynamic>? collectedData;

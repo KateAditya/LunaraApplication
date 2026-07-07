@@ -55,7 +55,7 @@ class StrangersMeetTicketScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: [
                     BoxShadow(
-                      color: LunaraTheme.electricViolet.withOpacity(0.4),
+                      color: LunaraTheme.electricViolet.withValues(alpha: 0.4),
                       blurRadius: 20,
                       offset: const Offset(0, 10),
                     ),
@@ -75,7 +75,7 @@ class StrangersMeetTicketScreen extends StatelessWidget {
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.2),
+                                  color: Colors.white.withValues(alpha: 0.2),
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: const Text(
@@ -97,7 +97,7 @@ class StrangersMeetTicketScreen extends StatelessWidget {
                           const SizedBox(height: 8),
                           Text(
                             request.tagline,
-                            style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 14),
+                            style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 14),
                           ),
                           const SizedBox(height: 32),
                           
@@ -206,7 +206,7 @@ class StrangersMeetTicketScreen extends StatelessWidget {
                   icon: const Icon(Icons.download_rounded, color: Colors.white),
                   label: const Text('SAVE TICKET', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1)),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white.withOpacity(0.1),
+                    backgroundColor: Colors.white.withValues(alpha: 0.1),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     elevation: 0,
                   ),
@@ -233,7 +233,7 @@ class StrangersMeetTicketScreen extends StatelessWidget {
       children: [
         Text(
           label,
-          style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1),
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1),
         ),
         const SizedBox(height: 4),
         Text(

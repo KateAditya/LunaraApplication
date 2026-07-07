@@ -168,7 +168,7 @@ class _RateVenueScreenState extends State<RateVenueScreen> {
         const Center(
           child: Text(
             'HOW WAS YOUR NIGHT?',
-            style: const TextStyle(
+            style: TextStyle(
               color: Colors.black,
               fontSize: 11,
               fontWeight: FontWeight.w900,
@@ -233,7 +233,7 @@ class _RateVenueScreenState extends State<RateVenueScreen> {
       children: [
         const Text(
           'WHAT STOOD OUT?',
-          style: const TextStyle(
+          style: TextStyle(
             color: Colors.black,
             fontSize: 11,
             fontWeight: FontWeight.w900,

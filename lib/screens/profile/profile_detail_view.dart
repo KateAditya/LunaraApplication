@@ -83,10 +83,11 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                 'Inappropriate profile content',
               );
               _checkBlockStatus();
-              if (mounted)
+              if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('User reported and blocked')),
                 );
+              }
             },
             child: const Text('Report', style: TextStyle(color: Colors.red)),
           ),

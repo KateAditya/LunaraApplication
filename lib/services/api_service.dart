@@ -1,6 +1,5 @@
 import 'dart:io' show Platform;
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:flutter/foundation.dart'; // For debugPrint
@@ -44,7 +43,7 @@ class ApiService {
     }
   }
 
-  static IO.Socket? socket;
+  static socket_io.Socket? socket;
 
   static void initSocket() {
     final userId = currentUserId;
@@ -54,9 +53,9 @@ class ApiService {
       socket!.disconnect();
     }
 
-    socket = IO.io(
+    socket = socket_io.io(
       baseUrl,
-      IO.OptionBuilder()
+      socket_io.OptionBuilder()
           .setTransports(['websocket'])
           .disableAutoConnect()
           .build(),
@@ -1227,8 +1226,9 @@ class ApiService {
         'userId': userId,
         'otherUserId': otherUserId,
       };
-      if (contextType != null && contextType.isNotEmpty)
+      if (contextType != null && contextType.isNotEmpty) {
         body['contextType'] = contextType;
+      }
       if (contextId != null && contextId.isNotEmpty) {
         body['contextId'] = contextId;
         body['contextType'] ??= 'plan';
@@ -1259,7 +1259,7 @@ class ApiService {
       final params = <String, String>{
         'userId': userId,
         'limit': limit.toString(),
-        if (before != null) 'before': before,
+        'before': ?before,
       };
       final response = await get(
         '/api/mobile/chat/conversations/$conversationId/messages',
@@ -1296,8 +1296,9 @@ class ApiService {
       if (mediaUrl != null) body['mediaUrl'] = mediaUrl;
       if (mediaMimeType != null) body['mediaMimeType'] = mediaMimeType;
       if (invitationRef != null) body['invitationRef'] = invitationRef;
-      if (invitationRefType != null)
+      if (invitationRefType != null) {
         body['invitationRefType'] = invitationRefType;
+      }
       if (invitationTime != null) body['invitationTime'] = invitationTime;
 
       final response = await post(
@@ -1307,8 +1308,9 @@ class ApiService {
       //debugPrint('sendMessage ${response.statusCode}: ${response.body}');
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true)
+        if (data['success'] == true) {
           return Map<String, dynamic>.from(data['data']);
+        }
       }
     } catch (e) {
       debugPrint('sendMessage error: $e');
@@ -1593,8 +1595,9 @@ class ApiService {
 
   static Future<Map<String, int>> fetchBadgeCounts() async {
     final userId = currentUserId;
-    if (userId == null)
+    if (userId == null) {
       return {'liveFeedCount': 0, 'chatCount': 0, 'totalCount': 0};
+    }
     try {
       final response = await get(
         '/api/mobile/user/badge-counts',
@@ -1728,8 +1731,9 @@ class ApiService {
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true)
+        if (data['success'] == true) {
           return Map<String, dynamic>.from(data['data'] ?? {});
+        }
       }
     } catch (e) {
       debugPrint('getChatSessionStatus error: \$e');
@@ -1747,7 +1751,7 @@ class ApiService {
         body: {
           'conversationId': conversationId,
           'userId': currentUserId,
-          if (paymentId != null) 'paymentId': paymentId,
+          'paymentId': ?paymentId,
         },
       );
       if (response.statusCode == 200) {
@@ -1794,8 +1798,8 @@ class ApiService {
         body: {
           'conversationId': conversationId,
           'userId': currentUserId,
-          if (requestedById != null) 'requestedById': requestedById,
-          if (paymentId != null) 'paymentId': paymentId,
+          'requestedById': ?requestedById,
+          'paymentId': ?paymentId,
         },
       );
       if (response.statusCode == 200) {
@@ -1813,8 +1817,9 @@ class ApiService {
       final response = await get('/api/admin/settings/chat');
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true)
+        if (data['success'] == true) {
           return Map<String, dynamic>.from(data['data'] ?? {});
+        }
       }
     } catch (e) {
       debugPrint('getAdminChatSettings error: \$e');
