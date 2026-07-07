@@ -36,15 +36,10 @@ const profileSetupValidation = [
  * 
  * Public/Testing — userId must be provided in body.
  * Upload multiple photos (multipart/form-data) under the field "photos".
+ */
 router.post('/photos', uploadTempPhotos.array('photos', 6), mobileUserController.uploadPhotos);
 
-/**
- * POST /api/mobile/user/verify-face
- * 
- * Verifies a live selfie against a profile photo using face recognition.
- * Expects: profilePhoto (file), selfiePhoto (file), userId (string)
- */
-router.post('/verify-face', uploadTempPhotos.fields([{ name: 'profilePhoto', maxCount: 1 }, { name: 'selfiePhoto', maxCount: 1 }]), mobileUserController.verifyFace);
+
 
 /**
  * PUT /api/mobile/user/profile-setup
@@ -144,7 +139,7 @@ router.get('/notifications', async (req, res) => {
     try {
         const { userId } = req.query;
         if (!userId) return res.status(400).json({ success: false, message: 'userId required' });
-        
+
         // Mock notifications for demonstration
         const notifications = [
             {
@@ -176,7 +171,7 @@ router.get('/notifications', async (req, res) => {
                 read: false,
             }
         ];
-        
+
         return res.json({ success: true, data: notifications });
     } catch (error) {
         return res.status(500).json({ success: false, message: 'Failed to fetch notifications' });
@@ -197,10 +192,10 @@ router.get('/badge-counts', async (req, res) => {
     try {
         const { userId } = req.query;
         if (!userId) return res.status(400).json({ success: false, message: 'userId required' });
-        
+
         // Mock values: 2 unread notifications/live feed, 5 unread chats
-        return res.json({ 
-            success: true, 
+        return res.json({
+            success: true,
             data: {
                 liveFeedCount: 2,
                 chatCount: 5,

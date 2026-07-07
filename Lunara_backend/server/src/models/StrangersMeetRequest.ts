@@ -2,14 +2,14 @@ import { Model, DataTypes, Optional } from 'sequelize';
 import sequelize from '../config/database';
 
 export enum StrangersMeetStatus {
-    PENDING  = 'pending',
+    PENDING = 'pending',
     APPROVED = 'approved',
     REJECTED = 'rejected',
 }
 
 export enum StrangersMeetPaymentStatus {
     UNPAID = 'unpaid',
-    PAID   = 'paid',
+    PAID = 'paid',
 }
 
 export interface StrangersMeetRequestAttributes {
@@ -46,7 +46,7 @@ export interface StrangersMeetRequestCreationAttributes
         | 'ticketId'
         | 'createdAt'
         | 'updatedAt'
-    > {}
+    > { }
 
 class StrangersMeetRequest
     extends Model<StrangersMeetRequestAttributes, StrangersMeetRequestCreationAttributes>

@@ -49,7 +49,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       for (var c in rawCustomers) {
         try {
           final u = User.fromJson(c);
-          
+
           // Exclude logged-in user
           if (myId != null && u.id == myId) {
             continue;
@@ -57,7 +57,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
           // Filter by selected city (case-insensitive)
           if (selectedCity != null && selectedCity.isNotEmpty) {
-            if (u.city == null || u.city!.toLowerCase() != selectedCity.toLowerCase()) {
+            if (u.city == null ||
+                u.city!.toLowerCase() != selectedCity.toLowerCase()) {
               continue;
             }
           }
@@ -89,7 +90,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _updateCurrentProfileIndex() {
     if (_displayUser != null && _allProfiles.isNotEmpty) {
-      _currentProfileIndex = _allProfiles.indexWhere((u) => u.id == _displayUser!.id);
+      _currentProfileIndex = _allProfiles.indexWhere(
+        (u) => u.id == _displayUser!.id,
+      );
     }
   }
 
@@ -101,10 +104,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
       });
       _updateCurrentProfileIndex();
       // Fetch full user profile to retrieve the photos list and details
-      debugPrint('[ProfileScreen] Fetching profile for user: ${widget.user!.id}');
+      debugPrint(
+        '[ProfileScreen] Fetching profile for user: ${widget.user!.id}',
+      );
       final fullUser = await ApiService.fetchProfile(userId: widget.user!.id);
       if (fullUser != null && mounted) {
-        debugPrint('[ProfileScreen] Profile loaded successfully with ${fullUser.photos.length} photos.');
+        debugPrint(
+          '[ProfileScreen] Profile loaded successfully with ${fullUser.photos.length} photos.',
+        );
         setState(() {
           _displayUser = fullUser;
         });
@@ -165,7 +172,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _swipeAction = 'like';
 
     // Trigger backend API call to register the swipe
-    ApiService.swipeUser(targetUserId: targetUser.id, action: action).then((res) {
+    ApiService.swipeUser(targetUserId: targetUser.id, action: action).then((
+      res,
+    ) {
       if (res != null && res['matched'] == true && mounted) {
         _showMatchDialog(targetUser);
       }
@@ -215,10 +224,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Text(
                 "You and ${matchUser.firstName} liked each other.",
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 14,
-                ),
+                style: const TextStyle(color: Colors.white70, fontSize: 14),
               ),
               const SizedBox(height: 24),
               Row(
@@ -228,11 +234,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   CircleAvatar(
                     radius: 45,
                     backgroundColor: Colors.grey[800],
-                    backgroundImage: _me?.profilePhoto != null && _me!.profilePhoto!.isNotEmpty
+                    backgroundImage:
+                        _me?.profilePhoto != null &&
+                            _me!.profilePhoto!.isNotEmpty
                         ? NetworkImage(_me!.profilePhoto!)
                         : null,
-                    child: _me?.profilePhoto == null || _me!.profilePhoto!.isEmpty
-                        ? const Icon(Icons.person, color: Colors.white, size: 40)
+                    child:
+                        _me?.profilePhoto == null || _me!.profilePhoto!.isEmpty
+                        ? const Icon(
+                            Icons.person,
+                            color: Colors.white,
+                            size: 40,
+                          )
                         : null,
                   ),
                   const SizedBox(width: 16),
@@ -242,11 +255,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   CircleAvatar(
                     radius: 45,
                     backgroundColor: Colors.grey[800],
-                    backgroundImage: matchUser.profilePhoto != null && matchUser.profilePhoto!.isNotEmpty
+                    backgroundImage:
+                        matchUser.profilePhoto != null &&
+                            matchUser.profilePhoto!.isNotEmpty
                         ? NetworkImage(matchUser.profilePhoto!)
                         : null,
-                    child: matchUser.profilePhoto == null || matchUser.profilePhoto!.isEmpty
-                        ? const Icon(Icons.person, color: Colors.white, size: 40)
+                    child:
+                        matchUser.profilePhoto == null ||
+                            matchUser.profilePhoto!.isEmpty
+                        ? const Icon(
+                            Icons.person,
+                            color: Colors.white,
+                            size: 40,
+                          )
                         : null,
                   ),
                 ],
@@ -256,7 +277,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: LunaraTheme.electricViolet,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 32,
+                    vertical: 14,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
                   ),
@@ -267,7 +291,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 },
                 child: const Text(
                   "SAY HELLO",
-                  style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1,
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
@@ -277,7 +304,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   "KEEP SWIPING",
                   style: TextStyle(color: Colors.white54),
                 ),
-              )
+              ),
             ],
           ),
         ),
@@ -319,7 +346,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (_backtrackedUser != null) {
       setState(() {
         _displayUser = _backtrackedUser;
-        _currentProfileIndex = _allProfiles.indexWhere((u) => u.id == _backtrackedUser!.id);
+        _currentProfileIndex = _allProfiles.indexWhere(
+          (u) => u.id == _backtrackedUser!.id,
+        );
         _isMe = _backtrackedUser!.id == ApiService.currentUserId;
         _backtrackedUser = null;
       });
@@ -331,7 +360,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (_isLoading) {
       return const Scaffold(
         backgroundColor: Colors.white,
-        body: Center(child: CircularProgressIndicator(color: LunaraTheme.electricViolet)),
+        body: Center(
+          child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+        ),
       );
     }
 

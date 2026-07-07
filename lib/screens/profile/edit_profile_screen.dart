@@ -110,41 +110,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         namesList.add(image.name);
       }
       
-      if (isMainProfilePhoto) {
-        // Verification process
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please take a live selfie for verification.')),
-        );
-        
-        final XFile? selfieImage = await _picker.pickImage(
-          source: ImageSource.camera,
-          maxWidth: 600,
-          maxHeight: 600,
-          imageQuality: 50,
-        );
-        
-        if (selfieImage == null) {
-          setState(() => _isLoading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Selfie is required for profile photo updates.')),
-          );
-          return;
-        }
 
-        final selfieBytes = await selfieImage.readAsBytes();
-        final result = await ApiService.verifyFace(bytesList.first, selfieBytes);
-        
-        if (result == null || result['success'] != true) {
-          setState(() => _isLoading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(result?['message'] ?? 'Face verification failed.'),
-              backgroundColor: Colors.red,
-            ),
-          );
-          return;
-        }
-      }
 
       final success = await ApiService.uploadProfilePhotos(bytesList, namesList);
       

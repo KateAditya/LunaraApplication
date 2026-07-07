@@ -24,8 +24,11 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
   String? _passwordError;
 
   void _validatePasswords() {
-    if (_passwordController.text.isNotEmpty && _passwordController.text.length < 3) {
-      setState(() => _passwordError = 'Password must contain minimum 3 characters');
+    if (_passwordController.text.isNotEmpty &&
+        _passwordController.text.length < 3) {
+      setState(
+        () => _passwordError = 'Password must contain minimum 3 characters',
+      );
     } else if (_confirmController.text.isNotEmpty &&
         _passwordController.text != _confirmController.text) {
       setState(() => _passwordError = 'Passwords do not match');
@@ -43,9 +46,11 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
 
   Future<void> _handleCompleteSetup() async {
     if (_passwordController.text.length < 3) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Password must contain minimum 3 characters')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Password must contain minimum 3 characters'),
+        ),
+      );
       return;
     }
     if (_passwordController.text != _confirmController.text) {
@@ -75,7 +80,10 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error), backgroundColor: LunaraTheme.primaryDeep),
+          SnackBar(
+            content: Text(error),
+            backgroundColor: LunaraTheme.primaryDeep,
+          ),
         );
       }
     }
@@ -107,7 +115,9 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
                 style: LunaraTheme.bodyStyle.copyWith(
                   fontSize: 12,
                   letterSpacing: 2,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.45),
                 ),
               ),
               const SizedBox(height: 8),
@@ -169,7 +179,10 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
 
   Widget _buildHeader(BuildContext context) {
     return IconButton(
-      icon: Icon(Icons.arrow_back, color: Theme.of(context).colorScheme.onSurface),
+      icon: Icon(
+        Icons.arrow_back,
+        color: Theme.of(context).colorScheme.onSurface,
+      ),
       onPressed: () => Navigator.pop(context),
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(),
@@ -214,7 +227,11 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.bold,
-              color: active ? LunaraTheme.primaryRich : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+              color: active
+                  ? LunaraTheme.primaryRich
+                  : Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.38),
               letterSpacing: 1,
             ),
           ),
@@ -230,7 +247,9 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
         label,
         style: TextStyle(
           fontSize: 12,
-          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+          color: Theme.of(
+            context,
+          ).colorScheme.onSurface.withValues(alpha: 0.54),
           letterSpacing: 1.5,
           fontWeight: FontWeight.bold,
         ),
@@ -258,7 +277,11 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
         style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38)),
+          hintStyle: TextStyle(
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.38),
+          ),
           border: InputBorder.none,
           icon: Icon(icon, color: LunaraTheme.primaryRich, size: 20),
           suffixIcon: isPassword
@@ -267,7 +290,9 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
                     _obscurePassword
                         ? Icons.visibility_off_outlined
                         : Icons.visibility_outlined,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.54),
                     size: 16,
                   ),
                   onPressed: () =>
@@ -316,7 +341,12 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
                 const SizedBox(height: 4),
                 Text(
                   'Secure access with FaceID or TouchID',
-                  style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.54),
+                  ),
                 ),
               ],
             ),
@@ -334,7 +364,11 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
                 } else {
                   if (!mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Biometric authentication failed. Cannot enable.')),
+                    const SnackBar(
+                      content: Text(
+                        'Biometric authentication failed. Cannot enable.',
+                      ),
+                    ),
                   );
                   setState(() => _useBiometrics = false);
                 }

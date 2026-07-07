@@ -7,8 +7,6 @@ import '../../models/community_guideline.dart';
 import '../../models/legal_document.dart';
 import '../../services/biometric_service.dart';
 
-
-
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -66,73 +64,83 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Icons.lock_outline,
                     () => _showChangePasswordSheet(),
                   ),
-                  _buildSwitchTile(
-                    'Biometric Authentication',
-                    _biometricAuth,
-                    (v) async {
-                      if (v) {
-                        // Attempt to authenticate before turning on
-                        final success = await BiometricService.authenticate(
-                          reason: 'Verify your identity to enable biometrics',
-                        );
-                        if (success) {
-                          setState(() => _biometricAuth = true);
-                        } else {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Biometric authentication failed.'),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                          }
-                          // Keep it off
-                          setState(() => _biometricAuth = false);
-                        }
+                  _buildSwitchTile('Biometric Authentication', _biometricAuth, (
+                    v,
+                  ) async {
+                    if (v) {
+                      // Attempt to authenticate before turning on
+                      final success = await BiometricService.authenticate(
+                        reason: 'Verify your identity to enable biometrics',
+                      );
+                      if (success) {
+                        setState(() => _biometricAuth = true);
                       } else {
-                        // Disable it immediately
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Biometric authentication failed.'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                        // Keep it off
                         setState(() => _biometricAuth = false);
                       }
-                    },
-                  ),
+                    } else {
+                      // Disable it immediately
+                      setState(() => _biometricAuth = false);
+                    }
+                  }),
                   const SizedBox(height: 40),
                   _buildSectionHeader('PRIVACY'),
                   const SizedBox(height: 16),
-                  _isLoading 
-                    ? const Padding(
-                        padding: EdgeInsets.only(bottom: 12),
-                        child: Center(child: CircularProgressIndicator(color: LunaraTheme.electricViolet)),
-                      )
-                    : _buildSwitchTile(
-                        'Hide Profile',
-                        _hideProfile,
-                        (v) async {
+                  _isLoading
+                      ? const Padding(
+                          padding: EdgeInsets.only(bottom: 12),
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              color: LunaraTheme.electricViolet,
+                            ),
+                          ),
+                        )
+                      : _buildSwitchTile('Hide Profile', _hideProfile, (
+                          v,
+                        ) async {
                           final prevValue = _hideProfile;
                           setState(() => _hideProfile = v);
-                          
+
                           // ApiService expects showMeInMatching
-                          final success = await ApiService.updateUserPreferences(
-                            showMeInMatching: !v, // Not hidden means show me
-                          );
+                          final success =
+                              await ApiService.updateUserPreferences(
+                                showMeInMatching:
+                                    !v, // Not hidden means show me
+                              );
 
                           if (!success && mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content: Text('Failed to update profile visibility.'),
+                                content: Text(
+                                  'Failed to update profile visibility.',
+                                ),
                                 backgroundColor: Colors.red,
                               ),
                             );
-                            setState(() => _hideProfile = prevValue); // revert on fail
+                            setState(
+                              () => _hideProfile = prevValue,
+                            ); // revert on fail
                           } else if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text(v ? 'Profile is now hidden.' : 'Profile is now visible.'),
+                                content: Text(
+                                  v
+                                      ? 'Profile is now hidden.'
+                                      : 'Profile is now visible.',
+                                ),
                                 backgroundColor: LunaraTheme.electricViolet,
                               ),
                             );
                           }
-                        },
-                      ),
+                        }),
                   _buildSettingsTile(
                     'Blocked Contacts',
                     Icons.block_flipped,
@@ -233,7 +241,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             gradient: LunaraTheme.cardGradient,
             borderRadius: BorderRadius.circular(20),
             boxShadow: LunaraTheme.premiumCardShadow,
-            border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.05)),
+            border: Border.all(
+              color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
+            ),
           ),
           child: Row(
             children: [
@@ -270,7 +280,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           gradient: LunaraTheme.cardGradient,
           borderRadius: BorderRadius.circular(20),
           boxShadow: LunaraTheme.premiumCardShadow,
-          border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.05)),
+          border: Border.all(
+            color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
+          ),
         ),
         child: Row(
           children: [
@@ -287,7 +299,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Switch.adaptive(
               value: value,
               onChanged: onChanged,
-              activeTrackColor: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+              activeTrackColor: LunaraTheme.electricViolet.withValues(
+                alpha: 0.3,
+              ),
               activeColor: LunaraTheme.electricViolet,
             ),
           ],
@@ -322,7 +336,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: const Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.delete_forever_outlined, color: Colors.redAccent, size: 20),
+                Icon(
+                  Icons.delete_forever_outlined,
+                  color: Colors.redAccent,
+                  size: 20,
+                ),
                 SizedBox(width: 12),
                 Text(
                   'DELETE ACCOUNT',
@@ -379,7 +397,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           obscure: true,
         ),
         const SizedBox(height: 16),
-        _formField('New Password', newController, Icons.lock_outline, obscure: true),
+        _formField(
+          'New Password',
+          newController,
+          Icons.lock_outline,
+          obscure: true,
+        ),
         const SizedBox(height: 16),
         _formField(
           'Confirm Password',
@@ -396,41 +419,55 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onPressed: () async {
                 if (newController.text.isEmpty || oldController.text.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Please fill all fields'), backgroundColor: Colors.red),
+                    const SnackBar(
+                      content: Text('Please fill all fields'),
+                      backgroundColor: Colors.red,
+                    ),
                   );
                   return;
                 }
                 if (newController.text != confirmController.text) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('New passwords do not match'), backgroundColor: Colors.red),
+                    const SnackBar(
+                      content: Text('New passwords do not match'),
+                      backgroundColor: Colors.red,
+                    ),
                   );
                   return;
                 }
-                
+
                 setState(() => isUpdating = true);
-                
+
                 final success = await ApiService.changePassword(
                   oldController.text,
                   newController.text,
                   confirmController.text,
                 );
-                
+
                 if (!mounted) return;
                 setState(() => isUpdating = false);
-                
+
                 if (success) {
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Password updated successfully!'), backgroundColor: Colors.green),
+                    const SnackBar(
+                      content: Text('Password updated successfully!'),
+                      backgroundColor: Colors.green,
+                    ),
                   );
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Failed to update password. Check your current password.'), backgroundColor: Colors.red),
+                    const SnackBar(
+                      content: Text(
+                        'Failed to update password. Check your current password.',
+                      ),
+                      backgroundColor: Colors.red,
+                    ),
                   );
                 }
               },
             );
-          }
+          },
         ),
       ],
     );
@@ -441,7 +478,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       title: 'BLOCKED CONTACTS',
       children: [
         const SizedBox(height: 40),
-        Center(child: Icon(Icons.block_flipped, color: Colors.grey[200], size: 64)),
+        Center(
+          child: Icon(Icons.block_flipped, color: Colors.grey[200], size: 64),
+        ),
         const SizedBox(height: 24),
         const Center(
           child: Text(
@@ -503,12 +542,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             decoration: BoxDecoration(
               color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.1)),
+              border: Border.all(
+                color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+              ),
             ),
             child: const Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.download_rounded, color: LunaraTheme.electricViolet, size: 20),
+                Icon(
+                  Icons.download_rounded,
+                  color: LunaraTheme.electricViolet,
+                  size: 20,
+                ),
                 SizedBox(width: 12),
                 Text(
                   'REQUEST DATA EXPORT',
@@ -526,7 +571,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ],
     );
   }
-
 
   void _showHelpCenterSheet() {
     showModalBottomSheet(
@@ -611,7 +655,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onPressed: () => Navigator.pop(ctx),
               child: Text(
                 'CANCEL',
-                style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900),
+                style: TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ),
             ElevatedButton(
@@ -710,7 +757,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: const TextStyle(color: Colors.black, fontWeight: FontWeight.w900),
+        labelStyle: const TextStyle(
+          color: Colors.black,
+          fontWeight: FontWeight.w900,
+        ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: Colors.grey[100]!),
@@ -726,7 +776,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _saveButton(String label, {VoidCallback? onPressed, bool isLoading = false}) {
+  Widget _saveButton(
+    String label, {
+    VoidCallback? onPressed,
+    bool isLoading = false,
+  }) {
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton(
@@ -738,22 +792,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
             borderRadius: BorderRadius.circular(20),
           ),
         ),
-        onPressed: isLoading 
-            ? null 
-            : (onPressed ?? () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Changes saved successfully!'),
-                    backgroundColor: LunaraTheme.electricViolet,
-                  ),
-                );
-              }),
+        onPressed: isLoading
+            ? null
+            : (onPressed ??
+                  () {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Changes saved successfully!'),
+                        backgroundColor: LunaraTheme.electricViolet,
+                      ),
+                    );
+                  }),
         child: isLoading
             ? const SizedBox(
                 height: 20,
                 width: 20,
-                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2,
+                ),
               )
             : Text(
                 label,
@@ -891,7 +949,9 @@ class _HelpCenterSheetState extends State<HelpCenterSheet> {
         gradient: LunaraTheme.cardGradient,
         borderRadius: BorderRadius.circular(20),
         boxShadow: LunaraTheme.premiumCardShadow,
-        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.05)),
+        border: Border.all(
+          color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
+        ),
       ),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -954,10 +1014,7 @@ class _HelpCenterSheetState extends State<HelpCenterSheet> {
             const Text(
               'Please check your internet connection and try again.',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.grey,
-                fontSize: 12,
-              ),
+              style: TextStyle(color: Colors.grey, fontSize: 12),
             ),
             const SizedBox(height: 24),
             ElevatedButton(
@@ -967,7 +1024,10 @@ class _HelpCenterSheetState extends State<HelpCenterSheet> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
               ),
               child: const Text(
                 'RETRY',
@@ -1006,10 +1066,7 @@ class _HelpCenterSheetState extends State<HelpCenterSheet> {
             const Text(
               'Support articles will appear here once published.',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.grey,
-                fontSize: 12,
-              ),
+              style: TextStyle(color: Colors.grey, fontSize: 12),
             ),
             const SizedBox(height: 24),
             ElevatedButton(
@@ -1019,7 +1076,10 @@ class _HelpCenterSheetState extends State<HelpCenterSheet> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
               ),
               child: const Text(
                 'REFRESH',
@@ -1075,7 +1135,9 @@ class _HelpCenterSheetState extends State<HelpCenterSheet> {
                   icon: Icons.mail_outline,
                   label: 'EMAIL',
                   onTap: () {
-                    Clipboard.setData(const ClipboardData(text: 'support@lunara.buzz'));
+                    Clipboard.setData(
+                      const ClipboardData(text: 'support@lunara.buzz'),
+                    );
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text('Support email copied to clipboard!'),
@@ -1091,10 +1153,14 @@ class _HelpCenterSheetState extends State<HelpCenterSheet> {
                   icon: Icons.phone_outlined,
                   label: 'CALL',
                   onTap: () {
-                    Clipboard.setData(const ClipboardData(text: '+919876543210'));
+                    Clipboard.setData(
+                      const ClipboardData(text: '+919876543210'),
+                    );
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Support phone number copied to clipboard!'),
+                        content: Text(
+                          'Support phone number copied to clipboard!',
+                        ),
                         backgroundColor: LunaraTheme.electricViolet,
                       ),
                     );
@@ -1102,7 +1168,7 @@ class _HelpCenterSheetState extends State<HelpCenterSheet> {
                 ),
               ),
             ],
-          )
+          ),
         ],
       ),
     );
@@ -1146,7 +1212,8 @@ class CommunityGuidelinesSheet extends StatefulWidget {
   const CommunityGuidelinesSheet({super.key});
 
   @override
-  State<CommunityGuidelinesSheet> createState() => _CommunityGuidelinesSheetState();
+  State<CommunityGuidelinesSheet> createState() =>
+      _CommunityGuidelinesSheetState();
 }
 
 class _CommunityGuidelinesSheetState extends State<CommunityGuidelinesSheet> {
@@ -1233,7 +1300,9 @@ class _CommunityGuidelinesSheetState extends State<CommunityGuidelinesSheet> {
         gradient: LunaraTheme.cardGradient,
         borderRadius: BorderRadius.circular(20),
         boxShadow: LunaraTheme.premiumCardShadow,
-        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.05)),
+        border: Border.all(
+          color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
+        ),
       ),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -1297,10 +1366,7 @@ class _CommunityGuidelinesSheetState extends State<CommunityGuidelinesSheet> {
             const Text(
               'Please check your internet connection and try again.',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.grey,
-                fontSize: 12,
-              ),
+              style: TextStyle(color: Colors.grey, fontSize: 12),
             ),
             const SizedBox(height: 24),
             ElevatedButton(
@@ -1310,7 +1376,10 @@ class _CommunityGuidelinesSheetState extends State<CommunityGuidelinesSheet> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
               ),
               child: const Text(
                 'RETRY',
@@ -1349,10 +1418,7 @@ class _CommunityGuidelinesSheetState extends State<CommunityGuidelinesSheet> {
             const Text(
               'Guidelines will appear here once published.',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.grey,
-                fontSize: 12,
-              ),
+              style: TextStyle(color: Colors.grey, fontSize: 12),
             ),
             const SizedBox(height: 24),
             ElevatedButton(
@@ -1362,7 +1428,10 @@ class _CommunityGuidelinesSheetState extends State<CommunityGuidelinesSheet> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
               ),
               child: const Text(
                 'REFRESH',
@@ -1514,7 +1583,9 @@ class _LegalDocumentsSheetState extends State<LegalDocumentsSheet> {
         gradient: LunaraTheme.cardGradient,
         borderRadius: BorderRadius.circular(20),
         boxShadow: LunaraTheme.premiumCardShadow,
-        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.05)),
+        border: Border.all(
+          color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
+        ),
       ),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -1578,10 +1649,7 @@ class _LegalDocumentsSheetState extends State<LegalDocumentsSheet> {
             const Text(
               'Please check your internet connection and try again.',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.grey,
-                fontSize: 12,
-              ),
+              style: TextStyle(color: Colors.grey, fontSize: 12),
             ),
             const SizedBox(height: 24),
             ElevatedButton(
@@ -1591,7 +1659,10 @@ class _LegalDocumentsSheetState extends State<LegalDocumentsSheet> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
               ),
               child: const Text(
                 'RETRY',
@@ -1630,10 +1701,7 @@ class _LegalDocumentsSheetState extends State<LegalDocumentsSheet> {
             const Text(
               'Legal terms will appear here once published.',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.grey,
-                fontSize: 12,
-              ),
+              style: TextStyle(color: Colors.grey, fontSize: 12),
             ),
             const SizedBox(height: 24),
             ElevatedButton(
@@ -1643,7 +1711,10 @@ class _LegalDocumentsSheetState extends State<LegalDocumentsSheet> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
               ),
               child: const Text(
                 'REFRESH',

@@ -5,7 +5,7 @@ import crypto from 'crypto';
 import sharp from 'sharp';
 import { UserProfile, UserPreference, UserPhoto, UserMatch } from '../models';
 import User, { UserRole } from '../models/User';
-import { verifyFaces, verifySingleFace } from '../services/faceVerificationService';
+
 import { logger } from '../config/logger';
 import { Op } from 'sequelize';
 import { getUserGalleryDir } from '../middleware/upload';
@@ -13,9 +13,9 @@ import SocialConnection, { ConnectionStatus } from '../models/SocialConnection';
 import UserPenalty from '../models/UserPenalty';
 
 // ─── Image compression constants ──────────────────────────────────────────────
-const PHOTO_MAX_WIDTH  = 1080;   // px
+const PHOTO_MAX_WIDTH = 1080;   // px
 const PHOTO_MAX_HEIGHT = 1080;   // px
-const PHOTO_QUALITY    = 80;     // JPEG quality (0-100)
+const PHOTO_QUALITY = 80;     // JPEG quality (0-100)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/mobile/user/photos
@@ -41,25 +41,19 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
 
             const fileBuffer = file.buffer || fs.readFileSync(file.path);
 
-            if (i === 0) {
-                // Verify that the primary photo has a valid face
-                const hasFace = await verifySingleFace(fileBuffer);
-                if (!hasFace) {
-                    return res.status(400).json({ success: false, message: 'No face detected in the primary profile photo. Please upload a clear photo of yourself.' });
-                }
-            }
+
 
             // ── Compress with sharp ──────────────────────────────────────────
-            const randomHex   = crypto.randomBytes(8).toString('hex');
-            const filename     = `${Date.now()}_${randomHex}.jpg`;
+            const randomHex = crypto.randomBytes(8).toString('hex');
+            const filename = `${Date.now()}_${randomHex}.jpg`;
             const absolutePath = path.join(galleryDir, filename);
 
             const compressedBuffer = await sharp(fileBuffer)
                 .rotate() // Auto-rotates image based on EXIF orientation data
                 .resize({
-                    width:  PHOTO_MAX_WIDTH,
+                    width: PHOTO_MAX_WIDTH,
                     height: PHOTO_MAX_HEIGHT,
-                    fit:    'inside',          // preserve aspect ratio, never upscale beyond box
+                    fit: 'inside',          // preserve aspect ratio, never upscale beyond box
                     withoutEnlargement: true,  // skip resize if image is already smaller
                 })
                 .jpeg({ quality: PHOTO_QUALITY, progressive: true })
@@ -68,17 +62,17 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
             fs.writeFileSync(absolutePath, compressedBuffer);
 
             // Store relative path (forward-slash, no leading slash) in DB
-            const uploadsBase  = process.env.UPLOAD_DIR || 'uploads';
+            const uploadsBase = process.env.UPLOAD_DIR || 'uploads';
             const relativePath = path
                 .join(uploadsBase, 'users', userId, 'gallery', filename)
                 .replace(/\\/g, '/');
 
             const photo = await UserPhoto.create({
                 userId,
-                filePath:     relativePath,
-                fileSize:     compressedBuffer.length,   // compressed size, not original
-                mimeType:     'image/jpeg',
-                isPrimary:    i === 0,
+                filePath: relativePath,
+                fileSize: compressedBuffer.length,   // compressed size, not original
+                mimeType: 'image/jpeg',
+                isPrimary: i === 0,
                 displayOrder: i,
             });
 
@@ -94,11 +88,11 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
             message: 'Photos uploaded successfully',
             data: {
                 photos: createdPhotos.map(p => ({
-                    id:           p.id,
-                    url:          p.getUrl(),
-                    isPrimary:    p.isPrimary,
+                    id: p.id,
+                    url: p.getUrl(),
+                    isPrimary: p.isPrimary,
                     displayOrder: p.displayOrder,
-                    sizeKb:       Math.round(p.fileSize / 1024),  // handy for debugging
+                    sizeKb: Math.round(p.fileSize / 1024),  // handy for debugging
                 }))
             }
         });
@@ -225,9 +219,9 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
         const photoRecord = await UserPhoto.findOne({
             where: { userId },
             order: [
-                ['isPrimary',    'DESC'],
+                ['isPrimary', 'DESC'],
                 ['displayOrder', 'ASC'],
-                ['uploadedAt',   'DESC'],
+                ['uploadedAt', 'DESC'],
             ],
             attributes: ['id', 'filePath', 'isPrimary', 'displayOrder', 'uploadedAt'],
         });
@@ -236,9 +230,9 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
         const allPhotos = await UserPhoto.findAll({
             where: { userId },
             order: [
-                ['isPrimary',    'DESC'],
+                ['isPrimary', 'DESC'],
                 ['displayOrder', 'ASC'],
-                ['uploadedAt',   'DESC'],
+                ['uploadedAt', 'DESC'],
             ],
             attributes: ['id', 'filePath', 'fileSize', 'mimeType', 'isPrimary', 'displayOrder', 'uploadedAt'],
         });
@@ -249,7 +243,7 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
 
         if (photoRecord) {
             profilePhotoPath = photoRecord.filePath;
-            profilePhotoUrl  = '/' + photoRecord.filePath.replace(/\\/g, '/');
+            profilePhotoUrl = '/' + photoRecord.filePath.replace(/\\/g, '/');
         } else if (user.profileImageUrl) {
             profilePhotoUrl = user.profileImageUrl;
         }
@@ -259,40 +253,40 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
             ? Math.floor(
                 (Date.now() - new Date((user as any).dateOfBirth).getTime()) /
                 (365.25 * 24 * 60 * 60 * 1000)
-              )
+            )
             : null;
 
         // Map gallery photos to URL-ready objects
         const photos = allPhotos.map(p => ({
-            id:           p.id,
-            url:          '/' + p.filePath.replace(/\\/g, '/'),
-            filePath:     p.filePath,
-            fileSize:     p.fileSize,
-            mimeType:     p.mimeType,
-            isPrimary:    p.isPrimary,
+            id: p.id,
+            url: '/' + p.filePath.replace(/\\/g, '/'),
+            filePath: p.filePath,
+            fileSize: p.fileSize,
+            mimeType: p.mimeType,
+            isPrimary: p.isPrimary,
             displayOrder: p.displayOrder,
-            uploadedAt:   p.uploadedAt,
+            uploadedAt: p.uploadedAt,
         }));
 
         return res.status(200).json({
             success: true,
             data: {
                 // ── Core user fields ─────────────────────────────────────────
-                id:               user.id,
-                firstName:        user.firstName,
-                lastName:         user.lastName,
-                fullName:         `${user.firstName} ${user.lastName}`,
-                email:            user.email,
-                phone:            user.phone,
-                role:             user.role,
-                isVerified:       user.isVerified,
-                isActive:         user.isActive,
-                mfaEnabled:       user.mfaEnabled,
-                dateOfBirth:      (user as any).dateOfBirth ?? null,
+                id: user.id,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                fullName: `${user.firstName} ${user.lastName}`,
+                email: user.email,
+                phone: user.phone,
+                role: user.role,
+                isVerified: user.isVerified,
+                isActive: user.isActive,
+                mfaEnabled: user.mfaEnabled,
+                dateOfBirth: (user as any).dateOfBirth ?? null,
                 age,
-                createdAt:        user.createdAt,
-                updatedAt:        user.updatedAt,
-                lastLoginAt:      (user as any).lastLoginAt ?? null,
+                createdAt: user.createdAt,
+                updatedAt: user.updatedAt,
+                lastLoginAt: (user as any).lastLoginAt ?? null,
 
                 // ── Profile photo (primary / best) ────────────────────────────
                 profilePhotoUrl,
@@ -306,46 +300,46 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
 
                 // ── Extended profile ──────────────────────────────────────────
                 profile: profile ? {
-                    id:                   profile.id,
-                    displayName:          profile.displayName ?? null,
-                    bio:                  profile.bio ?? null,
-                    gender:               profile.gender ?? null,
-                    city:                 profile.city ?? null,
-                    occupation:           profile.occupation ?? null,
-                    company:              profile.company ?? null,
-                    education:            profile.education ?? null,
-                    relationshipStatus:   profile.relationshipStatus ?? null,
-                    lookingFor:           profile.lookingFor ?? [],
-                    nightlifePreference:  profile.nightlifePreference ?? [],
-                    interests:            profile.interests ?? [],
-                    instagramHandle:      profile.instagramHandle ?? null,
-                    spotifyProfile:       profile.spotifyProfile ?? null,
+                    id: profile.id,
+                    displayName: profile.displayName ?? null,
+                    bio: profile.bio ?? null,
+                    gender: profile.gender ?? null,
+                    city: profile.city ?? null,
+                    occupation: profile.occupation ?? null,
+                    company: profile.company ?? null,
+                    education: profile.education ?? null,
+                    relationshipStatus: profile.relationshipStatus ?? null,
+                    lookingFor: profile.lookingFor ?? [],
+                    nightlifePreference: profile.nightlifePreference ?? [],
+                    interests: profile.interests ?? [],
+                    instagramHandle: profile.instagramHandle ?? null,
+                    spotifyProfile: profile.spotifyProfile ?? null,
                     profileCompletionPct: profile.getCompletionPercentage(),
-                    isProfileComplete:    profile.isProfileComplete(),
-                    createdAt:            profile.createdAt,
-                    updatedAt:            profile.updatedAt,
+                    isProfileComplete: profile.isProfileComplete(),
+                    createdAt: profile.createdAt,
+                    updatedAt: profile.updatedAt,
                 } : null,
 
                 // ── Preferences ───────────────────────────────────────────────
                 preferences: preferences ? {
-                    id:                   preferences.id,
-                    preferredVenues:      preferences.preferredVenues ?? [],
-                    preferredCrowdSize:   preferences.preferredCrowdSize ?? null,
-                    musicPreference:      preferences.musicPreference ?? [],
-                    drinkPreference:      preferences.drinkPreference ?? [],
-                    smokingPreference:    preferences.smokingPreference ?? null,
-                    preferredGenders:     preferences.preferredGenders ?? [],
-                    minAgePreference:     preferences.minAgePreference ?? null,
-                    maxAgePreference:     preferences.maxAgePreference ?? null,
-                    budgetRange:          preferences.budgetRange ?? null,
-                    partyTimePreference:  preferences.partyTimePreference ?? null,
-                    groupSizePreference:  preferences.groupSizePreference ?? null,
-                    matchDistanceKm:      preferences.matchDistanceKm,
-                    showMeInMatching:     preferences.showMeInMatching,
+                    id: preferences.id,
+                    preferredVenues: preferences.preferredVenues ?? [],
+                    preferredCrowdSize: preferences.preferredCrowdSize ?? null,
+                    musicPreference: preferences.musicPreference ?? [],
+                    drinkPreference: preferences.drinkPreference ?? [],
+                    smokingPreference: preferences.smokingPreference ?? null,
+                    preferredGenders: preferences.preferredGenders ?? [],
+                    minAgePreference: preferences.minAgePreference ?? null,
+                    maxAgePreference: preferences.maxAgePreference ?? null,
+                    budgetRange: preferences.budgetRange ?? null,
+                    partyTimePreference: preferences.partyTimePreference ?? null,
+                    groupSizePreference: preferences.groupSizePreference ?? null,
+                    matchDistanceKm: preferences.matchDistanceKm,
+                    showMeInMatching: preferences.showMeInMatching,
                     bookingAlertsEnabled: preferences.bookingAlertsEnabled,
-                    isConfigured:         preferences.isConfigured(),
-                    createdAt:            preferences.createdAt,
-                    updatedAt:            preferences.updatedAt,
+                    isConfigured: preferences.isConfigured(),
+                    createdAt: preferences.createdAt,
+                    updatedAt: preferences.updatedAt,
                 } : null,
             },
         });
@@ -366,20 +360,20 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
 // ─────────────────────────────────────────────────────────────────────────────
 export const getAllCustomers = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const page   = Math.max(1, parseInt(req.query.page   as string) || 1);
-        const limit  = Math.min(100, parseInt(req.query.limit as string) || 20);
+        const page = Math.max(1, parseInt(req.query.page as string) || 1);
+        const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
         const offset = (page - 1) * limit;
         const search = (req.query.search as string)?.trim();
-        const city   = (req.query.city   as string)?.trim();
+        const city = (req.query.city as string)?.trim();
 
         // Build User-level where clause
         const userWhere: any = { role: UserRole.CUSTOMER, isActive: true };
         if (search) {
             userWhere[Op.or] = [
                 { firstName: { [Op.iLike]: `%${search}%` } },
-                { lastName:  { [Op.iLike]: `%${search}%` } },
-                { email:     { [Op.iLike]: `%${search}%` } },
-                { phone:     { [Op.iLike]: `%${search}%` } },
+                { lastName: { [Op.iLike]: `%${search}%` } },
+                { email: { [Op.iLike]: `%${search}%` } },
+                { phone: { [Op.iLike]: `%${search}%` } },
             ];
         }
 
@@ -427,7 +421,7 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                     where: { isPrimary: true },   // Only fetch primary photo for list
                 },
             ],
-            order:  [['createdAt', 'DESC']],
+            order: [['createdAt', 'DESC']],
             limit,
             offset,
             distinct: true,   // Needed for correct count with includes
@@ -443,34 +437,34 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                 : null;
 
             // Build photo URL
-            const photo     = u.photos?.[0];
-            const photoUrl  = photo
+            const photo = u.photos?.[0];
+            const photoUrl = photo
                 ? '/' + photo.filePath.replace(/\\/g, '/')
                 : (user.profileImageUrl ?? null);
 
             return {
-                id:            user.id,
-                firstName:     user.firstName,
-                lastName:      user.lastName,
-                fullName:      `${user.firstName} ${user.lastName}`.trim(),
-                email:         user.email,
-                phone:         user.phone,
+                id: user.id,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                fullName: `${user.firstName} ${user.lastName}`.trim(),
+                email: user.email,
+                phone: user.phone,
                 age,
-                dateOfBirth:   user.dateOfBirth,
-                role:          user.role,
-                isVerified:    user.isVerified,
-                isActive:      user.isActive,
+                dateOfBirth: user.dateOfBirth,
+                role: user.role,
+                isVerified: user.isVerified,
+                isActive: user.isActive,
                 profilePhotoUrl: photoUrl,
-                createdAt:     user.createdAt,
-                lastLoginAt:   (user as any).lastLoginAt ?? null,
-                profile:       u.profile   ?? null,
-                preferences:   u.preferences ?? null,
+                createdAt: user.createdAt,
+                lastLoginAt: (user as any).lastLoginAt ?? null,
+                profile: u.profile ?? null,
+                preferences: u.preferences ?? null,
             };
         });
 
         return res.status(200).json({
-            success:    true,
-            total:      count,
+            success: true,
+            total: count,
             page,
             limit,
             totalPages,
@@ -540,51 +534,6 @@ export const registerFcmToken = async (req: Request, res: Response): Promise<Res
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /api/mobile/user/verify-face
-// Verifies live selfie against profile photo
-// ─────────────────────────────────────────────────────────────────────────────
-export const verifyFace = async (req: Request, res: Response): Promise<Response> => {
-    try {
-        const userId = req.body.userId;
-        if (!userId) {
-            return res.status(400).json({ success: false, message: 'userId is required' });
-        }
-
-        const files = req.files as { [fieldname: string]: Express.Multer.File[] };
-        if (!files || !files.profilePhoto || !files.selfiePhoto) {
-            return res.status(400).json({ success: false, message: 'Both profilePhoto and selfiePhoto are required' });
-        }
-
-        const profilePhoto = files.profilePhoto[0];
-        const selfiePhoto = files.selfiePhoto[0];
-
-        try {
-            const profileBuffer = profilePhoto.buffer || fs.readFileSync(profilePhoto.path);
-            const selfieBuffer = selfiePhoto.buffer || fs.readFileSync(selfiePhoto.path);
-
-            // Using Google Cloud Vision API to verify both images contain valid faces
-            const similarity = await verifyFaces(profileBuffer, selfieBuffer);
-            
-            if (profilePhoto.path && fs.existsSync(profilePhoto.path)) fs.unlinkSync(profilePhoto.path);
-            if (selfiePhoto.path && fs.existsSync(selfiePhoto.path)) fs.unlinkSync(selfiePhoto.path);
-
-            if (similarity === 100) {
-                return res.status(200).json({ success: true, message: 'Faces verified successfully in both images', similarity });
-            } else {
-                return res.status(400).json({ success: false, message: 'Face verification failed. Please ensure your face is clearly visible.' });
-            }
-        } catch (error: any) {
-            if (profilePhoto.path && fs.existsSync(profilePhoto.path)) fs.unlinkSync(profilePhoto.path);
-            if (selfiePhoto.path && fs.existsSync(selfiePhoto.path)) fs.unlinkSync(selfiePhoto.path);
-            logger.error('[MobileUser] Face verification processing error:', error);
-            return res.status(400).json({ success: false, message: error.message || 'Face verification failed' });
-        }
-    } catch (error: any) {
-        logger.error('[MobileUser] Error verifying face:', error);
-        return res.status(500).json({ success: false, message: 'Failed to verify face' });
-    }
-};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/mobile/user/block
@@ -883,17 +832,17 @@ export const getMyLikesAndMatches = async (req: Request, res: Response): Promise
     }
 };
 
-export default { 
-    uploadPhotos, 
-    completeProfileSetup, 
-    getMyProfile, 
-    getAllCustomers, 
-    getUserStatus, 
-    registerFcmToken, 
-    verifyFace, 
-    blockUser, 
-    unblockUser, 
-    reportUser, 
+export default {
+    uploadPhotos,
+    completeProfileSetup,
+    getMyProfile,
+    getAllCustomers,
+    getUserStatus,
+    registerFcmToken,
+
+    blockUser,
+    unblockUser,
+    reportUser,
     getBlockedUsers,
     swipeUser,
     getMyLikesAndMatches

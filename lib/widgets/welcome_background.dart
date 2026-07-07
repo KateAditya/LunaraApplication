@@ -5,7 +5,7 @@ class WelcomeBackground extends StatelessWidget {
   final String? backgroundImage;
 
   const WelcomeBackground({
-    super.key, 
+    super.key,
     required this.child,
     this.backgroundImage,
   });
@@ -21,23 +21,7 @@ class WelcomeBackground extends StatelessWidget {
             fit: BoxFit.cover,
           ),
         ),
-        // Soft White/Lavender Overlay
-        Positioned.fill(
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.white.withValues(alpha: 0.1),
-                  Colors.white.withValues(alpha: 0.3),
-                  Colors.white.withValues(alpha: 0.9),
-                ],
-                stops: const [0.0, 0.5, 1.0],
-              ),
-            ),
-          ),
-        ),
+
         // Main content
         child,
       ],

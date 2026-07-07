@@ -32,7 +32,7 @@ async function autoOpenChat(hostId: string, joinerId: string) {
                 participantTwo: joinerId
             });
         }
-        
+
         const freeDays = getChatSettings().freeDays;
         const validUntil = new Date();
         validUntil.setDate(validUntil.getDate() + freeDays);
@@ -220,12 +220,12 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                 const hostName = `${user.firstName} ${user.lastName}`.trim();
                 const venueName = venue.name;
                 const notifTitle = `🎉 New Party Plan at ${venueName}`;
-                const notifBody  = `${hostName} has created a party plan. Tap to view!`;
-                const notifData  = {
-                    type:        'new_party_plan',
+                const notifBody = `${hostName} has created a party plan. Tap to view!`;
+                const notifData = {
+                    type: 'new_party_plan',
                     partyPlanId: partyPlan.id,
-                    venueId:     venueId,
-                    hostId:      userId,
+                    venueId: venueId,
+                    hostId: userId,
                 };
 
                 if (parsedVisibility === PartyPlanVisibility.PRIVATE && Array.isArray(selectedUsers) && selectedUsers.length > 0) {
@@ -241,8 +241,8 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                     if (tokens.length > 0) {
                         await sendMulticastPushNotification(tokens, {
                             title: notifTitle,
-                            body:  notifBody,
-                            data:  notifData,
+                            body: notifBody,
+                            data: notifData,
                         });
                     }
                 }

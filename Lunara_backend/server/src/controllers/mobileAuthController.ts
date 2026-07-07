@@ -42,14 +42,14 @@ function calcAge(dob: string): number {
 // Request body type (documentation only — TypeScript won't enforce at runtime)
 // ─────────────────────────────────────────────────────────────────────────────
 interface MobileRegisterBody {
-    firstName:   string;
-    lastName:    string;
-    email:       string;
-    phone:       string;
-    password:    string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    password: string;
     dateOfBirth: string;   // ISO format: YYYY-MM-DD
-    gender?:     string;
-    city?:       string;
+    gender?: string;
+    city?: string;
     biometricEnabled?: boolean;
 }
 
@@ -76,7 +76,7 @@ export const mobileSendOTP = async (req: Request, res: Response): Promise<Respon
 
         // Generate OTP
         const { code } = await OTPVerification.generateOTP(phone.trim(), OTPPurpose.REGISTRATION);
-        
+
         // For development/dummy requirement, we can print it or return it.
         // We are using '1234' as the fixed dummy OTP during verification, but we still create the record.
         logger.info(`[MobileSendOTP] Generated OTP for ${phone}: ${code} (Dummy verification accepts 1234)`);
@@ -101,12 +101,12 @@ export const mobileCheckEmail = async (req: Request, res: Response): Promise<Res
         if (!email) {
             return res.status(400).json({ success: false, message: 'Email is required' });
         }
-        
+
         const existing = await User.findOne({ where: { email: email.trim().toLowerCase() } });
         if (existing) {
             return res.status(200).json({ success: true, isTaken: true, message: 'Email is already taken' });
         }
-        
+
         return res.status(200).json({ success: true, isTaken: false, message: 'Email is available' });
     } catch (error: any) {
         logger.error('[MobileCheckEmail] Error:', error);
@@ -180,19 +180,19 @@ export const mobileRegister = async (req: Request, res: Response): Promise<Respo
 
         // ── 1. Required field presence check ──────────────────────────────────
         const missing: string[] = [];
-        if (!firstName?.trim())   missing.push('firstName');
-        if (!lastName?.trim())    missing.push('lastName');
-        if (!email?.trim())       missing.push('email');
-        if (!phone?.trim())       missing.push('phone');
-        if (!password)            missing.push('password');
+        if (!firstName?.trim()) missing.push('firstName');
+        if (!lastName?.trim()) missing.push('lastName');
+        if (!email?.trim()) missing.push('email');
+        if (!phone?.trim()) missing.push('phone');
+        if (!password) missing.push('password');
         if (!dateOfBirth?.trim()) missing.push('dateOfBirth');
 
         if (missing.length > 0) {
             return res.status(400).json({
                 success: false,
-                code:    'MISSING_FIELDS',
+                code: 'MISSING_FIELDS',
                 message: 'Required fields are missing',
-                fields:  missing,
+                fields: missing,
             });
         }
 
@@ -214,7 +214,7 @@ export const mobileRegister = async (req: Request, res: Response): Promise<Respo
         if (!isValidEmail(email)) {
             return res.status(400).json({
                 success: false,
-                code:    'INVALID_EMAIL',
+                code: 'INVALID_EMAIL',
                 message: 'Please provide a valid email address',
             });
         }
@@ -222,7 +222,7 @@ export const mobileRegister = async (req: Request, res: Response): Promise<Respo
         if (!isValidPhone(phone)) {
             return res.status(400).json({
                 success: false,
-                code:    'INVALID_PHONE',
+                code: 'INVALID_PHONE',
                 message: 'Please provide a valid 10-digit Indian mobile number (starting with 6–9)',
             });
         }
@@ -231,19 +231,19 @@ export const mobileRegister = async (req: Request, res: Response): Promise<Respo
         if (pwdError) {
             return res.status(400).json({
                 success: false,
-                code:    'WEAK_PASSWORD',
+                code: 'WEAK_PASSWORD',
                 message: pwdError,
             });
         }
 
         // ── 3. Age verification ───────────────────────────────────────────────
-        const age    = calcAge(dateOfBirth);
+        const age = calcAge(dateOfBirth);
         const minAge = parseInt(process.env.MINIMUM_AGE || '18', 10);
 
         if (isNaN(age) || age < 0) {
             return res.status(400).json({
                 success: false,
-                code:    'INVALID_DOB',
+                code: 'INVALID_DOB',
                 message: 'Please provide a valid date of birth (YYYY-MM-DD)',
             });
         }
@@ -251,7 +251,7 @@ export const mobileRegister = async (req: Request, res: Response): Promise<Respo
         if (age < minAge) {
             return res.status(400).json({
                 success: false,
-                code:    'UNDERAGE',
+                code: 'UNDERAGE',
                 message: `You must be at least ${minAge} years old to register`,
             });
         }
@@ -271,7 +271,7 @@ export const mobileRegister = async (req: Request, res: Response): Promise<Respo
                 existing.email === email.trim().toLowerCase() ? 'email' : 'phone';
             return res.status(409).json({
                 success: false,
-                code:    'DUPLICATE_USER',
+                code: 'DUPLICATE_USER',
                 message: conflict === 'email'
                     ? 'An account with this email already exists'
                     : 'An account with this phone number already exists',
@@ -288,25 +288,25 @@ export const mobileRegister = async (req: Request, res: Response): Promise<Respo
 
         // ── 6. Create user ────────────────────────────────────────────────────
         const user = await User.create({
-            firstName:    firstName.trim(),
-            lastName:     lastName.trim(),
-            email:        email.trim().toLowerCase(),
-            phone:        phone.trim(),
+            firstName: firstName.trim(),
+            lastName: lastName.trim(),
+            email: email.trim().toLowerCase(),
+            phone: phone.trim(),
             passwordHash,                      // pre-hashed, hook will skip re-hash
-            dateOfBirth:  new Date(dateOfBirth),
-            role:         UserRole.CUSTOMER,
-            isActive:     true,
-            isVerified:   false,
-            mfaEnabled:   false,
+            dateOfBirth: new Date(dateOfBirth),
+            role: UserRole.CUSTOMER,
+            isActive: true,
+            isVerified: false,
+            mfaEnabled: false,
         });
 
         // ── 7. Create supporting records (non-fatal if any fail) ──────────────
         await Promise.allSettled([
             UserProfile.create({
-                userId:      user.id,
+                userId: user.id,
                 displayName: `${firstName.trim()} ${lastName.trim()}`,
-                gender:      gender?.trim(),
-                city:        city?.trim(),
+                gender: gender?.trim(),
+                city: city?.trim(),
             }),
             UserPreference.create({ userId: user.id }),
             // Delete OTP record after successful registration
@@ -316,7 +316,7 @@ export const mobileRegister = async (req: Request, res: Response): Promise<Respo
         // ── 8. Send verification email (non-fatal) ────────────────────────────
         try {
             const verification = await EmailVerification.generateToken(user.id);
-            const rawToken     = (verification as any).rawToken;
+            const rawToken = (verification as any).rawToken;
             await sendVerificationEmail(user.email, rawToken, user.firstName);
             logger.info(`[MobileRegister] Verification email sent to ${user.email}`);
         } catch (emailErr: any) {
@@ -326,8 +326,8 @@ export const mobileRegister = async (req: Request, res: Response): Promise<Respo
         // ── 9. Issue JWT token pair ───────────────────────────────────────────
         const tokens = generateTokenPair({
             userId: user.id,
-            email:  user.email,
-            role:   user.role,
+            email: user.email,
+            role: user.role,
         });
 
         logger.info(`[MobileRegister] New mobile user registered: ${user.email} | ID: ${user.id}`);
@@ -337,10 +337,10 @@ export const mobileRegister = async (req: Request, res: Response): Promise<Respo
             success: true,
             message: 'Registration successful. Please verify your email to unlock all features.',
             data: {
-                user:         user.toJSON(),     // passwordHash excluded by toJSON()
-                accessToken:  tokens.accessToken,
+                user: user.toJSON(),     // passwordHash excluded by toJSON()
+                accessToken: tokens.accessToken,
                 refreshToken: tokens.refreshToken,
-                expiresIn:    process.env.JWT_EXPIRES_IN || '7d',
+                expiresIn: process.env.JWT_EXPIRES_IN || '7d',
             },
         });
 
@@ -352,7 +352,7 @@ export const mobileRegister = async (req: Request, res: Response): Promise<Respo
             const field = error.errors?.[0]?.path || 'field';
             return res.status(409).json({
                 success: false,
-                code:    'DUPLICATE_USER',
+                code: 'DUPLICATE_USER',
                 message: `An account with this ${field} already exists`,
                 field,
             });
@@ -362,14 +362,14 @@ export const mobileRegister = async (req: Request, res: Response): Promise<Respo
         if (error.name === 'SequelizeValidationError') {
             return res.status(400).json({
                 success: false,
-                code:    'VALIDATION_ERROR',
+                code: 'VALIDATION_ERROR',
                 message: error.errors?.[0]?.message || 'Validation failed',
             });
         }
 
         return res.status(500).json({
             success: false,
-            code:    'SERVER_ERROR',
+            code: 'SERVER_ERROR',
             message: 'Registration failed due to a server error. Please try again.',
         });
     }
@@ -477,7 +477,7 @@ export const mobileResetPassword = async (req: Request, res: Response): Promise<
 export const mobileLogout = async (req: Request, res: Response): Promise<Response> => {
     try {
         const userId = req.body.userId || req.user?.id;
-        
+
         if (!userId) {
             return res.status(400).json({ success: false, message: 'User ID is required' });
         }
@@ -486,7 +486,7 @@ export const mobileLogout = async (req: Request, res: Response): Promise<Respons
         if (user) {
             const now = new Date();
             await user.update({ isOnline: false, lastActiveAt: now });
-            
+
             try {
                 const { io } = require('../server');
                 io.emit('user_status_changed', { userId: user.id, isOnline: false, lastActiveAt: now });

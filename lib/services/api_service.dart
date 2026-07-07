@@ -16,10 +16,11 @@ import 'package:socket_io_client/socket_io_client.dart' as IO;
 
 class ApiService {
   // Toggle this to true to use your local backend, false for production
-  static const bool isLocal = true;
+  static const bool isLocal = false;
 
   // Uses your machine's local IP (192.168.0.155) for local dev on a real device
-  static String get baseUrl => isLocal ? 'http://192.168.0.155:9076' : 'http://103.224.247.35:9076';
+  static String get baseUrl =>
+      isLocal ? 'http://192.168.0.155:9076' : 'http://103.224.247.35:9076';
 
   static String? _authToken;
   static String? selectedCity;
@@ -40,15 +41,17 @@ class ApiService {
   static void initSocket() {
     final userId = currentUserId;
     if (userId == null) return;
-    
+
     if (socket != null && socket!.connected) {
       socket!.disconnect();
     }
 
-    socket = IO.io(baseUrl, IO.OptionBuilder()
-      .setTransports(['websocket'])
-      .disableAutoConnect()
-      .build()
+    socket = IO.io(
+      baseUrl,
+      IO.OptionBuilder()
+          .setTransports(['websocket'])
+          .disableAutoConnect()
+          .build(),
     );
 
     socket!.connect();
@@ -114,16 +117,16 @@ class ApiService {
       }
 
       //debugPrint('Fetching profile for userId: $targetUserId');
-      
+
       // Use query parameter only, as Flutter Web (fetch) does not allow bodies in GET requests
       final response = await get(
         '/api/mobile/user/userprofile',
         queryParameters: {'userId': targetUserId},
       );
-      
+
       //debugPrint('Profile Response Status: ${response.statusCode}');
       //debugPrint('Profile Response Body: ${response.body}');
-      
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
@@ -146,7 +149,10 @@ class ApiService {
       // Consistent fallback based on other user's ID to keep UI stable
       int idHash = 0;
       if (otherUser is Map) {
-        idHash = (otherUser['id'] ?? otherUser['_id'] ?? '').toString().hashCode.abs();
+        idHash = (otherUser['id'] ?? otherUser['_id'] ?? '')
+            .toString()
+            .hashCode
+            .abs();
       } else if (otherUser is User) {
         idHash = otherUser.id.hashCode.abs();
       }
@@ -200,7 +206,10 @@ class ApiService {
     }
   }
 
-  static Future<List<Map<String, dynamic>>> fetchActiveAds({String? city, String? type}) async {
+  static Future<List<Map<String, dynamic>>> fetchActiveAds({
+    String? city,
+    String? type,
+  }) async {
     try {
       final targetCity = city ?? selectedCity;
       final queryParams = <String>[];
@@ -210,7 +219,9 @@ class ApiService {
       if (type != null && type.isNotEmpty) {
         queryParams.add('type=${Uri.encodeComponent(type)}');
       }
-      final queryString = queryParams.isNotEmpty ? '?${queryParams.join('&')}' : '';
+      final queryString = queryParams.isNotEmpty
+          ? '?${queryParams.join('&')}'
+          : '';
       final path = '/api/ads/active$queryString';
       final response = await get(path);
       if (response.statusCode == 200) {
@@ -231,7 +242,7 @@ class ApiService {
       final response = await get('/api/mobile/user/customers');
       //debugPrint('Customers Response Status: ${response.statusCode}');
       //debugPrint('Customers Response Body: ${response.body}');
-      
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         // Be flexible with the key name (customers or data)
@@ -251,16 +262,19 @@ class ApiService {
 
   static Future<List<Package>> fetchVenuePackages(String venueId) async {
     try {
-      final response = await get('/api/mobile/bookings/venues/$venueId/packages');
+      final response = await get(
+        '/api/mobile/bookings/venues/$venueId/packages',
+      );
       //debugPrint('Packages Response Status: ${response.statusCode}');
       //debugPrint('Packages Response Body: ${response.body}');
 
       if (response.statusCode == 200) {
         final jsonResponse = jsonDecode(response.body);
-        
+
         // The API returns packages in the 'data' field or 'packages' field
-        final dynamic packageList = jsonResponse['data'] ?? jsonResponse['packages'];
-        
+        final dynamic packageList =
+            jsonResponse['data'] ?? jsonResponse['packages'];
+
         if (packageList is List) {
           return packageList.map((json) => Package.fromJson(json)).toList();
         } else if (jsonResponse is List) {
@@ -274,13 +288,20 @@ class ApiService {
     }
   }
 
-  static Future<List<Map<String, dynamic>>> fetchPartyPlans({int page = 1, int limit = 20, String status = 'active'}) async {
+  static Future<List<Map<String, dynamic>>> fetchPartyPlans({
+    int page = 1,
+    int limit = 20,
+    String status = 'active',
+  }) async {
     try {
-      final response = await get('/api/mobile/party-plans', queryParameters: {
-        'status': status,
-        'page': page.toString(),
-        'limit': limit.toString(),
-      });
+      final response = await get(
+        '/api/mobile/party-plans',
+        queryParameters: {
+          'status': status,
+          'page': page.toString(),
+          'limit': limit.toString(),
+        },
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
@@ -307,18 +328,21 @@ class ApiService {
     if (userId == null) return false;
 
     try {
-      final response = await post('/api/mobile/bookings', body: {
-        'userId': userId,
-        'venueId': venueId,
-        'bookingDate': date,
-        'startTime': time,
-        'tablePackage': 'none',
-        'goingMode': 'party_request',
-        'numberOfGuests': guests,
-        'partySubject': subject,
-        'partyRequirement': requirement,
-        'partyDescription': description,
-      });
+      final response = await post(
+        '/api/mobile/bookings',
+        body: {
+          'userId': userId,
+          'venueId': venueId,
+          'bookingDate': date,
+          'startTime': time,
+          'tablePackage': 'none',
+          'goingMode': 'party_request',
+          'numberOfGuests': guests,
+          'partySubject': subject,
+          'partyRequirement': requirement,
+          'partyDescription': description,
+        },
+      );
 
       if (response.statusCode == 201) {
         final data = jsonDecode(response.body);
@@ -338,11 +362,14 @@ class ApiService {
       final userId = currentUserId;
       if (userId == null) return null;
 
-      final response = await post('/api/mobile/user/swipe', body: {
-        'userId': userId,
-        'targetUserId': targetUserId,
-        'action': action,
-      });
+      final response = await post(
+        '/api/mobile/user/swipe',
+        body: {
+          'userId': userId,
+          'targetUserId': targetUserId,
+          'action': action,
+        },
+      );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -362,9 +389,10 @@ class ApiService {
       final userId = currentUserId;
       if (userId == null) return [];
 
-      final response = await get('/api/mobile/user/likes-matches', queryParameters: {
-        'userId': userId,
-      });
+      final response = await get(
+        '/api/mobile/user/likes-matches',
+        queryParameters: {'userId': userId},
+      );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -379,12 +407,15 @@ class ApiService {
     }
   }
 
-  static Future<List<Map<String, dynamic>>> fetchStrangersMeetFeed({int page = 1, int limit = 20}) async {
+  static Future<List<Map<String, dynamic>>> fetchStrangersMeetFeed({
+    int page = 1,
+    int limit = 20,
+  }) async {
     try {
-      final response = await get('/api/mobile/strangers-meet/feed', queryParameters: {
-        'page': page.toString(),
-        'limit': limit.toString(),
-      });
+      final response = await get(
+        '/api/mobile/strangers-meet/feed',
+        queryParameters: {'page': page.toString(), 'limit': limit.toString()},
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
@@ -417,21 +448,31 @@ class ApiService {
     }
   }
 
-  static Future<Map<String, dynamic>> fetchLiveFeedData({String? venueId, String? date}) async {
+  static Future<Map<String, dynamic>> fetchLiveFeedData({
+    String? venueId,
+    String? date,
+  }) async {
     try {
       final queryParams = <String, String>{};
       if (venueId != null) queryParams['venueId'] = venueId;
       if (date != null) queryParams['date'] = date;
       if (currentUserId != null) queryParams['viewerId'] = currentUserId!;
 
-      final response = await get('/api/mobile/plans/live-feed', queryParameters: queryParams);
+      final response = await get(
+        '/api/mobile/plans/live-feed',
+        queryParameters: queryParams,
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
           return {
             'feed': List<Map<String, dynamic>>.from(data['data'] ?? []),
-            'myRequests': List<Map<String, dynamic>>.from(data['myRequests'] ?? []),
-            'incomingRequests': List<Map<String, dynamic>>.from(data['incomingRequests'] ?? []),
+            'myRequests': List<Map<String, dynamic>>.from(
+              data['myRequests'] ?? [],
+            ),
+            'incomingRequests': List<Map<String, dynamic>>.from(
+              data['incomingRequests'] ?? [],
+            ),
           };
         }
       }
@@ -443,14 +484,15 @@ class ApiService {
   }
 
   // ─── Party Plan Request APIs ────────────────────────────────────────────────
-  
+
   static Future<bool> requestToJoinPartyPlan(String planId) async {
     final userId = currentUserId;
     if (userId == null) return false;
     try {
-      final response = await post('/api/mobile/party-plans/$planId/requests', body: {
-        'userId': userId,
-      });
+      final response = await post(
+        '/api/mobile/party-plans/$planId/requests',
+        body: {'userId': userId},
+      );
       if (response.statusCode == 201) {
         return true;
       }
@@ -460,13 +502,16 @@ class ApiService {
     return false;
   }
 
-  static Future<List<Map<String, dynamic>>> fetchPartyPlanRequests(String planId) async {
+  static Future<List<Map<String, dynamic>>> fetchPartyPlanRequests(
+    String planId,
+  ) async {
     final userId = currentUserId;
     if (userId == null) return [];
     try {
-      final response = await get('/api/mobile/party-plans/$planId/requests', queryParameters: {
-        'userId': userId,
-      });
+      final response = await get(
+        '/api/mobile/party-plans/$planId/requests',
+        queryParameters: {'userId': userId},
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
@@ -483,7 +528,9 @@ class ApiService {
     final userId = currentUserId;
     if (userId == null) return [];
     try {
-      final response = await get('/api/mobile/party-plans/requests/user/$userId');
+      final response = await get(
+        '/api/mobile/party-plans/requests/user/$userId',
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
@@ -513,13 +560,16 @@ class ApiService {
     return [];
   }
 
-  static Future<Map<String, dynamic>?> acceptPartyPlanRequest(String reqId) async {
+  static Future<Map<String, dynamic>?> acceptPartyPlanRequest(
+    String reqId,
+  ) async {
     final userId = currentUserId;
     if (userId == null) return null;
     try {
-      final response = await post('/api/mobile/party-plans/requests/$reqId/accept', body: {
-        'userId': userId,
-      });
+      final response = await post(
+        '/api/mobile/party-plans/requests/$reqId/accept',
+        body: {'userId': userId},
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return data['data'];
@@ -530,13 +580,21 @@ class ApiService {
     return null;
   }
 
-  static Future<bool> verifyJoinerPayment(String reqId, String orderId, String paymentId, String signature) async {
+  static Future<bool> verifyJoinerPayment(
+    String reqId,
+    String orderId,
+    String paymentId,
+    String signature,
+  ) async {
     try {
-      final response = await post('/api/mobile/party-plans/requests/$reqId/joiner-pay', body: {
-        'razorpay_order_id': orderId,
-        'razorpay_payment_id': paymentId,
-        'razorpay_signature': signature,
-      });
+      final response = await post(
+        '/api/mobile/party-plans/requests/$reqId/joiner-pay',
+        body: {
+          'razorpay_order_id': orderId,
+          'razorpay_payment_id': paymentId,
+          'razorpay_signature': signature,
+        },
+      );
       if (response.statusCode == 200) {
         return true;
       }
@@ -546,13 +604,21 @@ class ApiService {
     return false;
   }
 
-  static Future<bool> verifyHostPayment(String planId, String orderId, String paymentId, String signature) async {
+  static Future<bool> verifyHostPayment(
+    String planId,
+    String orderId,
+    String paymentId,
+    String signature,
+  ) async {
     try {
-      final response = await post('/api/mobile/party-plans/$planId/host-pay', body: {
-        'razorpay_order_id': orderId,
-        'razorpay_payment_id': paymentId,
-        'razorpay_signature': signature,
-      });
+      final response = await post(
+        '/api/mobile/party-plans/$planId/host-pay',
+        body: {
+          'razorpay_order_id': orderId,
+          'razorpay_payment_id': paymentId,
+          'razorpay_signature': signature,
+        },
+      );
       if (response.statusCode == 200) {
         return true;
       }
@@ -566,9 +632,10 @@ class ApiService {
     final userId = currentUserId;
     if (userId == null) return false;
     try {
-      final response = await post('/api/mobile/party-plans/$planId/cancel', body: {
-        'userId': userId,
-      });
+      final response = await post(
+        '/api/mobile/party-plans/$planId/cancel',
+        body: {'userId': userId},
+      );
       if (response.statusCode == 200) {
         return true;
       }
@@ -593,16 +660,20 @@ class ApiService {
     if (userId == null) return false;
 
     try {
-      final response = await post('/api/mobile/strangers-meet', body: {
-        'userId': userId,
-        'venueId': venueId,
-        'subject': subject,
-        'tagline': tagline,
-        'eventDateTime': eventDateTime,
-        'numberOfPersons': numberOfPersons,
-        'mobileNumber': mobileNumber,
-        if (alternateMobileNumber != null && alternateMobileNumber.isNotEmpty) 'alternateMobileNumber': alternateMobileNumber,
-      });
+      final response = await post(
+        '/api/mobile/strangers-meet',
+        body: {
+          'userId': userId,
+          'venueId': venueId,
+          'subject': subject,
+          'tagline': tagline,
+          'eventDateTime': eventDateTime,
+          'numberOfPersons': numberOfPersons,
+          'mobileNumber': mobileNumber,
+          if (alternateMobileNumber != null && alternateMobileNumber.isNotEmpty)
+            'alternateMobileNumber': alternateMobileNumber,
+        },
+      );
       if (response.statusCode == 201) {
         final data = jsonDecode(response.body);
         return data['success'] == true;
@@ -613,19 +684,26 @@ class ApiService {
     return false;
   }
 
-  static Future<List<StrangersMeetRequest>> fetchMyStrangersMeetRequests({String? status}) async {
+  static Future<List<StrangersMeetRequest>> fetchMyStrangersMeetRequests({
+    String? status,
+  }) async {
     final userId = currentUserId;
     if (userId == null) return [];
 
     try {
       final queryParams = <String, String>{};
       if (status != null) queryParams['status'] = status;
-      
-      final response = await get('/api/mobile/strangers-meet/my-requests/$userId', queryParameters: queryParams);
+
+      final response = await get(
+        '/api/mobile/strangers-meet/my-requests/$userId',
+        queryParameters: queryParams,
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
-          return (data['data'] as List).map((json) => StrangersMeetRequest.fromJson(json)).toList();
+          return (data['data'] as List)
+              .map((json) => StrangersMeetRequest.fromJson(json))
+              .toList();
         }
       }
     } catch (e) {
@@ -634,7 +712,9 @@ class ApiService {
     return [];
   }
 
-  static Future<StrangersMeetRequest?> fetchStrangersMeetRequestById(String id) async {
+  static Future<StrangersMeetRequest?> fetchStrangersMeetRequestById(
+    String id,
+  ) async {
     try {
       final response = await get('/api/mobile/strangers-meet/$id');
       if (response.statusCode == 200) {
@@ -649,14 +729,17 @@ class ApiService {
     return null;
   }
 
-  static Future<Map<String, dynamic>?> initiateStrangersMeetPayment(String id) async {
+  static Future<Map<String, dynamic>?> initiateStrangersMeetPayment(
+    String id,
+  ) async {
     final userId = currentUserId;
     if (userId == null) return null;
 
     try {
-      final response = await post('/api/mobile/strangers-meet/$id/initiate-payment', body: {
-        'userId': userId,
-      });
+      final response = await post(
+        '/api/mobile/strangers-meet/$id/initiate-payment',
+        body: {'userId': userId},
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
@@ -679,12 +762,15 @@ class ApiService {
     if (userId == null) return null;
 
     try {
-      final response = await post('/api/mobile/strangers-meet/$id/pay', body: {
-        'userId': userId,
-        'razorpay_order_id': razorpayOrderId,
-        'razorpay_payment_id': paymentId,
-        'razorpay_signature': signature,
-      });
+      final response = await post(
+        '/api/mobile/strangers-meet/$id/pay',
+        body: {
+          'userId': userId,
+          'razorpay_order_id': razorpayOrderId,
+          'razorpay_payment_id': paymentId,
+          'razorpay_signature': signature,
+        },
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
@@ -742,8 +828,8 @@ class ApiService {
   static Future<List<LegalDocument>> fetchLegalDocuments() async {
     try {
       final response = await get('/api/support/legal');
-     // debugPrint('Legal Documents Response Status: ${response.statusCode}');
-     // debugPrint('Legal Documents Response Body: ${response.body}');
+      // debugPrint('Legal Documents Response Status: ${response.statusCode}');
+      // debugPrint('Legal Documents Response Body: ${response.body}');
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['documents'] != null) {
@@ -798,9 +884,14 @@ class ApiService {
     return false;
   }
 
-  static Future<bool> uploadProfilePhotos(List<Uint8List> fileBytes, List<String> fileNames) async {
+  static Future<bool> uploadProfilePhotos(
+    List<Uint8List> fileBytes,
+    List<String> fileNames,
+  ) async {
     try {
-      debugPrint('uploadProfilePhotos: preparing to send ${fileBytes.length} files');
+      debugPrint(
+        'uploadProfilePhotos: preparing to send ${fileBytes.length} files',
+      );
       final files = <http.MultipartFile>[];
       for (int i = 0; i < fileBytes.length; i++) {
         String ext = fileNames[i].split('.').last.toLowerCase();
@@ -808,13 +899,15 @@ class ApiService {
         if (ext == 'png') mimeType = 'png';
         if (ext == 'gif') mimeType = 'gif';
         if (ext == 'webp') mimeType = 'webp';
-        
-        files.add(http.MultipartFile.fromBytes(
-          'photos',
-          fileBytes[i],
-          filename: fileNames[i],
-          contentType: MediaType('image', mimeType),
-        ));
+
+        files.add(
+          http.MultipartFile.fromBytes(
+            'photos',
+            fileBytes[i],
+            filename: fileNames[i],
+            contentType: MediaType('image', mimeType),
+          ),
+        );
       }
       final response = await postMultipart('/api/profile/photos', files: files);
       debugPrint('uploadProfilePhotos status: ${response.statusCode}');
@@ -828,51 +921,13 @@ class ApiService {
     return false;
   }
 
-  static Future<Map<String, dynamic>?> verifyFace(Uint8List profileBytes, Uint8List selfieBytes) async {
-    try {
-      if (currentUserId == null) return null;
-
-      final files = <http.MultipartFile>[
-        http.MultipartFile.fromBytes(
-          'profilePhoto',
-          profileBytes,
-          filename: 'profile.jpg',
-          contentType: MediaType('image', 'jpeg'),
-        ),
-        http.MultipartFile.fromBytes(
-          'selfiePhoto',
-          selfieBytes,
-          filename: 'selfie.jpg',
-          contentType: MediaType('image', 'jpeg'),
-        ),
-      ];
-
-      final response = await postMultipart(
-        '/api/mobile/user/verify-face',
-        fields: {'userId': currentUserId!},
-        files: files,
-      );
-
-      debugPrint('verifyFace status: ${response.statusCode}');
-      debugPrint('verifyFace body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data;
-      } else {
-        final data = jsonDecode(response.body);
-        return {'success': false, 'message': data['message'] ?? 'Verification failed'};
-      }
-    } catch (e) {
-      debugPrint('verifyFace error: $e');
-      return {'success': false, 'message': e.toString()};
-    }
-  }
 
   static Future<bool> deleteProfilePhoto(String photoId) async {
     try {
       final response = await delete('/api/profile/photos/$photoId');
-      if (response.statusCode == 200 || response.statusCode == 201 || response.statusCode == 204) {
+      if (response.statusCode == 200 ||
+          response.statusCode == 201 ||
+          response.statusCode == 204) {
         return true;
       }
     } catch (e) {
@@ -881,7 +936,11 @@ class ApiService {
     return false;
   }
 
-  static Future<bool> changePassword(String currentPassword, String newPassword, String confirmPassword) async {
+  static Future<bool> changePassword(
+    String currentPassword,
+    String newPassword,
+    String confirmPassword,
+  ) async {
     try {
       final response = await post(
         '/api/profile/change-password',
@@ -960,10 +1019,15 @@ class ApiService {
   // ─── Chat Module ───────────────────────────────────────────────────────────
 
   /// Step 2 — GET /api/mobile/chat/conversations?userId=
-  static Future<List<Map<String, dynamic>>> fetchConversations(String userId) async {
+  static Future<List<Map<String, dynamic>>> fetchConversations(
+    String userId,
+  ) async {
     try {
-      final response = await get('/api/mobile/chat/conversations', queryParameters: {'userId': userId});
-     // debugPrint('fetchConversations ${response.statusCode}: ${response.body}');
+      final response = await get(
+        '/api/mobile/chat/conversations',
+        queryParameters: {'userId': userId},
+      );
+      // debugPrint('fetchConversations ${response.statusCode}: ${response.body}');
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] is List) {
@@ -1006,13 +1070,14 @@ class ApiService {
         'userId': userId,
         'otherUserId': otherUserId,
       };
-      if (contextType != null && contextType.isNotEmpty) body['contextType'] = contextType;
+      if (contextType != null && contextType.isNotEmpty)
+        body['contextType'] = contextType;
       if (contextId != null && contextId.isNotEmpty) {
         body['contextId'] = contextId;
         body['contextType'] ??= 'plan';
       }
       final response = await post('/api/mobile/chat/conversations', body: body);
-     // debugPrint('createOrGetConversation ${response.statusCode}: ${response.body}');
+      // debugPrint('createOrGetConversation ${response.statusCode}: ${response.body}');
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
@@ -1043,7 +1108,7 @@ class ApiService {
         '/api/mobile/chat/conversations/$conversationId/messages',
         queryParameters: params,
       );
-     // debugPrint('fetchMessages ${response.statusCode}: ${response.body}');
+      // debugPrint('fetchMessages ${response.statusCode}: ${response.body}');
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] is List) {
@@ -1069,15 +1134,13 @@ class ApiService {
     String? invitationTime,
   }) async {
     try {
-      final body = <String, dynamic>{
-        'senderId': senderId,
-        'type': type,
-      };
+      final body = <String, dynamic>{'senderId': senderId, 'type': type};
       if (content != null) body['content'] = content;
       if (mediaUrl != null) body['mediaUrl'] = mediaUrl;
       if (mediaMimeType != null) body['mediaMimeType'] = mediaMimeType;
       if (invitationRef != null) body['invitationRef'] = invitationRef;
-      if (invitationRefType != null) body['invitationRefType'] = invitationRefType;
+      if (invitationRefType != null)
+        body['invitationRefType'] = invitationRefType;
       if (invitationTime != null) body['invitationTime'] = invitationTime;
 
       final response = await post(
@@ -1087,7 +1150,8 @@ class ApiService {
       //debugPrint('sendMessage ${response.statusCode}: ${response.body}');
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true) return Map<String, dynamic>.from(data['data']);
+        if (data['success'] == true)
+          return Map<String, dynamic>.from(data['data']);
       }
     } catch (e) {
       debugPrint('sendMessage error: $e');
@@ -1119,7 +1183,10 @@ class ApiService {
   }
 
   /// Step 7 — PATCH .../conversations/:id/read
-  static Future<void> markConversationRead(String conversationId, String userId) async {
+  static Future<void> markConversationRead(
+    String conversationId,
+    String userId,
+  ) async {
     try {
       // ignore: unused_local_variable
       final response = await patch(
@@ -1134,7 +1201,9 @@ class ApiService {
 
   /// GET /api/mobile/user/:otherUserId/status
   /// Returns the online status and last active timestamp for a specific user.
-  static Future<Map<String, dynamic>?> getUserOnlineStatus(String otherUserId) async {
+  static Future<Map<String, dynamic>?> getUserOnlineStatus(
+    String otherUserId,
+  ) async {
     try {
       final response = await get('/api/mobile/user/$otherUserId/status');
       //debugPrint('getUserOnlineStatus ${response.statusCode}: ${response.body}');
@@ -1165,7 +1234,7 @@ class ApiService {
         '/api/mobile/chat/conversations/$conversationId/messages/$messageId',
         body: {'userId': userId},
       );
-     // debugPrint('deleteMessage ${response.statusCode}: ${response.body}');
+      // debugPrint('deleteMessage ${response.statusCode}: ${response.body}');
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return data['success'] == true;
@@ -1185,11 +1254,10 @@ class ApiService {
 
     try {
       final platform = Platform.isIOS ? 'ios' : 'android';
-      final response = await post('/api/mobile/user/fcm-token', body: {
-        'userId': userId,
-        'token': token,
-        'platform': platform,
-      });
+      final response = await post(
+        '/api/mobile/user/fcm-token',
+        body: {'userId': userId, 'token': token, 'platform': platform},
+      );
       if (response.statusCode == 200 || response.statusCode == 201) {
         debugPrint('FCM token registered successfully');
         return true;
@@ -1205,10 +1273,10 @@ class ApiService {
     try {
       final userId = currentUserId;
       if (userId == null) return false;
-      final response = await post('/api/mobile/user/block', body: {
-        'userId': userId,
-        'targetUserId': targetUserId,
-      });
+      final response = await post(
+        '/api/mobile/user/block',
+        body: {'userId': userId, 'targetUserId': targetUserId},
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return data['success'] == true;
@@ -1223,10 +1291,10 @@ class ApiService {
     try {
       final userId = currentUserId;
       if (userId == null) return false;
-      final response = await post('/api/mobile/user/unblock', body: {
-        'userId': userId,
-        'targetUserId': targetUserId,
-      });
+      final response = await post(
+        '/api/mobile/user/unblock',
+        body: {'userId': userId, 'targetUserId': targetUserId},
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return data['success'] == true;
@@ -1241,11 +1309,14 @@ class ApiService {
     try {
       final userId = currentUserId;
       if (userId == null) return false;
-      final response = await post('/api/mobile/user/report', body: {
-        'userId': userId,
-        'targetUserId': targetUserId,
-        'reason': reason,
-      });
+      final response = await post(
+        '/api/mobile/user/report',
+        body: {
+          'userId': userId,
+          'targetUserId': targetUserId,
+          'reason': reason,
+        },
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return data['success'] == true;
@@ -1273,7 +1344,9 @@ class ApiService {
     return [];
   }
 
-  static Future<bool> updateUserPreferences({required bool showMeInMatching}) async {
+  static Future<bool> updateUserPreferences({
+    required bool showMeInMatching,
+  }) async {
     try {
       final userId = currentUserId;
       if (userId == null) return false;
@@ -1284,10 +1357,14 @@ class ApiService {
         headers['Authorization'] = 'Bearer $_authToken';
       }
 
-      final response = await http.put(uri, headers: headers, body: jsonEncode({
-        'userId': userId,
-        'showMeInMatching': showMeInMatching,
-      }));
+      final response = await http.put(
+        uri,
+        headers: headers,
+        body: jsonEncode({
+          'userId': userId,
+          'showMeInMatching': showMeInMatching,
+        }),
+      );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -1304,16 +1381,19 @@ class ApiService {
     try {
       final parts = _authToken!.split('.');
       if (parts.length != 3) return null;
-      final payload = utf8.decode(base64Url.decode(base64Url.normalize(parts[1])));
+      final payload = utf8.decode(
+        base64Url.decode(base64Url.normalize(parts[1])),
+      );
       final data = jsonDecode(payload);
-     // debugPrint('Decoded JWT payload: $data');
-      return data['id']?.toString() ?? data['userId']?.toString() ?? data['_id']?.toString();
+      // debugPrint('Decoded JWT payload: $data');
+      return data['id']?.toString() ??
+          data['userId']?.toString() ??
+          data['_id']?.toString();
     } catch (e) {
       debugPrint('Error decoding JWT: $e');
       return null;
     }
   }
-
 
   // ─── Notifications ──────────────────────────────────────────────────────────
 
@@ -1322,7 +1402,10 @@ class ApiService {
     final userId = currentUserId;
     if (userId == null) return [];
     try {
-      final response = await get('/api/mobile/user/notifications', queryParameters: {'userId': userId});
+      final response = await get(
+        '/api/mobile/user/notifications',
+        queryParameters: {'userId': userId},
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final list = data['data'] ?? data['notifications'];
@@ -1336,9 +1419,13 @@ class ApiService {
 
   static Future<Map<String, int>> fetchBadgeCounts() async {
     final userId = currentUserId;
-    if (userId == null) return {'liveFeedCount': 0, 'chatCount': 0, 'totalCount': 0};
+    if (userId == null)
+      return {'liveFeedCount': 0, 'chatCount': 0, 'totalCount': 0};
     try {
-      final response = await get('/api/mobile/user/badge-counts', queryParameters: {'userId': userId});
+      final response = await get(
+        '/api/mobile/user/badge-counts',
+        queryParameters: {'userId': userId},
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
@@ -1369,9 +1456,10 @@ class ApiService {
     final userId = currentUserId;
     if (userId == null) return false;
     try {
-      final response = await post('/api/mobile/party-plans/requests/$reqId/reject', body: {
-        'userId': userId,
-      });
+      final response = await post(
+        '/api/mobile/party-plans/requests/$reqId/reject',
+        body: {'userId': userId},
+      );
       if (response.statusCode == 200) return true;
     } catch (e) {
       debugPrint('rejectPartyPlanRequest error: $e');
@@ -1380,13 +1468,16 @@ class ApiService {
   }
 
   /// Joiner proceeds to pay after host accepts
-  static Future<Map<String, dynamic>?> initiateJoinerPayment(String reqId) async {
+  static Future<Map<String, dynamic>?> initiateJoinerPayment(
+    String reqId,
+  ) async {
     final userId = currentUserId;
     if (userId == null) return null;
     try {
-      final response = await post('/api/mobile/party-plans/requests/$reqId/initiate-joiner-payment', body: {
-        'userId': userId,
-      });
+      final response = await post(
+        '/api/mobile/party-plans/requests/$reqId/initiate-joiner-payment',
+        body: {'userId': userId},
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) return data;
@@ -1404,28 +1495,30 @@ class ApiService {
   }) async {
     final uri = Uri.parse('$baseUrl$endpoint');
     debugPrint('POST MULTIPART $uri');
-    
+
     final request = http.MultipartRequest('POST', uri);
-    
+
     if (_authToken != null) {
       request.headers['Authorization'] = 'Bearer $_authToken';
     }
-    
+
     if (fields != null) {
       request.fields.addAll(fields);
     }
-    
+
     if (files != null) {
       request.files.addAll(files);
     }
-    
+
     final streamedResponse = await request.send();
     return await http.Response.fromStream(streamedResponse);
   }
 
   // ── Chat Subscription APIs ──────────────────────────────────────────────────
 
-  static Future<Map<String, dynamic>?> getChatSessionStatus(String conversationId) async {
+  static Future<Map<String, dynamic>?> getChatSessionStatus(
+    String conversationId,
+  ) async {
     try {
       final response = await get(
         '/api/mobile/user/chat/session-status/$conversationId',
@@ -1433,7 +1526,8 @@ class ApiService {
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true) return Map<String, dynamic>.from(data['data'] ?? {});
+        if (data['success'] == true)
+          return Map<String, dynamic>.from(data['data'] ?? {});
       }
     } catch (e) {
       debugPrint('getChatSessionStatus error: \$e');
@@ -1441,13 +1535,19 @@ class ApiService {
     return null;
   }
 
-  static Future<bool> extendChat(String conversationId, {String? paymentId}) async {
+  static Future<bool> extendChat(
+    String conversationId, {
+    String? paymentId,
+  }) async {
     try {
-      final response = await post('/api/mobile/user/chat/extend', body: {
-        'conversationId': conversationId,
-        'userId': currentUserId,
-        if (paymentId != null) 'paymentId': paymentId,
-      });
+      final response = await post(
+        '/api/mobile/user/chat/extend',
+        body: {
+          'conversationId': conversationId,
+          'userId': currentUserId,
+          if (paymentId != null) 'paymentId': paymentId,
+        },
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return data['success'] == true;
@@ -1458,13 +1558,19 @@ class ApiService {
     return false;
   }
 
-  static Future<bool> requestChatExtension(String conversationId, String targetUserId) async {
+  static Future<bool> requestChatExtension(
+    String conversationId,
+    String targetUserId,
+  ) async {
     try {
-      final response = await post('/api/mobile/user/chat/request-extension', body: {
-        'conversationId': conversationId,
-        'requesterId': currentUserId,
-        'targetUserId': targetUserId,
-      });
+      final response = await post(
+        '/api/mobile/user/chat/request-extension',
+        body: {
+          'conversationId': conversationId,
+          'requesterId': currentUserId,
+          'targetUserId': targetUserId,
+        },
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return data['success'] == true;
@@ -1481,12 +1587,15 @@ class ApiService {
     String? paymentId,
   }) async {
     try {
-      final response = await post('/api/mobile/user/chat/accept-extension-request', body: {
-        'conversationId': conversationId,
-        'userId': currentUserId,
-        if (requestedById != null) 'requestedById': requestedById,
-        if (paymentId != null) 'paymentId': paymentId,
-      });
+      final response = await post(
+        '/api/mobile/user/chat/accept-extension-request',
+        body: {
+          'conversationId': conversationId,
+          'userId': currentUserId,
+          if (requestedById != null) 'requestedById': requestedById,
+          if (paymentId != null) 'paymentId': paymentId,
+        },
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return data['success'] == true;
@@ -1502,7 +1611,8 @@ class ApiService {
       final response = await get('/api/admin/settings/chat');
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true) return Map<String, dynamic>.from(data['data'] ?? {});
+        if (data['success'] == true)
+          return Map<String, dynamic>.from(data['data'] ?? {});
       }
     } catch (e) {
       debugPrint('getAdminChatSettings error: \$e');
@@ -1516,11 +1626,14 @@ class ApiService {
     required double extensionPrice,
   }) async {
     try {
-      final response = await put('/api/admin/settings/chat', body: {
-        'freeDays': freeDays,
-        'extensionDays': extensionDays,
-        'extensionPrice': extensionPrice,
-      });
+      final response = await put(
+        '/api/admin/settings/chat',
+        body: {
+          'freeDays': freeDays,
+          'extensionDays': extensionDays,
+          'extensionPrice': extensionPrice,
+        },
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return data['success'] == true;
@@ -1531,4 +1644,3 @@ class ApiService {
     return false;
   }
 }
-

@@ -17,7 +17,8 @@ class LiveFeedScreen extends StatefulWidget {
   State<LiveFeedScreen> createState() => _LiveFeedScreenState();
 }
 
-class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStateMixin {
+class _LiveFeedScreenState extends State<LiveFeedScreen>
+    with TickerProviderStateMixin {
   late TabController _tabController;
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
@@ -26,7 +27,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
   List<Map<String, dynamic>> _notifications = [];
   bool _isLoading = true;
   Timer? _pollingTimer;
-  
+
   // Track optimistic state changes for buttons
   final Map<String, String> _optimisticStates = {};
 
@@ -42,7 +43,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
     _loadFeed();
-    
+
     // Fast polling every 15 seconds
     _pollingTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       _loadFeed(showLoader: false);
@@ -62,7 +63,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
     try {
       final data = await ApiService.fetchLiveFeedData();
       final notifs = await ApiService.fetchNotifications();
-      
+
       List<Map<String, dynamic>> combined = [
         ...List<Map<String, dynamic>>.from(data['feed'] ?? []),
         ...List<Map<String, dynamic>>.from(data['myRequests'] ?? []),
@@ -70,8 +71,16 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
       ];
 
       combined.sort((a, b) {
-        final dateA = DateTime.tryParse(a['postedAt']?.toString() ?? a['createdAt']?.toString() ?? '') ?? DateTime.now();
-        final dateB = DateTime.tryParse(b['postedAt']?.toString() ?? b['createdAt']?.toString() ?? '') ?? DateTime.now();
+        final dateA =
+            DateTime.tryParse(
+              a['postedAt']?.toString() ?? a['createdAt']?.toString() ?? '',
+            ) ??
+            DateTime.now();
+        final dateB =
+            DateTime.tryParse(
+              b['postedAt']?.toString() ?? b['createdAt']?.toString() ?? '',
+            ) ??
+            DateTime.now();
         return dateB.compareTo(dateA);
       });
 
@@ -107,11 +116,15 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
     try {
       final parsedDate = DateTime.parse(planDate.toString()).toLocal();
       final now = DateTime.now();
-      if (parsedDate.year == now.year && parsedDate.month == now.month && parsedDate.day == now.day) {
+      if (parsedDate.year == now.year &&
+          parsedDate.month == now.month &&
+          parsedDate.day == now.day) {
         return 'Tonight';
       }
       final tomorrow = now.add(const Duration(days: 1));
-      if (parsedDate.year == tomorrow.year && parsedDate.month == tomorrow.month && parsedDate.day == tomorrow.day) {
+      if (parsedDate.year == tomorrow.year &&
+          parsedDate.month == tomorrow.month &&
+          parsedDate.day == tomorrow.day) {
         return 'Tomorrow';
       }
       return DateFormat('E, dd MMM').format(parsedDate);
@@ -133,25 +146,41 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
               labelColor: LunaraTheme.accentVivid,
               unselectedLabelColor: Colors.grey,
               indicatorColor: LunaraTheme.accentVivid,
-              labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              labelStyle: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
               tabs: [
                 Tab(
                   child: Badge(
-                    isLabelVisible: _feedItems.any((i) => i['type'] == 'incoming_request' && (i['requestType'] == 'table_plan' || i['requestType'] == 'stranger_meet') && i['status'] == 'pending'),
+                    isLabelVisible: _feedItems.any(
+                      (i) =>
+                          i['type'] == 'incoming_request' &&
+                          (i['requestType'] == 'table_plan' ||
+                              i['requestType'] == 'stranger_meet') &&
+                          i['status'] == 'pending',
+                    ),
                     smallSize: 8,
                     child: const Text('Stranger Meet'),
                   ),
                 ),
                 Tab(
                   child: Badge(
-                    isLabelVisible: _feedItems.any((i) => i['type'] == 'incoming_request' && i['requestType'] == 'party_plan' && i['status'] == 'pending'),
+                    isLabelVisible: _feedItems.any(
+                      (i) =>
+                          i['type'] == 'incoming_request' &&
+                          i['requestType'] == 'party_plan' &&
+                          i['status'] == 'pending',
+                    ),
                     smallSize: 8,
                     child: const Text('Party Plan'),
                   ),
                 ),
                 Tab(
                   child: Badge(
-                    isLabelVisible: _notifications.any((n) => n['isRead'] != true),
+                    isLabelVisible: _notifications.any(
+                      (n) => n['isRead'] != true,
+                    ),
                     smallSize: 8,
                     child: const Text('Other'),
                   ),
@@ -184,24 +213,34 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
         children: [
           if (!widget.isTab)
             IconButton(
-              icon: Icon(Icons.arrow_back, color: Theme.of(context).colorScheme.onSurface),
+              icon: Icon(
+                Icons.arrow_back,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
               onPressed: () => Navigator.pop(context),
             )
           else
-            const SizedBox(width: 48), // Maintain spacing for the Row's MainAxisAlignment.spaceBetween
+            const SizedBox(
+              width: 48,
+            ), // Maintain spacing for the Row's MainAxisAlignment.spaceBetween
           Row(
             children: [
               AnimatedBuilder(
                 animation: _pulseAnimation,
                 builder: (context, child) {
                   return Container(
-                    width: 8, height: 8,
+                    width: 8,
+                    height: 8,
                     decoration: BoxDecoration(
-                      color: Colors.red.withValues(alpha: _pulseAnimation.value),
+                      color: Colors.red.withValues(
+                        alpha: _pulseAnimation.value,
+                      ),
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.red.withValues(alpha: _pulseAnimation.value * 0.5),
+                          color: Colors.red.withValues(
+                            alpha: _pulseAnimation.value * 0.5,
+                          ),
                           blurRadius: 6,
                         ),
                       ],
@@ -234,8 +273,8 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
     final strangerItems = _feedItems.where((item) {
       final type = item['type'];
       final reqType = item['requestType'];
-      return type == 'table_plan' || 
-             ((type == 'incoming_request' || type == 'my_request') && 
+      return type == 'table_plan' ||
+          ((type == 'incoming_request' || type == 'my_request') &&
               (reqType == 'table_plan' || reqType == 'stranger_meet'));
     }).toList();
 
@@ -248,8 +287,10 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
               itemCount: strangerItems.length,
               itemBuilder: (context, index) {
                 final item = strangerItems[index];
-                if (item['type'] == 'incoming_request') return _buildIncomingRequestCard(item);
-                if (item['type'] == 'my_request') return _buildMyRequestCard(item);
+                if (item['type'] == 'incoming_request')
+                  return _buildIncomingRequestCard(item);
+                if (item['type'] == 'my_request')
+                  return _buildMyRequestCard(item);
                 return _buildPlanCard(item); // default fallback
               },
             ),
@@ -260,8 +301,8 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
     final partyItems = _feedItems.where((item) {
       final type = item['type'];
       final reqType = item['requestType'];
-      return type == 'party_plan' || 
-             ((type == 'incoming_request' || type == 'my_request') && 
+      return type == 'party_plan' ||
+          ((type == 'incoming_request' || type == 'my_request') &&
               reqType == 'party_plan');
     }).toList();
 
@@ -274,9 +315,12 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
               itemCount: partyItems.length,
               itemBuilder: (context, index) {
                 final item = partyItems[index];
-                if (item['type'] == 'party_plan') return _buildPartyPlanCard(item);
-                if (item['type'] == 'incoming_request') return _buildIncomingRequestCard(item);
-                if (item['type'] == 'my_request') return _buildMyRequestCard(item);
+                if (item['type'] == 'party_plan')
+                  return _buildPartyPlanCard(item);
+                if (item['type'] == 'incoming_request')
+                  return _buildIncomingRequestCard(item);
+                if (item['type'] == 'my_request')
+                  return _buildMyRequestCard(item);
                 return const SizedBox.shrink();
               },
             ),
@@ -334,31 +378,53 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
           children: [
             Row(
               children: [
-                LunaraProfileImage(userData: host, radius: 22, isInteractive: false),
+                LunaraProfileImage(
+                  userData: host,
+                  radius: 22,
+                  isInteractive: false,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('${host['name'] ?? 'Unknown'}, ${host['age'] ?? '25'}',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                      Text('${host['occupation'] ?? 'Guest'}',
-                          style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                      Text(
+                        '${host['name'] ?? 'Unknown'}, ${host['age'] ?? '25'}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      Text(
+                        '${host['occupation'] ?? 'Guest'}',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey,
+                        ),
+                      ),
                     ],
                   ),
                 ),
-                Text(timeAgo, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                Text(
+                  timeAgo,
+                  style: const TextStyle(fontSize: 10, color: Colors.grey),
+                ),
               ],
             ),
             const SizedBox(height: 12),
-            Text('${venue['name'] ?? 'Venue'} • $formattedDate at $planTime',
-                style: const TextStyle(fontSize: 12)),
+            Text(
+              '${venue['name'] ?? 'Venue'} • $formattedDate at $planTime',
+              style: const TextStyle(fontSize: 12),
+            ),
             const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
                   child: _actionButton(
-                    icon: Icons.info_outline, label: 'DETAILS', color: LunaraTheme.accentVivid, outline: true,
+                    icon: Icons.info_outline,
+                    label: 'DETAILS',
+                    color: LunaraTheme.accentVivid,
+                    outline: true,
                     onTap: () {}, // Navigate to details
                   ),
                 ),
@@ -366,9 +432,16 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
                   const SizedBox(width: 10),
                   Expanded(
                     child: _actionButton(
-                      icon: Icons.bolt, label: 'JOIN', color: LunaraTheme.primaryDeep, outline: false,
+                      icon: Icons.bolt,
+                      label: 'JOIN',
+                      color: LunaraTheme.primaryDeep,
+                      outline: false,
                       onTap: () async {
-                        final success = await ApiService.requestToJoinPartyPlan(post['id']?.toString() ?? post['planId']?.toString() ?? '');
+                        final success = await ApiService.requestToJoinPartyPlan(
+                          post['id']?.toString() ??
+                              post['planId']?.toString() ??
+                              '',
+                        );
                         if (success) _loadFeed(showLoader: false);
                       },
                     ),
@@ -395,9 +468,13 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: [Color(0xFF1F003A), Color(0xFF0D001C)]),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF1F003A), Color(0xFF0D001C)],
+          ),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.3)),
+          border: Border.all(
+            color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -406,45 +483,85 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(color: LunaraTheme.primaryDeep, borderRadius: BorderRadius.circular(20)),
-                  child: const Text('PARTY PLAN', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: LunaraTheme.primaryDeep,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    'PARTY PLAN',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
-                Text(timeAgo, style: const TextStyle(color: Colors.white54, fontSize: 10)),
+                Text(
+                  timeAgo,
+                  style: const TextStyle(color: Colors.white54, fontSize: 10),
+                ),
               ],
             ),
             const SizedBox(height: 12),
             Row(
               children: [
-                LunaraProfileImage(userData: host, radius: 22, isInteractive: false),
+                LunaraProfileImage(
+                  userData: host,
+                  radius: 22,
+                  isInteractive: false,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('${host['name'] ?? 'Unknown'}, ${host['age'] ?? '25'}',
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-                      Text('${host['occupation'] ?? 'Guest'}',
-                          style: const TextStyle(color: Colors.white70, fontSize: 10)),
+                      Text(
+                        '${host['name'] ?? 'Unknown'}, ${host['age'] ?? '25'}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      Text(
+                        '${host['occupation'] ?? 'Guest'}',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 10,
+                        ),
+                      ),
                     ],
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            if (plan['description'] != null && plan['description'].toString().isNotEmpty)
+            if (plan['description'] != null &&
+                plan['description'].toString().isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: Text(plan['description'], style: const TextStyle(color: Colors.white, fontSize: 13)),
+                child: Text(
+                  plan['description'],
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                ),
               ),
-            Text('${venue['name'] ?? 'Venue'} • $formattedDate at $planTime',
-                style: const TextStyle(color: Colors.white70, fontSize: 12)),
+            Text(
+              '${venue['name'] ?? 'Venue'} • $formattedDate at $planTime',
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
             const SizedBox(height: 14),
             Row(
               children: [
                 Expanded(
                   child: _actionButton(
-                    icon: Icons.info_outline, label: 'DETAILS', color: LunaraTheme.cyberCyan, outline: true,
+                    icon: Icons.info_outline,
+                    label: 'DETAILS',
+                    color: LunaraTheme.cyberCyan,
+                    outline: true,
                     onTap: () {},
                   ),
                 ),
@@ -452,10 +569,18 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
                   const SizedBox(width: 10),
                   Expanded(
                     child: _actionButton(
-                      icon: Icons.bolt, label: 'JOIN', color: LunaraTheme.primaryDeep, outline: false,
+                      icon: Icons.bolt,
+                      label: 'JOIN',
+                      color: LunaraTheme.primaryDeep,
+                      outline: false,
                       onTap: () async {
-                        final planId = plan['planId']?.toString() ?? plan['id']?.toString() ?? '';
-                        final success = await ApiService.requestToJoinPartyPlan(planId);
+                        final planId =
+                            plan['planId']?.toString() ??
+                            plan['id']?.toString() ??
+                            '';
+                        final success = await ApiService.requestToJoinPartyPlan(
+                          planId,
+                        );
                         if (success) _loadFeed(showLoader: false);
                       },
                     ),
@@ -474,7 +599,10 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
     final requester = req['requester'] ?? {};
     final reqId = req['id']?.toString() ?? '';
     final timeAgo = _formatTimeAgo(req['createdAt']);
-    final currentStatus = _optimisticStates[reqId] ?? req['status']?.toString().toLowerCase() ?? 'pending';
+    final currentStatus =
+        _optimisticStates[reqId] ??
+        req['status']?.toString().toLowerCase() ??
+        'pending';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -483,23 +611,45 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
         decoration: BoxDecoration(
           color: LunaraTheme.primaryDeep.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: LunaraTheme.primaryDeep.withValues(alpha: 0.3)),
+          border: Border.all(
+            color: LunaraTheme.primaryDeep.withValues(alpha: 0.3),
+          ),
         ),
         child: Column(
           children: [
             Row(
               children: [
-                LunaraProfileImage(userData: requester, radius: 20, isInteractive: false),
+                LunaraProfileImage(
+                  userData: requester,
+                  radius: 20,
+                  isInteractive: false,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('${requester['firstName'] ?? 'User'} wants to join',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                      Text('Your ${req['requestType'] == 'table_plan' ? 'Table Plan' : 'Party Plan'}',
-                          style: const TextStyle(color: Colors.black54, fontSize: 12)),
-                      Text(timeAgo, style: const TextStyle(color: Colors.black38, fontSize: 10)),
+                      Text(
+                        '${requester['firstName'] ?? 'User'} wants to join',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      Text(
+                        'Your ${req['requestType'] == 'table_plan' ? 'Table Plan' : 'Party Plan'}',
+                        style: const TextStyle(
+                          color: Colors.black54,
+                          fontSize: 12,
+                        ),
+                      ),
+                      Text(
+                        timeAgo,
+                        style: const TextStyle(
+                          color: Colors.black38,
+                          fontSize: 10,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -511,7 +661,10 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
                 children: [
                   Expanded(
                     child: _actionButton(
-                      icon: Icons.check, label: 'ACCEPT', color: Colors.green, outline: false,
+                      icon: Icons.check,
+                      label: 'ACCEPT',
+                      color: Colors.green,
+                      outline: false,
                       onTap: () async {
                         setState(() => _optimisticStates[reqId] = 'accepted');
                         await ApiService.acceptPartyPlanRequest(reqId);
@@ -522,7 +675,10 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
                   const SizedBox(width: 10),
                   Expanded(
                     child: _actionButton(
-                      icon: Icons.close, label: 'REJECT', color: Colors.red, outline: true,
+                      icon: Icons.close,
+                      label: 'REJECT',
+                      color: Colors.red,
+                      outline: true,
                       onTap: () async {
                         setState(() => _optimisticStates[reqId] = 'rejected');
                         await ApiService.rejectPartyPlanRequest(reqId);
@@ -535,19 +691,36 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
             ] else if (currentStatus == 'accepted') ...[
               Container(
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: const Center(
-                  child: Text('WAITING FOR PAYMENT', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 12)),
+                  child: Text(
+                    'WAITING FOR PAYMENT',
+                    style: TextStyle(
+                      color: Colors.orange,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
                 ),
               ),
             ] else ...[
               Container(
                 padding: const EdgeInsets.all(12),
                 child: Center(
-                  child: Text(currentStatus.toUpperCase(), style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 12)),
+                  child: Text(
+                    currentStatus.toUpperCase(),
+                    style: const TextStyle(
+                      color: Colors.grey,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
                 ),
               ),
-            ]
+            ],
           ],
         ),
       ),
@@ -560,8 +733,11 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
     final venue = plan['venue'] ?? {};
     final timeAgo = _formatTimeAgo(req['createdAt']);
     final reqId = req['id']?.toString() ?? '';
-    final currentStatus = _optimisticStates[reqId] ?? req['status']?.toString().toLowerCase() ?? 'pending';
-    
+    final currentStatus =
+        _optimisticStates[reqId] ??
+        req['status']?.toString().toLowerCase() ??
+        'pending';
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Container(
@@ -569,7 +745,9 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
         decoration: BoxDecoration(
           color: LunaraTheme.accentVivid.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: LunaraTheme.accentVivid.withValues(alpha: 0.3)),
+          border: Border.all(
+            color: LunaraTheme.accentVivid.withValues(alpha: 0.3),
+          ),
         ),
         child: Column(
           children: [
@@ -577,18 +755,42 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
               children: [
                 Container(
                   padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: LunaraTheme.accentVivid.withValues(alpha: 0.2), shape: BoxShape.circle),
-                  child: const Icon(Icons.send, color: LunaraTheme.accentVivid, size: 20),
+                  decoration: BoxDecoration(
+                    color: LunaraTheme.accentVivid.withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.send,
+                    color: LunaraTheme.accentVivid,
+                    size: 20,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('You requested to join', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                      Text('${plan['type'] == 'table_plan' ? 'Table Plan' : 'Party Plan'} at ${venue['name'] ?? 'Venue'}',
-                          style: const TextStyle(color: Colors.black54, fontSize: 12)),
-                      Text(timeAgo, style: const TextStyle(color: Colors.black38, fontSize: 10)),
+                      const Text(
+                        'You requested to join',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      Text(
+                        '${plan['type'] == 'table_plan' ? 'Table Plan' : 'Party Plan'} at ${venue['name'] ?? 'Venue'}',
+                        style: const TextStyle(
+                          color: Colors.black54,
+                          fontSize: 12,
+                        ),
+                      ),
+                      Text(
+                        timeAgo,
+                        style: const TextStyle(
+                          color: Colors.black38,
+                          fontSize: 10,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -598,19 +800,33 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
             if (currentStatus == 'accepted') ...[
               Container(
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: Colors.green.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: Column(
                   children: [
-                    const Text('YOUR REQUEST WAS ACCEPTED!', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12)),
+                    const Text(
+                      'YOUR REQUEST WAS ACCEPTED!',
+                      style: TextStyle(
+                        color: Colors.green,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
                     const SizedBox(height: 10),
                     Row(
                       children: [
                         Expanded(
                           child: _actionButton(
-                            icon: Icons.payment, label: 'PROCEED TO PAY', color: Colors.green, outline: false,
+                            icon: Icons.payment,
+                            label: 'PROCEED TO PAY',
+                            color: Colors.green,
+                            outline: false,
                             onTap: () async {
                               // Initiate payment
-                              final data = await ApiService.initiateJoinerPayment(reqId);
+                              final data =
+                                  await ApiService.initiateJoinerPayment(reqId);
                               if (data != null && mounted) {
                                 Navigator.push(
                                   context,
@@ -620,7 +836,8 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
                                       date: plan['planDate'] ?? '',
                                       time: plan['startTime'] ?? '',
                                       package: 'Join Party',
-                                      totalPrice: data['amount']?.toString() ?? '99',
+                                      totalPrice:
+                                          data['amount']?.toString() ?? '99',
                                       showSplitBill: false,
                                     ),
                                   ),
@@ -632,9 +849,14 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
                         const SizedBox(width: 8),
                         Expanded(
                           child: _actionButton(
-                            icon: Icons.cancel, label: 'CANCEL', color: Colors.red, outline: true,
+                            icon: Icons.cancel,
+                            label: 'CANCEL',
+                            color: Colors.red,
+                            outline: true,
                             onTap: () async {
-                              setState(() => _optimisticStates[reqId] = 'cancelled');
+                              setState(
+                                () => _optimisticStates[reqId] = 'cancelled',
+                              );
                               await ApiService.rejectPartyPlanRequest(reqId);
                               _loadFeed(showLoader: false);
                             },
@@ -648,13 +870,23 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
             ] else if (currentStatus == 'paid') ...[
               Container(
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: Colors.blue.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: const Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(Icons.check_circle, color: Colors.blue, size: 16),
                     SizedBox(width: 6),
-                    Text('PAYMENT CONFIRMED', style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold, fontSize: 12)),
+                    Text(
+                      'PAYMENT CONFIRMED',
+                      style: TextStyle(
+                        color: Colors.blue,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -662,10 +894,17 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
               Container(
                 padding: const EdgeInsets.all(12),
                 child: Center(
-                  child: Text(currentStatus.toUpperCase(), style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 12)),
+                  child: Text(
+                    currentStatus.toUpperCase(),
+                    style: const TextStyle(
+                      color: Colors.grey,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
                 ),
               ),
-            ]
+            ],
           ],
         ),
       ),
@@ -676,12 +915,20 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
     final title = notif['title'] ?? 'Notification';
     final body = notif['body'] ?? '';
     final timeAgo = _formatTimeAgo(notif['createdAt']);
-    
+
     IconData icon = Icons.notifications;
     Color color = Colors.grey;
-    if (title.toLowerCase().contains('like')) { icon = Icons.favorite; color = Colors.red; }
-    else if (title.toLowerCase().contains('payment')) { icon = Icons.payment; color = Colors.green; }
-    else if (title.toLowerCase().contains('visit') || title.toLowerCase().contains('view')) { icon = Icons.visibility; color = Colors.blue; }
+    if (title.toLowerCase().contains('like')) {
+      icon = Icons.favorite;
+      color = Colors.red;
+    } else if (title.toLowerCase().contains('payment')) {
+      icon = Icons.payment;
+      color = Colors.green;
+    } else if (title.toLowerCase().contains('visit') ||
+        title.toLowerCase().contains('view')) {
+      icon = Icons.visibility;
+      color = Colors.blue;
+    }
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -699,13 +946,25 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
                   const SizedBox(height: 4),
-                  Text(body, style: const TextStyle(color: Colors.black87, fontSize: 12)),
+                  Text(
+                    body,
+                    style: const TextStyle(color: Colors.black87, fontSize: 12),
+                  ),
                 ],
               ),
             ),
-            Text(timeAgo, style: const TextStyle(color: Colors.black54, fontSize: 10)),
+            Text(
+              timeAgo,
+              style: const TextStyle(color: Colors.black54, fontSize: 10),
+            ),
           ],
         ),
       ),
@@ -726,14 +985,23 @@ class _LiveFeedScreenState extends State<LiveFeedScreen> with TickerProviderStat
         decoration: BoxDecoration(
           color: outline ? color.withValues(alpha: 0.1) : color,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: outline ? color.withValues(alpha: 0.5) : Colors.transparent),
+          border: Border.all(
+            color: outline ? color.withValues(alpha: 0.5) : Colors.transparent,
+          ),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(icon, color: outline ? color : Colors.white, size: 15),
             const SizedBox(width: 6),
-            Text(label, style: TextStyle(color: outline ? color : Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+            Text(
+              label,
+              style: TextStyle(
+                color: outline ? color : Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ],
         ),
       ),

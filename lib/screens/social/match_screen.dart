@@ -56,7 +56,7 @@ class _MatchScreenState extends State<MatchScreen>
 
       // 1. Fetch all raw customers
       final rawCustomers = await ApiService.fetchCustomers();
-      
+
       // 2. Fetch all likes and matches
       final mySwipes = await ApiService.fetchMyLikesAndMatches();
 
@@ -83,7 +83,8 @@ class _MatchScreenState extends State<MatchScreen>
 
           // Filter by selected city
           if (selectedCity != null && selectedCity.isNotEmpty) {
-            if (u.city == null || u.city!.toLowerCase() != selectedCity.toLowerCase()) {
+            if (u.city == null ||
+                u.city!.toLowerCase() != selectedCity.toLowerCase()) {
               continue;
             }
           }
@@ -115,15 +116,27 @@ class _MatchScreenState extends State<MatchScreen>
           };
 
           // Find swipes
-          final outgoingSwipes = mySwipes.where(
-            (s) => s['user1Id']?.toString() == myId && s['user2Id']?.toString() == u.id,
-          ).toList();
-          final outgoingSwipe = outgoingSwipes.isNotEmpty ? outgoingSwipes.first : null;
+          final outgoingSwipes = mySwipes
+              .where(
+                (s) =>
+                    s['user1Id']?.toString() == myId &&
+                    s['user2Id']?.toString() == u.id,
+              )
+              .toList();
+          final outgoingSwipe = outgoingSwipes.isNotEmpty
+              ? outgoingSwipes.first
+              : null;
 
-          final incomingSwipes = mySwipes.where(
-            (s) => s['user2Id']?.toString() == myId && s['user1Id']?.toString() == u.id,
-          ).toList();
-          final incomingSwipe = incomingSwipes.isNotEmpty ? incomingSwipes.first : null;
+          final incomingSwipes = mySwipes
+              .where(
+                (s) =>
+                    s['user2Id']?.toString() == myId &&
+                    s['user1Id']?.toString() == u.id,
+              )
+              .toList();
+          final incomingSwipe = incomingSwipes.isNotEmpty
+              ? incomingSwipes.first
+              : null;
 
           bool isLiked = false;
           bool isMatched = false;
@@ -197,10 +210,9 @@ class _MatchScreenState extends State<MatchScreen>
     });
 
     // Make backend swipe call
-    ApiService.swipeUser(
-      targetUserId: swiped['id'],
-      action: action,
-    ).then((res) {
+    ApiService.swipeUser(targetUserId: swiped['id'], action: action).then((
+      res,
+    ) {
       if (res != null) {
         final bool matched = res['matched'] == true;
         if (matched) {
@@ -275,10 +287,14 @@ class _MatchScreenState extends State<MatchScreen>
             const SizedBox(height: 20),
             Expanded(
               child: _isLoading
-                  ? const Center(child: CircularProgressIndicator(color: LunaraTheme.accentVivid))
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: LunaraTheme.accentVivid,
+                      ),
+                    )
                   : _profiles.isEmpty
-                      ? _buildEmptyState()
-                      : _buildSwipeableCards(),
+                  ? _buildEmptyState()
+                  : _buildSwipeableCards(),
             ),
             const SizedBox(height: 20),
             _buildActionButtons(),

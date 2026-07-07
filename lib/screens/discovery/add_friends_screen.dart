@@ -21,13 +21,48 @@ class AddFriendsScreen extends StatefulWidget {
 
 class _AddFriendsScreenState extends State<AddFriendsScreen> {
   final List<Map<String, dynamic>> _allFriends = [
-    {'id': '1', 'name': 'Zane Archer', 'avatar': 'assets/images/profiles/zane.png', 'status': 'Online'},
-    {'id': '2', 'name': 'Lyra Vance', 'avatar': 'assets/images/profiles/lyra.png', 'status': 'Active 5m ago'},
-    {'id': '3', 'name': 'Elara Sky', 'avatar': 'assets/images/profiles/elara.png', 'status': 'Online'},
-    {'id': '4', 'name': 'Kaelen Voss', 'avatar': 'assets/images/profiles/zane.png', 'status': 'Busy'},
-    {'id': '5', 'name': 'Nova Ray', 'avatar': 'assets/images/profiles/lyra.png', 'status': 'Online'},
-    {'id': '6', 'name': 'Jaxen Cole', 'avatar': 'assets/images/profiles/elara.png', 'status': 'Active 1h ago'},
-    {'id': '7', 'name': 'Aria Storm', 'avatar': 'assets/images/profiles/zane.png', 'status': 'Online'},
+    {
+      'id': '1',
+      'name': 'Zane Archer',
+      'avatar': 'assets/images/profiles/zane.png',
+      'status': 'Online',
+    },
+    {
+      'id': '2',
+      'name': 'Lyra Vance',
+      'avatar': 'assets/images/profiles/lyra.png',
+      'status': 'Active 5m ago',
+    },
+    {
+      'id': '3',
+      'name': 'Elara Sky',
+      'avatar': 'assets/images/profiles/elara.png',
+      'status': 'Online',
+    },
+    {
+      'id': '4',
+      'name': 'Kaelen Voss',
+      'avatar': 'assets/images/profiles/zane.png',
+      'status': 'Busy',
+    },
+    {
+      'id': '5',
+      'name': 'Nova Ray',
+      'avatar': 'assets/images/profiles/lyra.png',
+      'status': 'Online',
+    },
+    {
+      'id': '6',
+      'name': 'Jaxen Cole',
+      'avatar': 'assets/images/profiles/elara.png',
+      'status': 'Active 1h ago',
+    },
+    {
+      'id': '7',
+      'name': 'Aria Storm',
+      'avatar': 'assets/images/profiles/zane.png',
+      'status': 'Online',
+    },
   ];
 
   final Set<String> _selectedFriends = {};
@@ -36,7 +71,9 @@ class _AddFriendsScreenState extends State<AddFriendsScreen> {
   List<Map<String, dynamic>> get _filteredFriends {
     if (_searchQuery.isEmpty) return _allFriends;
     return _allFriends
-        .where((f) => f['name'].toLowerCase().contains(_searchQuery.toLowerCase()))
+        .where(
+          (f) => f['name'].toLowerCase().contains(_searchQuery.toLowerCase()),
+        )
         .toList();
   }
 
@@ -50,9 +87,7 @@ class _AddFriendsScreenState extends State<AddFriendsScreen> {
             _buildHeader(),
             _buildSearchBar(),
             _buildSelectedFriendsHorizontal(),
-            Expanded(
-              child: _buildFriendsList(),
-            ),
+            Expanded(child: _buildFriendsList()),
             _buildFooter(),
           ],
         ),
@@ -148,14 +183,19 @@ class _AddFriendsScreenState extends State<AddFriendsScreen> {
                       right: 0,
                       top: 0,
                       child: GestureDetector(
-                        onTap: () => setState(() => _selectedFriends.remove(friendId)),
+                        onTap: () =>
+                            setState(() => _selectedFriends.remove(friendId)),
                         child: Container(
                           padding: const EdgeInsets.all(2),
                           decoration: const BoxDecoration(
                             color: Colors.black,
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(Icons.close, size: 12, color: Colors.white),
+                          child: const Icon(
+                            Icons.close,
+                            size: 12,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ),
@@ -164,7 +204,10 @@ class _AddFriendsScreenState extends State<AddFriendsScreen> {
                 const SizedBox(height: 4),
                 Text(
                   friend['name'].split(' ')[0],
-                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
@@ -213,10 +256,14 @@ class _AddFriendsScreenState extends State<AddFriendsScreen> {
             margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: isSelected ? LunaraTheme.electricViolet.withValues(alpha: 0.05) : Colors.white,
+              color: isSelected
+                  ? LunaraTheme.electricViolet.withValues(alpha: 0.05)
+                  : Colors.white,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: isSelected ? LunaraTheme.electricViolet : Colors.grey[200]!,
+                color: isSelected
+                    ? LunaraTheme.electricViolet
+                    : Colors.grey[200]!,
                 width: 1,
               ),
             ),
@@ -235,16 +282,15 @@ class _AddFriendsScreenState extends State<AddFriendsScreen> {
                         friend['name'],
                         style: TextStyle(
                           fontSize: 15,
-                          fontWeight: isSelected ? FontWeight.w900 : FontWeight.w700,
+                          fontWeight: isSelected
+                              ? FontWeight.w900
+                              : FontWeight.w700,
                           color: Colors.black,
                         ),
                       ),
                       Text(
                         friend['status'],
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[500],
-                        ),
+                        style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                       ),
                     ],
                   ),
@@ -255,10 +301,14 @@ class _AddFriendsScreenState extends State<AddFriendsScreen> {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: isSelected ? LunaraTheme.electricViolet : Colors.grey[300]!,
+                      color: isSelected
+                          ? LunaraTheme.electricViolet
+                          : Colors.grey[300]!,
                       width: 2,
                     ),
-                    color: isSelected ? LunaraTheme.electricViolet : Colors.transparent,
+                    color: isSelected
+                        ? LunaraTheme.electricViolet
+                        : Colors.transparent,
                   ),
                   child: isSelected
                       ? const Icon(Icons.check, size: 16, color: Colors.white)
@@ -294,12 +344,14 @@ class _AddFriendsScreenState extends State<AddFriendsScreen> {
           LunaraActionButton(
             text: 'PROCEED TO PAYMENT',
             onPressed: () {
-              final double basePrice = double.tryParse(widget.venue['tableBookingCharges']?.toString() ?? '20') ?? 20.0;
-              final int guests = _selectedFriends.length + 1;
-              final double subtotal = basePrice * guests;
-              final double discountPercent = double.tryParse(widget.venue['discountPercentage']?.toString() ?? '0') ?? 0.0;
-              final double discountAmount = (subtotal * discountPercent) / 100;
-              final double totalPrice = subtotal - discountAmount;
+              final chargesVal = widget.venue['tableBookingCharges'];
+              String chargesStr = '20';
+              if (chargesVal != null) {
+                final parsed = double.tryParse(chargesVal.toString());
+                if (parsed != null) {
+                  chargesStr = parsed.toStringAsFixed(0);
+                }
+              }
 
               Navigator.push(
                 context,
@@ -308,7 +360,7 @@ class _AddFriendsScreenState extends State<AddFriendsScreen> {
                     venue: widget.venue,
                     date: widget.date,
                     package: widget.package,
-                    totalPrice: '₹${totalPrice.toStringAsFixed(0)}',
+                    totalPrice: '₹$chargesStr',
                   ),
                 ),
               );

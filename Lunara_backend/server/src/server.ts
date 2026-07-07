@@ -56,7 +56,7 @@ app.get('/health', (_req, res) => {
     res.status(200).json({
         status: 'OK',
         timestamp: new Date().toISOString(),
-});
+    });
 });
 
 // Serve static files from uploads directory
@@ -96,14 +96,14 @@ app.get('/api', (_req, res) => {
         version: '1.0.0',
         status: 'Running',
         endpoints: {
-            auth:           '/api/auth',
-            mobileAuth:     '/api/mobile/auth',
+            auth: '/api/auth',
+            mobileAuth: '/api/mobile/auth',
             mobileBookings: '/api/mobile/bookings',
-            mobilePlans:    '/api/mobile/plans',
-            mobileChat:     '/api/mobile/chat',
+            mobilePlans: '/api/mobile/plans',
+            mobileChat: '/api/mobile/chat',
             mobileGroupParty: '/api/mobile/group-parties',
-            health:         '/health',
-            dashboard:      '/api/dashboard',
+            health: '/health',
+            dashboard: '/api/dashboard',
         },
     });
 });
@@ -146,11 +146,11 @@ io.on('connection', (socket) => {
         socket.join(`user_${userId}`);
         (socket as any).userId = userId;
         logger.info(`Socket ${socket.id} joined user room user_${userId}`);
-        
+
         try {
             await User.update({ isOnline: true, lastActiveAt: new Date() }, { where: { id: userId } });
             io.emit('user_status_changed', { userId, isOnline: true, lastActiveAt: new Date() });
-            
+
             const convs = await Conversation.findAll({
                 where: {
                     [Op.or]: [{ participantOne: userId }, { participantTwo: userId }]
@@ -160,12 +160,12 @@ io.on('connection', (socket) => {
             if (convIds.length > 0) {
                 await Message.update(
                     { status: MessageStatus.DELIVERED },
-                    { 
-                        where: { 
+                    {
+                        where: {
                             conversationId: { [Op.in]: convIds },
                             senderId: { [Op.ne]: userId },
-                            status: MessageStatus.SENT 
-                        } 
+                            status: MessageStatus.SENT
+                        }
                     }
                 );
                 for (const conv of convs) {

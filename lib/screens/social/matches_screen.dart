@@ -59,9 +59,13 @@ class _MatchesScreenState extends State<MatchesScreen> {
     try {
       final dt = DateTime.parse(dateTimeStr).toLocal();
       final now = DateTime.now();
-      final isToday = dt.year == now.year && dt.month == now.month && dt.day == now.day;
-      final timeStr = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-      return isToday ? 'Tonight at $timeStr' : '${dt.day}/${dt.month}/${dt.year} at $timeStr';
+      final isToday =
+          dt.year == now.year && dt.month == now.month && dt.day == now.day;
+      final timeStr =
+          '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+      return isToday
+          ? 'Tonight at $timeStr'
+          : '${dt.day}/${dt.month}/${dt.year} at $timeStr';
     } catch (e) {
       return dateTimeStr;
     }
@@ -117,114 +121,126 @@ class _MatchesScreenState extends State<MatchesScreen> {
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.filter_list, color: Colors.black87), // Dark icon
+            icon: const Icon(
+              Icons.filter_list,
+              color: Colors.black87,
+            ), // Dark icon
             onPressed: () {},
           ),
         ],
       ),
-      body: _isLoading 
-        ? const Center(child: CircularProgressIndicator(color: LunaraTheme.deepBlue))
-        : SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 16),
-                // LIVE Header
-                Row(
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
+      body: _isLoading
+          ? const Center(
+              child: CircularProgressIndicator(color: LunaraTheme.deepBlue),
+            )
+          : SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 16),
+                  // LIVE Header
+                  Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'LIVE',
-                      style: TextStyle(
-                        color: Colors.red,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                        letterSpacing: 1.0,
+                      const SizedBox(width: 8),
+                      const Text(
+                        'LIVE',
+                        style: TextStyle(
+                          color: Colors.red,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                          letterSpacing: 1.0,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '${_plans?.length ?? 0} plans • ${_plans?.length ?? 0} updates tonight',
-                      style: TextStyle(
-                        color: Colors.grey[700], // Darker grey for light theme
-                        fontSize: 12,
+                      const SizedBox(width: 8),
+                      Text(
+                        '${_plans?.length ?? 0} plans • ${_plans?.length ?? 0} updates tonight',
+                        style: TextStyle(
+                          color:
+                              Colors.grey[700], // Darker grey for light theme
+                          fontSize: 12,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                // PLANS NEAR YOU Header
-                Row(
-                  children: [
-                    Text(
-                      'PLANS NEAR YOU',
-                      style: TextStyle(
-                        color: Colors.black, // Darker grey
-                        fontSize: 12,
-                        letterSpacing: 2.0,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Container(
-                        height: 1,
-                        color: Colors.grey.withOpacity(0.2), // Lighter divider
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                if (_plans == null || _plans!.isEmpty)
-                  Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(32.0),
-                      child: Text(
-                        'No active plans nearby right now.\nCheck back later!',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.grey[600]),
-                      ),
-                    ),
+                    ],
                   ),
-                // List of Cards
-                ...(_plans ?? []).map((plan) => _buildPlanCard(plan)).toList(),
-                const SizedBox(height: 32), // Bottom padding
-              ],
+                  const SizedBox(height: 24),
+                  // PLANS NEAR YOU Header
+                  Row(
+                    children: [
+                      Text(
+                        'PLANS NEAR YOU',
+                        style: TextStyle(
+                          color: Colors.black, // Darker grey
+                          fontSize: 12,
+                          letterSpacing: 2.0,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Container(
+                          height: 1,
+                          color: Colors.grey.withOpacity(
+                            0.2,
+                          ), // Lighter divider
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  if (_plans == null || _plans!.isEmpty)
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(32.0),
+                        child: Text(
+                          'No active plans nearby right now.\nCheck back later!',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey[600]),
+                        ),
+                      ),
+                    ),
+                  // List of Cards
+                  ...(_plans ?? [])
+                      .map((plan) => _buildPlanCard(plan))
+                      .toList(),
+                  const SizedBox(height: 32), // Bottom padding
+                ],
+              ),
             ),
-          ),
     );
   }
 
   Widget _buildPlanCard(Map<String, dynamic> plan) {
     final user = plan['user'] ?? {};
     final venue = plan['venue'] ?? {};
-    
+
     final name = '${user['firstName'] ?? ''} ${user['lastName'] ?? ''}'.trim();
     final displayName = name.isEmpty ? 'Anonymous' : name;
-    
-    final job = user['occupation']?.toString().isNotEmpty == true 
-        ? user['occupation'] 
+
+    final job = user['occupation']?.toString().isNotEmpty == true
+        ? user['occupation']
         : 'Lunara Member';
-        
+
     final venueName = venue['name'] ?? 'Unknown Venue';
-    
+
     final time = _formatTime(plan['planDateTime']);
     final elapsed = _getElapsed(plan['createdAt']);
-    
+
     final matchPercentage = ApiService.calculateMatchPercentage(user);
     final matchColor = _getMatchColor(matchPercentage);
-    
-    final profileUrl = user['profilePhotoUrl'] != null && user['profilePhotoUrl'].toString().isNotEmpty
-        ? '${ApiService.baseUrl}${user['profilePhotoUrl']}' 
+
+    final profileUrl =
+        user['profilePhotoUrl'] != null &&
+            user['profilePhotoUrl'].toString().isNotEmpty
+        ? '${ApiService.baseUrl}${user['profilePhotoUrl']}'
         : null;
 
     return Container(
@@ -269,10 +285,15 @@ class _MatchesScreenState extends State<MatchesScreen> {
                   children: [
                     CircleAvatar(
                       radius: 24,
-                      backgroundImage: profileUrl != null 
-                          ? NetworkImage(profileUrl) 
-                          : const AssetImage(LunaraTheme.defaultAvatar) as ImageProvider,
-                      onBackgroundImageError: (exception, stackTrace) {}, // Handle broken images silently
+                      backgroundImage: profileUrl != null
+                          ? NetworkImage(profileUrl)
+                          : const AssetImage(LunaraTheme.defaultAvatar)
+                                as ImageProvider,
+                      onBackgroundImageError:
+                          (
+                            exception,
+                            stackTrace,
+                          ) {}, // Handle broken images silently
                     ),
                     const SizedBox(width: 12),
                   ],
@@ -309,7 +330,11 @@ class _MatchesScreenState extends State<MatchesScreen> {
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          Icon(Icons.work_outline, color: Colors.grey[600], size: 14),
+                          Icon(
+                            Icons.work_outline,
+                            color: Colors.grey[600],
+                            size: 14,
+                          ),
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
@@ -330,9 +355,14 @@ class _MatchesScreenState extends State<MatchesScreen> {
               ),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
-                  color: matchColor.withOpacity(0.1), // Lighter badge background
+                  color: matchColor.withOpacity(
+                    0.1,
+                  ), // Lighter badge background
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Column(
@@ -361,12 +391,19 @@ class _MatchesScreenState extends State<MatchesScreen> {
           ),
           const SizedBox(height: 16),
           // Divider
-          Divider(color: Colors.grey.withOpacity(0.1), height: 1), // Darker divider for light theme
+          Divider(
+            color: Colors.grey.withOpacity(0.1),
+            height: 1,
+          ), // Darker divider for light theme
           const SizedBox(height: 16),
           // Row 2: Location and Time
           Row(
             children: [
-              const Icon(Icons.location_on, color: LunaraTheme.deepBlue, size: 16), // Use deepBlue for better contrast on white
+              const Icon(
+                Icons.location_on,
+                color: LunaraTheme.deepBlue,
+                size: 16,
+              ), // Use deepBlue for better contrast on white
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -382,10 +419,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
               const SizedBox(width: 4),
               Text(
                 elapsed,
-                style: TextStyle(
-                  color: Colors.grey[500],
-                  fontSize: 12,
-                ),
+                style: TextStyle(color: Colors.grey[500], fontSize: 12),
               ),
             ],
           ),
@@ -409,19 +443,22 @@ class _MatchesScreenState extends State<MatchesScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => PostDetailScreen(
-                          post: postMap,
-                          venue: venue,
-                        ),
+                        builder: (_) =>
+                            PostDetailScreen(post: postMap, venue: venue),
                       ),
                     );
                   },
                   icon: const Icon(Icons.person_search, size: 18),
                   label: const Text('SEE DETAILS'),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: LunaraTheme.electricViolet, // deepBlue for better light theme contrast
-                    side: BorderSide(color: LunaraTheme.electricViolet.withOpacity(0.5)),
-                    backgroundColor: LunaraTheme.electricViolet.withOpacity(0.05),
+                    foregroundColor: LunaraTheme
+                        .electricViolet, // deepBlue for better light theme contrast
+                    side: BorderSide(
+                      color: LunaraTheme.electricViolet.withOpacity(0.5),
+                    ),
+                    backgroundColor: LunaraTheme.electricViolet.withOpacity(
+                      0.05,
+                    ),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -438,11 +475,15 @@ class _MatchesScreenState extends State<MatchesScreen> {
                   ),
                   child: ElevatedButton.icon(
                     onPressed: () {
-                      final bool isPaidByPartner = plan['paymentStatus'] == 'paid_by_partner' || plan['isPaidByPartner'] == true;
+                      final bool isPaidByPartner =
+                          plan['paymentStatus'] == 'paid_by_partner' ||
+                          plan['isPaidByPartner'] == true;
                       if (isPaidByPartner) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: const Text('Payment already paid by partner! You can join directly.'),
+                            content: const Text(
+                              'Payment already paid by partner! You can join directly.',
+                            ),
                             backgroundColor: LunaraTheme.electricViolet,
                             behavior: SnackBarBehavior.floating,
                           ),
@@ -453,7 +494,10 @@ class _MatchesScreenState extends State<MatchesScreen> {
                           MaterialPageRoute(
                             builder: (_) => PaymentConfirmationScreen(
                               venue: venue,
-                              date: plan['planDateTime'] ?? plan['createdAt'] ?? 'Today',
+                              date:
+                                  plan['planDateTime'] ??
+                                  plan['createdAt'] ??
+                                  'Today',
                               package: 'Party Plan Safety Deposit',
                               totalPrice: '₹99',
                               showSplitBill: false,
@@ -466,7 +510,8 @@ class _MatchesScreenState extends State<MatchesScreen> {
                     label: const Text('JOIN'),
                     style: ElevatedButton.styleFrom(
                       foregroundColor: Colors.white,
-                      backgroundColor: Colors.transparent, // Let gradient show through
+                      backgroundColor:
+                          Colors.transparent, // Let gradient show through
                       shadowColor: Colors.transparent,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(

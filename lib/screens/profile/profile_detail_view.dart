@@ -61,43 +61,59 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
   }
 
   void _reportUser() {
-    showDialog(context: context, builder: (ctx) => AlertDialog(
-      title: const Text('Report User'),
-      content: const Text('Are you sure you want to report and block this user?'),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-        TextButton(
-          onPressed: () async {
-            Navigator.pop(ctx);
-            await BlockService.reportUser(widget.user.id, 'Inappropriate profile content');
-            _checkBlockStatus();
-            if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User reported and blocked')));
-          },
-          child: const Text('Report', style: TextStyle(color: Colors.red)),
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Report User'),
+        content: const Text(
+          'Are you sure you want to report and block this user?',
         ),
-      ],
-    ));
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await BlockService.reportUser(
+                widget.user.id,
+                'Inappropriate profile content',
+              );
+              _checkBlockStatus();
+              if (mounted)
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('User reported and blocked')),
+                );
+            },
+            child: const Text('Report', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
   }
 
   List<String> get _userPhotos {
     if (widget.user.photos.isNotEmpty) {
       return widget.user.photos;
     }
-    if (widget.user.profilePhoto != null && widget.user.profilePhoto!.isNotEmpty) {
+    if (widget.user.profilePhoto != null &&
+        widget.user.profilePhoto!.isNotEmpty) {
       return [widget.user.profilePhoto!];
     }
     return [];
   }
 
   void _showPreviousPhoto() {
-    final photos = _userPhotos;    
+    final photos = _userPhotos;
     if (photos.length <= 1) return;
     setState(() {
-      _currentPhotoIndex = (_currentPhotoIndex - 1 + photos.length) % photos.length;
+      _currentPhotoIndex =
+          (_currentPhotoIndex - 1 + photos.length) % photos.length;
     });
   }
 
-  void _showNextPhoto() {    
+  void _showNextPhoto() {
     final photos = _userPhotos;
     if (photos.length <= 1) return;
     setState(() {
@@ -137,10 +153,14 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
       }
       workEduRows.add(_buildInfoRow(Icons.work_outline_rounded, occ));
     } else if (widget.user.company != null && widget.user.company!.isNotEmpty) {
-      workEduRows.add(_buildInfoRow(Icons.business_outlined, widget.user.company!));
+      workEduRows.add(
+        _buildInfoRow(Icons.business_outlined, widget.user.company!),
+      );
     }
     if (widget.user.education != null && widget.user.education!.isNotEmpty) {
-      workEduRows.add(_buildInfoRow(Icons.school_outlined, widget.user.education!));
+      workEduRows.add(
+        _buildInfoRow(Icons.school_outlined, widget.user.education!),
+      );
     }
 
     if (workEduRows.isNotEmpty) {
@@ -165,7 +185,11 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
             children: [
               const Row(
                 children: [
-                  Icon(Icons.music_note_rounded, size: 14, color: LunaraTheme.cyberCyan),
+                  Icon(
+                    Icons.music_note_rounded,
+                    size: 14,
+                    color: LunaraTheme.cyberCyan,
+                  ),
                   SizedBox(width: 6),
                   Text(
                     'MY MUSIC',
@@ -184,11 +208,16 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                 runSpacing: 6,
                 children: widget.user.musicPreference.take(3).map((genre) {
                   return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.15),
+                      ),
                     ),
                     child: Text(
                       genre.toUpperCase(),
@@ -211,13 +240,27 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
     // Section 4: Preferences (Looking For, Smoking, Budget)
     final List<Widget> prefRows = [];
     if (widget.user.lookingFor.isNotEmpty) {
-      prefRows.add(_buildInfoRow(Icons.search_rounded, 'Looking for: ${widget.user.lookingFor.join(", ")}'));
+      prefRows.add(
+        _buildInfoRow(
+          Icons.search_rounded,
+          'Looking for: ${widget.user.lookingFor.join(", ")}',
+        ),
+      );
     }
-    if (widget.user.smokingPreference != null && widget.user.smokingPreference!.isNotEmpty) {
-      prefRows.add(_buildInfoRow(Icons.smoke_free_rounded, widget.user.smokingPreference!));
+    if (widget.user.smokingPreference != null &&
+        widget.user.smokingPreference!.isNotEmpty) {
+      prefRows.add(
+        _buildInfoRow(Icons.smoke_free_rounded, widget.user.smokingPreference!),
+      );
     }
-    if (widget.user.budgetRange != null && widget.user.budgetRange!.isNotEmpty) {
-      prefRows.add(_buildInfoRow(Icons.currency_rupee_rounded, 'Budget: ${widget.user.budgetRange}'));
+    if (widget.user.budgetRange != null &&
+        widget.user.budgetRange!.isNotEmpty) {
+      prefRows.add(
+        _buildInfoRow(
+          Icons.currency_rupee_rounded,
+          'Budget: ${widget.user.budgetRange}',
+        ),
+      );
     }
 
     if (prefRows.isNotEmpty) {
@@ -312,9 +355,14 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                 onPressed: _toggleBlock,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
                 ),
-                child: const Text('Unblock', style: TextStyle(color: Colors.white)),
+                child: const Text(
+                  'Unblock',
+                  style: TextStyle(color: Colors.white),
+                ),
               ),
             ],
           ),
@@ -329,20 +377,20 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
         removeTop: true,
         child: CustomScrollView(
           slivers: [
-          _buildSliverAppBar(),
-          SliverToBoxAdapter(
-            child: Column(
-              children: [
-                const SizedBox(height: 32),
-                _buildActionButtons(),
-                _buildDetailsSection(),
-                const SizedBox(height: 32),
-                _buildPhotoGridLabel(),
-                _buildPhotoGrid(),
-                const SizedBox(height: 100),
-              ],
+            _buildSliverAppBar(),
+            SliverToBoxAdapter(
+              child: Column(
+                children: [
+                  const SizedBox(height: 32),
+                  _buildActionButtons(),
+                  _buildDetailsSection(),
+                  const SizedBox(height: 32),
+                  _buildPhotoGridLabel(),
+                  _buildPhotoGrid(),
+                  const SizedBox(height: 100),
+                ],
+              ),
             ),
-          ),
           ],
         ),
       ),
@@ -356,8 +404,12 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
         : widget.user.profilePhoto;
 
     final infoSections = _buildDynamicInfoSections();
-    final int sectionIndex = infoSections.isNotEmpty ? _currentPhotoIndex % infoSections.length : 0;
-    final Widget activeSection = infoSections.isNotEmpty ? infoSections[sectionIndex] : const SizedBox.shrink();
+    final int sectionIndex = infoSections.isNotEmpty
+        ? _currentPhotoIndex % infoSections.length
+        : 0;
+    final Widget activeSection = infoSections.isNotEmpty
+        ? infoSections[sectionIndex]
+        : const SizedBox.shrink();
 
     return SliverAppBar(
       expandedHeight: MediaQuery.of(context).size.height,
@@ -373,7 +425,10 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: Colors.black.withValues(alpha: 0.35),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.2), width: 1.5),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  width: 1.5,
+                ),
               ),
               child: IconButton(
                 padding: EdgeInsets.zero,
@@ -395,11 +450,17 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: Colors.black.withValues(alpha: 0.35),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.2), width: 1.5),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      width: 1.5,
+                    ),
                   ),
                   child: IconButton(
                     padding: EdgeInsets.zero,
-                    icon: const Icon(Icons.settings_outlined, color: Colors.white),
+                    icon: const Icon(
+                      Icons.settings_outlined,
+                      color: Colors.white,
+                    ),
                     onPressed: () => Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => const SettingsScreen()),
@@ -419,7 +480,10 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: Colors.black.withValues(alpha: 0.35),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.2), width: 1.5),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      width: 1.5,
+                    ),
                   ),
                   child: PopupMenuButton<String>(
                     icon: const Icon(Icons.more_vert, color: Colors.white),
@@ -431,16 +495,22 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                         _reportUser();
                       }
                     },
-                    itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                      PopupMenuItem<String>(
-                        value: 'block',
-                        child: Text(_isBlocked ? 'Unblock User' : 'Block User'),
-                      ),
-                      const PopupMenuItem<String>(
-                        value: 'report',
-                        child: Text('Report User', style: TextStyle(color: Colors.red)),
-                      ),
-                    ],
+                    itemBuilder: (BuildContext context) =>
+                        <PopupMenuEntry<String>>[
+                          PopupMenuItem<String>(
+                            value: 'block',
+                            child: Text(
+                              _isBlocked ? 'Unblock User' : 'Block User',
+                            ),
+                          ),
+                          const PopupMenuItem<String>(
+                            value: 'report',
+                            child: Text(
+                              'Report User',
+                              style: TextStyle(color: Colors.red),
+                            ),
+                          ),
+                        ],
                   ),
                 ),
               ),
@@ -462,14 +532,18 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Background Gradient/Image            
+              // Background Gradient/Image
               if (photo != null && photo.isNotEmpty)
                 SizedBox.expand(
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 300),
-                    transitionBuilder: (Widget child, Animation<double> animation) {
-                      return FadeTransition(opacity: animation, child: child);
-                    },
+                    transitionBuilder:
+                        (Widget child, Animation<double> animation) {
+                          return FadeTransition(
+                            opacity: animation,
+                            child: child,
+                          );
+                        },
                     child: SizedBox.expand(
                       key: ValueKey<String>(photo),
                       child: Image.network(
@@ -477,7 +551,9 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) => Container(
                           key: const ValueKey<String>('error_placeholder'),
-                          decoration: const BoxDecoration(gradient: LunaraTheme.deepPurpleGradient),
+                          decoration: const BoxDecoration(
+                            gradient: LunaraTheme.deepPurpleGradient,
+                          ),
                         ),
                       ),
                     ),
@@ -486,9 +562,10 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
               else
                 Container(
                   key: const ValueKey<String>('empty_placeholder'),
-                  decoration: const BoxDecoration(gradient: LunaraTheme.deepPurpleGradient),
+                  decoration: const BoxDecoration(
+                    gradient: LunaraTheme.deepPurpleGradient,
+                  ),
                 ),
-              
 
               // Beautiful Top and Bottom Gradients for Text Readability
               Positioned(
@@ -567,100 +644,128 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                 child: Container(
                   padding: const EdgeInsets.fromLTRB(24, 40, 24, 24),
                   child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
                         children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.baseline,
-                            textBaseline: TextBaseline.alphabetic,
-                            children: [
-                              Flexible(
+                          Flexible(
+                            child: Text(
+                              widget.user.fullName.toUpperCase(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 28,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1.2,
+                                fontFamily: 'AllroundGothic',
+                                shadows: [
+                                  Shadow(
+                                    color: Colors.black45,
+                                    blurRadius: 4,
+                                    offset: Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (widget.user.age != null) ...[
+                            const SizedBox(width: 8),
+                            Text(
+                              ', ${widget.user.age}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 24,
+                                fontWeight: FontWeight.w900,
+                                shadows: [
+                                  Shadow(
+                                    color: Colors.black45,
+                                    blurRadius: 4,
+                                    offset: Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          if (widget.user.isVerified) ...[
+                            const SizedBox(width: 8),
+                            const Icon(
+                              Icons.verified_rounded,
+                              color: LunaraTheme.cyberCyan,
+                              size: 24,
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(20),
+                            child: BackdropFilter(
+                              filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.3),
+                                  ),
+                                ),
                                 child: Text(
-                                  widget.user.fullName.toUpperCase(),
+                                  (widget.user.city ?? 'UNKNOWN CITY')
+                                      .toUpperCase(),
                                   style: const TextStyle(
                                     color: Colors.white,
-                                    fontSize: 28,
+                                    fontSize: 10,
                                     fontWeight: FontWeight.w900,
-                                    letterSpacing: 1.2,
-                                    fontFamily: 'AllroundGothic',
-                                    shadows: [Shadow(color: Colors.black45, blurRadius: 4, offset: Offset(0, 2))],
+                                    letterSpacing: 1.5,
                                   ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              if (widget.user.age != null) ...[
-                                const SizedBox(width: 8),
-                                Text(
-                                  ', ${widget.user.age}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.w900,
-                                    shadows: [Shadow(color: Colors.black45, blurRadius: 4, offset: Offset(0, 2))],
-                                  ),
-                                ),
-                              ],
-                              if (widget.user.isVerified) ...[
-                                const SizedBox(width: 8),
-                                const Icon(
-                                  Icons.verified_rounded,
-                                  color: LunaraTheme.cyberCyan,
-                                  size: 24,
-                                ),
-                              ],
-                            ],
+                            ),
                           ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              ClipRRect(
+                          const SizedBox(width: 8),
+                          if (widget.user.gender != null)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: LunaraTheme.electricViolet.withValues(
+                                  alpha: 0.25,
+                                ),
                                 borderRadius: BorderRadius.circular(20),
-                                child: BackdropFilter(
-                                  filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withValues(alpha: 0.2),
-                                      borderRadius: BorderRadius.circular(20),
-                                      border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
-                                    ),
-                                    child: Text(
-                                      (widget.user.city ?? 'UNKNOWN CITY').toUpperCase(),
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w900,
-                                        letterSpacing: 1.5,
-                                      ),
-                                    ),
+                                border: Border.all(
+                                  color: LunaraTheme.electricViolet.withValues(
+                                    alpha: 0.45,
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              if (widget.user.gender != null)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: LunaraTheme.electricViolet.withValues(alpha: 0.25),
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.45)),
-                                  ),
-                                  child: Text(
-                                    widget.user.gender!.toUpperCase(),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 1.5,
-                                    ),
-                                  ),
+                              child: Text(
+                                widget.user.gender!.toUpperCase(),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 1.5,
                                 ),
-                            ],
-                          ),
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 300),
-                            transitionBuilder: (Widget child, Animation<double> animation) {
+                              ),
+                            ),
+                        ],
+                      ),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 300),
+                        transitionBuilder:
+                            (Widget child, Animation<double> animation) {
                               return FadeTransition(
                                 opacity: animation,
                                 child: SlideTransition(
@@ -672,16 +777,16 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                                 ),
                               );
                             },
-                            child: SizedBox(
-                              key: ValueKey<int>(sectionIndex),
-                              width: double.infinity,
-                              child: activeSection,
-                            ),
-                          ),
-                        ],
+                        child: SizedBox(
+                          key: ValueKey<int>(sectionIndex),
+                          width: double.infinity,
+                          child: activeSection,
+                        ),
                       ),
-                    ),
+                    ],
                   ),
+                ),
+              ),
             ],
           ),
         ),
@@ -691,7 +796,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
 
   Widget _buildActionButtons() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     if (widget.isMe) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -730,7 +835,6 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // Backtrack button with label
         Opacity(
           opacity: widget.canBacktrack ? 1.0 : 0.4,
           child: Column(
@@ -741,28 +845,14 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                 height: 48,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: widget.canBacktrack
-                      ? LunaraTheme.amberGlow
-                      : LinearGradient(
-                          colors: isDark 
-                              ? [Colors.grey.shade800, Colors.grey.shade900]
-                              : [Colors.grey.shade200, Colors.grey.shade300],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                  border: Border.all(
-                    color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.grey.shade300,
-                    width: 1.5,
-                  ),
-                  boxShadow: widget.canBacktrack
-                      ? [
-                          BoxShadow(
-                            color: Colors.amber.withValues(alpha: 0.25),
-                            blurRadius: 10,
-                            spreadRadius: 1,
-                          ),
-                        ]
-                      : null,
+                  gradient: LunaraTheme.amberGlow,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.amber.withValues(alpha: isDark ? 0.35 : 0.15),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
                 child: IconButton(
                   icon: const Icon(Icons.undo_rounded, color: Colors.white),
@@ -771,10 +861,10 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
               ),
               const SizedBox(height: 6),
               Text(
-                'Backtrack', 
+                'Backtrack',
                 style: TextStyle(
-                  fontSize: 11, 
-                  color: isDark ? Colors.white60 : Colors.black54, 
+                  fontSize: 11,
+                  color: isDark ? Colors.white60 : Colors.black54,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -798,7 +888,9 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFFF2A6D).withValues(alpha: isDark ? 0.35 : 0.15),
+                    color: const Color(
+                      0xFFFF2A6D,
+                    ).withValues(alpha: isDark ? 0.35 : 0.15),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
@@ -811,10 +903,10 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Nope', 
+              'Nope',
               style: TextStyle(
-                fontSize: 11, 
-                color: isDark ? Colors.white60 : Colors.black54, 
+                fontSize: 11,
+                color: isDark ? Colors.white60 : Colors.black54,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -837,7 +929,9 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF00B5FF).withValues(alpha: isDark ? 0.4 : 0.2),
+                    color: const Color(
+                      0xFF00B5FF,
+                    ).withValues(alpha: isDark ? 0.4 : 0.2),
                     blurRadius: 12,
                     offset: const Offset(0, 5),
                   ),
@@ -851,10 +945,10 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Like', 
+              'Like',
               style: TextStyle(
-                fontSize: 11, 
-                color: isDark ? Colors.white60 : Colors.black54, 
+                fontSize: 11,
+                color: isDark ? Colors.white60 : Colors.black54,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -877,7 +971,9 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF7F00FF).withValues(alpha: isDark ? 0.35 : 0.15),
+                    color: const Color(
+                      0xFF7F00FF,
+                    ).withValues(alpha: isDark ? 0.35 : 0.15),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
@@ -890,10 +986,10 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Super', 
+              'Super',
               style: TextStyle(
-                fontSize: 11, 
-                color: isDark ? Colors.white60 : Colors.black54, 
+                fontSize: 11,
+                color: isDark ? Colors.white60 : Colors.black54,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -903,7 +999,13 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
     );
   }
 
-  Widget _actionButton(String label, Color bgColor, Color textColor, VoidCallback onTap, {bool isOutlined = false}) {
+  Widget _actionButton(
+    String label,
+    Color bgColor,
+    Color textColor,
+    VoidCallback onTap, {
+    bool isOutlined = false,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -913,7 +1015,9 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
           color: isOutlined ? Colors.transparent : bgColor,
           borderRadius: BorderRadius.circular(16),
           border: isOutlined ? Border.all(color: Colors.grey[200]!) : null,
-          gradient: !isOutlined && bgColor == LunaraTheme.electricViolet ? LunaraTheme.purpleGradient : null,
+          gradient: !isOutlined && bgColor == LunaraTheme.electricViolet
+              ? LunaraTheme.purpleGradient
+              : null,
         ),
         child: Text(
           label,
@@ -930,7 +1034,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
 
   Widget _buildPhotoGridLabel() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       child: Row(
@@ -976,38 +1080,28 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
     final user = widget.user;
     final List<Map<String, dynamic>> details = [];
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     if (user.occupation != null && user.occupation!.isNotEmpty) {
       String occ = user.occupation!;
       if (user.company != null && user.company!.isNotEmpty) {
         occ += ' at ${user.company}';
       }
-      details.add({
-        'icon': Icons.work_outline_rounded,
-        'label': occ,
-      });
+      details.add({'icon': Icons.work_outline_rounded, 'label': occ});
     } else if (user.company != null && user.company!.isNotEmpty) {
-      details.add({
-        'icon': Icons.business_outlined,
-        'label': user.company,
-      });
+      details.add({'icon': Icons.business_outlined, 'label': user.company});
     }
-    
+
     if (user.education != null && user.education!.isNotEmpty) {
-      details.add({
-        'icon': Icons.school_outlined,
-        'label': user.education,
-      });
+      details.add({'icon': Icons.school_outlined, 'label': user.education});
     }
-    
-    
+
     if (user.smokingPreference != null && user.smokingPreference!.isNotEmpty) {
       details.add({
         'icon': Icons.smoke_free_rounded,
         'label': user.smokingPreference,
       });
     }
-    
+
     if (user.budgetRange != null && user.budgetRange!.isNotEmpty) {
       details.add({
         'icon': Icons.currency_rupee_rounded,
@@ -1015,7 +1109,11 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
       });
     }
 
-    if (details.isEmpty && user.musicPreference.isEmpty && user.lookingFor.isEmpty && user.interests.isEmpty && user.nightlifePreference.isEmpty) {
+    if (details.isEmpty &&
+        user.musicPreference.isEmpty &&
+        user.lookingFor.isEmpty &&
+        user.interests.isEmpty &&
+        user.nightlifePreference.isEmpty) {
       return const SizedBox.shrink();
     }
 
@@ -1054,25 +1152,38 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
               runSpacing: 8,
               children: details.map((d) {
                 return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
-                    color: isDark ? Colors.white.withValues(alpha: 0.03) : Colors.purple.withValues(alpha: 0.02),
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.03)
+                        : Colors.purple.withValues(alpha: 0.02),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: LunaraTheme.electricViolet.withValues(alpha: isDark ? 0.35 : 0.15),
+                      color: LunaraTheme.electricViolet.withValues(
+                        alpha: isDark ? 0.35 : 0.15,
+                      ),
                       width: 1.5,
                     ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(d['icon'] as IconData, size: 16, color: LunaraTheme.electricViolet),
+                      Icon(
+                        d['icon'] as IconData,
+                        size: 16,
+                        color: LunaraTheme.electricViolet,
+                      ),
                       const SizedBox(width: 8),
                       Flexible(
                         child: Text(
                           (d['label'] as String).toUpperCase(),
                           style: TextStyle(
-                            color: isDark ? Colors.white.withValues(alpha: 0.9) : Colors.black87,
+                            color: isDark
+                                ? Colors.white.withValues(alpha: 0.9)
+                                : Colors.black87,
                             fontSize: 10,
                             fontWeight: FontWeight.w900,
                             letterSpacing: 0.5,
@@ -1086,24 +1197,36 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                 );
               }).toList(),
             ),
-          
+
           if (user.nightlifePreference.isNotEmpty) ...[
             if (details.isNotEmpty) const SizedBox(height: 24),
-            _buildTagsList('NIGHTLIFE PREFERENCE', user.nightlifePreference, isDark),
+            _buildTagsList(
+              'NIGHTLIFE PREFERENCE',
+              user.nightlifePreference,
+              isDark,
+            ),
           ],
-          
+
           if (user.interests.isNotEmpty) ...[
-            if (details.isNotEmpty || user.nightlifePreference.isNotEmpty) const SizedBox(height: 24),
+            if (details.isNotEmpty || user.nightlifePreference.isNotEmpty)
+              const SizedBox(height: 24),
             _buildTagsList('INTERESTS', user.interests, isDark),
           ],
-          
+
           if (user.musicPreference.isNotEmpty) ...[
-            if (details.isNotEmpty || user.nightlifePreference.isNotEmpty || user.interests.isNotEmpty) const SizedBox(height: 24),
+            if (details.isNotEmpty ||
+                user.nightlifePreference.isNotEmpty ||
+                user.interests.isNotEmpty)
+              const SizedBox(height: 24),
             _buildTagsList('MUSIC PREFERENCES', user.musicPreference, isDark),
           ],
-          
+
           if (user.lookingFor.isNotEmpty) ...[
-            if (details.isNotEmpty || user.nightlifePreference.isNotEmpty || user.interests.isNotEmpty || user.musicPreference.isNotEmpty) const SizedBox(height: 24),
+            if (details.isNotEmpty ||
+                user.nightlifePreference.isNotEmpty ||
+                user.interests.isNotEmpty ||
+                user.musicPreference.isNotEmpty)
+              const SizedBox(height: 24),
             _buildTagsList('LOOKING FOR', user.lookingFor, isDark),
           ],
         ],
@@ -1153,14 +1276,18 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                 ),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: LunaraTheme.cyberCyan.withValues(alpha: isDark ? 0.35 : 0.18),
+                  color: LunaraTheme.cyberCyan.withValues(
+                    alpha: isDark ? 0.35 : 0.18,
+                  ),
                   width: 1.5,
                 ),
               ),
               child: Text(
                 item.toUpperCase(),
                 style: TextStyle(
-                  color: isDark ? LunaraTheme.cyberCyan : LunaraTheme.electricViolet,
+                  color: isDark
+                      ? LunaraTheme.cyberCyan
+                      : LunaraTheme.electricViolet,
                   fontSize: 11,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 1,
@@ -1177,16 +1304,22 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
     final photos = widget.user.photos;
     final int count = photos.isEmpty ? 0 : photos.length;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     if (count == 0) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         child: Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: isDark ? Colors.white.withValues(alpha: 0.03) : Colors.grey[50],
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.03)
+                : Colors.grey[50],
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.grey[200]!),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.05)
+                  : Colors.grey[200]!,
+            ),
           ),
           child: const Center(
             child: Text(
@@ -1229,7 +1362,9 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.05),
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : Colors.black.withValues(alpha: 0.05),
                 width: 1.5,
               ),
               boxShadow: [
@@ -1245,8 +1380,13 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
               photos[index],
               fit: BoxFit.cover,
               errorBuilder: (context, error, stackTrace) => Container(
-                color: isDark ? Colors.white.withValues(alpha: 0.03) : Colors.grey[50],
-                child: const Icon(Icons.broken_image_outlined, color: Colors.grey),
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.03)
+                    : Colors.grey[50],
+                child: const Icon(
+                  Icons.broken_image_outlined,
+                  color: Colors.grey,
+                ),
               ),
             ),
           ),

@@ -405,7 +405,10 @@ class _PosterProfileScreenState extends State<PosterProfileScreen>
                     icon: const Icon(Icons.bolt, size: 18),
                     label: const Text(
                       'JOIN & PAY',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.transparent,

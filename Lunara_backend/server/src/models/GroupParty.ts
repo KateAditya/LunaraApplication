@@ -35,7 +35,7 @@ export interface GroupPartyCreationAttributes
     extends Optional<
         GroupPartyAttributes,
         'id' | 'status' | 'paymentStatus' | 'paymentId' | 'createdAt' | 'updatedAt' | 'optionalMobileNumber'
-    > {}
+    > { }
 
 class GroupParty
     extends Model<GroupPartyAttributes, GroupPartyCreationAttributes>

@@ -44,7 +44,11 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
           final firstName = (post['firstName'] ?? '').toString().toLowerCase();
           final lastName = (post['lastName'] ?? '').toString().toLowerCase();
           final q = _searchQuery.toLowerCase();
-          return content.contains(q) || venue.contains(q) || userName.contains(q) || firstName.contains(q) || lastName.contains(q);
+          return content.contains(q) ||
+              venue.contains(q) ||
+              userName.contains(q) ||
+              firstName.contains(q) ||
+              lastName.contains(q);
         }).toList();
       }
     });
@@ -63,11 +67,17 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
                   ? const Center(
                       child: Text(
                         'No posts found.',
-                        style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     )
                   : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 10,
+                      ),
                       itemCount: _filteredPosts.length,
                       itemBuilder: (context, index) {
                         return _buildPostCard(context, _filteredPosts[index]);
@@ -108,7 +118,10 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
               child: TextField(
                 controller: _searchController,
                 onChanged: _onSearchChanged,
-                style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.bold,
+                ),
                 decoration: InputDecoration(
                   hintText: 'Search posts, venues, users...',
                   hintStyle: TextStyle(
@@ -125,7 +138,10 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
                             _onSearchChanged('');
                           },
                         )
-                      : const Icon(Icons.search, color: LunaraTheme.electricViolet),
+                      : const Icon(
+                          Icons.search,
+                          color: LunaraTheme.electricViolet,
+                        ),
                 ),
               ),
             ),
@@ -136,7 +152,9 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
   }
 
   Widget _buildPostCard(BuildContext context, Map<String, dynamic> post) {
-    final String? profilePhoto = (post['profilePhotoUrl'] ?? post['profilePhoto'] ?? post['image'])?.toString();
+    final String? profilePhoto =
+        (post['profilePhotoUrl'] ?? post['profilePhoto'] ?? post['image'])
+            ?.toString();
     String? imageUrl = profilePhoto;
     if (imageUrl != null && imageUrl.startsWith('/')) {
       imageUrl = '${ApiService.baseUrl}$imageUrl';
@@ -145,7 +163,15 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
     final String venueName = post['venue']?.toString() ?? '';
     final venue = widget.venues.firstWhere(
       (v) => v.name.toLowerCase() == venueName.toLowerCase(),
-      orElse: () => widget.venues.isNotEmpty ? widget.venues.first : Venue(id: '0', name: venueName, city: 'Pune', addressLine1: 'Pune', averageRating: 0.0),
+      orElse: () => widget.venues.isNotEmpty
+          ? widget.venues.first
+          : Venue(
+              id: '0',
+              name: venueName,
+              city: 'Pune',
+              addressLine1: 'Pune',
+              averageRating: 0.0,
+            ),
     );
 
     return Container(
@@ -156,10 +182,15 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
         borderRadius: BorderRadius.circular(24),
         image: DecorationImage(
           image: (imageUrl != null && imageUrl.isNotEmpty)
-              ? (imageUrl.startsWith('http') ? NetworkImage(imageUrl) as ImageProvider : AssetImage(imageUrl))
+              ? (imageUrl.startsWith('http')
+                    ? NetworkImage(imageUrl) as ImageProvider
+                    : AssetImage(imageUrl))
               : const AssetImage(LunaraTheme.defaultAvatar),
           fit: BoxFit.cover,
-          colorFilter: ColorFilter.mode(Colors.black.withValues(alpha: 0.3), BlendMode.darken),
+          colorFilter: ColorFilter.mode(
+            Colors.black.withValues(alpha: 0.3),
+            BlendMode.darken,
+          ),
         ),
         color: Colors.white,
         boxShadow: [
@@ -175,10 +206,8 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => PostDetailScreen(
-                post: post,
-                venue: venue.toMap(),
-              ),
+              builder: (_) =>
+                  PostDetailScreen(post: post, venue: venue.toMap()),
             ),
           );
         },
@@ -215,17 +244,29 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
                         radius: 16,
                         backgroundColor: LunaraTheme.electricViolet,
                         child: Text(
-                          ((post['firstName'] ?? post['userName'] ?? 'U')[0]).toString().toUpperCase(),
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                          ((post['firstName'] ?? post['userName'] ?? 'U')[0])
+                              .toString()
+                              .toUpperCase(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          (post['firstName'] != null && post['lastName'] != null)
+                          (post['firstName'] != null &&
+                                  post['lastName'] != null)
                               ? '${post['firstName']} ${post['lastName']}'
                               : (post['userName'] ?? 'Lunara User'),
-                          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, letterSpacing: 0.5, color: Colors.white),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 18,
+                            letterSpacing: 0.5,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ],
@@ -235,12 +276,18 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
                     children: [
                       if (post['type'] == 'strangers_meet')
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                           margin: const EdgeInsets.only(right: 8),
                           decoration: BoxDecoration(
                             color: Colors.amber.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.amber.withValues(alpha: 0.5), width: 1),
+                            border: Border.all(
+                              color: Colors.amber.withValues(alpha: 0.5),
+                              width: 1,
+                            ),
                           ),
                           child: const Text(
                             'STRANGER MEET',
@@ -252,7 +299,11 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
                             ),
                           ),
                         ),
-                      const Icon(Icons.location_on_rounded, color: Colors.white70, size: 14),
+                      const Icon(
+                        Icons.location_on_rounded,
+                        color: Colors.white70,
+                        size: 14,
+                      ),
                       const SizedBox(width: 6),
                       Text(
                         post['venue'].toString().toUpperCase(),

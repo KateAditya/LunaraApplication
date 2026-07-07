@@ -39,17 +39,22 @@ class LunaraProfileImage extends StatelessWidget {
   String? get _profilePhoto {
     final resolved = _resolvedUser;
     if (resolved != null) return resolved.profilePhoto;
-    
+
     // Fallback logic if resolution fails
     if (userData != null) {
-      String? photo = (userData!['profilePhotoUrl'] ?? 
-              userData!['profileImageUrl'] ??
-              userData!['profilePhoto'] ?? 
-              userData!['userAvatar'] ?? 
-              userData!['image'] ?? 
-              userData!['avatar'])?.toString();
-      
-      if (photo != null && photo.isNotEmpty && !photo.startsWith('http') && !photo.startsWith('assets')) {
+      String? photo =
+          (userData!['profilePhotoUrl'] ??
+                  userData!['profileImageUrl'] ??
+                  userData!['profilePhoto'] ??
+                  userData!['userAvatar'] ??
+                  userData!['image'] ??
+                  userData!['avatar'])
+              ?.toString();
+
+      if (photo != null &&
+          photo.isNotEmpty &&
+          !photo.startsWith('http') &&
+          !photo.startsWith('assets')) {
         // Assuming relative path from API
         return '${ApiService.baseUrl}${photo.startsWith('/') ? '' : '/'}$photo';
       }
@@ -61,20 +66,28 @@ class LunaraProfileImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     String? photo = _profilePhoto;
-    
+
     // Check if it's a relative path that should have been a network image
-    if (photo != null && photo.isNotEmpty && photo.startsWith('/') && !photo.startsWith('assets')) {
+    if (photo != null &&
+        photo.isNotEmpty &&
+        photo.startsWith('/') &&
+        !photo.startsWith('assets')) {
       photo = '${ApiService.baseUrl}$photo';
     }
-    
-    final bool isNetwork = photo != null && photo.isNotEmpty && photo.startsWith('http');
-    
+
+    final bool isNetwork =
+        photo != null && photo.isNotEmpty && photo.startsWith('http');
+
     Widget avatar = CircleAvatar(
       radius: radius,
       backgroundColor: Colors.grey[100],
-      backgroundImage: isNetwork 
+      backgroundImage: isNetwork
           ? NetworkImage(photo) as ImageProvider
-          : AssetImage((photo != null && photo.isNotEmpty) ? photo : LunaraTheme.defaultAvatar),
+          : AssetImage(
+              (photo != null && photo.isNotEmpty)
+                  ? photo
+                  : LunaraTheme.defaultAvatar,
+            ),
     );
 
     if (showGradientBorder) {

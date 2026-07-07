@@ -39,18 +39,22 @@ class StrangersMeetRequest {
       id: json['id'] ?? '',
       subject: json['subject'] ?? '',
       tagline: json['tagline'] ?? '',
-      eventDateTime: DateTime.parse(json['eventDateTime'] ?? DateTime.now().toIso8601String()),
+      eventDateTime: DateTime.parse(
+        json['eventDateTime'] ?? DateTime.now().toIso8601String(),
+      ),
       numberOfPersons: json['numberOfPersons'] ?? 21,
       status: json['status'] ?? 'pending',
-      paymentAmount: json['paymentAmount'] != null 
-          ? (json['paymentAmount'] is String 
-              ? double.tryParse(json['paymentAmount']) 
-              : (json['paymentAmount'] as num).toDouble()) 
+      paymentAmount: json['paymentAmount'] != null
+          ? (json['paymentAmount'] is String
+                ? double.tryParse(json['paymentAmount'])
+                : (json['paymentAmount'] as num).toDouble())
           : null,
       paymentStatus: json['paymentStatus'] ?? 'unpaid',
       adminNotes: json['adminNotes'],
       ticketId: json['ticketId'],
-      createdAt: json['createdAt'] != null ? DateTime.parse(json['createdAt']) : null,
+      createdAt: json['createdAt'] != null
+          ? DateTime.parse(json['createdAt'])
+          : null,
       mobileNumber: json['mobileNumber'],
       alternateMobileNumber: json['alternateMobileNumber'],
       user: json['user'],

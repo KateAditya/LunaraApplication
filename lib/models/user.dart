@@ -38,7 +38,6 @@ class User {
   final String? dateOfBirth;
   final bool isVerified;
 
-
   User({
     required this.id,
     required this.firstName,
@@ -90,19 +89,24 @@ class User {
 
     final profile = data['profile'] ?? {};
     final preferences = data['preferences'] ?? {};
-    
+
     // Extract photo from various possible fields
     String? photo;
     if (data['profilePhotoUrl'] != null) {
       String url = data['profilePhotoUrl'].toString();
-      photo = url.startsWith('http') ? url : '${ApiService.baseUrl}${url.startsWith('/') ? '' : '/'}$url';
+      photo = url.startsWith('http')
+          ? url
+          : '${ApiService.baseUrl}${url.startsWith('/') ? '' : '/'}$url';
     } else if (data['profileImageUrl'] != null) {
       String url = data['profileImageUrl'].toString();
-      photo = url.startsWith('http') ? url : '${ApiService.baseUrl}${url.startsWith('/') ? '' : '/'}$url';
+      photo = url.startsWith('http')
+          ? url
+          : '${ApiService.baseUrl}${url.startsWith('/') ? '' : '/'}$url';
     } else if (data['images'] != null && (data['images'] as List).isNotEmpty) {
       final img = data['images'][0];
       if (img is Map && img['filePath'] != null) {
-        photo = '${ApiService.baseUrl}/${img['filePath'].toString().replaceAll('\\', '/')}';
+        photo =
+            '${ApiService.baseUrl}/${img['filePath'].toString().replaceAll('\\', '/')}';
       } else if (img is String) {
         photo = img;
       }
@@ -113,11 +117,15 @@ class User {
     final List<Map<String, String>> photoDetailsList = [];
     if (data['photos'] != null && data['photos'] is List) {
       for (var p in data['photos']) {
-        String? urlStr = (p is Map) ? (p['url']?.toString() ?? p['filePath']?.toString()) : null;
+        String? urlStr = (p is Map)
+            ? (p['url']?.toString() ?? p['filePath']?.toString())
+            : null;
         if (urlStr != null) {
-          String fullUrl = urlStr.startsWith('http') ? urlStr : '${ApiService.baseUrl}${urlStr.startsWith('/') ? '' : '/'}$urlStr';
+          String fullUrl = urlStr.startsWith('http')
+              ? urlStr
+              : '${ApiService.baseUrl}${urlStr.startsWith('/') ? '' : '/'}$urlStr';
           photoUrls.add(fullUrl);
-          
+
           String id = p['id']?.toString() ?? p['_id']?.toString() ?? '';
           photoDetailsList.add({'id': id, 'url': fullUrl});
         }
@@ -130,34 +138,75 @@ class User {
       lastName: data['lastName'] ?? data['last_name'] ?? '',
       email: data['email'] ?? '',
       phone: data['phone'] ?? '',
-      profilePhoto: photo ?? profile['profilePhoto'] ?? data['profilePhoto'] ?? data['avatar'],
+      profilePhoto:
+          photo ??
+          profile['profilePhoto'] ??
+          data['profilePhoto'] ??
+          data['avatar'],
       bio: profile['bio'] ?? data['bio'],
       city: profile['city'] ?? data['city'],
       gender: profile['gender'] ?? data['gender'],
       photos: photoUrls,
       photoDetails: photoDetailsList,
-      age: data['age'] is int ? data['age'] : int.tryParse(data['age']?.toString() ?? ''),
+      age: data['age'] is int
+          ? data['age']
+          : int.tryParse(data['age']?.toString() ?? ''),
       displayName: profile['displayName'],
       occupation: profile['occupation'],
       company: profile['company'],
       education: profile['education'],
-      lookingFor: profile['lookingFor'] is List ? List<String>.from(profile['lookingFor'].map((e) => e.toString())) : const [],
-      interests: profile['interests'] is List ? List<String>.from(profile['interests'].map((e) => e.toString())) : const [],
-      nightlifePreference: profile['nightlifePreference'] is List ? List<String>.from(profile['nightlifePreference'].map((e) => e.toString())) : const [],
-      musicPreference: preferences['musicPreference'] is List ? List<String>.from(preferences['musicPreference'].map((e) => e.toString())) : const [],
+      lookingFor: profile['lookingFor'] is List
+          ? List<String>.from(profile['lookingFor'].map((e) => e.toString()))
+          : const [],
+      interests: profile['interests'] is List
+          ? List<String>.from(profile['interests'].map((e) => e.toString()))
+          : const [],
+      nightlifePreference: profile['nightlifePreference'] is List
+          ? List<String>.from(
+              profile['nightlifePreference'].map((e) => e.toString()),
+            )
+          : const [],
+      musicPreference: preferences['musicPreference'] is List
+          ? List<String>.from(
+              preferences['musicPreference'].map((e) => e.toString()),
+            )
+          : const [],
       smokingPreference: preferences['smokingPreference']?.toString(),
-      drinkPreference: preferences['drinkPreference'] is List ? List<String>.from(preferences['drinkPreference'].map((e) => e.toString())) : const [],
+      drinkPreference: preferences['drinkPreference'] is List
+          ? List<String>.from(
+              preferences['drinkPreference'].map((e) => e.toString()),
+            )
+          : const [],
       budgetRange: preferences['budgetRange']?.toString(),
-      minBudget: preferences['minBudget'] != null ? int.tryParse(preferences['minBudget'].toString()) : null,
-      maxBudget: preferences['maxBudget'] != null ? int.tryParse(preferences['maxBudget'].toString()) : null,
-      preferredGenders: preferences['preferredGenders'] is List ? List<String>.from(preferences['preferredGenders'].map((e) => e.toString())) : const [],
-      minAgePreference: preferences['minAgePreference'] != null ? int.tryParse(preferences['minAgePreference'].toString()) : null,
-      maxAgePreference: preferences['maxAgePreference'] != null ? int.tryParse(preferences['maxAgePreference'].toString()) : null,
-      matchDistanceKm: preferences['matchDistanceKm'] != null ? int.tryParse(preferences['matchDistanceKm'].toString()) : null,
-      invisibleMode: preferences['invisibleMode'] == true || data['invisibleMode'] == true,
+      minBudget: preferences['minBudget'] != null
+          ? int.tryParse(preferences['minBudget'].toString())
+          : null,
+      maxBudget: preferences['maxBudget'] != null
+          ? int.tryParse(preferences['maxBudget'].toString())
+          : null,
+      preferredGenders: preferences['preferredGenders'] is List
+          ? List<String>.from(
+              preferences['preferredGenders'].map((e) => e.toString()),
+            )
+          : const [],
+      minAgePreference: preferences['minAgePreference'] != null
+          ? int.tryParse(preferences['minAgePreference'].toString())
+          : null,
+      maxAgePreference: preferences['maxAgePreference'] != null
+          ? int.tryParse(preferences['maxAgePreference'].toString())
+          : null,
+      matchDistanceKm: preferences['matchDistanceKm'] != null
+          ? int.tryParse(preferences['matchDistanceKm'].toString())
+          : null,
+      invisibleMode:
+          preferences['invisibleMode'] == true || data['invisibleMode'] == true,
       showMeInMatching: preferences['showMeInMatching'] ?? true,
-      bookingAlertsEnabled: preferences['bookingAlertsEnabled'] ?? data['bookingAlertsEnabled'] ?? true,
-      dateOfBirth: profile['dateOfBirth']?.toString() ?? data['dateOfBirth']?.toString(),
+      bookingAlertsEnabled:
+          preferences['bookingAlertsEnabled'] ??
+          data['bookingAlertsEnabled'] ??
+          true,
+      dateOfBirth:
+          profile['dateOfBirth']?.toString() ?? data['dateOfBirth']?.toString(),
       isVerified: data['isVerified'] == true,
     );
   }
@@ -169,7 +218,9 @@ class User {
     if (drinkPreference.isNotEmpty && other.drinkPreference.isNotEmpty) {
       bool drinkMatch = false;
       for (var drink in drinkPreference) {
-        if (other.drinkPreference.any((d) => d.toLowerCase().trim() == drink.toLowerCase().trim())) {
+        if (other.drinkPreference.any(
+          (d) => d.toLowerCase().trim() == drink.toLowerCase().trim(),
+        )) {
           drinkMatch = true;
           break;
         }
@@ -183,7 +234,8 @@ class User {
 
     // 2. Compare Smoking Preference
     if (smokingPreference != null && other.smokingPreference != null) {
-      if (smokingPreference!.toLowerCase().trim() == other.smokingPreference!.toLowerCase().trim()) {
+      if (smokingPreference!.toLowerCase().trim() ==
+          other.smokingPreference!.toLowerCase().trim()) {
         percentage += 10;
       }
     } else if (smokingPreference == null && other.smokingPreference == null) {
@@ -194,7 +246,9 @@ class User {
     if (interests.isNotEmpty && other.interests.isNotEmpty) {
       int commonInterests = 0;
       for (var interest in interests) {
-        if (other.interests.any((i) => i.toLowerCase().trim() == interest.toLowerCase().trim())) {
+        if (other.interests.any(
+          (i) => i.toLowerCase().trim() == interest.toLowerCase().trim(),
+        )) {
           commonInterests++;
         }
       }
@@ -205,7 +259,9 @@ class User {
     if (lookingFor.isNotEmpty && other.lookingFor.isNotEmpty) {
       int commonLookingFor = 0;
       for (var lf in lookingFor) {
-        if (other.lookingFor.any((l) => l.toLowerCase().trim() == lf.toLowerCase().trim())) {
+        if (other.lookingFor.any(
+          (l) => l.toLowerCase().trim() == lf.toLowerCase().trim(),
+        )) {
           commonLookingFor++;
         }
       }

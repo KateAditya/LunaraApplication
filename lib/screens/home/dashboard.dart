@@ -33,7 +33,10 @@ class _DashboardState extends State<Dashboard> {
     super.initState();
     _loadProfile();
     _fetchBadges();
-    _badgeTimer = Timer.periodic(const Duration(seconds: 15), (_) => _fetchBadges());
+    _badgeTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => _fetchBadges(),
+    );
   }
 
   Future<void> _fetchBadges() async {
@@ -89,8 +92,6 @@ class _DashboardState extends State<Dashboard> {
     const ProfileHubScreen(),
   ];
 
-
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -107,38 +108,33 @@ class _DashboardState extends State<Dashboard> {
             child: GestureDetector(
               key: AppTourService.vipUpgradeKey,
               onTap: () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const VIPMembershipScreen()));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const VIPMembershipScreen(),
+                  ),
+                );
               },
               child: Container(
-                height: 43,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                height: 48,
+                width: 48,
                 decoration: BoxDecoration(
-                  gradient: LunaraTheme.purpleGradient,
-                  borderRadius: BorderRadius.circular(30),
+                  color: Colors.amber,
+                  shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF3e0f6b).withValues(alpha: 0.35),
+                      color: Colors.amber.withValues(alpha: 0.35),
                       blurRadius: 12,
                       offset: const Offset(0, 6),
                     ),
                   ],
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.workspace_premium_rounded, color: Colors.white, size: 18),
-                    const SizedBox(width: 6),
-                    const Text(
-                      'UPGRADE',
-                      style: TextStyle(
-                        fontFamily: 'AllroundGothic',
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 10,
-                        letterSpacing: 1,
-                      ),
-                    ),
-                  ],
+                child: const Center(
+                  child: Icon(
+                    Icons.workspace_premium_rounded,
+                    color: Colors.white,
+                    size: 24,
+                  ),
                 ),
               ),
             ),
@@ -155,10 +151,16 @@ class _DashboardState extends State<Dashboard> {
                 pageBuilder: (_, __, ___) => const PlanHubScreen(),
                 transitionsBuilder: (_, anim, __, child) {
                   return SlideTransition(
-                    position: Tween<Offset>(
-                      begin: const Offset(0, 1),
-                      end: Offset.zero,
-                    ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+                    position:
+                        Tween<Offset>(
+                          begin: const Offset(0, 1),
+                          end: Offset.zero,
+                        ).animate(
+                          CurvedAnimation(
+                            parent: anim,
+                            curve: Curves.easeOutCubic,
+                          ),
+                        ),
                     child: child,
                   );
                 },
@@ -184,12 +186,19 @@ class _DashboardState extends State<Dashboard> {
           BottomNavigationBarItem(
             icon: Badge(
               isLabelVisible: _liveFeedCount > 0,
-              label: Text(_liveFeedCount > 99 ? '99+' : _liveFeedCount.toString()),
-              child: Icon(Icons.favorite_outline, key: AppTourService.matchesTabKey),
+              label: Text(
+                _liveFeedCount > 99 ? '99+' : _liveFeedCount.toString(),
+              ),
+              child: Icon(
+                Icons.favorite_outline,
+                key: AppTourService.matchesTabKey,
+              ),
             ),
             activeIcon: Badge(
               isLabelVisible: _liveFeedCount > 0,
-              label: Text(_liveFeedCount > 99 ? '99+' : _liveFeedCount.toString()),
+              label: Text(
+                _liveFeedCount > 99 ? '99+' : _liveFeedCount.toString(),
+              ),
               child: const Icon(Icons.favorite),
             ),
             label: 'Live Feed',
@@ -215,7 +224,10 @@ class _DashboardState extends State<Dashboard> {
             icon: Badge(
               isLabelVisible: _chatCount > 0,
               label: Text(_chatCount > 99 ? '99+' : _chatCount.toString()),
-              child: Icon(Icons.chat_bubble_outline, key: AppTourService.messagesTabKey),
+              child: Icon(
+                Icons.chat_bubble_outline,
+                key: AppTourService.messagesTabKey,
+              ),
             ),
             activeIcon: Badge(
               isLabelVisible: _chatCount > 0,
@@ -241,9 +253,9 @@ class _DashboardState extends State<Dashboard> {
       height: 28,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: isActive 
-          ? Border.all(color: LunaraTheme.electricViolet, width: 2)
-          : Border.all(color: Colors.transparent, width: 2),
+        border: isActive
+            ? Border.all(color: LunaraTheme.electricViolet, width: 2)
+            : Border.all(color: Colors.transparent, width: 2),
       ),
       child: Center(
         child: LunaraProfileImage(

@@ -2,8 +2,8 @@ import { Model, DataTypes, Optional } from 'sequelize';
 import sequelize from '../config/database';
 
 export enum PartyPlanStatus {
-    ACTIVE    = 'active',
-    INACTIVE  = 'inactive',
+    ACTIVE = 'active',
+    INACTIVE = 'inactive',
     CANCELLED = 'cancelled',
 }
 
@@ -46,7 +46,7 @@ export interface PartyPlanCreationAttributes
     extends Optional<
         PartyPlanAttributes,
         'id' | 'status' | 'visibility' | 'createdAt' | 'updatedAt' | 'selectedUsers' | 'depositAmount' | 'hostPaymentStatus' | 'isLive' | 'expiresAt' | 'hostLatLangCheckIn' | 'paymentStatus' | 'optionalMobileNumber'
-    > {}
+    > { }
 
 class PartyPlan
     extends Model<PartyPlanAttributes, PartyPlanCreationAttributes>
