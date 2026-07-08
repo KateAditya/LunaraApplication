@@ -22,6 +22,10 @@ import { startPartyPlanCron } from './cron/partyPlanCron';
 dotenv.config();
 
 const app: Application = express();
+
+// Trust reverse proxy (e.g., NGINX) to ensure rate limiter uses real client IPs
+app.set('trust proxy', 1);
+
 const httpServer = createServer(app);
 const io = new SocketIOServer(httpServer, {
     cors: {

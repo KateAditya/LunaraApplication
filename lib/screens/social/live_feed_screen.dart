@@ -45,6 +45,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
     _loadFeed();
+    _initSocketListeners();
 
     // Fast polling every 15 seconds
     _pollingTimer = Timer.periodic(const Duration(seconds: 15), (_) {
@@ -54,11 +55,145 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
 
   @override
   void dispose() {
+    _disposeSocketListeners();
     _tabController.removeListener(_handleTabChange);
     _pollingTimer?.cancel();
     _pulseController.dispose();
     _tabController.dispose();
     super.dispose();
+  }
+
+  void _initSocketListeners() {
+    ApiService.addSocketListener('party_plan_created', _onPartyPlanCreated);
+    ApiService.addSocketListener('party_plan_deleted', _onPartyPlanDeleted);
+    ApiService.addSocketListener('party_plan_request_accepted', _onPartyPlanRequestAccepted);
+    ApiService.addSocketListener('party_plan_match_success', _onPartyPlanMatchSuccess);
+    ApiService.addSocketListener('party_plan_host_paid', _onPartyPlanHostPaid);
+    ApiService.addSocketListener('party_plan_joiner_paid', _onPartyPlanJoinerPaid);
+  }
+
+  void _disposeSocketListeners() {
+    ApiService.removeSocketListener('party_plan_created', _onPartyPlanCreated);
+    ApiService.removeSocketListener('party_plan_deleted', _onPartyPlanDeleted);
+    ApiService.removeSocketListener('party_plan_request_accepted', _onPartyPlanRequestAccepted);
+    ApiService.removeSocketListener('party_plan_match_success', _onPartyPlanMatchSuccess);
+    ApiService.removeSocketListener('party_plan_host_paid', _onPartyPlanHostPaid);
+    ApiService.removeSocketListener('party_plan_joiner_paid', _onPartyPlanJoinerPaid);
+  }
+
+  void _onPartyPlanCreated(dynamic data) {
+    if (!mounted) return;
+    try {
+      final map = Map<String, dynamic>.from(data);
+      setState(() {
+        final exists = _feedItems.any((item) => item['id']?.toString() == map['id']?.toString());
+        if (!exists) {
+          _feedItems.insert(0, map);
+        }
+      });
+    } catch (e) {
+      debugPrint('Error handling party_plan_created: $e');
+    }
+  }
+
+  void _onPartyPlanDeleted(dynamic data) {
+    if (!mounted) return;
+    try {
+      final planId = data['planId']?.toString();
+      if (planId != null) {
+        setState(() {
+          _feedItems.removeWhere((item) => 
+            (item['planId']?.toString() == planId) || 
+            (item['id']?.toString() == planId && item['type'] == 'party_plan') ||
+            (item['plan'] != null && item['plan']['id']?.toString() == planId)
+          );
+        });
+      }
+    } catch (e) {
+      debugPrint('Error handling party_plan_deleted: $e');
+    }
+  }
+
+  void _onPartyPlanRequestAccepted(dynamic data) {
+    if (!mounted) return;
+    try {
+      final reqId = data['requestId']?.toString();
+      if (reqId != null) {
+        setState(() {
+          for (var item in _feedItems) {
+            if (item['id']?.toString() == reqId) {
+              item['status'] = 'accepted';
+              item['razorpayOrderId'] = data['razorpayOrderId'];
+              item['charges'] = data['charges'];
+              item['safetyDeposit'] = data['safetyDeposit'];
+              item['totalAmount'] = data['totalAmount'];
+            }
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Error handling party_plan_request_accepted: $e');
+    }
+  }
+
+  void _onPartyPlanMatchSuccess(dynamic data) {
+    if (!mounted) return;
+    try {
+      final reqId = data['requestId']?.toString();
+      final planId = data['planId']?.toString();
+      setState(() {
+        for (var item in _feedItems) {
+          if (item['id']?.toString() == reqId || (item['plan'] != null && item['plan']['id']?.toString() == planId)) {
+            item['status'] = 'paid';
+          }
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('🎉 Party Match Confirmed! Both host and guest have paid.'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 5),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Error handling party_plan_match_success: $e');
+    }
+  }
+
+  void _onPartyPlanHostPaid(dynamic data) {
+    if (!mounted) return;
+    try {
+      final reqId = data['requestId']?.toString();
+      if (reqId != null) {
+        setState(() {
+          for (var item in _feedItems) {
+            if (item['id']?.toString() == reqId) {
+              item['status'] = 'host_paid';
+            }
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Error handling party_plan_host_paid: $e');
+    }
+  }
+
+  void _onPartyPlanJoinerPaid(dynamic data) {
+    if (!mounted) return;
+    try {
+      final reqId = data['requestId']?.toString();
+      if (reqId != null) {
+        setState(() {
+          for (var item in _feedItems) {
+            if (item['id']?.toString() == reqId) {
+              item['status'] = 'joiner_paid';
+            }
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Error handling party_plan_joiner_paid: $e');
+    }
   }
 
   void _handleTabChange() {
