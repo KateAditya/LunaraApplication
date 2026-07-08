@@ -18,7 +18,7 @@ import '../screens/auth/autoblocked_warning_screen.dart';
 
 class ApiService {
   // Toggle this to true to use your local backend, false for production
-  static const bool isLocal = true;
+  static const bool isLocal = false;
 
   // Uses your machine's local IP (192.168.0.169) for local dev on a real device
   static String get baseUrl {
@@ -211,7 +211,9 @@ class ApiService {
       }
       // Fallback: if we queried a specific city and got no venues, try fetching all venues
       if (targetCity != null && targetCity.isNotEmpty) {
-        debugPrint('fetchVenues: No venues found for $targetCity, falling back to all venues.');
+        debugPrint(
+          'fetchVenues: No venues found for $targetCity, falling back to all venues.',
+        );
         final fallbackResponse = await get('/api/venues');
         if (fallbackResponse.statusCode == 200) {
           final data = jsonDecode(fallbackResponse.body);
@@ -367,7 +369,8 @@ class ApiService {
           'partyRequirement': requirement,
           'partyDescription': description,
           'mobileNumber': mobileNumber.trim(),
-          if (optionalMobileNumber != null && optionalMobileNumber.trim().isNotEmpty)
+          if (optionalMobileNumber != null &&
+              optionalMobileNumber.trim().isNotEmpty)
             'optionalMobileNumber': optionalMobileNumber.trim(),
         },
       );
@@ -588,7 +591,9 @@ class ApiService {
     return [];
   }
 
-  static Future<List<Map<String, dynamic>>> fetchUserPartyPlans(String userId) async {
+  static Future<List<Map<String, dynamic>>> fetchUserPartyPlans(
+    String userId,
+  ) async {
     try {
       final response = await get('/api/mobile/party-plans/user/$userId');
       if (response.statusCode == 200) {
@@ -968,11 +973,14 @@ class ApiService {
       try {
         final data = jsonDecode(response.body);
         if (data is Map && data['code'] == 'USER_AUTOBLOCKED') {
-          final reason = data['autoblockedReason'] ?? data['message'] ?? 'Suspended due to safety reports.';
-          
+          final reason =
+              data['autoblockedReason'] ??
+              data['message'] ??
+              'Suspended due to safety reports.';
+
           // Log out immediately
           clearAuthToken();
-          
+
           // Navigate immediately to AutoblockedWarningScreen
           final nav = NotificationNavigator.navigator;
           if (nav != null) {
@@ -1118,7 +1126,11 @@ class ApiService {
       'Content-Type': 'application/json',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
-    final response = await http.put(uri, headers: headers, body: jsonEncode(body));
+    final response = await http.put(
+      uri,
+      headers: headers,
+      body: jsonEncode(body),
+    );
     _checkAutoblockedResponse(response);
     return response;
   }
@@ -1133,7 +1145,11 @@ class ApiService {
       'Content-Type': 'application/json',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
-    final response = await http.post(uri, headers: headers, body: jsonEncode(body));
+    final response = await http.post(
+      uri,
+      headers: headers,
+      body: jsonEncode(body),
+    );
     _checkAutoblockedResponse(response);
     return response;
   }
@@ -1148,7 +1164,11 @@ class ApiService {
       'Content-Type': 'application/json',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
-    final response = await http.patch(uri, headers: headers, body: jsonEncode(body));
+    final response = await http.patch(
+      uri,
+      headers: headers,
+      body: jsonEncode(body),
+    );
     _checkAutoblockedResponse(response);
     return response;
   }
@@ -1507,7 +1527,9 @@ class ApiService {
     try {
       final userId = currentUserId;
       if (userId == null) return [];
-      final response = await get('/api/mobile/user/blocks/details?userId=$userId');
+      final response = await get(
+        '/api/mobile/user/blocks/details?userId=$userId',
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {

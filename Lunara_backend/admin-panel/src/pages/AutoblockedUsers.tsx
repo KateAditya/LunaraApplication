@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BiSearch, BiBlock, BiShow, BiLoaderAlt, BiUserCheck, BiMessageSquareDetail } from 'react-icons/bi';
+import { BiBlock, BiShow, BiLoaderAlt, BiUserCheck, BiMessageSquareDetail } from 'react-icons/bi';
 import { UserDetails } from '../components/UserDetails';
 import { usersApi } from '../api/users';
 import type { User } from '../types/user';

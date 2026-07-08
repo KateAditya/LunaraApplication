@@ -67,11 +67,20 @@ class _PlanHubScreenState extends State<PlanHubScreen>
       7: 'Sunday',
     };
     final weekdayName = weekdaysMap[date.weekday];
-    return daysOpen.any((d) => d.toString().trim().toLowerCase() == weekdayName?.toLowerCase());
+    return daysOpen.any(
+      (d) => d.toString().trim().toLowerCase() == weekdayName?.toLowerCase(),
+    );
   }
 
-  bool _isTimeWithinVenueHours(TimeOfDay time, String? openingStr, String? closingStr) {
-    if (openingStr == null || openingStr.isEmpty || closingStr == null || closingStr.isEmpty) {
+  bool _isTimeWithinVenueHours(
+    TimeOfDay time,
+    String? openingStr,
+    String? closingStr,
+  ) {
+    if (openingStr == null ||
+        openingStr.isEmpty ||
+        closingStr == null ||
+        closingStr.isEmpty) {
       return true; // no timing constraint
     }
 
@@ -1104,27 +1113,47 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     descriptionCtrl.text =
                                         "Let's party at ${v.name}! 🚀";
                                     // Validate previously selected date & time
-                                    if (selectedDate != null && !_isVenueOpenOnDate(v, selectedDate!)) {
+                                    if (selectedDate != null &&
+                                        !_isVenueOpenOnDate(v, selectedDate!)) {
                                       selectedDate = null;
                                       selectedTime = null;
                                       dateCtrl.clear();
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         SnackBar(
-                                          content: Text('Cleared date selection because ${v.name} is closed on that day.'),
+                                          content: Text(
+                                            'Cleared date selection because ${v.name} is closed on that day.',
+                                          ),
                                           backgroundColor: Colors.orangeAccent,
                                         ),
                                       );
-                                    } else if (selectedTime != null && !_isTimeWithinVenueHours(selectedTime!, v.openingTime, v.closingTime)) {
+                                    } else if (selectedTime != null &&
+                                        !_isTimeWithinVenueHours(
+                                          selectedTime!,
+                                          v.openingTime,
+                                          v.closingTime,
+                                        )) {
                                       selectedTime = null;
                                       dateCtrl.clear();
                                       if (selectedDate != null) {
-                                        dateCtrl.text = DateFormat('MMM dd, yyyy').format(selectedDate!);
+                                        dateCtrl.text = DateFormat(
+                                          'MMM dd, yyyy',
+                                        ).format(selectedDate!);
                                       }
-                                      final openStr = _formatTimeOfBooking(v.openingTime);
-                                      final closeStr = _formatTimeOfBooking(v.closingTime);
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      final openStr = _formatTimeOfBooking(
+                                        v.openingTime,
+                                      );
+                                      final closeStr = _formatTimeOfBooking(
+                                        v.closingTime,
+                                      );
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         SnackBar(
-                                          content: Text('Cleared time selection because it is outside ${v.name}\'s working hours ($openStr - $closeStr).'),
+                                          content: Text(
+                                            'Cleared time selection because it is outside ${v.name}\'s working hours ($openStr - $closeStr).',
+                                          ),
                                           backgroundColor: Colors.orangeAccent,
                                         ),
                                       );
@@ -1227,15 +1256,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             if (!_isVenueOpenOnDate(selectedVenue!, date)) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text('The venue is closed (holiday) on ${[
-                                    'Monday',
-                                    'Tuesday',
-                                    'Wednesday',
-                                    'Thursday',
-                                    'Friday',
-                                    'Saturday',
-                                    'Sunday'
-                                  ][date.weekday - 1]}.'),
+                                  content: Text(
+                                    'The venue is closed (holiday) on ${['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][date.weekday - 1]}.',
+                                  ),
                                   backgroundColor: Colors.redAccent,
                                 ),
                               );
@@ -1247,12 +1270,22 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             );
                             if (time != null) {
                               if (!context.mounted) return;
-                              if (!_isTimeWithinVenueHours(time, selectedVenue!.openingTime, selectedVenue!.closingTime)) {
-                                final openStr = _formatTimeOfBooking(selectedVenue!.openingTime);
-                                final closeStr = _formatTimeOfBooking(selectedVenue!.closingTime);
+                              if (!_isTimeWithinVenueHours(
+                                time,
+                                selectedVenue!.openingTime,
+                                selectedVenue!.closingTime,
+                              )) {
+                                final openStr = _formatTimeOfBooking(
+                                  selectedVenue!.openingTime,
+                                );
+                                final closeStr = _formatTimeOfBooking(
+                                  selectedVenue!.closingTime,
+                                );
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text('Venue is closed at this time. Working hours: $openStr - $closeStr'),
+                                    content: Text(
+                                      'Venue is closed at this time. Working hours: $openStr - $closeStr',
+                                    ),
                                     backgroundColor: Colors.redAccent,
                                   ),
                                 );
@@ -1261,7 +1294,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               setSheetState(() {
                                 selectedDate = date;
                                 selectedTime = time;
-                                final formattedTime = _formatTimeOfBooking('${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}');
+                                final formattedTime = _formatTimeOfBooking(
+                                  '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
+                                );
                                 dateCtrl.text =
                                     "${DateFormat('MMM dd, yyyy').format(date)} at $formattedTime";
                               });
@@ -1414,10 +1449,15 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                             selectedUserIds.remove(pId);
                                           } else {
                                             if (selectedUserIds.length >= 50) {
-                                              ScaffoldMessenger.of(context).showSnackBar(
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
                                                 const SnackBar(
-                                                  content: Text('Maximum 50 invites allowed.'),
-                                                  backgroundColor: Colors.redAccent,
+                                                  content: Text(
+                                                    'Maximum 50 invites allowed.',
+                                                  ),
+                                                  backgroundColor:
+                                                      Colors.redAccent,
                                                 ),
                                               );
                                               return;
@@ -1498,7 +1538,10 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                           ),
                           child: Row(
                             children: [
-                              Icon(Icons.info_outline_rounded, color: Colors.orange.shade800),
+                              Icon(
+                                Icons.info_outline_rounded,
+                                color: Colors.orange.shade800,
+                              ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
@@ -1524,8 +1567,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                         // Tag line / other details
                         _sheetField(
                           controller: taglineCtrl,
-                          hint: 'Enter Tagline / Details...',
+                          hint: 'Requirement Details...',
                           icon: Icons.subtitles_rounded,
+                          maxLines: 3,
                         ),
                         const SizedBox(height: 14),
                         // Charges per head
@@ -1545,8 +1589,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                           label: isPosting
                               ? 'PROCEEDING...'
                               : (selectedUserIds.length > 20
-                                  ? 'SUBMIT STRANGERS MEET'
-                                  : 'POST PARTY PLAN'),
+                                    ? 'SUBMIT STRANGERS MEET'
+                                    : 'POST PARTY PLAN'),
                           onTap: isPosting
                               ? () {}
                               : () async {
@@ -1606,33 +1650,50 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     return;
                                   }
 
-                                  final isStrangersMeet = selectedUserIds.length > 20;
+                                  final isStrangersMeet =
+                                      selectedUserIds.length > 20;
 
                                   if (isStrangersMeet) {
                                     if (subjectCtrl.text.trim().isEmpty) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         const SnackBar(
-                                          content: Text('Please enter an event subject'),
+                                          content: Text(
+                                            'Please enter an event subject',
+                                          ),
                                           backgroundColor: Colors.redAccent,
                                         ),
                                       );
                                       return;
                                     }
                                     if (taglineCtrl.text.trim().isEmpty) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         const SnackBar(
-                                          content: Text('Please enter tag line / details'),
+                                          content: Text(
+                                            'Please enter requirement details',
+                                          ),
                                           backgroundColor: Colors.redAccent,
                                         ),
                                       );
                                       return;
                                     }
                                     final chargesText = chargesCtrl.text.trim();
-                                    final charges = double.tryParse(chargesText);
-                                    if (chargesText.isEmpty || charges == null || charges < 0) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                    final charges = double.tryParse(
+                                      chargesText,
+                                    );
+                                    if (chargesText.isEmpty ||
+                                        charges == null ||
+                                        charges < 0) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         const SnackBar(
-                                          content: Text('Please enter a valid charges per head (min 0)'),
+                                          content: Text(
+                                            'Please enter a valid charges per head (min 0)',
+                                          ),
                                           backgroundColor: Colors.redAccent,
                                         ),
                                       );
@@ -1652,21 +1713,36 @@ class _PlanHubScreenState extends State<PlanHubScreen>
 
                                   if (isStrangersMeet) {
                                     try {
-                                      final success = await ApiService.submitStrangersMeetRequest(
-                                        venueId: selectedVenue!.id,
-                                        subject: subjectCtrl.text.trim(),
-                                        tagline: taglineCtrl.text.trim(),
-                                        eventDateTime: dt.toUtc().toIso8601String(),
-                                        numberOfPersons: selectedUserIds.length,
-                                        chargesPerHead: double.tryParse(chargesCtrl.text.trim()) ?? 0.0,
-                                        mobileNumber: mobileCtrl.text.trim(),
-                                        alternateMobileNumber: optMobileCtrl.text.trim(),
-                                      );
+                                      final success =
+                                          await ApiService.submitStrangersMeetRequest(
+                                            venueId: selectedVenue!.id,
+                                            subject: subjectCtrl.text.trim(),
+                                            tagline: taglineCtrl.text.trim(),
+                                            eventDateTime: dt
+                                                .toUtc()
+                                                .toIso8601String(),
+                                            numberOfPersons:
+                                                selectedUserIds.length,
+                                            chargesPerHead:
+                                                double.tryParse(
+                                                  chargesCtrl.text.trim(),
+                                                ) ??
+                                                0.0,
+                                            mobileNumber: mobileCtrl.text
+                                                .trim(),
+                                            alternateMobileNumber: optMobileCtrl
+                                                .text
+                                                .trim(),
+                                          );
 
                                       if (success) {
                                         if (!mounted) return;
-                                        Navigator.pop(context); // Close bottom sheet
-                                        ScaffoldMessenger.of(context).showSnackBar(
+                                        Navigator.pop(
+                                          context,
+                                        ); // Close bottom sheet
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
                                           const SnackBar(
                                             content: Text(
                                               'Strangers Meet Request submitted successfully! Admin will review it.',
@@ -1678,9 +1754,13 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                       } else {
                                         if (!mounted) return;
                                         setSheetState(() => isPosting = false);
-                                        ScaffoldMessenger.of(context).showSnackBar(
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
                                           const SnackBar(
-                                            content: Text('Failed to submit Strangers Meet request.'),
+                                            content: Text(
+                                              'Failed to submit Strangers Meet request.',
+                                            ),
                                             backgroundColor: Colors.redAccent,
                                           ),
                                         );
@@ -1688,7 +1768,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     } catch (e) {
                                       if (!mounted) return;
                                       setSheetState(() => isPosting = false);
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         SnackBar(
                                           content: Text('Error: $e'),
                                           backgroundColor: Colors.redAccent,
@@ -1953,27 +2035,47 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                   setSheetState(() {
                                     selectedVenue = v;
                                     // Validate previously selected date & time
-                                    if (selectedDate != null && !_isVenueOpenOnDate(v, selectedDate!)) {
+                                    if (selectedDate != null &&
+                                        !_isVenueOpenOnDate(v, selectedDate!)) {
                                       selectedDate = null;
                                       selectedTime = null;
                                       dateCtrl.clear();
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         SnackBar(
-                                          content: Text('Cleared date selection because ${v.name} is closed on that day.'),
+                                          content: Text(
+                                            'Cleared date selection because ${v.name} is closed on that day.',
+                                          ),
                                           backgroundColor: Colors.orangeAccent,
                                         ),
                                       );
-                                    } else if (selectedTime != null && !_isTimeWithinVenueHours(selectedTime!, v.openingTime, v.closingTime)) {
+                                    } else if (selectedTime != null &&
+                                        !_isTimeWithinVenueHours(
+                                          selectedTime!,
+                                          v.openingTime,
+                                          v.closingTime,
+                                        )) {
                                       selectedTime = null;
                                       dateCtrl.clear();
                                       if (selectedDate != null) {
-                                        dateCtrl.text = DateFormat('MMM dd, yyyy').format(selectedDate!);
+                                        dateCtrl.text = DateFormat(
+                                          'MMM dd, yyyy',
+                                        ).format(selectedDate!);
                                       }
-                                      final openStr = _formatTimeOfBooking(v.openingTime);
-                                      final closeStr = _formatTimeOfBooking(v.closingTime);
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      final openStr = _formatTimeOfBooking(
+                                        v.openingTime,
+                                      );
+                                      final closeStr = _formatTimeOfBooking(
+                                        v.closingTime,
+                                      );
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         SnackBar(
-                                          content: Text('Cleared time selection because it is outside ${v.name}\'s working hours ($openStr - $closeStr).'),
+                                          content: Text(
+                                            'Cleared time selection because it is outside ${v.name}\'s working hours ($openStr - $closeStr).',
+                                          ),
                                           backgroundColor: Colors.orangeAccent,
                                         ),
                                       );
@@ -2038,8 +2140,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       // Tag line / other details
                       _sheetField(
                         controller: taglineCtrl,
-                        hint: 'Enter Tagline / Details...',
+                        hint: 'Enter Requirement Details...',
                         icon: Icons.subtitles_rounded,
+                        maxLines: 3,
                       ),
                       const SizedBox(height: 14),
                       // Charges per head
@@ -2076,15 +2179,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             if (!_isVenueOpenOnDate(selectedVenue!, date)) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text('The venue is closed (holiday) on ${[
-                                    'Monday',
-                                    'Tuesday',
-                                    'Wednesday',
-                                    'Thursday',
-                                    'Friday',
-                                    'Saturday',
-                                    'Sunday'
-                                  ][date.weekday - 1]}.'),
+                                  content: Text(
+                                    'The venue is closed (holiday) on ${['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][date.weekday - 1]}.',
+                                  ),
                                   backgroundColor: Colors.redAccent,
                                 ),
                               );
@@ -2096,12 +2193,22 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             );
                             if (time != null) {
                               if (!context.mounted) return;
-                              if (!_isTimeWithinVenueHours(time, selectedVenue!.openingTime, selectedVenue!.closingTime)) {
-                                final openStr = _formatTimeOfBooking(selectedVenue!.openingTime);
-                                final closeStr = _formatTimeOfBooking(selectedVenue!.closingTime);
+                              if (!_isTimeWithinVenueHours(
+                                time,
+                                selectedVenue!.openingTime,
+                                selectedVenue!.closingTime,
+                              )) {
+                                final openStr = _formatTimeOfBooking(
+                                  selectedVenue!.openingTime,
+                                );
+                                final closeStr = _formatTimeOfBooking(
+                                  selectedVenue!.closingTime,
+                                );
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text('Venue is closed at this time. Working hours: $openStr - $closeStr'),
+                                    content: Text(
+                                      'Venue is closed at this time. Working hours: $openStr - $closeStr',
+                                    ),
                                     backgroundColor: Colors.redAccent,
                                   ),
                                 );
@@ -2110,7 +2217,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               setSheetState(() {
                                 selectedDate = date;
                                 selectedTime = time;
-                                final formattedTime = _formatTimeOfBooking('${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}');
+                                final formattedTime = _formatTimeOfBooking(
+                                  '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
+                                );
                                 dateCtrl.text =
                                     "${DateFormat('MMM dd, yyyy').format(date)} at $formattedTime";
                               });
@@ -2283,7 +2392,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                   content: Text(
-                                    'Please enter tag line / details',
+                                    'Please enter requirement details',
                                   ),
                                 ),
                               );
@@ -2291,7 +2400,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             }
                             final chargesText = chargesCtrl.text.trim();
                             final charges = double.tryParse(chargesText);
-                            if (chargesText.isEmpty || charges == null || charges < 0) {
+                            if (chargesText.isEmpty ||
+                                charges == null ||
+                                charges < 0) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                   content: Text(
@@ -2371,7 +2482,11 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                   tagline: taglineCtrl.text.trim(),
                                   eventDateTime: dt.toUtc().toIso8601String(),
                                   numberOfPersons: numberOfPersons,
-                                  chargesPerHead: double.tryParse(chargesCtrl.text.trim()) ?? 0.0,
+                                  chargesPerHead:
+                                      double.tryParse(
+                                        chargesCtrl.text.trim(),
+                                      ) ??
+                                      0.0,
                                   mobileNumber: mobileCtrl.text.trim(),
                                   alternateMobileNumber: altMobileCtrl.text
                                       .trim(),
@@ -2425,6 +2540,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     required IconData icon,
     ValueChanged<String>? onChanged,
     TextInputType? keyboardType,
+    int? maxLines = 1,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -2436,6 +2552,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
         controller: controller,
         onChanged: onChanged,
         keyboardType: keyboardType,
+        maxLines: maxLines,
         style: const TextStyle(fontSize: 14),
         decoration: InputDecoration(
           hintText: hint,

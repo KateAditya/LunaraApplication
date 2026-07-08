@@ -1161,6 +1161,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
         _optimisticStates[reqId] ??
         req['status']?.toString().toLowerCase() ??
         'pending';
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -1189,23 +1190,23 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                     children: [
                       Text(
                         '${requester['firstName'] ?? 'User'} wants to join',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
-                          color: Colors.white,
+                          color: isDark ? Colors.white : Colors.black87,
                         ),
                       ),
                       Text(
                         'Your ${req['requestType'] == 'table_plan' ? 'Table Plan' : 'Party Plan'}',
-                        style: const TextStyle(
-                          color: Colors.white70,
+                        style: TextStyle(
+                          color: isDark ? Colors.white70 : Colors.black87,
                           fontSize: 12,
                         ),
                       ),
                       Text(
                         timeAgo,
-                        style: const TextStyle(
-                          color: Colors.white38,
+                        style: TextStyle(
+                          color: isDark ? Colors.white38 : Colors.black54,
                           fontSize: 10,
                         ),
                       ),
@@ -1358,6 +1359,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
         _optimisticStates[reqId] ??
         req['status']?.toString().toLowerCase() ??
         'pending';
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -1391,27 +1393,27 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'You requested to join',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
-                          color: Colors.white,
+                          color: isDark ? Colors.white : Colors.black87,
                         ),
                       ),
                       Text(
                         isLargeParty
                             ? 'Group Booking at ${venue['name'] ?? 'Venue'}'
                             : '${plan['type'] == 'table_plan' ? 'Table Plan' : 'Party Plan'} at ${venue['name'] ?? 'Venue'}',
-                        style: const TextStyle(
-                          color: Colors.white70,
+                        style: TextStyle(
+                          color: isDark ? Colors.white70 : Colors.black87,
                           fontSize: 12,
                         ),
                       ),
                       Text(
                         timeAgo,
-                        style: const TextStyle(
-                          color: Colors.white38,
+                        style: TextStyle(
+                          color: isDark ? Colors.white38 : Colors.black54,
                           fontSize: 10,
                         ),
                       ),
@@ -1715,6 +1717,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     final body = notif['body'] ?? '';
     final timeAgo = _formatTimeAgo(notif['createdAt']);
     final isRead = notif['isRead'] == true || notif['read'] == true;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     IconData icon = Icons.notifications;
     Color color = Colors.grey;
@@ -1756,14 +1759,18 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 14,
-                        color: isRead ? Colors.white70 : Colors.white,
+                        color: isDark 
+                            ? (isRead ? Colors.white70 : Colors.white)
+                            : (isRead ? Colors.black54 : Colors.black87),
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       body,
                       style: TextStyle(
-                        color: isRead ? Colors.white54 : Colors.white70,
+                        color: isDark 
+                            ? (isRead ? Colors.white54 : Colors.white70)
+                            : (isRead ? Colors.black45 : Colors.black87),
                         fontSize: 12,
                       ),
                     ),
@@ -1786,7 +1793,10 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                     ),
                   Text(
                     timeAgo,
-                    style: const TextStyle(color: Colors.white38, fontSize: 10),
+                    style: TextStyle(
+                      color: isDark ? Colors.white38 : Colors.black38,
+                      fontSize: 10,
+                    ),
                   ),
                 ],
               ),

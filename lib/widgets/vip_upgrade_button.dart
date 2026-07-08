@@ -21,16 +21,17 @@ class VIPUpgradeButton extends StatelessWidget {
         height: size,
         width: size,
         alignment: Alignment.center,
-        child: Icon(
-          Icons.star_rate,
-          color: Colors.amber,
-          size: size * 0.7,
-          shadows: [
-            Shadow(
-              color: Colors.amber.withValues(alpha: 0.5),
-              blurRadius: 8,
-            ),
-          ],
+        child: Text(
+          '👑',
+          style: TextStyle(
+            fontSize: size * 0.6,
+            shadows: [
+              Shadow(
+                color: Colors.amber.withValues(alpha: 0.5),
+                blurRadius: 8,
+              ),
+            ],
+          ),
         ),
       ),
     );
