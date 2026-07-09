@@ -36,7 +36,14 @@ const io = new SocketIOServer(httpServer, {
 
 // Middleware
 app.use(helmet({
-    crossOriginResourcePolicy: { policy: "cross-origin" }
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    contentSecurityPolicy: {
+        directives: {
+            ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+            "img-src": ["'self'", "data:", "blob:", "*.blob.core.windows.net", "placehold.co", "*.placehold.co"],
+            "connect-src": ["'self'", "*.azurewebsites.net", "*.windows.net"],
+        },
+    },
 })); // Security headers
 app.use(cors({
     origin: true,
