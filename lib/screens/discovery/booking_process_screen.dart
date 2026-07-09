@@ -42,7 +42,12 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
       7: 'Sunday',
     };
     final weekdayName = weekdaysMap[date.weekday];
-    return daysOpen.any((d) => d.toString().trim().toLowerCase() == weekdayName?.toLowerCase());
+    return daysOpen.any((d) {
+      final str = d.toString().trim().toLowerCase();
+      final fullDay = weekdayName?.toLowerCase();
+      final shortDay = weekdayName?.substring(0, 3).toLowerCase();
+      return str == fullDay || str == shortDay;
+    });
   }
 
   bool _isTimeWithinVenueHours(TimeOfDay time, String? openingStr, String? closingStr) {
