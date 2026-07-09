@@ -208,18 +208,6 @@ io.on('connection', (socket) => {
     // - admin notifications
 });
 
-// Error handling middleware (must be last)
-app.use(errorHandler);
-
-// 404 handler
-app.use((req, res) => {
-    logger.warn(`404 Not Found: ${req.method} ${req.originalUrl}`);
-    res.status(404).json({
-        success: false,
-        message: 'Route not found',
-    });
-});
-
 const PORT = process.env.PORT || 5000;
 const HOST = process.env.HOST || 'localhost';
 
@@ -234,6 +222,18 @@ app.get('*', (req, res, next) => {
     }
     res.sendFile(path.join(adminPanelPath, 'index.html'));
 });
+
+// 404 handler
+app.use((req, res) => {
+    logger.warn(`404 Not Found: ${req.method} ${req.originalUrl}`);
+    res.status(404).json({
+        success: false,
+        message: 'Route not found',
+    });
+});
+
+// Error handling middleware (must be last)
+app.use(errorHandler);
 
 // Sync database and start server after database connection
 const startServer = async () => {
