@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import '../../services/google_places_service.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import '../../core/theme.dart';
 import 'venue_detail_screen.dart';
@@ -38,6 +40,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   List<String> _availableAreas = [];
   String? _selectedArea;
   List<Map<String, dynamic>> _activeAds = [];
+  StreamSubscription<Position>? _positionStreamSubscription;
+  final Map<String, Map<String, dynamic>> _googleRatings = {};
   int _currentAdIndex = 0;
   List<Map<String, dynamic>> _upcomingNights = [];
 
@@ -49,11 +53,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   void initState() {
     super.initState();
     _loadVenues();
-    _determinePosition();
+    _determinePosition(requestIfNeeded: true);
   }
 
   @override
   void dispose() {
+    _positionStreamSubscription?.cancel();
     _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
@@ -87,14 +92,49 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     if (permission == LocationPermission.deniedForever) return;
 
     try {
-      final position = await Geolocator.getCurrentPosition();
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      );
       if (mounted) {
         setState(() {
           _currentPosition = position;
         });
       }
+      _startLocationUpdates();
     } catch (e) {
       debugPrint("Error getting location: $e");
+    }
+  }
+
+  void _startLocationUpdates() {
+    _positionStreamSubscription?.cancel();
+    _positionStreamSubscription = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+      ),
+    ).listen((Position position) {
+      if (mounted) {
+        setState(() {
+          _currentPosition = position;
+        });
+      }
+    }, onError: (e) {
+      debugPrint("Error in location stream: $e");
+    });
+  }
+
+  void _fetchGoogleRatingsForVenues(List<Venue> venues) {
+    for (final venue in venues) {
+      if (venue.name.isNotEmpty && !_googleRatings.containsKey(venue.id)) {
+        GooglePlacesService.fetchGoogleRating(venue.name, venue.city).then((result) {
+          if (result != null && mounted) {
+            setState(() {
+              _googleRatings[venue.id] = result;
+            });
+          }
+        });
+      }
     }
   }
 
@@ -289,7 +329,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
           _isLoading = false;
         });
-        //debugPrint('Loaded ${_allVenues.length} venues and ${_allUsers.length} users into state.');
+        _fetchGoogleRatingsForVenues(_allVenues);
       }
     } catch (e) {
       debugPrint('Error in _loadVenues: $e');
@@ -1419,17 +1459,43 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: Row(
+                                  mainAxisSize: MainAxisSize.min,
                                   children: [
                                     const Icon(
                                       Icons.star_rounded,
                                       color: Colors.amber,
                                       size: 14,
                                     ),
-                                    Text(
-                                      ' ${venue.averageRating}',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 12,
+                                    Builder(
+                                      builder: (context) {
+                                        final googleRatingData = _googleRatings[venue.id];
+                                        final double displayRating = googleRatingData != null
+                                            ? (googleRatingData['rating'] as num?)?.toDouble() ?? venue.averageRating
+                                            : venue.averageRating;
+                                        final displayRatingStr = displayRating > 0.0
+                                            ? displayRating.toStringAsFixed(1)
+                                            : '4.5';
+                                        return Text(
+                                          ' $displayRatingStr',
+                                          style: const TextStyle(
+                                            color: Colors.black87,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                          ),
+                                        );
+                                      }
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Image.asset(
+                                      'assets/images/google_logo.png',
+                                      height: 10,
+                                      errorBuilder: (_, _, _) => const Text(
+                                        'G',
+                                        style: TextStyle(
+                                          color: Colors.amber,
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
                                     ),
                                   ],

@@ -14,6 +14,8 @@ import '../../models/user.dart';
 import '../../services/api_service.dart';
 import '../../widgets/lunara_profile_image.dart';
 
+import '../social/match_success_dialog.dart';
+
 class Dashboard extends StatefulWidget {
   const Dashboard({super.key});
 
@@ -39,6 +41,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       const Duration(seconds: 15),
       (_) => _fetchBadges(),
     );
+    _initSocketListeners();
   }
 
   Future<void> _initApp() async {
@@ -82,9 +85,55 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _disposeSocketListeners();
     WidgetsBinding.instance.removeObserver(this);
     _badgeTimer?.cancel();
     super.dispose();
+  }
+
+  void _initSocketListeners() {
+    ApiService.addSocketListener('new_match', _onNewMatchReceived);
+  }
+
+  void _disposeSocketListeners() {
+    ApiService.removeSocketListener('new_match', _onNewMatchReceived);
+  }
+
+  void _onNewMatchReceived(dynamic data) {
+    if (!mounted) return;
+    try {
+      final matchedUserRaw = data['matchedUser'];
+      if (matchedUserRaw != null) {
+        final matchedUserMap = {
+          'id': matchedUserRaw['id'],
+          'name': '${matchedUserRaw['firstName'] ?? ''} ${matchedUserRaw['lastName'] ?? ''}'.trim().toUpperCase(),
+          'image': matchedUserRaw['profileImageUrl'] ?? 'https://picsum.photos/400/600',
+          'isAsset': false,
+        };
+        showGeneralDialog(
+          context: context,
+          barrierDismissible: true,
+          barrierLabel: 'Match',
+          transitionDuration: const Duration(milliseconds: 400),
+          transitionBuilder: (context, anim1, anim2, child) {
+            return FadeTransition(
+              opacity: anim1,
+              child: ScaleTransition(
+                scale: Tween<double>(begin: 0.8, end: 1.0).animate(
+                  CurvedAnimation(parent: anim1, curve: Curves.elasticOut),
+                ),
+                child: child,
+              ),
+            );
+          },
+          pageBuilder: (context, anim1, anim2) {
+            return MatchSuccessDialog(matchedUser: matchedUserMap);
+          },
+        );
+      }
+    } catch (e) {
+      debugPrint('Error showing global new match dialog: $e');
+    }
   }
 
   @override

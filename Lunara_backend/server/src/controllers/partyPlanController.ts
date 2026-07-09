@@ -179,33 +179,43 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             paymentStatus: 'pending',
         });
 
+        const responseData = {
+            id: partyPlan.id,
+            status: partyPlan.status,
+            paymentStatus: partyPlan.paymentStatus,
+            visibility: partyPlan.visibility,
+            selectedUsers: partyPlan.selectedUsers,
+            message: partyPlan.message,
+            planDateTime: partyPlan.planDateTime,
+            createdAt: partyPlan.createdAt,
+            hostPaymentStatus: partyPlan.hostPaymentStatus,
+            hostRazorpayOrderId: partyPlan.hostRazorpayOrderId,
+            isLive: partyPlan.isLive,
+            depositAmount: partyPlan.depositAmount,
+            expiresAt: partyPlan.expiresAt,
+            user: buildUserData({ creator: user } as any),
+            venue: {
+                id: venue.id,
+                name: venue.name,
+                addressLine1: venue.addressLine1,
+                area: venue.area,
+                city: venue.city,
+                category: venue.category,
+            },
+        };
+
+        // Emit socket event for real-time feed updates
+        try {
+            const { io } = require('../server');
+            io.emit('party_plan_created', responseData);
+        } catch (socketErr) {
+            logger.warn('Socket emission failed for party_plan_created:', socketErr);
+        }
+
         res.status(201).json({
             success: true,
             message: 'Party plan created successfully and is now live!',
-            data: {
-                id: partyPlan.id,
-                status: partyPlan.status,
-                paymentStatus: partyPlan.paymentStatus,
-                visibility: partyPlan.visibility,
-                selectedUsers: partyPlan.selectedUsers,
-                message: partyPlan.message,
-                planDateTime: partyPlan.planDateTime,
-                createdAt: partyPlan.createdAt,
-                hostPaymentStatus: partyPlan.hostPaymentStatus,
-                hostRazorpayOrderId: partyPlan.hostRazorpayOrderId,
-                isLive: partyPlan.isLive,
-                depositAmount: partyPlan.depositAmount,
-                expiresAt: partyPlan.expiresAt,
-                user: buildUserData({ creator: user } as any),
-                venue: {
-                    id: venue.id,
-                    name: venue.name,
-                    addressLine1: venue.addressLine1,
-                    area: venue.area,
-                    city: venue.city,
-                    category: venue.category,
-                },
-            },
+            data: responseData,
             razorpayOrderId: order.id,
             amount: order.amount,
             currency: order.currency,
@@ -315,9 +325,27 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
                         isLive: false,
                     });
                     await autoOpenChat(plan.userId, activeReq.requesterId);
+
+                    // Emit socket match success
+                    try {
+                        const { io } = require('../server');
+                        io.to(`user_${plan.userId}`).emit('party_plan_match_success', { planId: plan.id, requestId: activeReq.id });
+                        io.to(`user_${activeReq.requesterId}`).emit('party_plan_match_success', { planId: plan.id, requestId: activeReq.id });
+                    } catch (socketErr) {
+                        logger.warn('Socket emission failed for party_plan_match_success:', socketErr);
+                    }
+
                     res.json({ success: true, message: 'Both paid! Match Successful & Chat Opened 🎉', data: plan });
                     return;
                 } else {
+                    // Emit host paid to joiner so they know they can pay now
+                    try {
+                        const { io } = require('../server');
+                        io.to(`user_${activeReq.requesterId}`).emit('party_plan_host_paid', { planId: plan.id, requestId: activeReq.id });
+                    } catch (socketErr) {
+                        logger.warn('Socket emission failed for party_plan_host_paid:', socketErr);
+                    }
+
                     res.json({ success: true, message: 'Host payment verified. Joiner 30-minute payment window starts now. ⏳', data: plan });
                     return;
                 }
@@ -705,6 +733,14 @@ export const deletePartyPlan = async (req: Request, res: Response): Promise<void
 
         await plan.destroy();
 
+        // Emit socket event to notify other clients to remove it from feed
+        try {
+            const { io } = require('../server');
+            io.emit('party_plan_deleted', { planId: id });
+        } catch (socketErr) {
+            logger.warn('Socket emission failed for party_plan_deleted on destroy:', socketErr);
+        }
+
         res.json({ success: true, message: 'Party plan deleted successfully' });
     } catch (err: any) {
         logger.error('deletePartyPlan error:', err);
@@ -912,6 +948,29 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
             }
         );
 
+        // Emit socket events
+        try {
+            const { io } = require('../server');
+            
+            // Notify joiner
+            io.to(`user_${request.requesterId}`).emit('party_plan_request_accepted', {
+                requestId: request.id,
+                planId: plan.id,
+                hostAlreadyPaid,
+                hostRazorpayOrderId: hostOrder ? hostOrder.id : null,
+                hostAmount: hostOrder ? hostOrder.amount : null,
+                hostCurrency: hostOrder ? hostOrder.currency : null,
+                joinerRazorpayOrderId: joinerOrder.id,
+                joinerAmount: joinerOrder.amount,
+                joinerCurrency: joinerOrder.currency,
+            });
+
+            // Remove from global feeds (since it's reserved)
+            io.emit('party_plan_deleted', { planId: plan.id });
+        } catch (socketErr) {
+            logger.warn('Socket emission failed for acceptPartyPlanRequest:', socketErr);
+        }
+
         res.json({
             success: true,
             message: hostAlreadyPaid 
@@ -978,12 +1037,31 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
                     isLive: false,
                 });
                 await autoOpenChat(plan.userId, request.requesterId);
+
+                // Emit socket match success
+                try {
+                    const { io } = require('../server');
+                    io.to(`user_${plan.userId}`).emit('party_plan_match_success', { planId: plan.id, requestId: request.id });
+                    io.to(`user_${request.requesterId}`).emit('party_plan_match_success', { planId: plan.id, requestId: request.id });
+                } catch (socketErr) {
+                    logger.warn('Socket emission failed for party_plan_match_success:', socketErr);
+                }
+
                 res.json({ success: true, message: 'Both paid! Match Successful & Chat Opened 🎉', data: request });
             } else {
                 // Joiner paid, wait for host (though in flow Host should pay first)
                 await request.update({
                     status: PartyPlanRequestStatus.PAYMENT_PENDING,
                 });
+
+                // Emit joiner paid to host
+                try {
+                    const { io } = require('../server');
+                    io.to(`user_${plan.userId}`).emit('party_plan_joiner_paid', { planId: plan.id, requestId: request.id });
+                } catch (socketErr) {
+                    logger.warn('Socket emission failed for party_plan_joiner_paid:', socketErr);
+                }
+
                 res.json({ success: true, message: 'Payment verified. Waiting for host payment. ⏳', data: request });
             }
         } else {
@@ -1024,6 +1102,14 @@ export const cancelPartyPlan = async (req: Request, res: Response): Promise<void
         );
 
         // TODO: Initiate refund for host and any joiner if applicable
+
+        // Emit socket event to notify other clients to remove it from feed
+        try {
+            const { io } = require('../server');
+            io.emit('party_plan_deleted', { planId: plan.id });
+        } catch (socketErr) {
+            logger.warn('Socket emission failed for party_plan_deleted on cancel:', socketErr);
+        }
 
         res.json({ success: true, message: 'Party plan cancelled' });
     } catch (err: any) {

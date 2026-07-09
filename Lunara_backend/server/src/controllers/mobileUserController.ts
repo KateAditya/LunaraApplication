@@ -940,6 +940,25 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                     });
                 }
 
+                // Emit live new_match events
+                try {
+                    const currentUser = await User.findByPk(userId);
+                    const targetUser = await User.findByPk(targetUserId);
+                    if (currentUser && targetUser) {
+                        const { io } = require('../server');
+                        io.to(`user_${userId}`).emit('new_match', {
+                            matchedUser: targetUser.get({ plain: true }),
+                            conversationId: conversation.id
+                        });
+                        io.to(`user_${targetUserId}`).emit('new_match', {
+                            matchedUser: currentUser.get({ plain: true }),
+                            conversationId: conversation.id
+                        });
+                    }
+                } catch (emitErr) {
+                    logger.error('[swipeUser] Failed to emit new_match socket event:', emitErr);
+                }
+
                 return res.status(200).json({
                     success: true,
                     data: mySwipe,
@@ -948,6 +967,23 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                 });
             } catch (chatErr) {
                 logger.error('[swipeUser] Failed to init free chat, but match still created:', chatErr);
+            }
+
+            // Emit live new_match events if chat failed but match still created
+            try {
+                const currentUser = await User.findByPk(userId);
+                const targetUser = await User.findByPk(targetUserId);
+                if (currentUser && targetUser) {
+                    const { io } = require('../server');
+                    io.to(`user_${userId}`).emit('new_match', {
+                        matchedUser: targetUser.get({ plain: true })
+                    });
+                    io.to(`user_${targetUserId}`).emit('new_match', {
+                        matchedUser: currentUser.get({ plain: true })
+                    });
+                }
+            } catch (emitErr) {
+                logger.error('[swipeUser] Failed to emit new_match socket event:', emitErr);
             }
 
             return res.status(200).json({ success: true, data: mySwipe, matched: true });

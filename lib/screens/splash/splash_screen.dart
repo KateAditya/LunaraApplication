@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import '../../services/api_service.dart';
 import '../../services/push_notification_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../onboarding/permissions_screen.dart';
 import '../onboarding/welcome_carousel.dart';
 import '../home/dashboard.dart';
 
@@ -27,6 +29,14 @@ class _SplashScreenState extends State<SplashScreen> {
   Future<void> _initApp() async {
     _controller = VideoPlayerController.asset('assets/videos/splash.mp4');
     
+    // Safety fallback: if video fails or takes too long, force navigation
+    Future.delayed(const Duration(seconds: 4), () {
+      if (!_hasNavigated) {
+        debugPrint('Splash screen fallback triggered');
+        _checkAndNavigate(force: true);
+      }
+    });
+
     // Run both video initialization and API auth in parallel
     Future.wait([
       _controller.initialize().then((_) {
@@ -38,6 +48,10 @@ class _SplashScreenState extends State<SplashScreen> {
           _controller.play();
           _controller.addListener(_videoListener);
         }
+      }).catchError((error) {
+        debugPrint('Error initializing splash video: $error');
+        // Let the fallback timer handle navigation, or force it now
+        _checkAndNavigate(force: true);
       }),
       ApiService.initAuthToken().then((_) {
         _isApiInitDone = true;
@@ -45,6 +59,10 @@ class _SplashScreenState extends State<SplashScreen> {
         if (ApiService.currentUserId != null) {
           PushNotificationService.initialize();
         }
+        _checkAndNavigate();
+      }).catchError((error) {
+        debugPrint('Error in initAuthToken: $error');
+        _isApiInitDone = true;
         _checkAndNavigate();
       }),
     ]);
@@ -57,12 +75,12 @@ class _SplashScreenState extends State<SplashScreen> {
     }
   }
 
-  void _checkAndNavigate() {
+  void _checkAndNavigate({bool force = false}) {
     if (_hasNavigated) return;
     
-    if (_isApiInitDone && 
+    if (force || (_isApiInitDone && 
         _controller.value.isInitialized && 
-        _controller.value.position >= _controller.value.duration) {
+        _controller.value.position >= _controller.value.duration)) {
       
       _hasNavigated = true;
       _controller.removeListener(_videoListener);
@@ -70,9 +88,26 @@ class _SplashScreenState extends State<SplashScreen> {
     }
   }
 
-  void _navigateToNext() {
+  void _navigateToNext() async {
     if (!mounted) return;
     
+    final prefs = await SharedPreferences.getInstance();
+    final hasSeenPermissions = prefs.getBool('has_seen_permissions_screen') ?? false;
+
+    if (!mounted) return;
+
+    if (!hasSeenPermissions) {
+      Navigator.pushReplacement(
+        context,
+        PageRouteBuilder(
+          pageBuilder: (_, _, _) => const PermissionsScreen(),
+          transitionsBuilder: (_, a, _, child) => FadeTransition(opacity: a, child: child),
+          transitionDuration: const Duration(milliseconds: 400),
+        ),
+      );
+      return;
+    }
+
     if (ApiService.currentUserId != null) {
       Navigator.pushReplacement(
         context,

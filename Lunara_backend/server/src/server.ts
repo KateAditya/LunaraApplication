@@ -22,6 +22,10 @@ import { startPartyPlanCron } from './cron/partyPlanCron';
 dotenv.config();
 
 const app: Application = express();
+
+// Trust reverse proxy (e.g., NGINX) to ensure rate limiter uses real client IPs
+app.set('trust proxy', 1);
+
 const httpServer = createServer(app);
 const io = new SocketIOServer(httpServer, {
     cors: {
@@ -32,8 +36,22 @@ const io = new SocketIOServer(httpServer, {
 
 // Middleware
 app.use(helmet({
-    crossOriginResourcePolicy: { policy: "cross-origin" }
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    contentSecurityPolicy: {
+        directives: {
+            ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+            "img-src": ["'self'", "data:", "blob:", "*.blob.core.windows.net", "placehold.co", "*.placehold.co", "images.unsplash.com"],
+            "connect-src": ["'self'", "*.azurewebsites.net", "*.windows.net"],
+        },
+    },
 })); // Security headers
+
+// Explicit Permissions-Policy to silence the 'unload' violation from Chrome extensions
+app.use((_req, res, next) => {
+    res.setHeader('Permissions-Policy', 'unload=()');
+    next();
+});
+
 app.use(cors({
     origin: true,
     credentials: true,
@@ -61,13 +79,24 @@ app.get('/health', (_req, res) => {
     });
 });
 
-// Serve static files from uploads directory
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
-
-// Fallback for missing images in /uploads to prevent 404 errors in the mobile app during dev
-app.use('/uploads', (_req, res) => {
-    res.redirect('https://placehold.co/600x400/2a1b38/e0a0ff.png?text=Image+Not+Found');
-});
+// Serve static files from uploads directory (or redirect to Azure Blob Storage)
+if (process.env.AZURE_STORAGE_ACCOUNT_NAME) {
+    const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+    const containerName = process.env.AZURE_STORAGE_CONTAINER_NAME || 'lunara-uploads';
+    const blobBaseUrl = `https://${accountName}.blob.core.windows.net/${containerName}`;
+    
+    app.use('/uploads', (req, res) => {
+        // req.path starts with a slash, e.g., /venues/123/img.jpg
+        res.redirect(301, `${blobBaseUrl}${req.path}`);
+    });
+} else {
+    app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+    
+    // Fallback for missing images in /uploads to prevent 404 errors in the mobile app during dev
+    app.use('/uploads', (_req, res) => {
+        res.redirect('https://placehold.co/600x400/2a1b38/e0a0ff.png?text=Image+Not+Found');
+    });
+}
 
 // API Routes
 import authRoutes from './routes/auth';
@@ -90,6 +119,8 @@ import mobileStrangersMeetRoutes from './routes/mobileStrangersMeet';
 import adminStrangersMeetRoutes from './routes/adminStrangersMeet';
 import mobileCityRoutes from './routes/mobileCity';
 import adminBookingsRoutes from './routes/adminBookings';
+import adminSubscriptionRoutes from './routes/adminSubscription';
+import mobileSubscriptionRoutes from './routes/mobileSubscription';
 import { getAdminChatSettings, updateAdminChatSettings } from './controllers/chatSubscriptionController';
 
 app.get('/api', (_req, res) => {
@@ -131,6 +162,8 @@ app.use('/api/mobile/strangers-meet', mobileStrangersMeetRoutes); // Strangers M
 app.use('/api/admin/strangers-meet', adminStrangersMeetRoutes);
 app.use('/api/admin/bookings', adminBookingsRoutes);   // Strangers Meet (Admin)
 app.use('/api/mobile/cities', mobileCityRoutes);                   // Cities (Mobile App)
+app.use('/api/admin/subscriptions', adminSubscriptionRoutes); // Subscriptions (Admin)
+app.use('/api/mobile/subscriptions', mobileSubscriptionRoutes); // Subscriptions (Mobile)
 
 // Admin — chat subscription settings
 app.get('/api/admin/settings/chat', getAdminChatSettings);
@@ -200,8 +233,20 @@ io.on('connection', (socket) => {
     // - admin notifications
 });
 
-// Error handling middleware (must be last)
-app.use(errorHandler);
+const PORT = process.env.PORT || 5000;
+const HOST = process.env.HOST || 'localhost';
+
+// Serve the Admin Panel (React frontend)
+const adminPanelPath = path.join(__dirname, '../../admin-panel/dist');
+app.use(express.static(adminPanelPath));
+
+// Catch-all route to serve the React index.html for any non-API routes (React Router support)
+app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
+        return next();
+    }
+    res.sendFile(path.join(adminPanelPath, 'index.html'));
+});
 
 // 404 handler
 app.use((req, res) => {
@@ -212,10 +257,10 @@ app.use((req, res) => {
     });
 });
 
-const PORT = process.env.PORT || 5000;
-const HOST = process.env.HOST || 'localhost';
+// Error handling middleware (must be last)
+app.use(errorHandler);
 
-// Start server after database connection
+// Sync database and start server after database connection
 const startServer = async () => {
     try {
         await connectDatabase();
