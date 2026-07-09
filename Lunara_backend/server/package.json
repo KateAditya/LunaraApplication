@@ -24,6 +24,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@azure/storage-blob": "^12.33.0",
     "@google-cloud/vision": "^5.3.7",
     "@types/sharp": "^0.31.1",
     "bcryptjs": "^2.4.3",
@@ -39,6 +40,8 @@
     "jsonwebtoken": "^9.0.3",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
+    "multer-azure-blob-storage": "^1.2.0",
+    "multer-azure-storage": "^0.2.0",
     "node-cron": "^4.2.1",
     "nodemailer": "^6.10.1",
     "pg": "^8.11.3",

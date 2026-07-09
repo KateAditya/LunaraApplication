@@ -32,6 +32,8 @@ import PartyPlanRequest from './PartyPlanRequest';
 import UserPenalty from './UserPenalty';
 import City from './City';
 import ChatSubscription from './ChatSubscription';
+import SubscriptionPackage from './SubscriptionPackage';
+import UserSubscription from './UserSubscription';
 
 // ============================================================================
 // User Associations
@@ -97,6 +99,25 @@ User.hasMany(PasswordResetToken, {
 User.hasMany(EmailVerification, {
     foreignKey: 'userId',
     as: 'emailVerifications',
+});
+
+// User -> UserSubscription (1:1 per active package)
+User.hasMany(UserSubscription, {
+    foreignKey: 'userId',
+    as: 'subscriptions',
+});
+UserSubscription.belongsTo(User, {
+    foreignKey: 'userId',
+    as: 'user',
+});
+
+SubscriptionPackage.hasMany(UserSubscription, {
+    foreignKey: 'packageId',
+    as: 'userSubscriptions',
+});
+UserSubscription.belongsTo(SubscriptionPackage, {
+    foreignKey: 'packageId',
+    as: 'package',
 });
 
 // ============================================================================
@@ -443,6 +464,8 @@ export {
     UserPenalty,
     City,
     ChatSubscription,
+    SubscriptionPackage,
+    UserSubscription,
 };
 
 // Export sync function
@@ -483,6 +506,8 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
         await UserPenalty.sync(options);
         await City.sync(options);
         await ChatSubscription.sync(options);
+        await SubscriptionPackage.sync(options);
+        await UserSubscription.sync(options);
 
         console.log('✅ All models synchronized successfully');
     } catch (error) {
@@ -526,5 +551,7 @@ export default {
     UserPenalty,
     City,
     ChatSubscription,
+    SubscriptionPackage,
+    UserSubscription,
     syncModels,
 };

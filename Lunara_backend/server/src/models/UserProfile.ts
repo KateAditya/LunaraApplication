@@ -18,6 +18,13 @@ export interface UserProfileAttributes {
     interests?: string[];
     instagramHandle?: string;
     spotifyProfile?: string;
+    
+    // Daily limits tracking
+    dailyMatchRequestsCount?: number;
+    dailyLikesCount?: number;
+    dailyPostsCount?: number;
+    lastActivityDate?: Date;
+
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -39,6 +46,10 @@ export interface UserProfileCreationAttributes
         | 'interests'
         | 'instagramHandle'
         | 'spotifyProfile'
+        | 'dailyMatchRequestsCount'
+        | 'dailyLikesCount'
+        | 'dailyPostsCount'
+        | 'lastActivityDate'
         | 'createdAt'
         | 'updatedAt'
     > { }
@@ -61,6 +72,12 @@ class UserProfile
     public interests?: string[];
     public instagramHandle?: string;
     public spotifyProfile?: string;
+
+    public dailyMatchRequestsCount?: number;
+    public dailyLikesCount?: number;
+    public dailyPostsCount?: number;
+    public lastActivityDate?: Date;
+
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 
@@ -185,6 +202,25 @@ UserProfile.init(
             type: DataTypes.STRING(255),
             allowNull: true,
             field: 'spotify_profile',
+        },
+        dailyMatchRequestsCount: {
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            defaultValue: 0,
+        },
+        dailyLikesCount: {
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            defaultValue: 0,
+        },
+        dailyPostsCount: {
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            defaultValue: 0,
+        },
+        lastActivityDate: {
+            type: DataTypes.DATE,
+            allowNull: true,
         },
     },
     {

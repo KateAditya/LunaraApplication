@@ -44,6 +44,26 @@ class ApiService {
   }
 
   static socket_io.Socket? socket;
+  static final Map<String, List<Function(dynamic)>> _socketListeners = {};
+
+  static void addSocketListener(String event, Function(dynamic) callback) {
+    if (!_socketListeners.containsKey(event)) {
+      _socketListeners[event] = [];
+    }
+    _socketListeners[event]!.add(callback);
+    if (socket != null) {
+      socket!.on(event, callback);
+    }
+  }
+
+  static void removeSocketListener(String event, Function(dynamic) callback) {
+    if (_socketListeners.containsKey(event)) {
+      _socketListeners[event]!.remove(callback);
+      if (socket != null) {
+        socket!.off(event, callback);
+      }
+    }
+  }
 
   static void initSocket() {
     final userId = currentUserId;
@@ -57,7 +77,10 @@ class ApiService {
       baseUrl,
       socket_io.OptionBuilder()
           .setTransports(['websocket'])
-          .disableAutoConnect()
+          .enableAutoConnect()
+          .enableReconnection()
+          .setReconnectionDelay(1000)
+          .setReconnectionAttempts(99999)
           .build(),
     );
 
@@ -66,6 +89,12 @@ class ApiService {
     socket!.onConnect((_) {
       debugPrint('Socket connected: ${socket!.id}');
       socket!.emit('join_user_room', userId);
+      // Re-bind all registered listeners
+      _socketListeners.forEach((event, callbacks) {
+        for (final cb in callbacks) {
+          socket!.on(event, cb);
+        }
+      });
     });
 
     socket!.onDisconnect((_) => debugPrint('Socket disconnected'));

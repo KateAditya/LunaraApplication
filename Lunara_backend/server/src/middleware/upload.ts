@@ -2,6 +2,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
+import { MulterAzureStorage } from 'multer-azure-blob-storage';
 
 // Re-export crypto so controllers can use the same random-name helper
 export { crypto };
