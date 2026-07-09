@@ -21,20 +21,25 @@ class PartyPlanTicketScreen extends StatelessWidget {
     final venueName = venue['name'] ?? 'Unknown Venue';
     final venueCity = venue['city'] ?? 'Unknown City';
     final venueArea = venue['area'] ?? '';
-    final planDateTime = plan['planDateTime'] != null 
-        ? DateTime.tryParse(plan['planDateTime'].toString())?.toLocal() ?? DateTime.now()
+    final planDateTime = plan['planDateTime'] != null
+        ? DateTime.tryParse(plan['planDateTime'].toString())?.toLocal() ??
+              DateTime.now()
         : DateTime.now();
 
     final hostUser = plan['user'] ?? plan['host'] ?? {};
-    final hostName = '${hostUser['firstName'] ?? ''} ${hostUser['lastName'] ?? ''}'.trim();
+    final hostName =
+        '${hostUser['firstName'] ?? ''} ${hostUser['lastName'] ?? ''}'.trim();
     final cleanHostName = hostName.isNotEmpty ? hostName : 'Host';
 
     final joinerUser = request['requester'] ?? {};
-    final joinerName = '${joinerUser['firstName'] ?? ''} ${joinerUser['lastName'] ?? ''}'.trim();
+    final joinerName =
+        '${joinerUser['firstName'] ?? ''} ${joinerUser['lastName'] ?? ''}'
+            .trim();
     final cleanJoinerName = joinerName.isNotEmpty ? joinerName : 'Joiner';
 
     final ticketId = (request['id']?.toString() ?? 'TICKET').toUpperCase();
-    final description = plan['message'] ?? plan['description'] ?? 'Party Plan Vibe';
+    final description =
+        plan['message'] ?? plan['description'] ?? 'Party Plan Vibe';
 
     return Scaffold(
       backgroundColor: LunaraTheme.midnightBlack,
@@ -93,7 +98,7 @@ class PartyPlanTicketScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: [
                     BoxShadow(
-                      color: LunaraTheme.electricViolet.withOpacity(0.3),
+                      color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
                       blurRadius: 20,
                       offset: const Offset(0, 10),
                     ),
@@ -116,7 +121,7 @@ class PartyPlanTicketScreen extends StatelessWidget {
                                   vertical: 6,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.2),
+                                  color: Colors.white.withValues(alpha: 0.2),
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: const Text(
@@ -130,7 +135,9 @@ class PartyPlanTicketScreen extends StatelessWidget {
                                 ),
                               ),
                               Text(
-                                ticketId.length > 12 ? ticketId.substring(0, 12) : ticketId,
+                                ticketId.length > 12
+                                    ? ticketId.substring(0, 12)
+                                    : ticketId,
                                 style: const TextStyle(
                                   color: Colors.white70,
                                   fontSize: 12,
@@ -151,7 +158,7 @@ class PartyPlanTicketScreen extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 24),
-                          
+
                           // Details Grid
                           Row(
                             children: [
@@ -169,7 +176,9 @@ class PartyPlanTicketScreen extends StatelessWidget {
                               Expanded(
                                 child: _buildTicketDetail(
                                   'DATE',
-                                  DateFormat('MMM dd, yyyy').format(planDateTime),
+                                  DateFormat(
+                                    'MMM dd, yyyy',
+                                  ).format(planDateTime),
                                 ),
                               ),
                               Expanded(
@@ -219,7 +228,8 @@ class PartyPlanTicketScreen extends StatelessWidget {
                             builder: (context, constraints) {
                               return Flex(
                                 direction: Axis.horizontal,
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 mainAxisSize: MainAxisSize.max,
                                 children: List.generate(
                                   (constraints.constrainWidth() / 10).floor(),
@@ -227,7 +237,9 @@ class PartyPlanTicketScreen extends StatelessWidget {
                                     width: 5,
                                     height: 2,
                                     child: DecoratedBox(
-                                      decoration: BoxDecoration(color: Colors.white54),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white54,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -286,12 +298,15 @@ class PartyPlanTicketScreen extends StatelessWidget {
 
               // Screenshot Protection Notice
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
-                  color: LunaraTheme.electricViolet.withOpacity(0.1),
+                  color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: LunaraTheme.electricViolet.withOpacity(0.2),
+                    color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
                   ),
                 ),
                 child: const Row(
@@ -340,7 +355,7 @@ class PartyPlanTicketScreen extends StatelessWidget {
                     ),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white.withOpacity(0.1),
+                    backgroundColor: Colors.white.withValues(alpha: 0.1),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),
@@ -375,7 +390,7 @@ class PartyPlanTicketScreen extends StatelessWidget {
         Text(
           label,
           style: TextStyle(
-            color: Colors.white.withOpacity(0.6),
+            color: Colors.white.withValues(alpha: 0.6),
             fontSize: 10,
             fontWeight: FontWeight.bold,
             letterSpacing: 1,

@@ -4,7 +4,18 @@ import '../../widgets/glass_card.dart';
 import '../../widgets/action_button.dart';
 
 class AdvancedFiltersScreen extends StatefulWidget {
-  const AdvancedFiltersScreen({super.key});
+  final Set<String>? initialVibes;
+  final double? initialPriceLevel;
+  final double? initialRadius;
+  final String? initialCrowdDensity;
+
+  const AdvancedFiltersScreen({
+    super.key,
+    this.initialVibes,
+    this.initialPriceLevel,
+    this.initialRadius,
+    this.initialCrowdDensity,
+  });
 
   @override
   State<AdvancedFiltersScreen> createState() => _AdvancedFiltersScreenState();
@@ -12,25 +23,38 @@ class AdvancedFiltersScreen extends StatefulWidget {
 
 class _AdvancedFiltersScreenState extends State<AdvancedFiltersScreen> {
   final List<String> _vibes = [
-    'TECHNO',
+    'CLUB',
     'ROOFTOP',
-    'CHILL',
-    'COCKTAILS',
-    'LIVE',
-    'UNDERGROUND',
-    'JAZZ',
-    'HOUSE',
+    'PUB',
+    'LOUNGE',
+    'CAFE',
+    'HOTEL',
+    'RESTAURANT',
+    'BAR',
   ];
   final TextEditingController _searchController = TextEditingController();
+  
+  late final Set<String> _selectedVibes;
+  late double _priceLevel;
+  late double _radius;
+  String? _selectedCrowdDensity;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedVibes = widget.initialVibes != null 
+        ? Set.from(widget.initialVibes!) 
+        : {};
+    _priceLevel = widget.initialPriceLevel ?? 2.0;
+    _radius = widget.initialRadius ?? 5.0;
+    _selectedCrowdDensity = widget.initialCrowdDensity;
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
   }
-  final Set<String> _selectedVibes = {'TECHNO', 'ROOFTOP'};
-  double _priceLevel = 2.0; // Default to 'medium'
-  double _radius = 5.0;
-  String? _selectedCrowdDensity;
 
   @override
   Widget build(BuildContext context) {
@@ -47,7 +71,7 @@ class _AdvancedFiltersScreenState extends State<AdvancedFiltersScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildSectionLabel('VIBE CATEGORIES'),
+                    _buildSectionLabel('VENUE TYPES'),
                     const SizedBox(height: 16),
                     _buildVibeTags(),
                     const SizedBox(height: 40),
@@ -101,7 +125,11 @@ class _AdvancedFiltersScreenState extends State<AdvancedFiltersScreen> {
             },
             child: const Text(
               'RESET',
-              style: TextStyle(color: Colors.deepPurple,fontWeight: FontWeight.bold, fontSize: 12),
+              style: TextStyle(
+                color: Colors.deepPurple,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
             ),
           ),
         ],
@@ -160,16 +188,12 @@ class _AdvancedFiltersScreenState extends State<AdvancedFiltersScreen> {
           child: GlassCard(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             borderRadius: BorderRadius.circular(30),
-            borderColor: isSelected
-                ? Colors.deepPurple
-                : Colors.grey[400]!,
+            borderColor: isSelected ? Colors.deepPurple : Colors.grey[400]!,
             opacity: isSelected ? 0.2 : 0.05,
             child: Text(
               vibe,
               style: TextStyle(
-                color: isSelected
-                    ? Colors.deepPurple
-                    : Colors.black,
+                color: isSelected ? Colors.deepPurple : Colors.black,
                 fontSize: 14,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
               ),
@@ -269,17 +293,13 @@ class _AdvancedFiltersScreenState extends State<AdvancedFiltersScreen> {
               },
               child: GlassCard(
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                borderRadius: BorderRadius.circular(16), 
-                borderColor: isSelected
-                    ? Colors.deepPurple
-                    : Colors.grey[400]!,
+                borderRadius: BorderRadius.circular(16),
+                borderColor: isSelected ? Colors.deepPurple : Colors.grey[400]!,
                 child: Column(
                   children: [
                     Icon(
                       type['icon'] as IconData,
-                      color: isSelected
-                          ? Colors.deepPurple
-                          : Colors.black,
+                      color: isSelected ? Colors.deepPurple : Colors.black,
                       size: 20,
                     ),
                     const SizedBox(height: 8),

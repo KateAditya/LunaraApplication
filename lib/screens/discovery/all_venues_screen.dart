@@ -5,6 +5,7 @@ import 'venue_detail_screen.dart';
 import '../../widgets/light_map_view.dart';
 import '../../services/api_service.dart';
 import 'advanced_filters_screen.dart';
+
 class AllVenuesScreen extends StatefulWidget {
   final List<Venue> venues;
 
@@ -19,9 +20,12 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
   String _searchQuery = '';
   late List<Venue> _filteredVenues;
   bool _isMapView = false;
-  
+
   // Filter criteria
-  Set<String> _selectedVibes = {'TECHNO', 'ROOFTOP'};
+  Set<String> _selectedVibes = {'TEST'};
+  double _priceLevel = 2.0;
+  double _radius = 5.0;
+  String? _selectedCrowdDensity;
   String _selectedCategory = 'ALL';
   late List<String> _categories;
 
@@ -32,7 +36,14 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
     _filteredVenues = widget.venues;
     // Apply city filter if a city is selected in ApiService
     if (ApiService.selectedCity != null) {
-      _filteredVenues = _filteredVenues.where((v) => v.city.toLowerCase() == ApiService.selectedCity!.toLowerCase()).toList();
+      _filteredVenues = _filteredVenues
+          .where(
+            (v) =>
+                v.city.toLowerCase() ==
+                    ApiService.selectedCity!.toLowerCase() &&
+                v.status == "live",
+          )
+          .toList();
     }
     final types = widget.venues
         .map((v) => (v.type ?? '').toUpperCase())
@@ -51,12 +62,17 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
   void _applyFilters() {
     setState(() {
       _filteredVenues = widget.venues.where((v) {
-        final matchesSearch = _searchQuery.isEmpty ||
-            v.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-            v.city.toLowerCase().contains(_searchQuery.toLowerCase());
+        final matchesSearch =
+            (_searchQuery.isEmpty ||
+                v.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+                v.city.toLowerCase().contains(_searchQuery.toLowerCase())) &&
+            v.status == 'live';
         final venueType = (v.type ?? '').toUpperCase();
-        final matchesVibe = _selectedVibes.isEmpty || _selectedVibes.contains(venueType);
-        final matchesCity = ApiService.selectedCity == null || v.city.toLowerCase() == ApiService.selectedCity!.toLowerCase();
+        final matchesVibe =
+            _selectedVibes.isEmpty || _selectedVibes.contains(venueType);
+        final matchesCity =
+            ApiService.selectedCity == null ||
+            v.city.toLowerCase() == ApiService.selectedCity!.toLowerCase();
         // Additional filters can be added here (priceLevel, radius, crowdDensity)
         return matchesSearch && matchesVibe && matchesCity;
       }).toList();
@@ -78,22 +94,26 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
             _buildSearchHeader(context),
             Expanded(
               child: _isMapView
-                  ? LightMapView(venues: _filteredVenues.map((v) => v.toMap()).toList())
+                  ? LightMapView(
+                      venues: _filteredVenues.map((v) => v.toMap()).toList(),
+                    )
                   : _filteredVenues.isEmpty
-                      ? const Center(
-                          child: Text(
-                            'No venues found.',
-                            style: TextStyle(
-                                color: Colors.grey, fontWeight: FontWeight.bold),
-                          ),
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.all(20),
-                          itemCount: _filteredVenues.length,
-                          itemBuilder: (context, index) {
-                            return _buildVenueCard(context, _filteredVenues[index]);
-                          },
+                  ? const Center(
+                      child: Text(
+                        'No venues found.',
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontWeight: FontWeight.bold,
                         ),
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(20),
+                      itemCount: _filteredVenues.length,
+                      itemBuilder: (context, index) {
+                        return _buildVenueCard(context, _filteredVenues[index]);
+                      },
+                    ),
             ),
           ],
         ),
@@ -121,7 +141,11 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(_isMapView ? Icons.list : Icons.map, color: Colors.white, size: 18),
+              Icon(
+                _isMapView ? Icons.list : Icons.map,
+                color: Colors.white,
+                size: 18,
+              ),
               const SizedBox(width: 6),
               Text(
                 _isMapView ? 'LIST VIEW' : 'MAP VIEW',
@@ -170,10 +194,17 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
               child: TextField(
                 controller: _searchController,
                 onChanged: _onSearchChanged,
-                style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.bold,
+                ),
                 decoration: InputDecoration(
                   hintText: 'Search venues, cities...',
-                  hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14, fontWeight: FontWeight.w500),
+                  hintStyle: TextStyle(
+                    color: Colors.grey[400],
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
                   border: InputBorder.none,
                   suffixIcon: _searchQuery.isNotEmpty
                       ? IconButton(
@@ -183,7 +214,10 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
                             _onSearchChanged('');
                           },
                         )
-                      : const Icon(Icons.search, color: LunaraTheme.electricViolet),
+                      : const Icon(
+                          Icons.search,
+                          color: LunaraTheme.electricViolet,
+                        ),
                 ),
               ),
             ),
@@ -195,12 +229,23 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
             onPressed: () async {
               final result = await Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const AdvancedFiltersScreen()),
+                MaterialPageRoute(
+                  builder: (_) => AdvancedFiltersScreen(
+                    initialVibes: _selectedVibes,
+                    initialPriceLevel: _priceLevel,
+                    initialRadius: _radius,
+                    initialCrowdDensity: _selectedCrowdDensity,
+                  ),
+                ),
               );
               if (result != null) {
                 // Update filters from AdvancedFiltersScreen
                 setState(() {
                   _selectedVibes = Set<String>.from(result['vibes'] ?? []);
+                  _priceLevel =
+                      (result['priceLevel'] as num?)?.toDouble() ?? 2.0;
+                  _radius = (result['radius'] as num?)?.toDouble() ?? 5.0;
+                  _selectedCrowdDensity = result['crowdDensity'];
                 });
                 _applyFilters();
               }
@@ -224,9 +269,14 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
                       },
                       child: Container(
                         margin: const EdgeInsets.only(right: 8),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
                         decoration: BoxDecoration(
-                          color: isSelected ? LunaraTheme.electricViolet : Colors.white,
+                          color: isSelected
+                              ? LunaraTheme.electricViolet
+                              : Colors.white,
                           borderRadius: BorderRadius.circular(20),
                           boxShadow: LunaraTheme.premiumCardShadow,
                         ),
@@ -258,11 +308,7 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFFF3EEFF),
-            Color(0xFFF8F4FF),
-            Color(0xFFEEE6FF),
-          ],
+          colors: [Color(0xFFF3EEFF), Color(0xFFF8F4FF), Color(0xFFEEE6FF)],
         ),
         borderRadius: BorderRadius.circular(28),
         boxShadow: const [
@@ -277,10 +323,7 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
             offset: Offset(0, 4),
           ),
         ],
-        border: Border.all(
-          color: const Color(0x1A7F00FF),
-          width: 1.2,
-        ),
+        border: Border.all(color: const Color(0x1A7F00FF), width: 1.2),
       ),
       child: InkWell(
         onTap: () => Navigator.push(
@@ -295,7 +338,9 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
           children: [
             // Venue Image
             ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
               child: Image.network(
                 venue.imageUrl ?? '',
                 height: 200,
@@ -304,8 +349,10 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
                 errorBuilder: (context, error, stackTrace) => Container(
                   height: 200,
                   color: Colors.grey[100],
-                  child: const Icon(Icons.broken_image_outlined,
-                      color: Colors.grey),
+                  child: const Icon(
+                    Icons.broken_image_outlined,
+                    color: Colors.grey,
+                  ),
                 ),
                 loadingBuilder: (context, child, loadingProgress) {
                   if (loadingProgress == null) return child;
@@ -313,7 +360,8 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
                     height: 200,
                     color: Colors.grey[50],
                     child: const Center(
-                        child: CircularProgressIndicator(strokeWidth: 2)),
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
                   );
                 },
               ),
@@ -331,29 +379,37 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
                         child: Text(
                           venue.name.toUpperCase(),
                           style: const TextStyle(
-                              fontFamily: 'AllroundGothic',
-                              fontWeight: FontWeight.bold,
-                              fontSize: 18,
-                              letterSpacing: 1),
+                            fontFamily: 'AllroundGothic',
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                            letterSpacing: 1,
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.amber[50],
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.star_rounded,
-                                color: Colors.amber, size: 16),
+                            const Icon(
+                              Icons.star_rounded,
+                              color: Colors.amber,
+                              size: 16,
+                            ),
                             Text(
                               ' ${venue.averageRating}',
                               style: const TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 13),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
                             ),
                           ],
                         ),
@@ -364,24 +420,29 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
                   Text(
                     (venue.type ?? '').toUpperCase(),
                     style: const TextStyle(
-                        color: LunaraTheme.electricViolet,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 2),
+                      color: LunaraTheme.electricViolet,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 2,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Row(
                     children: [
-                      const Icon(Icons.location_on_rounded,
-                          color: Colors.grey, size: 16),
+                      const Icon(
+                        Icons.location_on_rounded,
+                        color: Colors.grey,
+                        size: 16,
+                      ),
                       const SizedBox(width: 6),
                       Text(
                         venue.city,
                         style: const TextStyle(
-                            fontFamily: 'AllroundGothic',
-                            color: Colors.black,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500),
+                          fontFamily: 'AllroundGothic',
+                          color: Colors.black,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ],
                   ),

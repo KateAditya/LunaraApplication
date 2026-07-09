@@ -27,6 +27,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final List<User> _swipeHistory = [];
   final List<bool> _swipeDirections = []; // true for like, false for nope
   final BumbleSwipeController _swipeController = BumbleSwipeController();
+  bool _outOfProfiles = false;
+  bool _isProfilesLoading = true;
   User? _backtrackedUser;
   String _swipeAction = 'like';
 
@@ -55,24 +57,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
             continue;
           }
 
-          // Filter by selected city (case-insensitive)
-          if (selectedCity != null && selectedCity.isNotEmpty) {
-            if (u.city == null ||
-                u.city!.toLowerCase() != selectedCity.toLowerCase()) {
+          // Filter out same gender
+          if (myGender != null && myGender.isNotEmpty) {
+            final uGender = u.gender?.toLowerCase();
+            if (uGender == null || uGender == myGender) {
               continue;
             }
           }
-
-          // Filter by opposite gender (case-insensitive)
-          if (myGender != null && myGender.isNotEmpty) {
-            final uGender = (u.gender ?? '').toLowerCase();
-            if (myGender == 'male' || myGender == 'm') {
-              if (uGender == 'male' || uGender == 'm') continue;
-            } else if (myGender == 'female' || myGender == 'f') {
-              if (uGender == 'female' || uGender == 'f') continue;
-            }
-          }
-
+          
           resolvedUsers.add(u);
         } catch (_) {}
       }
@@ -80,6 +72,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         setState(() {
           _me = me;
           _allProfiles = resolvedUsers;
+          _isProfilesLoading = false;
           _updateCurrentProfileIndex();
         });
       }
@@ -152,12 +145,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _showNextProfile() {
-    if (_allProfiles.isEmpty) return;
+    if (_allProfiles.isEmpty) {
+      if (!_isProfilesLoading) {
+        setState(() {
+          _outOfProfiles = true;
+        });
+      }
+      return;
+    }
     int nextIndex = _currentProfileIndex;
-    if (nextIndex == -1) {
+    if (nextIndex < 0 || nextIndex >= _allProfiles.length) {
       nextIndex = 0;
-    } else {
-      nextIndex = (nextIndex + 1) % _allProfiles.length;
     }
     _navigateToProfile(nextIndex);
   }
@@ -183,6 +181,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() {
       _swipeHistory.add(targetUser);
       _swipeDirections.add(liked);
+      _allProfiles.removeWhere((u) => u.id == targetUser.id);
     });
 
     _showNextProfile();
@@ -366,6 +365,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     }
 
+    final emptyStateWidget = Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.people_outline, size: 64, color: Colors.grey),
+            const SizedBox(height: 16),
+            Text(
+              'No more profiles to show.',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey[600]),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (_outOfProfiles) {
+      return emptyStateWidget;
+    }
+
     if (_displayUser == null) {
       return Scaffold(
         backgroundColor: Colors.white,
@@ -420,7 +448,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
     }
 
-    final nextProfileWidget = nextUser != null
+    final Widget? nextProfileWidget = nextUser != null
         ? ProfileDetailView(
             key: ValueKey(nextUser.id),
             user: nextUser,
@@ -433,13 +461,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
           )
         : null;
 
-    return BumbleSwipeWidget(
-      controller: _swipeController,
-      currentWidget: currentProfileWidget,
-      nextWidget: nextProfileWidget,
-      onSwipeLeft: () => _handleSwipe(false),
-      onSwipeRight: () => _handleSwipe(true),
-      onSwipePrev: _handleBacktrackComplete,
+    final Widget backgroundWidget = _isProfilesLoading
+        ? const Scaffold(
+            backgroundColor: Colors.white,
+            body: Center(
+              child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+            ),
+          )
+        : emptyStateWidget;
+
+    return Stack(
+      children: [
+        if (nextProfileWidget == null) backgroundWidget,
+        BumbleSwipeWidget(
+          controller: _swipeController,
+          currentWidget: currentProfileWidget,
+          nextWidget: nextProfileWidget,
+          onSwipeLeft: () => _handleSwipe(false),
+          onSwipeRight: () => _handleSwipe(true),
+          onSwipePrev: _handleBacktrackComplete,
+        ),
+      ],
     );
   }
 }

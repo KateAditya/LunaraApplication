@@ -10,7 +10,8 @@ class PartyPlanRequestsScreen extends StatefulWidget {
   const PartyPlanRequestsScreen({super.key});
 
   @override
-  State<PartyPlanRequestsScreen> createState() => _PartyPlanRequestsScreenState();
+  State<PartyPlanRequestsScreen> createState() =>
+      _PartyPlanRequestsScreenState();
 }
 
 class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
@@ -51,13 +52,15 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
   Future<void> _loadRequests() async {
     setState(() => _isLoading = true);
     final allRequests = await ApiService.fetchMyPartyPlanRequests();
-    
+
     if (mounted) {
       setState(() {
         _requests = allRequests.where((req) {
           final status = (req['status'] ?? '').toString().toLowerCase();
-          if (_selectedFilter == 'accepted') return status == 'accepted' || status == 'payment_pending';
-          if (_selectedFilter == 'rejected') return status == 'rejected' || status == 'payment_failed';
+          if (_selectedFilter == 'accepted')
+            return status == 'accepted' || status == 'payment_pending';
+          if (_selectedFilter == 'rejected')
+            return status == 'rejected' || status == 'payment_failed';
           return status == 'pending';
         }).toList();
         _isLoading = false;
@@ -75,9 +78,17 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
       MaterialPageRoute(
         builder: (_) => PaymentConfirmationScreen(
           venue: venue,
-          date: plan['planDateTime'] != null ? DateFormat('dd/MM/yyyy').format(DateTime.parse(plan['planDateTime'])) : 'Tonight',
+          date: plan['planDateTime'] != null
+              ? DateFormat(
+                  'dd/MM/yyyy',
+                ).format(DateTime.parse(plan['planDateTime']))
+              : 'Tonight',
           package: 'Party Plan Safety Deposit',
-          time: plan['planDateTime'] != null ? DateFormat('hh:mm a').format(DateTime.parse(plan['planDateTime'])) : '21:00',
+          time: plan['planDateTime'] != null
+              ? DateFormat(
+                  'hh:mm a',
+                ).format(DateTime.parse(plan['planDateTime']))
+              : '21:00',
           table: 'Strangers Table',
           guests: '1 Head',
           totalPrice: '₹99',
@@ -86,15 +97,26 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
           onRazorpayPaymentSuccess: (paymentId, signature) async {
             try {
               final orderId = req['joinerRazorpayOrderId'] ?? 'mock_order';
-              final success = await ApiService.verifyJoinerPayment(reqId, orderId, paymentId, signature);
+              final success = await ApiService.verifyJoinerPayment(
+                reqId,
+                orderId,
+                paymentId,
+                signature,
+              );
               if (success) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Payment Successful!'), backgroundColor: Colors.green),
+                  const SnackBar(
+                    content: Text('Payment Successful!'),
+                    backgroundColor: Colors.green,
+                  ),
                 );
                 _loadRequests();
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Payment Verification Failed.'), backgroundColor: Colors.red),
+                  const SnackBar(
+                    content: Text('Payment Verification Failed.'),
+                    backgroundColor: Colors.red,
+                  ),
                 );
               }
             } catch (e) {
@@ -105,15 +127,26 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
             try {
               // Joiner Razorpay Order ID
               final orderId = req['joinerRazorpayOrderId'] ?? 'mock_order';
-              final success = await ApiService.verifyJoinerPayment(reqId, orderId, 'mock_payment', 'mock_signature');
+              final success = await ApiService.verifyJoinerPayment(
+                reqId,
+                orderId,
+                'mock_payment',
+                'mock_signature',
+              );
               if (success) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Payment Successful!'), backgroundColor: Colors.green),
+                  const SnackBar(
+                    content: Text('Payment Successful!'),
+                    backgroundColor: Colors.green,
+                  ),
                 );
                 _loadRequests();
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Payment Verification Failed.'), backgroundColor: Colors.red),
+                  const SnackBar(
+                    content: Text('Payment Verification Failed.'),
+                    backgroundColor: Colors.red,
+                  ),
                 );
               }
             } catch (e) {
@@ -159,19 +192,26 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
           // List
           Expanded(
             child: _isLoading
-                ? const Center(child: CircularProgressIndicator(color: LunaraTheme.electricViolet))
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      color: LunaraTheme.electricViolet,
+                    ),
+                  )
                 : _requests.isEmpty
-                    ? _buildEmptyState()
-                    : RefreshIndicator(
-                        onRefresh: _loadRequests,
-                        child: ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          itemCount: _requests.length,
-                          itemBuilder: (context, index) {
-                            return _buildRequestCard(_requests[index]);
-                          },
-                        ),
+                ? _buildEmptyState()
+                : RefreshIndicator(
+                    onRefresh: _loadRequests,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
                       ),
+                      itemCount: _requests.length,
+                      itemBuilder: (context, index) {
+                        return _buildRequestCard(_requests[index]);
+                      },
+                    ),
+                  ),
           ),
         ],
       ),
@@ -234,19 +274,23 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
     final plan = req['plan'] ?? {};
     final venue = plan['venue'] ?? {};
     final host = plan['user'] ?? {};
-    
+
     final venueName = venue['name'] ?? 'Unknown Venue';
     final message = plan['message'] ?? 'Let\'s party!';
-    final planDateTime = plan['planDateTime'] != null ? DateTime.parse(plan['planDateTime']).toLocal() : DateTime.now();
-    final hostName = '${host['firstName'] ?? ''} ${host['lastName'] ?? ''}'.trim();
-
+    final planDateTime = plan['planDateTime'] != null
+        ? DateTime.parse(plan['planDateTime']).toLocal()
+        : DateTime.now();
+    final hostName = '${host['firstName'] ?? ''} ${host['lastName'] ?? ''}'
+        .trim();
 
     final isPaymentPending = status == 'payment_pending';
     final isAccepted = status == 'accepted';
-    
+
     final joinerPaid = paymentStatus == 'paid' || paymentStatus == 'refunded';
-    final hostPaid = plan['hostPaymentStatus'] == 'paid' || plan['hostPaymentStatus'] == 'refunded';
-    
+    final hostPaid =
+        plan['hostPaymentStatus'] == 'paid' ||
+        plan['hostPaymentStatus'] == 'refunded';
+
     final timerText = _getTimeRemaining(req['paymentTimeoutAt']);
 
     return Container(
@@ -286,22 +330,33 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                _buildStatusBadge(status, paymentStatus, plan['hostPaymentStatus']),
+                _buildStatusBadge(
+                  status,
+                  paymentStatus,
+                  plan['hostPaymentStatus'],
+                ),
               ],
             ),
             const SizedBox(height: 8),
-            
+
             Text(
               'Host: ${hostName.isNotEmpty ? hostName : 'Lunara User'}',
-              style: TextStyle(color: Colors.grey[600], fontSize: 13, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 12),
 
             // Details
             _buildDetailRow(Icons.location_on_rounded, venueName),
             const SizedBox(height: 8),
-            _buildDetailRow(Icons.calendar_today_rounded, DateFormat('MMM dd, yyyy • hh:mm a').format(planDateTime)),
-            
+            _buildDetailRow(
+              Icons.calendar_today_rounded,
+              DateFormat('MMM dd, yyyy • hh:mm a').format(planDateTime),
+            ),
+
             // Actions
             if (isPaymentPending && !joinerPaid) ...[
               if (!hostPaid) ...[
@@ -312,17 +367,25 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.1),
+                    color: Colors.orange.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.hourglass_empty_rounded, color: Colors.orange, size: 16),
+                      Icon(
+                        Icons.hourglass_empty_rounded,
+                        color: Colors.orange,
+                        size: 16,
+                      ),
                       SizedBox(width: 8),
                       Text(
                         'AWAITING HOST DEPOSIT PAYMENT',
-                        style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 11),
+                        style: TextStyle(
+                          color: Colors.orange,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
                       ),
                     ],
                   ),
@@ -337,10 +400,21 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Deposit Required ($timerText)', style: TextStyle(color: Colors.red[400], fontSize: 11, fontWeight: FontWeight.bold)),
+                        Text(
+                          'Deposit Required ($timerText)',
+                          style: TextStyle(
+                            color: Colors.red[400],
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                         const Text(
                           '₹99',
-                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black),
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black,
+                          ),
                         ),
                       ],
                     ),
@@ -349,10 +423,21 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: LunaraTheme.electricViolet,
                         foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
                       ),
-                      child: const Text('PAY DEPOSIT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                      child: const Text(
+                        'PAY DEPOSIT',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -376,12 +461,19 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
                     const SizedBox(
                       width: 14,
                       height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blue),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.blue,
+                      ),
                     ),
                     const SizedBox(width: 10),
                     Text(
                       'WAITING FOR HOST DEPOSIT ($timerText)',
-                      style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold, fontSize: 11),
+                      style: const TextStyle(
+                        color: Colors.blue,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
                     ),
                   ],
                 ),
@@ -408,7 +500,11 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
                         SizedBox(width: 8),
                         Text(
                           'BOOKING CONFIRMED',
-                          style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 11),
+                          style: TextStyle(
+                            color: Colors.green,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 11,
+                          ),
                         ),
                       ],
                     ),
@@ -429,14 +525,24 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
                             ),
                           );
                         },
-                        icon: const Icon(Icons.qr_code_rounded, size: 16, color: Colors.white),
+                        icon: const Icon(
+                          Icons.qr_code_rounded,
+                          size: 16,
+                          color: Colors.white,
+                        ),
                         label: const Text(
                           'VIEW TICKET',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                            color: Colors.white,
+                          ),
                         ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: LunaraTheme.electricViolet,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
                       ),
                     ),
@@ -450,7 +556,11 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
     );
   }
 
-  Widget _buildStatusBadge(String status, String paymentStatus, String? hostPaymentStatus) {
+  Widget _buildStatusBadge(
+    String status,
+    String paymentStatus,
+    String? hostPaymentStatus,
+  ) {
     Color bg;
     Color text;
     String label = status.toUpperCase();

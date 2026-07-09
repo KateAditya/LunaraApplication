@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import '../../core/theme.dart';
@@ -37,9 +38,11 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
     WidgetsBinding.instance.addObserver(this);
     _loadGoogleRating();
     _checkLocationAndForce(requestIfNeeded: false);
-    _serviceStatusSubscription = Geolocator.getServiceStatusStream().listen((status) {
-      _checkLocationAndForce(requestIfNeeded: false);
-    });
+    if (!kIsWeb) {
+      _serviceStatusSubscription = Geolocator.getServiceStatusStream().listen((status) {
+        _checkLocationAndForce(requestIfNeeded: false);
+      });
+    }
   }
 
   @override
