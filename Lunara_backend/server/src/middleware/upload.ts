@@ -58,8 +58,35 @@ export const imageOrVideoFileFilter = (_req: any, file: Express.Multer.File, cb:
     }
 };
 
+// ─── Azure Storage Configuration ───────────────────────────────────────────────
+import { MulterAzureStorage } from 'multer-azure-blob-storage';
+
+const azureConfigured = !!process.env.AZURE_STORAGE_CONNECTION_STRING;
+
+const azureStorageHelper = (folderPathFn: (req: any) => string) => {
+    return new MulterAzureStorage({
+        connectionString: process.env.AZURE_STORAGE_CONNECTION_STRING || '',
+        accessKey: process.env.AZURE_STORAGE_ACCESS_KEY || '',
+        accountName: process.env.AZURE_STORAGE_ACCOUNT_NAME || '',
+        containerName: process.env.AZURE_STORAGE_CONTAINER_NAME || 'lunara-uploads',
+        containerAccessLevel: 'blob',
+        urlExpirationTime: -1, // No expiration, public blob
+        blobName: (req: any, file: Express.Multer.File) => {
+            return new Promise((resolve) => {
+                const folder = folderPathFn(req);
+                const timestamp = Date.now();
+                const randomString = crypto.randomBytes(8).toString('hex');
+                const ext = path.extname(file.originalname);
+                // Windows-style paths (from path.join) must be converted to forward slashes for Azure Blob
+                const blobPath = `${folder}/${timestamp}_${randomString}${ext}`.replace(/\\/g, '/');
+                resolve(blobPath);
+            });
+        }
+    });
+};
+
 // Storage configuration for user photos
-const userPhotoStorage = multer.diskStorage({
+const userPhotoStorageLocal = multer.diskStorage({
     destination: (req: any, _file, cb) => {
         const userId = req.user?.id || 'anonymous';
         const uploadPath = path.join(uploadsDir, 'users', userId, 'gallery');
@@ -80,8 +107,12 @@ const userPhotoStorage = multer.diskStorage({
     },
 });
 
+const userPhotoStorage = azureConfigured
+    ? azureStorageHelper((req) => `users/${req.user?.id || 'anonymous'}/gallery`)
+    : userPhotoStorageLocal;
+
 // Storage configuration for venue photos
-const venuePhotoStorage = multer.diskStorage({
+const venuePhotoStorageLocal = multer.diskStorage({
     destination: (req: any, _file, cb) => {
         const venueId = req.params.venueId || req.body.venueId || 'temp';
         const imageType = req.body.imageType || 'gallery';
@@ -100,6 +131,14 @@ const venuePhotoStorage = multer.diskStorage({
         cb(null, `${timestamp}_${randomString}${ext}`);
     },
 });
+
+const venuePhotoStorage = azureConfigured
+    ? azureStorageHelper((req) => {
+          const venueId = req.params.venueId || req.body.venueId || 'temp';
+          const imageType = req.body.imageType || 'gallery';
+          return `venues/${venueId}/${imageType}`;
+      })
+    : venuePhotoStorageLocal;
 
 // Size limits
 const maxPhotoSize = 52428800; // 50MB limit to ensure high-res selfies don't fail
