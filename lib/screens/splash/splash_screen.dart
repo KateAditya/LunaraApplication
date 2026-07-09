@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import '../../services/api_service.dart';
 import '../../services/push_notification_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../onboarding/permissions_screen.dart';
 import '../onboarding/welcome_carousel.dart';
 import '../home/dashboard.dart';
 
@@ -86,9 +88,26 @@ class _SplashScreenState extends State<SplashScreen> {
     }
   }
 
-  void _navigateToNext() {
+  void _navigateToNext() async {
     if (!mounted) return;
     
+    final prefs = await SharedPreferences.getInstance();
+    final hasSeenPermissions = prefs.getBool('has_seen_permissions_screen') ?? false;
+
+    if (!mounted) return;
+
+    if (!hasSeenPermissions) {
+      Navigator.pushReplacement(
+        context,
+        PageRouteBuilder(
+          pageBuilder: (_, _, _) => const PermissionsScreen(),
+          transitionsBuilder: (_, a, _, child) => FadeTransition(opacity: a, child: child),
+          transitionDuration: const Duration(milliseconds: 400),
+        ),
+      );
+      return;
+    }
+
     if (ApiService.currentUserId != null) {
       Navigator.pushReplacement(
         context,
