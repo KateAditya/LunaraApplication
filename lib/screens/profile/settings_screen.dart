@@ -18,7 +18,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _hideProfile = false;
   bool _isLoading = true;
   bool _pushNotifications = true;
-  bool _marketingEmails = false;
   bool _biometricAuth = true;
 
   @override
@@ -158,11 +157,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     'Push Notifications',
                     _pushNotifications,
                     (v) => setState(() => _pushNotifications = v),
-                  ),
-                  _buildSwitchTile(
-                    'Marketing Emails',
-                    _marketingEmails,
-                    (v) => setState(() => _marketingEmails = v),
                   ),
                   const SizedBox(height: 40),
                   _buildSectionHeader('SUPPORT & LEGAL'),

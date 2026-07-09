@@ -1279,7 +1279,7 @@ class ApiService {
       final params = <String, String>{
         'userId': userId,
         'limit': limit.toString(),
-        if (before != null) 'before': before,
+        'before': ?before,
       };
       final response = await get(
         '/api/mobile/chat/conversations/$conversationId/messages',
@@ -1773,7 +1773,7 @@ class ApiService {
         body: {
           'conversationId': conversationId,
           'userId': currentUserId,
-          if (paymentId != null) 'paymentId': paymentId,
+          'paymentId': ?paymentId,
         },
       );
       if (response.statusCode == 200) {
@@ -1820,8 +1820,8 @@ class ApiService {
         body: {
           'conversationId': conversationId,
           'userId': currentUserId,
-          if (requestedById != null) 'requestedById': requestedById,
-          if (paymentId != null) 'paymentId': paymentId,
+          'requestedById': ?requestedById,
+          'paymentId': ?paymentId,
         },
       );
       if (response.statusCode == 200) {

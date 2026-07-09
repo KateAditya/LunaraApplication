@@ -390,18 +390,19 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                           ),
                         ),
                         // Animated logo icon
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.2),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.3),
-                              width: 1.5,
+                        if (MediaQuery.of(context).size.width > 350)
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.2),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.3),
+                                width: 1.5,
+                              ),
                             ),
-                          ),
-                          child: Transform.rotate(
-                            angle: _rotateAnim.value * 2,
+                            child: Transform.rotate(
+                              angle: _rotateAnim.value * 2,
                             child: Image.asset(
                               'assets/images/logo_icon.png',
                               width: 48,
@@ -589,15 +590,18 @@ class _PlanHubScreenState extends State<PlanHubScreen>
           children: [
             Icon(icon, color: Colors.white, size: 24),
             const SizedBox(height: 6),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 9.5,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.2,
-                height: 1.2,
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.2,
+                  height: 1.2,
+                ),
               ),
             ),
           ],
@@ -637,13 +641,16 @@ class _PlanHubScreenState extends State<PlanHubScreen>
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'FEATURED TONIGHT',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1,
-                  color: Colors.black,
+              const Expanded(
+                child: Text(
+                  'FEATURED TONIGHT',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1,
+                    color: Colors.black,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               GestureDetector(
@@ -997,8 +1004,6 @@ class _PlanHubScreenState extends State<PlanHubScreen>
   void _showCreatePlanSheet(BuildContext context) {
     final descriptionCtrl = TextEditingController();
     final dateCtrl = TextEditingController();
-    final mobileCtrl = TextEditingController();
-    final optMobileCtrl = TextEditingController();
     final subjectCtrl = TextEditingController();
     final taglineCtrl = TextEditingController();
     final chargesCtrl = TextEditingController(text: '0'); // default to 0
@@ -1215,24 +1220,12 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       ),
                       const SizedBox(height: 10),
 
-                      // Mobile Number Fields
-                      _sheetField(
-                        controller: mobileCtrl,
-                        hint: 'Mobile Number *',
-                        icon: Icons.phone,
-                        keyboardType: TextInputType.phone,
-                      ),
-                      const SizedBox(height: 10),
-                      _sheetField(
-                        controller: optMobileCtrl,
-                        hint: 'Optional Mobile Number',
-                        icon: Icons.phone_android,
-                        keyboardType: TextInputType.phone,
-                      ),
-                      const SizedBox(height: 10),
-
                       // Date & Time Picker
-                      GestureDetector(
+                      _sheetField(
+                        controller: dateCtrl,
+                        hint: 'Pick Date & Time',
+                        icon: Icons.calendar_today_rounded,
+                        readOnly: true,
                         onTap: () async {
                           if (selectedVenue == null) {
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -1303,13 +1296,6 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             }
                           }
                         },
-                        child: AbsorbPointer(
-                          child: _sheetField(
-                            controller: dateCtrl,
-                            hint: 'Pick Date & Time',
-                            icon: Icons.calendar_today_rounded,
-                          ),
-                        ),
                       ),
 
                       const SizedBox(height: 10),
@@ -1638,18 +1624,6 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     return;
                                   }
 
-                                  if (mobileCtrl.text.trim().isEmpty) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: const Text(
-                                          'Mobile number is required',
-                                        ),
-                                        backgroundColor: Colors.red[800],
-                                      ),
-                                    );
-                                    return;
-                                  }
-
                                   final isStrangersMeet =
                                       selectedUserIds.length > 20;
 
@@ -1728,11 +1702,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                                   chargesCtrl.text.trim(),
                                                 ) ??
                                                 0.0,
-                                            mobileNumber: mobileCtrl.text
-                                                .trim(),
-                                            alternateMobileNumber: optMobileCtrl
-                                                .text
-                                                .trim(),
+                                            mobileNumber: '',
+                                            alternateMobileNumber: '',
                                           );
 
                                       if (success) {
@@ -1847,10 +1818,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                             .toLowerCase(),
                                         'paymentStatus': 'pending',
                                         'selectedUserIds': selectedUserIds,
-                                        'mobileNumber': mobileCtrl.text.trim(),
-                                        'optionalMobileNumber': optMobileCtrl
-                                            .text
-                                            .trim(),
+                                        'mobileNumber': '',
+                                        'optionalMobileNumber': '',
                                       },
                                     );
 
@@ -2155,7 +2124,11 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       const SizedBox(height: 10),
 
                       // Date & Time Picker
-                      GestureDetector(
+                      _sheetField(
+                        controller: dateCtrl,
+                        hint: 'Pick Date & Time',
+                        icon: Icons.calendar_today_rounded,
+                        readOnly: true,
                         onTap: () async {
                           if (selectedVenue == null) {
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -2226,13 +2199,6 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             }
                           }
                         },
-                        child: AbsorbPointer(
-                          child: _sheetField(
-                            controller: dateCtrl,
-                            hint: 'Pick Date & Time',
-                            icon: Icons.calendar_today_rounded,
-                          ),
-                        ),
                       ),
 
                       const SizedBox(height: 16),
@@ -2541,6 +2507,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     ValueChanged<String>? onChanged,
     TextInputType? keyboardType,
     int? maxLines = 1,
+    bool readOnly = false,
+    VoidCallback? onTap,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -2553,6 +2521,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
         onChanged: onChanged,
         keyboardType: keyboardType,
         maxLines: maxLines,
+        readOnly: readOnly,
+        onTap: onTap,
         style: const TextStyle(fontSize: 14),
         decoration: InputDecoration(
           hintText: hint,

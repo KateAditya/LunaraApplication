@@ -855,7 +855,9 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                   gradient: LunaraTheme.amberGlow,
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.amber.withValues(alpha: isDark ? 0.35 : 0.15),
+                      color: Colors.amber.withValues(
+                        alpha: isDark ? 0.35 : 0.15,
+                      ),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),
@@ -1256,12 +1258,16 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
         ),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: LunaraTheme.electricViolet.withValues(alpha: isDark ? 0.3 : 0.15),
+          color: LunaraTheme.electricViolet.withValues(
+            alpha: isDark ? 0.3 : 0.15,
+          ),
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: LunaraTheme.electricViolet.withValues(alpha: isDark ? 0.1 : 0.05),
+            color: LunaraTheme.electricViolet.withValues(
+              alpha: isDark ? 0.1 : 0.05,
+            ),
             blurRadius: 20,
             offset: const Offset(0, 8),
           ),
@@ -1298,9 +1304,14 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
             runSpacing: 8,
             children: items.map((item) {
               return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
-                  color: isDark ? Colors.black.withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.6),
+                  color: isDark
+                      ? Colors.black.withValues(alpha: 0.2)
+                      : Colors.white.withValues(alpha: 0.6),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: LunaraTheme.cyberCyan.withValues(
@@ -1491,14 +1502,15 @@ class _ActivePlansBottomSheet extends StatefulWidget {
   });
 
   @override
-  State<_ActivePlansBottomSheet> createState() => _ActivePlansBottomSheetState();
+  State<_ActivePlansBottomSheet> createState() =>
+      _ActivePlansBottomSheetState();
 }
 
 class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
   bool _isLoading = true;
   List<Map<String, dynamic>> _plans = [];
   Set<String> _requestedPlanIds = {};
-  Set<String> _joiningPlanIds = {};
+  final Set<String> _joiningPlanIds = {};
 
   @override
   void initState() {
@@ -1529,7 +1541,8 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
       // Collect plan IDs that current user has already requested to join
       final requestedIds = <String>{};
       for (final req in myRequests) {
-        final planId = req['partyPlanId']?.toString() ?? req['planId']?.toString();
+        final planId =
+            req['partyPlanId']?.toString() ?? req['planId']?.toString();
         if (planId != null) {
           requestedIds.add(planId);
         }
@@ -1582,7 +1595,10 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
               elevation: 0,
               behavior: SnackBarBehavior.floating,
               content: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 14,
+                ),
                 decoration: BoxDecoration(
                   gradient: LunaraTheme.purpleGradient,
                   borderRadius: BorderRadius.circular(16),
@@ -1619,7 +1635,9 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Failed to send request. You may have already requested.'),
+              content: Text(
+                'Failed to send request. You may have already requested.',
+              ),
               backgroundColor: Colors.red,
             ),
           );
@@ -1628,10 +1646,7 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -1702,7 +1717,9 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w900,
-                              color: isDark ? LunaraTheme.cyberCyan : LunaraTheme.electricViolet,
+                              color: isDark
+                                  ? LunaraTheme.cyberCyan
+                                  : LunaraTheme.electricViolet,
                               letterSpacing: 1,
                             ),
                           ),
@@ -1710,7 +1727,10 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
                       ),
                     ),
                     IconButton(
-                      icon: Icon(Icons.close_rounded, color: isDark ? Colors.white70 : Colors.black54),
+                      icon: Icon(
+                        Icons.close_rounded,
+                        color: isDark ? Colors.white70 : Colors.black54,
+                      ),
                       onPressed: () => Navigator.pop(context),
                     ),
                   ],
@@ -1726,186 +1746,231 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
                         ),
                       )
                     : _plans.isEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.calendar_today_outlined,
-                                  size: 64,
-                                  color: isDark ? Colors.white24 : Colors.black26,
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'NO ACTIVE PLANS CURRENTLY',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w800,
-                                    color: isDark ? Colors.white54 : Colors.black54,
-                                    letterSpacing: 1,
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.calendar_today_outlined,
+                              size: 64,
+                              color: isDark ? Colors.white24 : Colors.black26,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'NO ACTIVE PLANS CURRENTLY',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                color: isDark ? Colors.white54 : Colors.black54,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: scrollController,
+                        padding: const EdgeInsets.fromLTRB(20, 10, 20, 30),
+                        itemCount: _plans.length,
+                        itemBuilder: (context, index) {
+                          final plan = _plans[index];
+                          final planId =
+                              plan['id']?.toString() ??
+                              plan['planId']?.toString() ??
+                              '';
+                          final venue =
+                              plan['venue'] as Map<String, dynamic>? ?? {};
+                          final venueName = venue['name'] as String? ?? 'Venue';
+                          final description =
+                              plan['description'] as String? ?? '';
+                          final formattedDate = _formatDateTime(
+                            plan['planDate'] ?? plan['planDateTime'],
+                          );
+                          final hasRequested = _requestedPlanIds.contains(
+                            planId,
+                          );
+                          final isJoining = _joiningPlanIds.contains(planId);
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 16),
+                            padding: const EdgeInsets.all(18),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? Colors.white.withValues(alpha: 0.04)
+                                  : Colors.grey[50],
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: isDark
+                                    ? Colors.white.withValues(alpha: 0.08)
+                                    : Colors.black.withValues(alpha: 0.05),
+                                width: 1.5,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(
+                                    alpha: isDark ? 0.2 : 0.02,
                                   ),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
                                 ),
                               ],
                             ),
-                          )
-                        : ListView.builder(
-                            controller: scrollController,
-                            padding: const EdgeInsets.fromLTRB(20, 10, 20, 30),
-                            itemCount: _plans.length,
-                            itemBuilder: (context, index) {
-                              final plan = _plans[index];
-                              final planId = plan['id']?.toString() ?? plan['planId']?.toString() ?? '';
-                              final venue = plan['venue'] as Map<String, dynamic>? ?? {};
-                              final venueName = venue['name'] as String? ?? 'Venue';
-                              final description = plan['description'] as String? ?? '';
-                              final formattedDate = _formatDateTime(plan['planDate'] ?? plan['planDateTime']);
-                              final hasRequested = _requestedPlanIds.contains(planId);
-                              final isJoining = _joiningPlanIds.contains(planId);
-
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 16),
-                                padding: const EdgeInsets.all(18),
-                                decoration: BoxDecoration(
-                                  color: isDark ? Colors.white.withValues(alpha: 0.04) : Colors.grey[50],
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(
-                                    color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.05),
-                                    width: 1.5,
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.02),
-                                      blurRadius: 10,
-                                      offset: const Offset(0, 4),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: LunaraTheme.electricViolet
+                                            .withValues(alpha: 0.15),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.nightlife_rounded,
+                                        color: LunaraTheme.electricViolet,
+                                        size: 20,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            venueName.toUpperCase(),
+                                            style: TextStyle(
+                                              color: isDark
+                                                  ? Colors.white
+                                                  : Colors.black,
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w900,
+                                              letterSpacing: 0.5,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            formattedDate,
+                                            style: TextStyle(
+                                              color: isDark
+                                                  ? Colors.white60
+                                                  : Colors.black54,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ],
                                 ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.all(10),
-                                          decoration: BoxDecoration(
-                                            color: LunaraTheme.electricViolet.withValues(alpha: 0.15),
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(
-                                            Icons.nightlife_rounded,
-                                            color: LunaraTheme.electricViolet,
-                                            size: 20,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 14),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                venueName.toUpperCase(),
-                                                style: TextStyle(
-                                                  color: isDark ? Colors.white : Colors.black,
-                                                  fontSize: 15,
-                                                  fontWeight: FontWeight.w900,
-                                                  letterSpacing: 0.5,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                formattedDate,
-                                                style: TextStyle(
-                                                  color: isDark ? Colors.white60 : Colors.black54,
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
+                                if (description.isNotEmpty) ...[
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    description,
+                                    style: TextStyle(
+                                      color: isDark
+                                          ? Colors.white70
+                                          : Colors.black87,
+                                      fontSize: 13,
+                                      height: 1.4,
                                     ),
-                                    if (description.isNotEmpty) ...[
-                                      const SizedBox(height: 12),
-                                      Text(
-                                        description,
-                                        style: TextStyle(
-                                          color: isDark ? Colors.white70 : Colors.black87,
-                                          fontSize: 13,
-                                          height: 1.4,
-                                        ),
-                                        maxLines: 3,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                    const SizedBox(height: 16),
-                                    // Button
-                                    SizedBox(
-                                      width: double.infinity,
-                                      height: 46,
-                                      child: hasRequested
-                                          ? Container(
-                                              alignment: Alignment.center,
-                                              decoration: BoxDecoration(
-                                                color: Colors.green.withValues(alpha: 0.15),
-                                                borderRadius: BorderRadius.circular(14),
-                                                border: Border.all(
-                                                  color: Colors.green.withValues(alpha: 0.4),
-                                                ),
+                                    maxLines: 3,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                                const SizedBox(height: 16),
+                                // Button
+                                SizedBox(
+                                  width: double.infinity,
+                                  height: 46,
+                                  child: hasRequested
+                                      ? Container(
+                                          alignment: Alignment.center,
+                                          decoration: BoxDecoration(
+                                            color: Colors.green.withValues(
+                                              alpha: 0.15,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              14,
+                                            ),
+                                            border: Border.all(
+                                              color: Colors.green.withValues(
+                                                alpha: 0.4,
                                               ),
-                                              child: const Row(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                  Icon(Icons.check_circle_rounded, color: Colors.green, size: 18),
-                                                  SizedBox(width: 8),
-                                                  Text(
-                                                    'REQUEST SENT',
-                                                    style: TextStyle(
-                                                      color: Colors.green,
-                                                      fontWeight: FontWeight.bold,
-                                                      fontSize: 12,
-                                                      letterSpacing: 1,
-                                                    ),
-                                                  ),
-                                                ],
+                                            ),
+                                          ),
+                                          child: const Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              Icon(
+                                                Icons.check_circle_rounded,
+                                                color: Colors.green,
+                                                size: 18,
                                               ),
-                                            )
-                                          : ElevatedButton.icon(
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor: LunaraTheme.electricViolet,
-                                                foregroundColor: Colors.white,
-                                                elevation: 0,
-                                                shape: RoundedRectangleBorder(
-                                                  borderRadius: BorderRadius.circular(14),
-                                                ),
-                                              ),
-                                              onPressed: isJoining ? null : () => _sendJoinRequest(planId),
-                                              icon: isJoining
-                                                  ? const SizedBox(
-                                                      width: 16,
-                                                      height: 16,
-                                                      child: CircularProgressIndicator(
-                                                        strokeWidth: 2,
-                                                        color: Colors.white,
-                                                      ),
-                                                    )
-                                                  : const Icon(Icons.add_circle_outline_rounded, size: 18),
-                                              label: Text(
-                                                isJoining ? 'SENDING...' : 'REQUEST TO JOIN',
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.w900,
+                                              SizedBox(width: 8),
+                                              Text(
+                                                'REQUEST SENT',
+                                                style: TextStyle(
+                                                  color: Colors.green,
+                                                  fontWeight: FontWeight.bold,
                                                   fontSize: 12,
                                                   letterSpacing: 1,
                                                 ),
                                               ),
+                                            ],
+                                          ),
+                                        )
+                                      : ElevatedButton.icon(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor:
+                                                LunaraTheme.electricViolet,
+                                            foregroundColor: Colors.white,
+                                            elevation: 0,
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(14),
                                             ),
-                                    ),
-                                  ],
+                                          ),
+                                          onPressed: isJoining
+                                              ? null
+                                              : () => _sendJoinRequest(planId),
+                                          icon: isJoining
+                                              ? const SizedBox(
+                                                  width: 16,
+                                                  height: 16,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                        color: Colors.white,
+                                                      ),
+                                                )
+                                              : const Icon(
+                                                  Icons
+                                                      .add_circle_outline_rounded,
+                                                  size: 18,
+                                                ),
+                                          label: Text(
+                                            isJoining
+                                                ? 'SENDING...'
+                                                : 'REQUEST TO JOIN',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: 12,
+                                              letterSpacing: 1,
+                                            ),
+                                          ),
+                                        ),
                                 ),
-                              );
-                            },
-                          ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
               ),
             ],
           ),

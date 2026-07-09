@@ -19,14 +19,12 @@ class SwipeIntroScreen extends StatelessWidget {
               children: [
                 const Spacer(),
                 _buildSwipeHint(
-                  icon: Icons.swipe_right,
                   color: LunaraTheme.accentVivid,
                   text: 'SWIPE RIGHT TO VIBE',
                   desc: 'Connect with people you want to party with.',
                 ),
                 const SizedBox(height: 60),
                 _buildSwipeHint(
-                  icon: Icons.swipe_left,
                   color: LunaraTheme.primaryDeep,
                   text: 'SWIPE LEFT TO SKIP',
                   desc: "Not your scene? Move to the next person.",
@@ -46,30 +44,12 @@ class SwipeIntroScreen extends StatelessWidget {
   }
 
   Widget _buildSwipeHint({
-    required IconData icon,
     required Color color,
     required String text,
     required String desc,
   }) {
     return Column(
       children: [
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.1),
-            shape: BoxShape.circle,
-            border: Border.all(color: color.withValues(alpha: 0.3), width: 2),
-            boxShadow: [
-              BoxShadow(
-                color: color.withValues(alpha: 0.2),
-                blurRadius: 30,
-                spreadRadius: 5,
-              ),
-            ],
-          ),
-          child: Icon(icon, color: color, size: 40),
-        ),
-        const SizedBox(height: 24),
         Text(
           text,
           style: LunaraTheme.headingStyle.copyWith(

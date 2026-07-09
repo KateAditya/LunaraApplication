@@ -531,47 +531,97 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   const SizedBox(height: 32),
   
                   // 4. Recent Posts
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'RECENT POSTS',
-                          style: TextStyle(
-                            letterSpacing: 2,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black,
-                            fontSize: 15,
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: () {
-                            final displayFeeds = _filteredPartyPlans;
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => AllPostsScreen(
-                                  posts: displayFeeds,
-                                  venues: _allVenues,
-                                ),
-                              ),
-                            );
-                          },
-                          child: const Text(
-                            'SEE ALL',
+                  if (_filteredPartyPlans.any((p) => p['type'] == 'party_plan')) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'RECENT POSTS',
                             style: TextStyle(
-                              letterSpacing: 1,
+                              letterSpacing: 2,
                               fontWeight: FontWeight.bold,
-                              color: LunaraTheme.electricViolet,
+                              color: Colors.black,
                               fontSize: 15,
                             ),
                           ),
-                        ),
-                      ],
+                          GestureDetector(
+                            onTap: () {
+                              final displayFeeds = _filteredPartyPlans.where((p) => p['type'] == 'party_plan').toList();
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => AllPostsScreen(
+                                    posts: displayFeeds,
+                                    venues: _allVenues,
+                                  ),
+                                ),
+                              );
+                            },
+                            child: const Text(
+                              'SEE ALL',
+                              style: TextStyle(
+                                letterSpacing: 1,
+                                fontWeight: FontWeight.bold,
+                                color: LunaraTheme.electricViolet,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  _buildRecentFeeds(),
+                    _buildFeedsList(_filteredPartyPlans.where((p) => p['type'] == 'party_plan').toList()),
+                  ],
+
+                  if (_filteredPartyPlans.any((p) => p['type'] == 'party_plan') && _filteredPartyPlans.any((p) => p['type'] == 'strangers_meet'))
+                    const SizedBox(height: 32),
+
+                  // 4b. Strangers Meet
+                  if (_filteredPartyPlans.any((p) => p['type'] == 'strangers_meet')) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'STRANGERS MEET',
+                            style: TextStyle(
+                              letterSpacing: 2,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black,
+                              fontSize: 15,
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () {
+                              final displayFeeds = _filteredPartyPlans.where((p) => p['type'] == 'strangers_meet').toList();
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => AllPostsScreen(
+                                    posts: displayFeeds,
+                                    venues: _allVenues,
+                                  ),
+                                ),
+                              );
+                            },
+                            child: const Text(
+                              'SEE ALL',
+                              style: TextStyle(
+                                letterSpacing: 1,
+                                fontWeight: FontWeight.bold,
+                                color: LunaraTheme.electricViolet,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _buildFeedsList(_filteredPartyPlans.where((p) => p['type'] == 'strangers_meet').toList()),
+                  ],
   
                   // 5. Top Profiles
                   _buildTopProfiles(),
@@ -1565,8 +1615,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     );
   }
 
-  Widget _buildRecentFeeds() {
-    final displayFeeds = _filteredPartyPlans;
+  Widget _buildFeedsList(List<Map<String, dynamic>> displayFeeds) {
     return SizedBox(
       height: 260,
       child: ListView.builder(
