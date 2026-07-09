@@ -1242,68 +1242,89 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
   }
 
   Widget _buildTagsList(String title, List<String> items, bool isDark) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Container(
-              width: 4,
-              height: 14,
-              decoration: BoxDecoration(
-                gradient: LunaraTheme.secondaryGradient,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-                color: isDark ? Colors.white54 : Colors.black54,
-                letterSpacing: 1,
-              ),
-            ),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            LunaraTheme.electricViolet.withValues(alpha: isDark ? 0.1 : 0.05),
+            LunaraTheme.cyberCyan.withValues(alpha: isDark ? 0.1 : 0.05),
           ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: items.map((item) {
-            return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    LunaraTheme.electricViolet.withValues(alpha: 0.08),
-                    LunaraTheme.cyberCyan.withValues(alpha: 0.08),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: LunaraTheme.cyberCyan.withValues(
-                    alpha: isDark ? 0.35 : 0.18,
-                  ),
-                  width: 1.5,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: LunaraTheme.electricViolet.withValues(alpha: isDark ? 0.3 : 0.15),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: LunaraTheme.electricViolet.withValues(alpha: isDark ? 0.1 : 0.05),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 4,
+                height: 14,
+                decoration: BoxDecoration(
+                  gradient: LunaraTheme.secondaryGradient,
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              child: Text(
-                item.toUpperCase(),
+              const SizedBox(width: 8),
+              Text(
+                title,
                 style: TextStyle(
-                  color: isDark
-                      ? LunaraTheme.cyberCyan
-                      : LunaraTheme.electricViolet,
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: FontWeight.w900,
+                  color: isDark ? Colors.white70 : Colors.black87,
                   letterSpacing: 1,
                 ),
               ),
-            );
-          }).toList(),
-        ),
-      ],
+            ],
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: items.map((item) {
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.black.withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: LunaraTheme.cyberCyan.withValues(
+                      alpha: isDark ? 0.35 : 0.18,
+                    ),
+                    width: 1.5,
+                  ),
+                ),
+                child: Text(
+                  item.toUpperCase(),
+                  style: TextStyle(
+                    color: isDark
+                        ? LunaraTheme.cyberCyan
+                        : LunaraTheme.electricViolet,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1,
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
     );
   }
 
