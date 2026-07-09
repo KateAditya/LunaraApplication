@@ -39,22 +39,18 @@ interface DashboardResponse<T> {
 
 export const dashboardApi = {
     getFeaturedVenues: async (): Promise<DashboardResponse<FeaturedVenue>> => {
-        const response = await api.get('/dashboard/featured');
-        return response.data;
+        return await api.get('/api/dashboard/featured');
     },
 
     getPartyTonight: async (): Promise<DashboardResponse<PartyTonight>> => {
-        const response = await api.get('/dashboard/tonight');
-        return response.data;
+        return await api.get('/api/dashboard/tonight');
     },
 
     getPartyPartners: async (): Promise<DashboardResponse<PartyPartner>> => {
-        const response = await api.get('/dashboard/partners');
-        return response.data;
+        return await api.get('/api/dashboard/partners');
     },
 
     getNearbyVenues: async (): Promise<DashboardResponse<NearbyVenue>> => {
-        const response = await api.get('/dashboard/nearby');
-        return response.data;
+        return await api.get('/api/dashboard/nearby');
     }
 };

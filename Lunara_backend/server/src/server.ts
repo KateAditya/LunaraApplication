@@ -40,11 +40,18 @@ app.use(helmet({
     contentSecurityPolicy: {
         directives: {
             ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-            "img-src": ["'self'", "data:", "blob:", "*.blob.core.windows.net", "placehold.co", "*.placehold.co"],
+            "img-src": ["'self'", "data:", "blob:", "*.blob.core.windows.net", "placehold.co", "*.placehold.co", "images.unsplash.com"],
             "connect-src": ["'self'", "*.azurewebsites.net", "*.windows.net"],
         },
     },
 })); // Security headers
+
+// Explicit Permissions-Policy to silence the 'unload' violation from Chrome extensions
+app.use((_req, res, next) => {
+    res.setHeader('Permissions-Policy', 'unload=()');
+    next();
+});
+
 app.use(cors({
     origin: true,
     credentials: true,
