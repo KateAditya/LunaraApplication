@@ -65,13 +65,24 @@ app.get('/health', (_req, res) => {
     });
 });
 
-// Serve static files from uploads directory
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
-
-// Fallback for missing images in /uploads to prevent 404 errors in the mobile app during dev
-app.use('/uploads', (_req, res) => {
-    res.redirect('https://placehold.co/600x400/2a1b38/e0a0ff.png?text=Image+Not+Found');
-});
+// Serve static files from uploads directory (or redirect to Azure Blob Storage)
+if (process.env.AZURE_STORAGE_ACCOUNT_NAME) {
+    const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+    const containerName = process.env.AZURE_STORAGE_CONTAINER_NAME || 'lunara-uploads';
+    const blobBaseUrl = `https://${accountName}.blob.core.windows.net/${containerName}`;
+    
+    app.use('/uploads', (req, res) => {
+        // req.path starts with a slash, e.g., /venues/123/img.jpg
+        res.redirect(301, `${blobBaseUrl}${req.path}`);
+    });
+} else {
+    app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+    
+    // Fallback for missing images in /uploads to prevent 404 errors in the mobile app during dev
+    app.use('/uploads', (_req, res) => {
+        res.redirect('https://placehold.co/600x400/2a1b38/e0a0ff.png?text=Image+Not+Found');
+    });
+}
 
 // API Routes
 import authRoutes from './routes/auth';
