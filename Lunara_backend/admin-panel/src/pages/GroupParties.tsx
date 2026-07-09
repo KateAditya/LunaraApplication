@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useAuthStore } from '../store/authStore';
+import apiClient from '../api/client';
 
 interface GroupParty {
   id: string;
@@ -30,11 +30,6 @@ interface GroupParty {
   } | null;
 }
 
-const BASE_URL = import.meta.env.VITE_API_URL || 
-  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    ? 'http://localhost:9076'
-    : `${window.location.protocol}//${window.location.hostname}:9076`);
-
 const STATUS_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   pending: { bg: 'rgba(245, 158, 11, 0.12)', text: '#d97706', border: 'rgba(245,158,11,0.3)' },
   confirmed: { bg: 'rgba(16, 185, 129, 0.12)', text: '#059669', border: 'rgba(16,185,129,0.3)' },
@@ -42,7 +37,6 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; border: string }
 };
 
 export const GroupParties: React.FC = () => {
-  const { accessToken } = useAuthStore();
   const [activeTab, setActiveTab] = useState<'pending' | 'confirmed' | 'cancelled' | 'all'>('all');
   const [parties, setParties] = useState<GroupParty[]>([]);
   const [loading, setLoading] = useState(false);
@@ -50,26 +44,25 @@ export const GroupParties: React.FC = () => {
   
   const [selected, setSelected] = useState<GroupParty | null>(null);
 
-  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` };
-
   const fetchParties = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const statusParam = activeTab === 'all' ? '' : `?status=${activeTab}`;
-      const res = await fetch(`${BASE_URL}/api/admin/group-parties${statusParam}`, { headers });
-      const data = await res.json();
-      if (data.success) {
-        setParties(data.data);
+      const res: any = await apiClient.get(`/api/admin/group-parties${statusParam}`);
+      
+      // Axios interceptor unwrap gives us the direct response data
+      if (res.success) {
+        setParties(res.data);
       } else {
-        setError(data.error || 'Failed to load group parties');
+        setError(res.error || 'Failed to load group parties');
       }
-    } catch (e) {
-      setError('Network error. Please try again.');
+    } catch (e: any) {
+      setError(e.response?.data?.message || 'Network error. Please try again.');
     } finally {
       setLoading(false);
     }
-  }, [activeTab, accessToken]);
+  }, [activeTab]);
 
   useEffect(() => { fetchParties(); }, [fetchParties]);
 
