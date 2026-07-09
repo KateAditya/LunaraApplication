@@ -94,6 +94,8 @@ import mobileStrangersMeetRoutes from './routes/mobileStrangersMeet';
 import adminStrangersMeetRoutes from './routes/adminStrangersMeet';
 import mobileCityRoutes from './routes/mobileCity';
 import adminBookingsRoutes from './routes/adminBookings';
+import adminSubscriptionRoutes from './routes/adminSubscription';
+import mobileSubscriptionRoutes from './routes/mobileSubscription';
 import { getAdminChatSettings, updateAdminChatSettings } from './controllers/chatSubscriptionController';
 
 app.get('/api', (_req, res) => {
@@ -135,6 +137,8 @@ app.use('/api/mobile/strangers-meet', mobileStrangersMeetRoutes); // Strangers M
 app.use('/api/admin/strangers-meet', adminStrangersMeetRoutes);
 app.use('/api/admin/bookings', adminBookingsRoutes);   // Strangers Meet (Admin)
 app.use('/api/mobile/cities', mobileCityRoutes);                   // Cities (Mobile App)
+app.use('/api/admin/subscriptions', adminSubscriptionRoutes); // Subscriptions (Admin)
+app.use('/api/mobile/subscriptions', mobileSubscriptionRoutes); // Subscriptions (Mobile)
 
 // Admin — chat subscription settings
 app.get('/api/admin/settings/chat', getAdminChatSettings);
@@ -219,7 +223,19 @@ app.use((req, res) => {
 const PORT = process.env.PORT || 5000;
 const HOST = process.env.HOST || 'localhost';
 
-// Start server after database connection
+// Serve the Admin Panel (React frontend)
+const adminPanelPath = path.join(__dirname, '../../admin-panel/dist');
+app.use(express.static(adminPanelPath));
+
+// Catch-all route to serve the React index.html for any non-API routes (React Router support)
+app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
+        return next();
+    }
+    res.sendFile(path.join(adminPanelPath, 'index.html'));
+});
+
+// Sync database and start server after database connection
 const startServer = async () => {
     try {
         await connectDatabase();
