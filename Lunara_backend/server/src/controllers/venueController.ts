@@ -131,6 +131,7 @@ export const createVenue = async (req: Request, res: Response) => {
             openingTime: data.openingTime || undefined,
             closingTime: data.closingTime || undefined,
             daysOpen: parseJson(data.daysOpen, ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']),
+            closedDates: parseJson(data.closedDates, []),
             ageLimit: data.ageLimit ? parseInt(data.ageLimit) : 21,
             coverChargeMale: data.coverChargeMale ? parseFloat(data.coverChargeMale) : undefined,
             coverChargeFemale: data.coverChargeFemale ? parseFloat(data.coverChargeFemale) : undefined,
@@ -445,7 +446,7 @@ export const updateVenue = async (req: Request, res: Response) => {
             });
         }
 
-        const jsonFields = ['tags', 'daysOpen', 'cuisineTypes', 'musicTypes', 'amenities'];
+        const jsonFields = ['tags', 'daysOpen', 'closedDates', 'cuisineTypes', 'musicTypes', 'amenities'];
         jsonFields.forEach(f => {
             const parsed = parseJson(data[f], f === 'amenities' ? {} : []);
             if (parsed !== undefined) updateData[f] = parsed;

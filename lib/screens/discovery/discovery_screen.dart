@@ -72,24 +72,50 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     });
   }
 
-  Future<void> _determinePosition({bool requestIfNeeded = false}) async {
+  Future<void> _determinePosition({bool requestIfNeeded = false, bool showLoader = false}) async {
+    if (showLoader && mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(color: LunaraTheme.cyberCyan),
+        ),
+      );
+    }
+    
     bool serviceEnabled;
     LocationPermission permission;
 
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return;
+    if (!serviceEnabled) {
+      if (requestIfNeeded) {
+        await Geolocator.openLocationSettings();
+      }
+      if (showLoader && mounted) Navigator.pop(context);
+      return;
+    }
 
     permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       if (requestIfNeeded) {
         permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) return;
+        if (permission == LocationPermission.denied) {
+          if (showLoader && mounted) Navigator.pop(context);
+          return;
+        }
       } else {
+        if (showLoader && mounted) Navigator.pop(context);
         return;
       }
     }
 
-    if (permission == LocationPermission.deniedForever) return;
+    if (permission == LocationPermission.deniedForever) {
+      if (requestIfNeeded) {
+        await Geolocator.openAppSettings();
+      }
+      if (showLoader && mounted) Navigator.pop(context);
+      return;
+    }
 
     try {
       final position = await Geolocator.getCurrentPosition(
@@ -101,8 +127,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         });
       }
       _startLocationUpdates();
+      if (showLoader && mounted) Navigator.pop(context);
     } catch (e) {
       debugPrint("Error getting location: $e");
+      if (showLoader && mounted) Navigator.pop(context);
     }
   }
 
@@ -489,7 +517,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                             if (_currentPosition == null) ...[
                               const SizedBox(width: 8),
                               GestureDetector(
-                                onTap: () => _determinePosition(requestIfNeeded: true),
+                                onTap: () => _determinePosition(requestIfNeeded: true, showLoader: true),
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
@@ -1501,7 +1529,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                 ),
                               ] else ...[
                                 InkWell(
-                                  onTap: () => _determinePosition(requestIfNeeded: true),
+                                  onTap: () => _determinePosition(requestIfNeeded: true, showLoader: true),
                                   borderRadius: BorderRadius.circular(8),
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

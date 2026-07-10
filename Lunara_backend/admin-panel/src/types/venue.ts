@@ -44,10 +44,11 @@ export interface BusinessDetails {
 }
 
 export interface OperationalDetails {
-    openingTime: string;
-    closingTime: string;
-    daysOpen: string[];
-    seatingCapacity: number;
+    openingTime?: string;
+    closingTime?: string;
+    daysOpen?: string[];
+    closedDates?: string[];
+    seatingCapacity?: number;
     standingCapacity?: number;
     coverChargeMale?: number;
     coverChargeFemale?: number;

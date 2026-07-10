@@ -95,9 +95,14 @@ export const getActiveAds = async (req: Request, res: Response): Promise<Respons
                 }
             }
             
+            let finalImagePath = adJson.imagePath;
+            if (finalImagePath && !finalImagePath.startsWith('http')) {
+                finalImagePath = `/${finalImagePath.replace(/\\/g, '/')}`;
+            }
+            
             return {
                 ...adJson,
-                imagePath: `/${adJson.imagePath.replace(/\\/g, '/')}`,
+                imagePath: finalImagePath,
             };
         });
 
@@ -151,8 +156,16 @@ export const createAd = async (req: Request, res: Response): Promise<Response> =
             return res.status(400).json({ success: false, message: 'Image file is required' });
         }
 
-        // Compress image if necessary
-        const compressedPath = await compressImageTo300KB(file.path);
+        // Handle Azure Blob Storage vs Local Disk
+        let imagePath = '';
+        if ((file as any).url) {
+            imagePath = (file as any).url;
+        } else if (file.path) {
+            const compressedPath = await compressImageTo300KB(file.path);
+            imagePath = compressedPath.replace(/\\/g, '/');
+        } else {
+            return res.status(400).json({ success: false, message: 'Invalid file upload state' });
+        }
 
         const newAd = await Ad.create({
             type,
@@ -160,7 +173,7 @@ export const createAd = async (req: Request, res: Response): Promise<Response> =
             city: parsedCity,
             area: parsedArea,
             title: getValidValue(title),
-            imagePath: compressedPath,
+            imagePath: imagePath,
             fromDate: new Date(fromDate),
             toDate: new Date(toDate),
             isActive: isActive === 'true' || isActive === true,
@@ -220,10 +233,18 @@ export const updateAd = async (req: Request, res: Response): Promise<Response> =
         const file = req.file;
         if (file) {
             const oldPath = ad.imagePath;
-            ad.imagePath = await compressImageTo300KB(file.path);
             
-            // Delete old file if it exists and is different
-            if (oldPath && fs.existsSync(oldPath) && oldPath !== ad.imagePath) {
+            if ((file as any).url) {
+                ad.imagePath = (file as any).url;
+            } else if (file.path) {
+                const compressedPath = await compressImageTo300KB(file.path);
+                ad.imagePath = compressedPath.replace(/\\/g, '/');
+            } else {
+                return res.status(400).json({ success: false, message: 'Invalid file upload state' });
+            }
+            
+            // Delete old file if it exists and is different (and not an HTTP URL)
+            if (oldPath && !oldPath.startsWith('http') && fs.existsSync(oldPath) && oldPath !== ad.imagePath) {
                 fs.unlink(oldPath, (err) => {
                     if (err) logger.warn(`[AdController] Failed to delete old ad image: ${oldPath}`, err);
                 });
@@ -254,7 +275,7 @@ export const deleteAd = async (req: Request, res: Response): Promise<Response> =
         const oldPath = ad.imagePath;
         await ad.destroy();
 
-        if (oldPath && fs.existsSync(oldPath)) {
+        if (oldPath && !oldPath.startsWith('http') && fs.existsSync(oldPath)) {
             fs.unlink(oldPath, (err) => {
                 if (err) logger.warn(`[AdController] Failed to delete ad image: ${oldPath}`, err);
             });

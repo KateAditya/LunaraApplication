@@ -42,11 +42,13 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
       7: 'Sunday',
     };
     final weekdayName = weekdaysMap[date.weekday];
+    if (weekdayName == null) return false;
+
     return daysOpen.any((d) {
       final str = d.toString().trim().toLowerCase();
-      final fullDay = weekdayName?.toLowerCase();
-      final shortDay = weekdayName?.substring(0, 3).toLowerCase();
-      return str == fullDay || str == shortDay;
+      final fullDay = weekdayName.toLowerCase();
+      final shortDay = weekdayName.substring(0, 3).toLowerCase();
+      return str.contains(fullDay) || str.contains(shortDay);
     });
   }
 

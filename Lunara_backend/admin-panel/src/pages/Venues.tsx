@@ -47,6 +47,7 @@ interface DbVenue {
     openingTime?: string;
     closingTime?: string;
     daysOpen?: string[];
+    closedDates?: string[];
     ageLimit?: number;
     coverChargeMale?: number;
     coverChargeFemale?: number;
@@ -168,6 +169,7 @@ const toRichVenue = (v: DbVenue) => {
             openingTime: v.openingTime || '',
             closingTime: v.closingTime || '',
             daysOpen: v.daysOpen || [],
+            closedDates: v.closedDates || [],
             seatingCapacity: v.seatingCapacity ?? v.capacity,
             standingCapacity: v.standingCapacity,
             cuisineTypes: v.cuisineTypes || [],
@@ -301,13 +303,16 @@ export const Venues: React.FC = () => {
         const toastId = toast.loading(selectedVenue ? 'Updating venue...' : 'Creating venue...');
         try {
             const fd = new FormData();
-            const skip = new Set(['_coverFile', '_photoFiles', '_videoFiles', '_menuFiles', '_foodMenuFiles', '_barMenuFiles', '_beverageMenuFiles', '_partyPackagesFiles', 'media', 'amenities', 'daysOpen', 'cuisineTypes', 'musicTypes']);
+            const skip = new Set(['_coverFile', '_photoFiles', '_videoFiles', '_menuFiles', '_foodMenuFiles', '_barMenuFiles', '_beverageMenuFiles', '_partyPackagesFiles', 'media', 'amenities', 'daysOpen', 'closedDates', 'cuisineTypes', 'musicTypes']);
             for (const [key, value] of Object.entries(data)) {
                 if (skip.has(key)) continue;
                 if (value !== null && value !== undefined) fd.append(key, String(value));
             }
             fd.append('amenities', JSON.stringify(data.amenities ?? {}));
             fd.append('daysOpen', JSON.stringify(data.daysOpen ?? []));
+            fd.append('closedDates', JSON.stringify(
+                (data.closedDates || '').split(',').map((s: string) => s.trim()).filter(Boolean)
+            ));
             fd.append('cuisineTypes', JSON.stringify(data.cuisineTypes ?? []));
             fd.append('musicTypes', JSON.stringify(data.musicTypes ?? []));
             // T&C acceptance — required for new venue creation

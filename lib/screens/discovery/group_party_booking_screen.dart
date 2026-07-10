@@ -416,6 +416,10 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
   );
   final TextEditingController _mobileController = TextEditingController();
   final TextEditingController _optMobileController = TextEditingController();
+  
+  DateTime? _selectedDate;
+  TimeOfDay? _selectedTime;
+  final TextEditingController _dateController = TextEditingController();
 
   @override
   void initState() {
@@ -430,6 +434,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
     _friendsController.dispose();
     _mobileController.dispose();
     _optMobileController.dispose();
+    _dateController.dispose();
     super.dispose();
   }
 
@@ -612,6 +617,73 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                   ),
                   const SizedBox(height: 24),
                   const Text(
+                    'DATE & TIME',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.5,
+                      color: Colors.black54,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  GestureDetector(
+                    onTap: () async {
+                      final date = await showDatePicker(
+                        context: context,
+                        initialDate: DateTime.now(),
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 60)),
+                      );
+                      if (date != null) {
+                        if (!context.mounted) return;
+                        final time = await showTimePicker(
+                          context: context,
+                          initialTime: TimeOfDay.now(),
+                        );
+                        if (time != null) {
+                          setState(() {
+                            _selectedDate = date;
+                            _selectedTime = time;
+                            final hour = time.hour % 12 == 0 ? 12 : time.hour % 12;
+                            final min = time.minute.toString().padLeft(2, '0');
+                            final ampm = time.hour >= 12 ? 'PM' : 'AM';
+                            _dateController.text = "${date.day}/${date.month}/${date.year} at $hour:$min $ampm";
+                          });
+                        }
+                      }
+                    },
+                    child: AbsorbPointer(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: TextField(
+                          controller: _dateController,
+                          decoration: InputDecoration(
+                            hintText: 'Select Date & Time *',
+                            hintStyle: TextStyle(
+                              color: Colors.grey[400],
+                              fontSize: 13,
+                            ),
+                            prefixIcon: const Icon(
+                              Icons.calendar_today_rounded,
+                              color: Color(0xFF7C3AED),
+                              size: 20,
+                            ),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
                     'CONTACT DETAILS',
                     style: TextStyle(
                       fontSize: 13,
@@ -763,6 +835,15 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                           );
                           return;
                         }
+                        if (_selectedDate == null || _selectedTime == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Please select Date and Time.'),
+                            ),
+                          );
+                          return;
+                        }
+
                         if (_mobileController.text.trim().isEmpty) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
@@ -775,6 +856,11 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                           _noOfFriends = parsed;
                         });
 
+                        final hour = _selectedTime!.hour % 12 == 0 ? 12 : _selectedTime!.hour % 12;
+                        final min = _selectedTime!.minute.toString().padLeft(2, '0');
+                        final ampm = _selectedTime!.hour >= 12 ? 'PM' : 'AM';
+                        final formattedTime = '$hour:$min $ampm';
+
                         final parentContext = context;
                         Navigator.pop(context);
                         Navigator.push(
@@ -783,9 +869,9 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                             builder: (_) => PaymentConfirmationScreen(
                               venue: widget.venue.toMap(),
                               date:
-                                  '${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}',
+                                  '${_selectedDate!.day}/${_selectedDate!.month}/${_selectedDate!.year}',
                               package: 'Group Party Booking',
-                              time: '10:30 PM',
+                              time: formattedTime,
                               table: 'Group Party',
                               guests: '$parsed Friends',
                               totalPrice: '₹${totalPrice.toStringAsFixed(0)}',

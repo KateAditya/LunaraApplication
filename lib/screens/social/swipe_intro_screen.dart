@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../widgets/action_button.dart';
+import 'match_screen.dart';
 
 class SwipeIntroScreen extends StatelessWidget {
   const SwipeIntroScreen({super.key});
@@ -34,7 +35,12 @@ class SwipeIntroScreen extends StatelessWidget {
                 const Spacer(),
                 LunaraActionButton(
                   text: 'GOT IT',
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (_) => const MatchScreen()),
+                    );
+                  },
                 ),
                 const SizedBox(height: 40),
               ],

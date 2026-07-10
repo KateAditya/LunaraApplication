@@ -15,6 +15,7 @@ import { sendMulticastPushNotification } from '../services/fcmService';
 import Conversation from '../models/Conversation';
 import ChatSubscription, { ChatSubscriptionStatus, ChatSubscriptionType } from '../models/ChatSubscription';
 import { getChatSettings } from './chatSubscriptionController';
+import { validateVenueTimingAndHolidays } from '../utils/venueValidator';
 
 async function autoOpenChat(hostId: string, joinerId: string) {
     try {
@@ -115,9 +116,16 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
         }
 
         // ── Verify venue exists and is active ─────────────────────────────────
-        const venue = await Venue.findByPk(venueId, { attributes: VENUE_ATTRS });
+        const venue = await Venue.findByPk(venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'coverChargeMale', 'coverChargeFemale', 'openingTime', 'closingTime', 'daysOpen', 'closedDates'] });
         if (!venue) {
             res.status(404).json({ success: false, message: 'Venue not found' });
+            return;
+        }
+
+        // ── Validate Venue Timings and Holidays ────────────────────────────────
+        const timingValidation = validateVenueTimingAndHolidays(venue, partyDate);
+        if (!timingValidation.isValid) {
+            res.status(400).json({ success: false, message: timingValidation.reason });
             return;
         }
 

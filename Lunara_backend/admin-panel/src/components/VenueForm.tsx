@@ -64,6 +64,7 @@ export interface VenueFormState {
     openingTime: string;
     closingTime: string;
     daysOpen: string[];
+    closedDates: string;
     seatingCapacity: string;
     standingCapacity: string;
     coverChargeMale: string;
@@ -147,6 +148,7 @@ const getDefaultForm = (venue?: Venue | null): Record<string, any> => ({
     openingTime: venue?.operations?.openingTime || '',
     closingTime: venue?.operations?.closingTime || '',
     daysOpen: venue?.operations?.daysOpen || [...DAYS],
+    closedDates: venue?.operations?.closedDates?.join(', ') || '',
     seatingCapacity: venue?.operations?.seatingCapacity?.toString() || '',
     standingCapacity: venue?.operations?.standingCapacity?.toString() || '',
     coverChargeMale: venue?.operations?.coverChargeMale?.toString() || '',
@@ -1020,6 +1022,10 @@ export const VenueForm: React.FC<VenueFormProps> = ({ venue, onClose, onSave }) 
                         >{day}</button>
                     ))}
                 </div>
+            </div>
+            <div style={field}>
+                <label style={labelStyle}>Holidays / Closed Dates (comma separated YYYY-MM-DD)</label>
+                <input className="vz-form-control" placeholder="e.g. 2026-08-15, 2026-12-25" value={form.closedDates} onChange={e => set('closedDates', e.target.value)} />
             </div>
             <div style={gridThree}>
                 <div style={field}>

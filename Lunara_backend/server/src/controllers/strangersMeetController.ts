@@ -15,6 +15,7 @@ import VenueImage from '../models/VenueImage';
 import { logger } from '../config/logger';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
+import { validateVenueTimingAndHolidays } from '../utils/venueValidator';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -23,7 +24,7 @@ const razorpay = new Razorpay({
 
 // ─── Shared attributes ────────────────────────────────────────────────────────
 const USER_ATTRS = ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'];
-const VENUE_ATTRS = ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone'];
+const VENUE_ATTRS = ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'openingTime', 'closingTime', 'daysOpen', 'closedDates'];
 const PROFILE_ATTRS = ['bio', 'occupation', 'city', 'gender'];
 
 function genTicketId(): string {
@@ -199,6 +200,13 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
         // Verify venue
         const venue = await Venue.findByPk(venueId, { attributes: VENUE_ATTRS });
         if (!venue) { res.status(404).json({ success: false, message: 'Venue not found' }); return; }
+
+        // Validate Venue Timings and Holidays
+        const timingValidation = validateVenueTimingAndHolidays(venue, eventDate);
+        if (!timingValidation.isValid) {
+            res.status(400).json({ success: false, message: timingValidation.reason });
+            return;
+        }
 
         const request = await StrangersMeetRequest.create({
             userId,
