@@ -33,6 +33,12 @@ export interface StrangersMeetRequestAttributes {
     razorpayOrderId?: string;
     razorpayPaymentId?: string;
     razorpaySignature?: string;
+    settlementStatus?: 'none' | 'requested' | 'paid';
+    bankDetails?: string;
+    settlementTransactionId?: string;
+    settlementAmount?: number;
+    settlementDate?: Date;
+    settlementMethod?: string;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -48,6 +54,12 @@ export interface StrangersMeetRequestCreationAttributes
         | 'alternateMobileNumber'
         | 'adminNotes'
         | 'ticketId'
+        | 'settlementStatus'
+        | 'bankDetails'
+        | 'settlementTransactionId'
+        | 'settlementAmount'
+        | 'settlementDate'
+        | 'settlementMethod'
         | 'createdAt'
         | 'updatedAt'
     > { }
@@ -74,6 +86,12 @@ class StrangersMeetRequest
     public razorpayOrderId?: string;
     public razorpayPaymentId?: string;
     public razorpaySignature?: string;
+    public settlementStatus?: 'none' | 'requested' | 'paid';
+    public bankDetails?: string;
+    public settlementTransactionId?: string;
+    public settlementAmount?: number;
+    public settlementDate?: Date;
+    public settlementMethod?: string;
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 }
@@ -192,6 +210,37 @@ StrangersMeetRequest.init(
             type: DataTypes.STRING(200),
             allowNull: true,
             field: 'razorpay_signature',
+        },
+        settlementStatus: {
+            type: DataTypes.ENUM('none', 'requested', 'paid'),
+            allowNull: false,
+            defaultValue: 'none',
+            field: 'settlement_status',
+        },
+        bankDetails: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+            field: 'bank_details',
+        },
+        settlementTransactionId: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'settlement_transaction_id',
+        },
+        settlementAmount: {
+            type: DataTypes.DECIMAL(10, 2),
+            allowNull: true,
+            field: 'settlement_amount',
+        },
+        settlementDate: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'settlement_date',
+        },
+        settlementMethod: {
+            type: DataTypes.STRING(50),
+            allowNull: true,
+            field: 'settlement_method',
         },
     },
     {

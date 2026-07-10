@@ -422,6 +422,30 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
   TimeOfDay? _selectedTime;
   final TextEditingController _dateController = TextEditingController();
 
+  final TextEditingController _partySubjectController = TextEditingController();
+  final TextEditingController _partyRequirementController = TextEditingController();
+  final TextEditingController _partyDescriptionController = TextEditingController();
+
+  InputDecoration _inputDecoration(String hint) {
+    return InputDecoration(
+      hintText: hint,
+      filled: true,
+      fillColor: Colors.grey[50],
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: Colors.grey[200]!),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: Colors.grey[200]!),
+      ),
+      focusedBorder: const OutlineInputBorder(
+        borderRadius: BorderRadius.all(Radius.circular(16)),
+        borderSide: BorderSide(color: LunaraTheme.electricViolet),
+      ),
+    );
+  }
+
   String _formatTimeOfBooking(String? timeStr) {
     if (timeStr == null || timeStr.isEmpty) return '';
     try {
@@ -552,6 +576,9 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
     _mobileController.dispose();
     _optMobileController.dispose();
     _dateController.dispose();
+    _partySubjectController.dispose();
+    _partyRequirementController.dispose();
+    _partyDescriptionController.dispose();
     super.dispose();
   }
 
@@ -911,6 +938,34 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                     ),
                   ),
                   const SizedBox(height: 24),
+                  if (_noOfFriends > 20) ...[
+                    const Text(
+                      'LARGE PARTY DETAILS',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: LunaraTheme.electricViolet,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _partySubjectController,
+                      decoration: _inputDecoration('Party Subject *'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _partyRequirementController,
+                      decoration: _inputDecoration('Party Requirement *'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _partyDescriptionController,
+                      maxLines: 3,
+                      decoration: _inputDecoration('Description (optional)'),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
                   const Text(
                     'CONTACT DETAILS',
                     style: TextStyle(
@@ -980,67 +1035,69 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                   ),
                   const SizedBox(height: 32),
                   // Price Details Section
-                  const Text(
-                    'PRICING DETAILS',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.5,
-                      color: Colors.black54,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          Color(0xFFF3EEFF),
-                          Color(0xFFF8F4FF),
-                          Color(0xFFEEE6FF),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: const Color(0x1A7F00FF),
-                        width: 1.2,
+                  if (_noOfFriends <= 20) ...[
+                    const Text(
+                      'PRICING DETAILS',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.5,
+                        color: Colors.black54,
                       ),
                     ),
-                    child: Column(
-                      children: [
-                        _buildPriceRow(
-                          'Table Booking Charges ($_noOfFriends)',
-                          subtotal,
-                          icon: Icons.person_rounded,
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Color(0xFFF3EEFF),
+                            Color(0xFFF8F4FF),
+                            Color(0xFFEEE6FF),
+                          ],
                         ),
-                        if (discountPercent > 0) ...[
-                          const SizedBox(height: 12),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: const Color(0x1A7F00FF),
+                          width: 1.2,
+                        ),
+                      ),
+                      child: Column(
+                        children: [
                           _buildPriceRow(
-                            'Discount ($discountPercent%)',
-                            -discountAmount,
-                            isDiscount: true,
+                            'Table Booking Charges ($_noOfFriends)',
+                            subtotal,
+                            icon: Icons.person_rounded,
+                          ),
+                          if (discountPercent > 0) ...[
+                            const SizedBox(height: 12),
+                            _buildPriceRow(
+                              'Discount ($discountPercent%)',
+                              -discountAmount,
+                              isDiscount: true,
+                            ),
+                          ],
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                            child: Divider(height: 1),
+                          ),
+                          _buildPriceRow(
+                            'Total Amount',
+                            totalPrice,
+                            isTotal: true,
                           ),
                         ],
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 16),
-                          child: Divider(height: 1),
-                        ),
-                        _buildPriceRow(
-                          'Total Amount',
-                          totalPrice,
-                          isTotal: true,
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 32),
+                    const SizedBox(height: 32),
+                  ],
                   SizedBox(
                     key: AppTourService.groupPartyProceedButtonKey,
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: () {
+                      onPressed: () async {
                         final parsed = int.tryParse(_friendsController.text);
                         if (parsed == null || parsed < 1) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -1108,6 +1165,83 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                           );
                           return;
                         }
+
+                        if (_noOfFriends > 20) {
+                          if (_partySubjectController.text.trim().isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Party Subject is required.'),
+                                backgroundColor: Colors.redAccent,
+                              ),
+                            );
+                            return;
+                          }
+                          if (_partyRequirementController.text.trim().isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Party Requirement is required.'),
+                                backgroundColor: Colors.redAccent,
+                              ),
+                            );
+                            return;
+                          }
+
+                          // Show loading snackbar
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Submitting request...'),
+                            ),
+                          );
+
+                          final success = await ApiService.submitLargePartyRequest(
+                            venueId: widget.venue.id,
+                            date: '${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}',
+                            time: _formatTimeOfBooking(
+                              '${_selectedTime!.hour.toString().padLeft(2, '0')}:${_selectedTime!.minute.toString().padLeft(2, '0')}',
+                            ),
+                            guests: parsed,
+                            subject: _partySubjectController.text,
+                            requirement: _partyRequirementController.text,
+                            description: _partyDescriptionController.text,
+                            mobileNumber: _mobileController.text.trim(),
+                            optionalMobileNumber: _optMobileController.text.trim().isEmpty
+                                ? null
+                                : _optMobileController.text.trim(),
+                          );
+
+                          if (!success) {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Failed to submit request. Please try again later.'),
+                              ),
+                            );
+                            return;
+                          }
+
+                          if (!context.mounted) return;
+                          Navigator.pop(context); // close bottom sheet
+
+                          showDialog(
+                            context: context,
+                            builder: (ctx2) => AlertDialog(
+                              title: const Text('Request Submitted'),
+                              content: const Text(
+                                'Your large party request has been submitted to the admin for approval. You will see it in your Live Feed once approved.',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () {
+                                    Navigator.pop(ctx2); // close dialog
+                                  },
+                                  child: const Text('OK'),
+                                ),
+                              ],
+                            ),
+                          );
+                          return;
+                        }
+
                         setState(() {
                           _noOfFriends = parsed;
                         });
@@ -1147,9 +1281,9 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                         ),
                         elevation: 0,
                       ),
-                      child: const Text(
-                        'PROCEED TO PAYMENT',
-                        style: TextStyle(
+                      child: Text(
+                        _noOfFriends > 20 ? 'SUBMIT REQUEST' : 'PROCEED TO PAYMENT',
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 14,
                           letterSpacing: 1.5,

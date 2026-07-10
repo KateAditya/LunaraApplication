@@ -7,6 +7,7 @@ interface SMRequest {
   tagline: string;
   eventDateTime: string;
   numberOfPersons: number;
+  chargesPerHead: number;
   status: 'pending' | 'approved' | 'rejected';
   paymentAmount: number | null;
   paymentStatus: 'unpaid' | 'paid';
@@ -14,6 +15,12 @@ interface SMRequest {
   alternateMobileNumber: string | null;
   adminNotes: string | null;
   ticketId: string | null;
+  settlementStatus: 'none' | 'requested' | 'paid';
+  bankDetails: string | null;
+  settlementTransactionId: string | null;
+  settlementAmount: number | null;
+  settlementDate: string | null;
+  settlementMethod: string | null;
   createdAt: string;
   user: {
     id: string;
@@ -58,9 +65,13 @@ export const StrangersMeet: React.FC = () => {
 
   // Modal state
   const [selected, setSelected] = useState<SMRequest | null>(null);
-  const [modalAction, setModalAction] = useState<'approve' | 'reject' | 'view' | null>(null);
+  const [modalAction, setModalAction] = useState<'approve' | 'reject' | 'view' | 'settlement' | null>(null);
   const [payAmount, setPayAmount] = useState('');
+  const [chargesPerHead, setChargesPerHead] = useState('');
   const [adminNote, setAdminNote] = useState('');
+  const [settlementTxnId, setSettlementTxnId] = useState('');
+  const [settlementAmt, setSettlementAmt] = useState('');
+  const [settlementMethod, setSettlementMethod] = useState('Bank Transfer');
   const [submitting, setSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -94,11 +105,15 @@ export const StrangersMeet: React.FC = () => {
     return () => clearInterval(id);
   }, [fetchRequests]);
 
-  const openModal = (req: SMRequest, action: 'approve' | 'reject' | 'view') => {
+  const openModal = (req: SMRequest, action: 'approve' | 'reject' | 'view' | 'settlement') => {
     setSelected(req);
     setModalAction(action);
     setPayAmount('');
+    setChargesPerHead('');
     setAdminNote('');
+    setSettlementTxnId('');
+    setSettlementAmt('');
+    setSettlementMethod('Bank Transfer');
     setSuccessMsg(null);
   };
 
@@ -108,7 +123,12 @@ export const StrangersMeet: React.FC = () => {
     if (!selected) return;
     const amount = parseFloat(payAmount);
     if (!payAmount || isNaN(amount) || amount <= 0) {
-      alert('Please enter a valid payment amount');
+      alert('Please enter a valid deposit payment amount');
+      return;
+    }
+    const cpHead = parseFloat(chargesPerHead);
+    if (!chargesPerHead || isNaN(cpHead) || cpHead < 0) {
+      alert('Please enter a valid charges per head (0 or more)');
       return;
     }
     setSubmitting(true);
@@ -116,15 +136,40 @@ export const StrangersMeet: React.FC = () => {
       const res = await fetch(`${BASE_URL}/api/admin/strangers-meet/${selected.id}/approve`, {
         method: 'PATCH',
         headers,
-        body: JSON.stringify({ paymentAmount: amount, adminNotes: adminNote || undefined }),
+        body: JSON.stringify({ paymentAmount: amount, chargesPerHead: cpHead, adminNotes: adminNote || undefined }),
       });
       const data = await res.json();
       if (data.success) {
-        setSuccessMsg(`Request approved with payment of ₹${amount.toFixed(0)}`);
+        setSuccessMsg(`Approved! Deposit ₹${amount.toFixed(0)}, Charges/head ₹${cpHead.toFixed(0)}`);
         fetchRequests();
-        setTimeout(closeModal, 1500);
+        setTimeout(closeModal, 1800);
       } else {
         alert(data.message || 'Failed to approve');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handlePaySettlement = async () => {
+    if (!selected) return;
+    if (!settlementTxnId.trim()) { alert('Transaction ID is required'); return; }
+    const amt = parseFloat(settlementAmt);
+    if (!settlementAmt || isNaN(amt) || amt <= 0) { alert('Enter a valid settlement amount'); return; }
+    setSubmitting(true);
+    try {
+      const res = await fetch(`${BASE_URL}/api/admin/strangers-meet/${selected.id}/pay-settlement`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ transactionId: settlementTxnId.trim(), amount: amt, paymentMethod: settlementMethod }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSuccessMsg(`Settlement of ₹${amt.toFixed(0)} marked as paid!`);
+        fetchRequests();
+        setTimeout(closeModal, 1800);
+      } else {
+        alert(data.message || 'Failed to pay settlement');
       }
     } finally {
       setSubmitting(false);
@@ -296,6 +341,16 @@ export const StrangersMeet: React.FC = () => {
                       </button>
                     </>
                   )}
+                  {req.settlementStatus === 'requested' && (
+                    <button onClick={() => openModal(req, 'settlement')} style={{ padding: '0.45rem 1rem', borderRadius: 8, border: 'none', background: '#f59e0b', color: '#fff', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}>
+                      💰 Pay Settlement
+                    </button>
+                  )}
+                  {req.settlementStatus === 'paid' && (
+                    <span style={{ padding: '0.3rem 0.75rem', borderRadius: 8, background: 'rgba(16,185,129,0.12)', color: '#059669', fontSize: '0.75rem', fontWeight: 700, textAlign: 'center' }}>
+                      ✓ Settled
+                    </span>
+                  )}
                 </div>
               </div>
             );
@@ -309,13 +364,13 @@ export const StrangersMeet: React.FC = () => {
           <div style={{ background: 'var(--vz-card-bg)', borderRadius: 16, padding: '2rem', width: '100%', maxWidth: 520, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }} onClick={e => e.stopPropagation()}>
             {successMsg ? (
               <div style={{ textAlign: 'center', padding: '2rem 0' }}>
-                <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>{modalAction === 'approve' ? '✅' : '❌'}</div>
+                <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>{modalAction === 'approve' ? '✅' : modalAction === 'settlement' ? '💸' : '❌'}</div>
                 <div style={{ fontWeight: 700, fontSize: '1rem' }}>{successMsg}</div>
               </div>
             ) : (
               <>
                 <h3 style={{ margin: '0 0 1.25rem', fontSize: '1.1rem' }}>
-                  {modalAction === 'approve' ? '✓ Approve Request' : modalAction === 'reject' ? '✕ Reject Request' : '📋 Request Details'}
+                  {modalAction === 'approve' ? '✓ Approve Request' : modalAction === 'reject' ? '✕ Reject Request' : modalAction === 'settlement' ? '💰 Pay Settlement' : '📋 Request Details'}
                 </h3>
 
                 {/* Summary */}
@@ -335,20 +390,46 @@ export const StrangersMeet: React.FC = () => {
                 </div>
 
                 {modalAction === 'approve' && (
-                  <div style={{ marginBottom: '1rem' }}>
-                    <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.875rem' }}>
-                      Payment Amount (₹) *
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      placeholder="Enter amount e.g. 2500"
-                      value={payAmount}
-                      onChange={e => setPayAmount(e.target.value)}
-                      style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: 8, border: '1.5px solid var(--vz-border-color)', background: 'var(--vz-card-bg)', color: 'var(--vz-text-primary)', fontSize: '1rem', boxSizing: 'border-box' }}
-                      autoFocus
-                    />
-                  </div>
+                  <>
+                    <div style={{ marginBottom: '0.85rem' }}>
+                      <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.875rem' }}>Deposit Amount (₹) *</label>
+                      <input type="number" min="1" placeholder="e.g. 2500" value={payAmount} onChange={e => setPayAmount(e.target.value)}
+                        style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: 8, border: '1.5px solid var(--vz-border-color)', background: 'var(--vz-card-bg)', color: 'var(--vz-text-primary)', fontSize: '1rem', boxSizing: 'border-box' }} autoFocus />
+                    </div>
+                    <div style={{ marginBottom: '1rem' }}>
+                      <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.875rem' }}>Charges Per Head (₹) *</label>
+                      <input type="number" min="0" placeholder="e.g. 350" value={chargesPerHead} onChange={e => setChargesPerHead(e.target.value)}
+                        style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: 8, border: '1.5px solid var(--vz-border-color)', background: 'var(--vz-card-bg)', color: 'var(--vz-text-primary)', fontSize: '1rem', boxSizing: 'border-box' }} />
+                    </div>
+                  </>
+                )}
+                {modalAction === 'settlement' && selected && (
+                  <>
+                    <div style={{ marginBottom: '0.85rem', padding: '0.75rem', background: 'rgba(245,158,11,0.1)', borderRadius: 8, fontSize: '0.82rem' }}>
+                      <b>Bank Details from Host:</b><br/>{selected.bankDetails || '—'}
+                    </div>
+                    <div style={{ marginBottom: '0.85rem' }}>
+                      <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.875rem' }}>Transaction ID *</label>
+                      <input type="text" placeholder="e.g. TXN1234567890" value={settlementTxnId} onChange={e => setSettlementTxnId(e.target.value)}
+                        style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: 8, border: '1.5px solid var(--vz-border-color)', background: 'var(--vz-card-bg)', color: 'var(--vz-text-primary)', fontSize: '0.9rem', boxSizing: 'border-box' }} autoFocus />
+                    </div>
+                    <div style={{ marginBottom: '0.85rem' }}>
+                      <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.875rem' }}>Settlement Amount (₹) *</label>
+                      <input type="number" min="1" placeholder="e.g. 5000" value={settlementAmt} onChange={e => setSettlementAmt(e.target.value)}
+                        style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: 8, border: '1.5px solid var(--vz-border-color)', background: 'var(--vz-card-bg)', color: 'var(--vz-text-primary)', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+                    </div>
+                    <div style={{ marginBottom: '1.25rem' }}>
+                      <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.875rem' }}>Payment Method</label>
+                      <select value={settlementMethod} onChange={e => setSettlementMethod(e.target.value)}
+                        style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: 8, border: '1.5px solid var(--vz-border-color)', background: 'var(--vz-card-bg)', color: 'var(--vz-text-primary)', fontSize: '0.9rem', boxSizing: 'border-box' }}>
+                        <option>Bank Transfer</option>
+                        <option>UPI Payout</option>
+                        <option>NEFT</option>
+                        <option>IMPS</option>
+                        <option>RTGS</option>
+                      </select>
+                    </div>
+                  </>
                 )}
 
                 {(modalAction === 'approve' || modalAction === 'reject') && (
@@ -371,13 +452,18 @@ export const StrangersMeet: React.FC = () => {
                     Cancel
                   </button>
                   {modalAction === 'approve' && (
-                    <button onClick={handleApprove} disabled={submitting || !payAmount} style={{ padding: '0.6rem 1.5rem', borderRadius: 8, border: 'none', background: '#7c3aed', color: '#fff', cursor: 'pointer', fontWeight: 600, opacity: submitting ? 0.7 : 1 }}>
+                    <button onClick={handleApprove} disabled={submitting || !payAmount || !chargesPerHead} style={{ padding: '0.6rem 1.5rem', borderRadius: 8, border: 'none', background: '#7c3aed', color: '#fff', cursor: 'pointer', fontWeight: 600, opacity: submitting ? 0.7 : 1 }}>
                       {submitting ? 'Approving…' : 'Approve & Set Payment'}
                     </button>
                   )}
                   {modalAction === 'reject' && (
                     <button onClick={handleReject} disabled={submitting} style={{ padding: '0.6rem 1.5rem', borderRadius: 8, border: 'none', background: '#dc2626', color: '#fff', cursor: 'pointer', fontWeight: 600, opacity: submitting ? 0.7 : 1 }}>
                       {submitting ? 'Rejecting…' : 'Confirm Reject'}
+                    </button>
+                  )}
+                  {modalAction === 'settlement' && (
+                    <button onClick={handlePaySettlement} disabled={submitting || !settlementTxnId || !settlementAmt} style={{ padding: '0.6rem 1.5rem', borderRadius: 8, border: 'none', background: '#f59e0b', color: '#fff', cursor: 'pointer', fontWeight: 600, opacity: submitting ? 0.7 : 1 }}>
+                      {submitting ? 'Processing…' : '💰 Mark as Paid'}
                     </button>
                   )}
                 </div>

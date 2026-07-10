@@ -6,10 +6,18 @@ export enum StrangersMeetJoinerPaymentStatus {
     PAID = 'paid',
 }
 
+export enum StrangersMeetJoinerStatus {
+    PENDING = 'pending',
+    ACCEPTED = 'accepted',
+    REJECTED = 'rejected',
+    PAID = 'paid',
+}
+
 export interface StrangersMeetJoinerAttributes {
     id: string;
     strangersMeetRequestId: string;
     userId: string;
+    status?: StrangersMeetJoinerStatus;
     paymentStatus: StrangersMeetJoinerPaymentStatus;
     paymentAmount: number;
     razorpayOrderId?: string;
@@ -23,6 +31,7 @@ export interface StrangersMeetJoinerCreationAttributes
     extends Optional<
         StrangersMeetJoinerAttributes,
         | 'id'
+        | 'status'
         | 'paymentStatus'
         | 'paymentAmount'
         | 'createdAt'
@@ -35,6 +44,7 @@ class StrangersMeetJoiner
     public id!: string;
     public strangersMeetRequestId!: string;
     public userId!: string;
+    public status!: StrangersMeetJoinerStatus;
     public paymentStatus!: StrangersMeetJoinerPaymentStatus;
     public paymentAmount!: number;
     public razorpayOrderId?: string;
@@ -64,6 +74,11 @@ StrangersMeetJoiner.init(
             field: 'user_id',
             references: { model: 'users', key: 'id' },
             onDelete: 'CASCADE',
+        },
+        status: {
+            type: DataTypes.ENUM(...Object.values(StrangersMeetJoinerStatus)),
+            allowNull: false,
+            defaultValue: StrangersMeetJoinerStatus.PENDING,
         },
         paymentStatus: {
             type: DataTypes.ENUM(...Object.values(StrangersMeetJoinerPaymentStatus)),

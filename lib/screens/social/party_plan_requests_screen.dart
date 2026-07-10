@@ -283,13 +283,16 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
     final hostName = '${host['firstName'] ?? ''} ${host['lastName'] ?? ''}'
         .trim();
 
-    final isPaymentPending = status == 'payment_pending';
-    final isAccepted = status == 'accepted';
-
     final joinerPaid = paymentStatus == 'paid' || paymentStatus == 'refunded';
     final hostPaid =
         plan['hostPaymentStatus'] == 'paid' ||
         plan['hostPaymentStatus'] == 'refunded';
+
+    final String lowerStatus = status.toString().toLowerCase();
+    final bool isBookingConfirmed = (lowerStatus == 'accepted' || lowerStatus == 'payment_pending') && hostPaid && joinerPaid;
+    final bool isAwaitingHost = (lowerStatus == 'accepted' || lowerStatus == 'payment_pending') && !hostPaid && !joinerPaid;
+    final bool isAwaitingJoinerPayment = (lowerStatus == 'accepted' || lowerStatus == 'payment_pending') && hostPaid && !joinerPaid;
+    final bool isJoinerPaidAwaitingHost = (lowerStatus == 'accepted' || lowerStatus == 'payment_pending') && !hostPaid && joinerPaid;
 
     final timerText = _getTimeRemaining(req['paymentTimeoutAt']);
 
@@ -358,93 +361,93 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
             ),
 
             // Actions
-            if (isPaymentPending && !joinerPaid) ...[
-              if (!hostPaid) ...[
-                const SizedBox(height: 16),
-                const Divider(),
-                const SizedBox(height: 8),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.hourglass_empty_rounded,
-                        color: Colors.orange,
-                        size: 16,
-                      ),
-                      SizedBox(width: 8),
-                      Text(
-                        'AWAITING HOST DEPOSIT PAYMENT',
-                        style: TextStyle(
-                          color: Colors.orange,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                  ),
+            if (isAwaitingHost) ...[
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-              ] else ...[
-                const SizedBox(height: 16),
-                const Divider(),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Deposit Required ($timerText)',
-                          style: TextStyle(
-                            color: Colors.red[400],
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const Text(
-                          '₹99',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black,
-                          ),
-                        ),
-                      ],
+                    Icon(
+                      Icons.hourglass_empty_rounded,
+                      color: Colors.orange,
+                      size: 16,
                     ),
-                    ElevatedButton(
-                      onPressed: () => _onProceedToPayment(req),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: LunaraTheme.electricViolet,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
-                        ),
-                      ),
-                      child: const Text(
-                        'PAY DEPOSIT',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
+                    SizedBox(width: 8),
+                    Text(
+                      'AWAITING HOST DEPOSIT PAYMENT',
+                      style: TextStyle(
+                        color: Colors.orange,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
                       ),
                     ),
                   ],
                 ),
-              ],
+              ),
             ],
 
-            if (isPaymentPending && joinerPaid && !hostPaid) ...[
+            if (isAwaitingJoinerPayment) ...[
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Deposit Required ($timerText)',
+                        style: TextStyle(
+                          color: Colors.red[400],
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Text(
+                        '₹99',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
+                      ),
+                    ],
+                  ),
+                  ElevatedButton(
+                    onPressed: () => _onProceedToPayment(req),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: LunaraTheme.electricViolet,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                    ),
+                    child: const Text(
+                      'PAY DEPOSIT',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+
+            if (isJoinerPaidAwaitingHost) ...[
               const SizedBox(height: 16),
               const Divider(),
               const SizedBox(height: 8),
@@ -480,7 +483,7 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
               ),
             ],
 
-            if ((isPaymentPending && joinerPaid && hostPaid) || isAccepted) ...[
+            if (isBookingConfirmed) ...[
               const SizedBox(height: 16),
               const Divider(),
               const SizedBox(height: 8),
@@ -563,24 +566,36 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
   ) {
     Color bg;
     Color text;
+    final String lowerStatus = status.toString().toLowerCase();
     String label = status.toUpperCase();
 
-    if (status == 'pending') {
+    if (lowerStatus == 'pending') {
       bg = Colors.orange.withValues(alpha: 0.1);
       text = Colors.orange;
-    } else if (status == 'rejected' || status == 'payment_failed') {
+    } else if (lowerStatus == 'rejected' || lowerStatus == 'payment_failed') {
       bg = Colors.red.withValues(alpha: 0.1);
       text = Colors.red;
-      label = status == 'payment_failed' ? 'FAILED' : 'REJECTED';
-    } else if (status == 'payment_pending') {
-      if (paymentStatus == 'paid' || paymentStatus == 'refunded') {
-        bg = Colors.blue.withValues(alpha: 0.1);
-        text = Colors.blue;
-        label = 'WAITING HOST';
-      } else {
+      label = lowerStatus == 'payment_failed' ? 'FAILED' : 'REJECTED';
+    } else if (lowerStatus == 'accepted' || lowerStatus == 'payment_pending') {
+      final joinerPaid = paymentStatus == 'paid' || paymentStatus == 'refunded';
+      final hostPaid = hostPaymentStatus == 'paid' || hostPaymentStatus == 'refunded';
+
+      if (joinerPaid && hostPaid) {
+        bg = Colors.green.withValues(alpha: 0.1);
+        text = Colors.green;
+        label = 'CONFIRMED';
+      } else if (!hostPaid) {
+        bg = Colors.orange.withValues(alpha: 0.1);
+        text = Colors.orange;
+        label = 'AWAITING HOST';
+      } else if (hostPaid && !joinerPaid) {
         bg = LunaraTheme.electricViolet.withValues(alpha: 0.1);
         text = LunaraTheme.electricViolet;
         label = 'PAY DEPOSIT';
+      } else {
+        bg = Colors.blue.withValues(alpha: 0.1);
+        text = Colors.blue;
+        label = 'WAITING HOST';
       }
     } else {
       bg = Colors.green.withValues(alpha: 0.1);

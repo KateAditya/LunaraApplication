@@ -267,6 +267,13 @@ export const sendMessage = async (req: Request, res: Response) => {
             return res.status(403).json({ success: false, message: 'This conversation is blocked' });
         }
 
+        // Check if chat subscription is active
+        const { getChatSessionStatus } = require('./chatSubscriptionController');
+        const sessionStatus = await getChatSessionStatus(id, senderId);
+        if (!sessionStatus.canChat) {
+            return res.status(403).json({ success: false, message: 'Chat session has expired or is locked' });
+        }
+
         // Validate content based on type
         if ([MessageType.TEXT, MessageType.ICEBREAKER].includes(type) && !content) {
             return res.status(400).json({ success: false, message: 'content is required for text/icebreaker messages' });
