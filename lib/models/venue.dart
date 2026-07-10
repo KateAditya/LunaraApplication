@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 
 class VenueAmenities {
@@ -372,8 +373,8 @@ class Venue {
     }
 
     final yyyy = businessDate.year;
-    final mm = String(businessDate.month).padLeft(2, '0');
-    final dd = String(businessDate.day).padLeft(2, '0');
+    final mm = businessDate.month.toString().padLeft(2, '0');
+    final dd = businessDate.day.toString().padLeft(2, '0');
     final businessDateStr = '$yyyy-$mm-$dd';
 
     if (closedDates != null && closedDates!.isNotEmpty) {
@@ -432,11 +433,11 @@ class Venue {
         }
 
         if (eventTimeMins < openTimeMins || eventTimeMins >= closeTimeMins) {
-          final formatTime = (int h, int m) {
+          String formatTime(int h, int m) {
             final ampm = h >= 12 && h < 24 ? 'PM' : 'AM';
             final displayH = h % 12 == 0 ? 12 : h % 12;
             return '$displayH:${m.toString().padLeft(2, '0')} $ampm';
-          };
+          }
           return 'Selected time is outside venue operating hours. The venue is open from ${formatTime(openHour, openMin)} to ${formatTime(closeHour, closeMin)}.';
         }
       }
