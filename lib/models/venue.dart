@@ -99,6 +99,7 @@ class Venue {
   final String? openingTime;
   final String? closingTime;
   final List<dynamic>? daysOpen;
+  final List<dynamic>? closedDates;
   final String? tagline;
   final double? coverChargeMale;
   final double? coverChargeFemale;
@@ -127,6 +128,7 @@ class Venue {
     this.openingTime,
     this.closingTime,
     this.daysOpen,
+    this.closedDates,
     this.tagline,
     this.coverChargeMale,
     this.coverChargeFemale,
@@ -271,6 +273,7 @@ class Venue {
       openingTime: json['openingTime']?.toString(),
       closingTime: json['closingTime']?.toString(),
       daysOpen: json['daysOpen'] is List ? json['daysOpen'] as List : null,
+      closedDates: json['closedDates'] is List ? json['closedDates'] as List : null,
       tagline: json['tagline']?.toString(),
       coverChargeMale: double.tryParse(
         json['coverChargeMale']?.toString() ?? '',
@@ -309,10 +312,136 @@ class Venue {
       'openingTime': openingTime,
       'closingTime': closingTime,
       'daysOpen': daysOpen,
+      'closedDates': closedDates,
       'tagline': tagline,
       'coverChargeMale': coverChargeMale,
       'coverChargeFemale': coverChargeFemale,
       'capacity': capacity,
     };
+  }
+
+  bool isOpenAt(DateTime date, dynamic timeOpt) {
+    TimeOfDay time;
+    if (timeOpt is TimeOfDay) {
+      time = timeOpt;
+    } else if (timeOpt is String) {
+      final parts = timeOpt.split(':');
+      if (parts.length >= 2) {
+        time = TimeOfDay(
+          hour: int.tryParse(parts[0]) ?? 0,
+          minute: int.tryParse(parts[1]) ?? 0,
+        );
+      } else {
+        return true;
+      }
+    } else {
+      return true;
+    }
+    return getInvalidReason(date, time) == null;
+  }
+
+  String? getInvalidReason(DateTime date, dynamic timeOpt) {
+    TimeOfDay time;
+    if (timeOpt is TimeOfDay) {
+      time = timeOpt;
+    } else if (timeOpt is String) {
+      final parts = timeOpt.split(':');
+      if (parts.length >= 2) {
+        time = TimeOfDay(
+          hour: int.tryParse(parts[0]) ?? 0,
+          minute: int.tryParse(parts[1]) ?? 0,
+        );
+      } else {
+        return null;
+      }
+    } else {
+      return null;
+    }
+
+    final dt = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
+
+    DateTime businessDate = dt;
+    if (time.hour < 6) {
+      businessDate = dt.subtract(const Duration(days: 1));
+    }
+
+    final yyyy = businessDate.year;
+    final mm = String(businessDate.month).padLeft(2, '0');
+    final dd = String(businessDate.day).padLeft(2, '0');
+    final businessDateStr = '$yyyy-$mm-$dd';
+
+    if (closedDates != null && closedDates!.isNotEmpty) {
+      if (closedDates!.contains(businessDateStr)) {
+        return 'The venue is closed on $businessDateStr (Holiday).';
+      }
+    }
+
+    if (daysOpen != null && daysOpen!.isNotEmpty) {
+      final weekdaysMap = {
+        1: 'Monday',
+        2: 'Tuesday',
+        3: 'Wednesday',
+        4: 'Thursday',
+        5: 'Friday',
+        6: 'Saturday',
+        7: 'Sunday',
+      };
+      final businessWeekdayName = weekdaysMap[businessDate.weekday];
+      if (businessWeekdayName != null) {
+        final isOpenOnWeekday = daysOpen!.any((d) {
+          final str = d.toString().trim().toLowerCase();
+          final fullDay = businessWeekdayName.toLowerCase();
+          final shortDay = businessWeekdayName.substring(0, 3).toLowerCase();
+          return str.contains(fullDay) || str.contains(shortDay);
+        });
+
+        if (!isOpenOnWeekday) {
+          return 'The venue is not open on ${businessWeekdayName}s.';
+        }
+      }
+    }
+
+    if (openingTime != null && closingTime != null) {
+      final openParts = openingTime!.split(':');
+      final closeParts = closingTime!.split(':');
+      if (openParts.length >= 2 && closeParts.length >= 2) {
+        final openHour = int.tryParse(openParts[0]) ?? 0;
+        final openMin = int.tryParse(openParts[1]) ?? 0;
+        final closeHour = int.tryParse(closeParts[0]) ?? 0;
+        final closeMin = int.tryParse(closeParts[1]) ?? 0;
+
+        int openTimeMins = openHour * 60 + openMin;
+        int closeTimeMins = closeHour * 60 + closeMin;
+        if (closeTimeMins < openTimeMins) {
+          closeTimeMins += 24 * 60;
+        }
+
+        int eventTimeMins = time.hour * 60 + time.minute;
+        if (time.hour < 6 && closeTimeMins > 24 * 60) {
+          eventTimeMins += 24 * 60;
+        } else if (time.hour < openHour && closeTimeMins <= 24 * 60) {
+          eventTimeMins -= 24 * 60;
+        } else if (time.hour < 6 && time.hour >= closeHour) {
+          eventTimeMins += 24 * 60;
+        }
+
+        if (eventTimeMins < openTimeMins || eventTimeMins >= closeTimeMins) {
+          final formatTime = (int h, int m) {
+            final ampm = h >= 12 && h < 24 ? 'PM' : 'AM';
+            final displayH = h % 12 == 0 ? 12 : h % 12;
+            return '$displayH:${m.toString().padLeft(2, '0')} $ampm';
+          };
+          return 'Selected time is outside venue operating hours. The venue is open from ${formatTime(openHour, openMin)} to ${formatTime(closeHour, closeMin)}.';
+        }
+      }
+    }
+
+    return null; // Valid!
   }
 }

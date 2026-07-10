@@ -269,7 +269,7 @@ export const createVenue = async (req: Request, res: Response) => {
                         let finalPath = '';
                         let finalSize = 0;
                         if ((imgFile as any).url) {
-                            finalPath = (imgFile as any).url;
+                            finalPath = (imgFile as any).url.split('?')[0];
                             finalSize = imgFile.size || 0;
                         } else {
                             const compressedPath = await compressImageTo300KB(imgFile.path);
@@ -316,7 +316,7 @@ export const createVenue = async (req: Request, res: Response) => {
                         
                         let finalPath = '';
                         if ((videoFile as any).url) {
-                            finalPath = (videoFile as any).url;
+                            finalPath = (videoFile as any).url.split('?')[0];
                         } else {
                             finalPath = path.relative(process.cwd(), videoFile.path);
                         }
@@ -589,7 +589,7 @@ export const updateVenue = async (req: Request, res: Response) => {
                         let finalPath = '';
                         let finalSize = 0;
                         if ((imgFile as any).url) {
-                            finalPath = (imgFile as any).url;
+                            finalPath = (imgFile as any).url.split('?')[0];
                             finalSize = imgFile.size || 0;
                         } else {
                             const compressedPath = await compressImageTo300KB(imgFile.path);
@@ -620,7 +620,7 @@ export const updateVenue = async (req: Request, res: Response) => {
                     let finalPath = '';
                     let finalSize = 0;
                     if ((coverFile as any).url) {
-                        finalPath = (coverFile as any).url;
+                        finalPath = (coverFile as any).url.split('?')[0];
                         finalSize = coverFile.size || 0;
                     } else {
                         const compressedPath = await compressImageTo300KB(coverFile.path);
@@ -665,7 +665,7 @@ export const updateVenue = async (req: Request, res: Response) => {
 
                         let finalPath = '';
                         if ((videoFile as any).url) {
-                            finalPath = (videoFile as any).url;
+                            finalPath = (videoFile as any).url.split('?')[0];
                         } else {
                             finalPath = path.relative(process.cwd(), videoFile.path);
                         }

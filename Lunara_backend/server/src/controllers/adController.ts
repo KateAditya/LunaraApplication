@@ -159,7 +159,7 @@ export const createAd = async (req: Request, res: Response): Promise<Response> =
         // Handle Azure Blob Storage vs Local Disk
         let imagePath = '';
         if ((file as any).url) {
-            imagePath = (file as any).url;
+            imagePath = (file as any).url.split('?')[0];
         } else if (file.path) {
             const compressedPath = await compressImageTo300KB(file.path);
             imagePath = compressedPath.replace(/\\/g, '/');
@@ -235,7 +235,7 @@ export const updateAd = async (req: Request, res: Response): Promise<Response> =
             const oldPath = ad.imagePath;
             
             if ((file as any).url) {
-                ad.imagePath = (file as any).url;
+                ad.imagePath = (file as any).url.split('?')[0];
             } else if (file.path) {
                 const compressedPath = await compressImageTo300KB(file.path);
                 ad.imagePath = compressedPath.replace(/\\/g, '/');

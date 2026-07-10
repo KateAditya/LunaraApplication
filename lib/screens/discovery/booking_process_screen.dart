@@ -3,6 +3,7 @@ import '../../core/theme.dart';
 import '../../widgets/action_button.dart';
 import 'payment_confirmation_screen.dart';
 import '../../services/api_service.dart';
+import '../../models/venue.dart';
 
 class BookingProcessScreen extends StatefulWidget {
   final Map<dynamic, dynamic> venue;
@@ -28,6 +29,17 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
       TextEditingController();
 
   bool _isVenueOpenOnDate(DateTime date) {
+    final closedDates = widget.venue['closedDates'];
+    if (closedDates != null && closedDates is List) {
+      final yyyy = date.year;
+      final mm = date.month.toString().padLeft(2, '0');
+      final dd = date.day.toString().padLeft(2, '0');
+      final dateStr = '$yyyy-$mm-$dd';
+      if (closedDates.contains(dateStr)) {
+        return false;
+      }
+    }
+
     final daysOpen = widget.venue['daysOpen'];
     if (daysOpen == null || daysOpen is! List || daysOpen.isEmpty) {
       return true; // default to open
@@ -530,16 +542,12 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                 return;
               }
 
-              // Validate venue working hours
-              final String? openingTime = widget.venue['openingTime'];
-              final String? closingTime = widget.venue['closingTime'];
-
-              if (!_isTimeWithinVenueHours(picked, openingTime, closingTime)) {
-                final openStr = _formatTimeOfBooking(openingTime);
-                final closeStr = _formatTimeOfBooking(closingTime);
+              final venueObj = Venue.fromJson(Map<String, dynamic>.from(widget.venue));
+              final invalidReason = venueObj.getInvalidReason(_selectedDate, picked);
+              if (invalidReason != null) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('Venue is closed at this time. Working hours: $openStr - $closeStr'),
+                    content: Text(invalidReason),
                     backgroundColor: Colors.redAccent,
                   ),
                 );

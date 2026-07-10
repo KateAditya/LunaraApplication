@@ -1032,6 +1032,231 @@ class _PlanHubScreenState extends State<PlanHubScreen>
         });
         return StatefulBuilder(
           builder: (context, setSheetState) {
+            final now = DateTime.now();
+            final today = DateTime(now.year, now.month, now.day);
+            final tomorrow = today.add(const Duration(days: 1));
+
+            int daysToFriday = (5 - now.weekday) % 7;
+            if (daysToFriday <= 0) daysToFriday += 7;
+            final nextFriday = today.add(Duration(days: daysToFriday));
+
+            int daysToSaturday = (6 - now.weekday) % 7;
+            if (daysToSaturday <= 0) daysToSaturday += 7;
+            final nextSaturday = today.add(Duration(days: daysToSaturday));
+
+            Future<void> handleDateSelection(DateTime date) async {
+              if (selectedVenue == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please select a venue first.'),
+                    backgroundColor: Colors.orangeAccent,
+                  ),
+                );
+                return;
+              }
+
+              final yyyy = date.year;
+              final mm = date.month.toString().padLeft(2, '0');
+              final dd = date.day.toString().padLeft(2, '0');
+              final dateStr = '$yyyy-$mm-$dd';
+              if (selectedVenue!.closedDates != null && selectedVenue!.closedDates!.contains(dateStr)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('The venue is closed on $dateStr (Holiday).'),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+                return;
+              }
+
+              final weekdaysMap = {
+                1: 'Monday',
+                2: 'Tuesday',
+                3: 'Wednesday',
+                4: 'Thursday',
+                5: 'Friday',
+                6: 'Saturday',
+                7: 'Sunday',
+              };
+              final weekdayName = weekdaysMap[date.weekday];
+              final isOpenOnWeekday = weekdayName != null && selectedVenue!.daysOpen != null && selectedVenue!.daysOpen!.any((d) {
+                final str = d.toString().trim().toLowerCase();
+                final fullDay = weekdayName.toLowerCase();
+                final shortDay = weekdayName.substring(0, 3).toLowerCase();
+                return str.contains(fullDay) || str.contains(shortDay);
+              });
+              if (!isOpenOnWeekday && selectedVenue!.daysOpen != null && selectedVenue!.daysOpen!.isNotEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('The venue is not open on ${weekdayName}s.'),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+                return;
+              }
+
+              final time = await showTimePicker(
+                context: context,
+                initialTime: selectedTime ?? TimeOfDay.now(),
+              );
+
+              if (time != null) {
+                final selectedDateTime = DateTime(
+                  date.year,
+                  date.month,
+                  date.day,
+                  time.hour,
+                  time.minute,
+                );
+                if (selectedDateTime.isBefore(DateTime.now())) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Selected date and time cannot be in the past.'),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                  return;
+                }
+
+                final invalidReason = selectedVenue!.getInvalidReason(date, time);
+                if (invalidReason != null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(invalidReason),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                  return;
+                }
+
+                setSheetState(() {
+                  selectedDate = date;
+                  selectedTime = time;
+                  final formattedTime = _formatTimeOfBooking(
+                    '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
+                  );
+                  dateCtrl.text =
+                      "${DateFormat('MMM dd, yyyy').format(date)} at $formattedTime";
+                });
+              }
+            }
+
+            Future<void> handleCustomDateSelection() async {
+              if (selectedVenue == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please select a venue first.'),
+                    backgroundColor: Colors.orangeAccent,
+                  ),
+                );
+                return;
+              }
+
+              final date = await showDatePicker(
+                context: context,
+                initialDate: selectedDate ?? DateTime.now(),
+                firstDate: DateTime.now(),
+                lastDate: DateTime.now().add(const Duration(days: 30)),
+              );
+
+              if (date != null) {
+                await handleDateSelection(date);
+              }
+            }
+
+            Widget buildDateChip(String label, DateTime dateVal, bool isSelected) {
+              return GestureDetector(
+                onTap: () => handleDateSelection(dateVal),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isSelected ? LunaraTheme.electricViolet : Colors.grey[50],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isSelected ? LunaraTheme.electricViolet : Colors.grey[300]!,
+                      width: 1,
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        label,
+                        style: TextStyle(
+                          color: isSelected ? Colors.white : Colors.black87,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        DateFormat('MMM d').format(dateVal),
+                        style: TextStyle(
+                          color: isSelected ? Colors.white70 : Colors.black54,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+
+            Widget buildCustomChip(bool isSelected) {
+              return GestureDetector(
+                onTap: handleCustomDateSelection,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isSelected ? LunaraTheme.electricViolet : Colors.grey[50],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isSelected ? LunaraTheme.electricViolet : Colors.grey[300]!,
+                      width: 1,
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.calendar_today_rounded,
+                            size: 12,
+                            color: isSelected ? Colors.white : Colors.black87,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Custom',
+                            style: TextStyle(
+                              color: isSelected ? Colors.white : Colors.black87,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        selectedDate != null &&
+                                selectedDate != today &&
+                                selectedDate != tomorrow &&
+                                selectedDate != nextFriday &&
+                                selectedDate != nextSaturday
+                            ? DateFormat('MMM d').format(selectedDate!)
+                            : 'Choose Date',
+                        style: TextStyle(
+                          color: isSelected ? Colors.white70 : Colors.black54,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+
             final List<Venue> displayedVenues = searchQuery.isEmpty
                 ? _allVenues.take(5).toList()
                 : _allVenues
@@ -1124,50 +1349,51 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     descriptionCtrl.text =
                                         "Let's party at ${v.name}! 🚀";
                                     // Validate previously selected date & time
-                                    if (selectedDate != null &&
-                                        !_isVenueOpenOnDate(v, selectedDate!)) {
-                                      selectedDate = null;
-                                      selectedTime = null;
-                                      dateCtrl.clear();
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            'Cleared date selection because ${v.name} is closed on that day.',
+                                    if (selectedDate != null && selectedTime != null) {
+                                      final invalidReason = v.getInvalidReason(selectedDate!, selectedTime!);
+                                      if (invalidReason != null) {
+                                        selectedDate = null;
+                                        selectedTime = null;
+                                        dateCtrl.clear();
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Cleared date/time selection: $invalidReason'),
+                                            backgroundColor: Colors.orangeAccent,
                                           ),
-                                          backgroundColor: Colors.orangeAccent,
-                                        ),
-                                      );
-                                    } else if (selectedTime != null &&
-                                        !_isTimeWithinVenueHours(
-                                          selectedTime!,
-                                          v.openingTime,
-                                          v.closingTime,
-                                        )) {
-                                      selectedTime = null;
-                                      dateCtrl.clear();
-                                      if (selectedDate != null) {
-                                        dateCtrl.text = DateFormat(
-                                          'MMM dd, yyyy',
-                                        ).format(selectedDate!);
+                                        );
                                       }
-                                      final openStr = _formatTimeOfBooking(
-                                        v.openingTime,
-                                      );
-                                      final closeStr = _formatTimeOfBooking(
-                                        v.closingTime,
-                                      );
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            'Cleared time selection because it is outside ${v.name}\'s working hours ($openStr - $closeStr).',
+                                    } else if (selectedDate != null) {
+                                      final yyyy = selectedDate!.year;
+                                      final mm = selectedDate!.month.toString().padLeft(2, '0');
+                                      final dd = selectedDate!.day.toString().padLeft(2, '0');
+                                      final dateStr = '$yyyy-$mm-$dd';
+                                      final weekdaysMap = {
+                                        1: 'Monday',
+                                        2: 'Tuesday',
+                                        3: 'Wednesday',
+                                        4: 'Thursday',
+                                        5: 'Friday',
+                                        6: 'Saturday',
+                                        7: 'Sunday',
+                                      };
+                                      final weekdayName = weekdaysMap[selectedDate!.weekday];
+                                      final isOpenOnWeekday = weekdayName != null && v.daysOpen != null && v.daysOpen!.any((d) {
+                                        final str = d.toString().trim().toLowerCase();
+                                        final fullDay = weekdayName.toLowerCase();
+                                        final shortDay = weekdayName.substring(0, 3).toLowerCase();
+                                        return str.contains(fullDay) || str.contains(shortDay);
+                                      });
+                                      final isHoliday = v.closedDates != null && v.closedDates!.contains(dateStr);
+                                      if (isHoliday || (!isOpenOnWeekday && v.daysOpen != null && v.daysOpen!.isNotEmpty)) {
+                                        selectedDate = null;
+                                        dateCtrl.clear();
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Cleared date selection because ${v.name} is closed on that day.'),
+                                            backgroundColor: Colors.orangeAccent,
                                           ),
-                                          backgroundColor: Colors.orangeAccent,
-                                        ),
-                                      );
+                                        );
+                                      }
                                     }
                                   });
                                 },
@@ -1226,80 +1452,51 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       ),
                       const SizedBox(height: 10),
 
-                      // Date & Time Picker
+                      // Date & Time Picker Options
+                      const Text(
+                        'SELECT DATE & TIME',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.5,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        physics: const BouncingScrollPhysics(),
+                        child: Row(
+                          children: [
+                            buildDateChip('Today', today, selectedDate == today),
+                            const SizedBox(width: 8),
+                            buildDateChip('Tomorrow', tomorrow, selectedDate == tomorrow),
+                            const SizedBox(width: 8),
+                            buildDateChip(DateFormat('E, MMM d').format(nextFriday), nextFriday, selectedDate == nextFriday),
+                            const SizedBox(width: 8),
+                            buildDateChip(DateFormat('E, MMM d').format(nextSaturday), nextSaturday, selectedDate == nextSaturday),
+                            const SizedBox(width: 8),
+                            buildCustomChip(
+                              selectedDate != null &&
+                              selectedDate != today &&
+                              selectedDate != tomorrow &&
+                              selectedDate != nextFriday &&
+                              selectedDate != nextSaturday
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
                       _sheetField(
                         controller: dateCtrl,
-                        hint: 'Pick Date & Time',
+                        hint: 'Selected Date & Time',
                         icon: Icons.calendar_today_rounded,
                         readOnly: true,
-                        onTap: () async {
-                          if (selectedVenue == null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Please select a venue first.'),
-                                backgroundColor: Colors.orangeAccent,
-                              ),
-                            );
-                            return;
-                          }
-                          final date = await showDatePicker(
-                            context: context,
-                            initialDate: DateTime.now(),
-                            firstDate: DateTime.now(),
-                            lastDate: DateTime.now().add(
-                              const Duration(days: 30),
-                            ),
-                          );
-                          if (date != null) {
-                            if (!context.mounted) return;
-                            if (!_isVenueOpenOnDate(selectedVenue!, date)) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'The venue is closed (holiday) on ${['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][date.weekday - 1]}.',
-                                  ),
-                                  backgroundColor: Colors.redAccent,
-                                ),
-                              );
-                              return;
-                            }
-                            final time = await showTimePicker(
-                              context: context,
-                              initialTime: TimeOfDay.now(),
-                            );
-                            if (time != null) {
-                              if (!context.mounted) return;
-                              if (!_isTimeWithinVenueHours(
-                                time,
-                                selectedVenue!.openingTime,
-                                selectedVenue!.closingTime,
-                              )) {
-                                final openStr = _formatTimeOfBooking(
-                                  selectedVenue!.openingTime,
-                                );
-                                final closeStr = _formatTimeOfBooking(
-                                  selectedVenue!.closingTime,
-                                );
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'Venue is closed at this time. Working hours: $openStr - $closeStr',
-                                    ),
-                                    backgroundColor: Colors.redAccent,
-                                  ),
-                                );
-                                return;
-                              }
-                              setSheetState(() {
-                                selectedDate = date;
-                                selectedTime = time;
-                                final formattedTime = _formatTimeOfBooking(
-                                  '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
-                                );
-                                dateCtrl.text =
-                                    "${DateFormat('MMM dd, yyyy').format(date)} at $formattedTime";
-                              });
-                            }
+                        onTap: () {
+                          if (selectedDate != null) {
+                            handleDateSelection(selectedDate!);
+                          } else {
+                            handleCustomDateSelection();
                           }
                         },
                       ),
@@ -1586,25 +1783,53 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                           onTap: isPosting
                               ? () {}
                               : () async {
-                                  if (selectedVenue == null) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Please select a venue'),
-                                      ),
-                                    );
-                                    return;
-                                  }
-                                  if (selectedDate == null ||
-                                      selectedTime == null) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Please select date and time',
-                                        ),
-                                      ),
-                                    );
-                                    return;
-                                  }
+                                   if (selectedVenue == null) {
+                                     ScaffoldMessenger.of(context).showSnackBar(
+                                       const SnackBar(
+                                         content: Text('Please select a venue'),
+                                         backgroundColor: Colors.orangeAccent,
+                                       ),
+                                     );
+                                     return;
+                                   }
+                                   if (selectedDate == null || selectedTime == null) {
+                                     ScaffoldMessenger.of(context).showSnackBar(
+                                       const SnackBar(
+                                         content: Text('Please select date and time'),
+                                         backgroundColor: Colors.orangeAccent,
+                                       ),
+                                     );
+                                     return;
+                                   }
+
+                                   final dt = DateTime(
+                                     selectedDate!.year,
+                                     selectedDate!.month,
+                                     selectedDate!.day,
+                                     selectedTime!.hour,
+                                     selectedTime!.minute,
+                                   );
+
+                                   if (dt.isBefore(DateTime.now())) {
+                                     ScaffoldMessenger.of(context).showSnackBar(
+                                       const SnackBar(
+                                         content: Text('Selected date and time cannot be in the past.'),
+                                         backgroundColor: Colors.redAccent,
+                                       ),
+                                     );
+                                     return;
+                                   }
+
+                                   final invalidReason = selectedVenue!.getInvalidReason(selectedDate!, selectedTime!);
+                                   if (invalidReason != null) {
+                                     ScaffoldMessenger.of(context).showSnackBar(
+                                       SnackBar(
+                                         content: Text(invalidReason),
+                                         backgroundColor: Colors.redAccent,
+                                       ),
+                                     );
+                                     return;
+                                   }
 
                                   final userId = ApiService.currentUserId;
                                   if (userId == null) {
@@ -1682,14 +1907,6 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                   }
 
                                   setSheetState(() => isPosting = true);
-
-                                  final dt = DateTime(
-                                    selectedDate!.year,
-                                    selectedDate!.month,
-                                    selectedDate!.day,
-                                    selectedTime!.hour,
-                                    selectedTime!.minute,
-                                  );
 
                                   if (isStrangersMeet) {
                                     try {
@@ -1817,9 +2034,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         'message': descriptionCtrl.text.isEmpty
                                             ? "Let's party at ${selectedVenue!.name}"
                                             : descriptionCtrl.text,
-                                        'planDateTime': DateFormat(
-                                          'yyyy-MM-dd HH:mm:ss',
-                                        ).format(dt),
+                                        'planDateTime': dt.toUtc().toIso8601String(),
                                         'privacyType': selectedPrivacy
                                             .toLowerCase(),
                                         'paymentStatus': 'pending',
