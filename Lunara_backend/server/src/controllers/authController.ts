@@ -379,6 +379,57 @@ export async function adminLogin(req: Request, res: Response) {
 }
 
 /**
+ * Bootstrap Admin — creates or resets admin user in the DB.
+ * POST /api/auth/bootstrap-admin
+ * Body: { secret: string }
+ * Protected by BOOTSTRAP_SECRET env var (default: 'lunara-bootstrap-2026')
+ */
+export async function bootstrapAdmin(req: Request, res: Response) {
+    try {
+        const { secret } = req.body;
+        const bootstrapSecret = process.env.BOOTSTRAP_SECRET || 'lunara-bootstrap-2026';
+        if (!secret || secret !== bootstrapSecret) {
+            return res.status(403).json({ success: false, message: 'Invalid bootstrap secret' });
+        }
+
+        const adminEmail = (process.env.ADMIN_EMAIL || 'admin@lunara.com').trim().toLowerCase();
+        const adminPassword = process.env.ADMIN_PASSWORD || 'JaiGanesh@2026';
+        const adminPhone = process.env.ADMIN_PHONE || '9999999999';
+
+        let adminUser = await User.findOne({ where: { email: adminEmail } });
+        if (adminUser) {
+            // Reset password and ensure admin role
+            adminUser.passwordHash = adminPassword; // beforeUpdate hook will hash it
+            adminUser.role = UserRole.ADMIN;
+            adminUser.isActive = true;
+            adminUser.isVerified = true;
+            await adminUser.save();
+            return res.json({ success: true, message: `Admin user reset: ${adminEmail}`, action: 'updated' });
+        }
+
+        // Create from scratch
+        adminUser = await User.create({
+            email: adminEmail,
+            phone: adminPhone,
+            passwordHash: adminPassword,  // beforeCreate hook hashes it
+            firstName: 'Super',
+            lastName: 'Admin',
+            dateOfBirth: new Date('1990-01-01'),
+            role: UserRole.ADMIN,
+            isVerified: true,
+            isActive: true,
+        });
+        try { await UserProfile.create({ userId: adminUser.id, displayName: 'Super Admin' }); } catch (_) {}
+        try { await UserPreference.create({ userId: adminUser.id }); } catch (_) {}
+        logger.info(`Bootstrap: Admin user created: ${adminEmail}`);
+        return res.json({ success: true, message: `Admin user created: ${adminEmail}`, action: 'created' });
+    } catch (error: any) {
+        logger.error('Bootstrap admin error:', error);
+        return res.status(500).json({ success: false, message: 'Bootstrap failed', error: error.message });
+    }
+}
+
+/**
  * Forgot password - send reset email
  * POST /api/auth/forgot-password
  */

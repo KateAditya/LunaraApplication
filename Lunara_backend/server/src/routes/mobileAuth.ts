@@ -17,6 +17,11 @@ const authLimiter = process.env.NODE_ENV === 'development'
         },
         standardHeaders: true,
         legacyHeaders:   false,
+        keyGenerator: (req: any): string => {
+            const raw = req.ip || req.socket?.remoteAddress || 'unknown';
+            // Azure LB may forward 'IP:PORT' — strip port to get a valid key
+            return raw.includes(':') && !raw.startsWith('::') ? raw.split(':')[0] : raw;
+        },
     });
 
 // ── Routes ────────────────────────────────────────────────────────────────────

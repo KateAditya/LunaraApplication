@@ -23,7 +23,8 @@ dotenv.config();
 
 const app: Application = express();
 
-// Trust reverse proxy (e.g., NGINX) to ensure rate limiter uses real client IPs
+// Trust Azure / NGINX reverse proxy — MUST be set before any rate limiter
+// Setting to 1 means trust the first proxy hop only.
 app.set('trust proxy', 1);
 
 const httpServer = createServer(app);
@@ -61,13 +62,21 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 app.use(morgan('combined', { stream: { write: (message) => logger.info(message.trim()) } }));
-app.set('trust proxy', 1);
-// Rate limiting (only in production/staging)
+// Rate limiting — apply globally. The keyGenerator strips any port from IP:PORT
+// strings produced by Azure's load balancer to avoid ERR_ERL_INVALID_IP_ADDRESS.
+const safeIpKeyGenerator = (req: any): string => {
+    const raw = req.ip || req.socket?.remoteAddress || 'unknown';
+    // Azure LB may pass '1.2.3.4:56789' — strip the port
+    return raw.includes(':') && !raw.startsWith('::') ? raw.split(':')[0] : raw;
+};
+
 if (process.env.NODE_ENV !== 'development') {
     const limiter = rateLimit({
         windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'),
         max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '10000'),
         message: { success: false, message: 'Too many requests from this IP, please try again later.' },
+        keyGenerator: safeIpKeyGenerator,
+        skip: (req) => req.path === '/health',
     });
     app.use('/api/', limiter);
 }

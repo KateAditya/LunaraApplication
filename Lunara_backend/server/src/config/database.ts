@@ -45,7 +45,7 @@ export const connectDatabase = async (): Promise<void> => {
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_amount DECIMAL(10,2);`);
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_date TIMESTAMP WITH TIME ZONE;`);
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_method VARCHAR(50);`);
-
+            
             await sequelize.query(`ALTER TABLE strangers_meet_joiners ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'pending';`);
         } catch (alterError: any) {
             logger.warn('Dynamic table migration warning: ' + alterError.message);
@@ -63,7 +63,7 @@ export const connectDatabase = async (): Promise<void> => {
                 const adminPassword = process.env.ADMIN_PASSWORD || 'JaiGanesh@2026';
                 const hashedPw = await bcrypt.hash(adminPassword, 10);
                 const adminId = require('crypto').randomUUID();
-
+                
                 await sequelize.query(`
                     INSERT INTO users (
                         id, email, phone, password_hash, first_name, last_name, 

@@ -106,6 +106,13 @@ router.post('/login', loginValidation, authController.login);
 router.post('/admin-login', loginValidation, authController.adminLogin);
 
 /**
+ * @route   POST /api/auth/bootstrap-admin
+ * @desc    One-shot: create/reset admin user from env vars. Protected by BOOTSTRAP_SECRET.
+ * @access  Public (secret-protected)
+ */
+router.post('/bootstrap-admin', authController.bootstrapAdmin);
+
+/**
  * @route   POST /api/auth/forgot-password
  * @desc    Send password reset email
  * @access  Public
