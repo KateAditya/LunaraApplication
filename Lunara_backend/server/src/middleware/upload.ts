@@ -61,9 +61,9 @@ export const imageOrVideoFileFilter = (_req: any, file: Express.Multer.File, cb:
 // ─── Azure Storage Configuration ───────────────────────────────────────────────
 import { MulterAzureStorage } from 'multer-azure-blob-storage';
 
-const azureConfigured = !!process.env.AZURE_STORAGE_CONNECTION_STRING;
+export const azureConfigured = !!process.env.AZURE_STORAGE_CONNECTION_STRING;
 
-const azureStorageHelper = (folderPathFn: (req: any) => string) => {
+export const azureStorageHelper = (folderPathFn: (req: any) => string) => {
     return new MulterAzureStorage({
         connectionString: process.env.AZURE_STORAGE_CONNECTION_STRING || '',
         accessKey: process.env.AZURE_STORAGE_ACCESS_KEY || '',

@@ -6,30 +6,37 @@ import crypto from 'crypto';
 import fs from 'fs';
 import { authenticate, authorize } from '../middleware/auth';
 import { UserRole } from '../models/User';
+import { azureConfigured, azureStorageHelper } from '../middleware/upload';
 
 const router = express.Router();
 
 // Define custom storage for these specific form uploads
 const uploadsDir = process.env.UPLOAD_DIR || 'uploads';
-const storage = multer.diskStorage({
-    destination: (req, _file, cb) => {
-        const venueId = req.params.id || 'temp';
-        // Use absolute path (rooted at process.cwd()) so fs.renameSync in the controller
-        // can always locate the temp files regardless of the working directory.
-        const uploadPath = path.join(process.cwd(), uploadsDir, 'venues', venueId, 'raw');
 
-        if (!fs.existsSync(uploadPath)) {
-            fs.mkdirSync(uploadPath, { recursive: true });
+const storage = azureConfigured
+    ? azureStorageHelper((req) => {
+        const venueId = req.params.id || 'temp';
+        return `venues/${venueId}/raw`;
+      })
+    : multer.diskStorage({
+        destination: (req, _file, cb) => {
+            const venueId = req.params.id || 'temp';
+            // Use absolute path (rooted at process.cwd()) so fs.renameSync in the controller
+            // can always locate the temp files regardless of the working directory.
+            const uploadPath = path.join(process.cwd(), uploadsDir, 'venues', venueId, 'raw');
+
+            if (!fs.existsSync(uploadPath)) {
+                fs.mkdirSync(uploadPath, { recursive: true });
+            }
+            cb(null, uploadPath);
+        },
+        filename: (_req, file, cb) => {
+            const timestamp = Date.now();
+            const randomString = crypto.randomBytes(8).toString('hex');
+            const ext = path.extname(file.originalname);
+            cb(null, `${timestamp}_${randomString}${ext}`);
         }
-        cb(null, uploadPath);
-    },
-    filename: (_req, file, cb) => {
-        const timestamp = Date.now();
-        const randomString = crypto.randomBytes(8).toString('hex');
-        const ext = path.extname(file.originalname);
-        cb(null, `${timestamp}_${randomString}${ext}`);
-    }
-});
+    });
 
 // ── Allowed MIME types ─────────────────────────────────────────────────────────
 const ALLOWED_IMAGE_MIMES = new Set([

@@ -12,7 +12,10 @@ import crypto from 'crypto';
 
 // ── Helper: build structured menu & media sections from flat images array ─────
 const buildVenueMediaSections = (images: VenueImage[]) => {
-    const getUrl = (img: VenueImage) => '/' + img.filePath.replace(/\\/g, '/');
+    const getUrl = (img: VenueImage) => {
+        if (img.filePath.startsWith('http')) return img.filePath;
+        return '/' + img.filePath.replace(/\\/g, '/');
+    };
 
     const byType = (type: VenueImageType) =>
         images
@@ -236,6 +239,8 @@ export const createVenue = async (req: Request, res: Response) => {
         if (files) {
             // Move files from 'temp' to actual venue ID directory
             const moveToVenueDir = (file: Express.Multer.File): Express.Multer.File => {
+                if ((file as any).url) return file; // Skip for Azure Blob URL
+                
                 const normalizedPath = path.normalize(file.path);
                 const tempMarker = path.normalize(path.join('venues', 'temp'));
 
@@ -261,13 +266,22 @@ export const createVenue = async (req: Request, res: Response) => {
                 for (let i = 0; i < fieldFiles.length; i++) {
                     try {
                         const imgFile = moveToVenueDir(fieldFiles[i]);
-                        const compressedPath = await compressImageTo300KB(imgFile.path);
-                        const compressedSize = fs.statSync(compressedPath).size;
+                        let finalPath = '';
+                        let finalSize = 0;
+                        if ((imgFile as any).url) {
+                            finalPath = (imgFile as any).url;
+                            finalSize = imgFile.size || 0;
+                        } else {
+                            const compressedPath = await compressImageTo300KB(imgFile.path);
+                            finalSize = fs.statSync(compressedPath).size;
+                            finalPath = path.relative(process.cwd(), compressedPath);
+                        }
+
                         await VenueImage.create({
                             venueId: newVenue.id,
-                            filePath: path.relative(process.cwd(), compressedPath),
-                            fileSize: compressedSize,
-                            mimeType: 'image/webp',
+                            filePath: finalPath,
+                            fileSize: finalSize,
+                            mimeType: (imgFile as any).url ? imgFile.mimetype : 'image/webp',
                             imageType,
                             isPrimary: imageType === VenueImageType.COVER,
                             displayOrder: displayOrderOffset + i,
@@ -299,10 +313,17 @@ export const createVenue = async (req: Request, res: Response) => {
                 for (let i = 0; i < files['videos'].length; i++) {
                     try {
                         const videoFile = moveToVenueDir(files['videos'][i]);
+                        
+                        let finalPath = '';
+                        if ((videoFile as any).url) {
+                            finalPath = (videoFile as any).url;
+                        } else {
+                            finalPath = path.relative(process.cwd(), videoFile.path);
+                        }
 
                         await VenueImage.create({
                             venueId: newVenue.id,
-                            filePath: path.relative(process.cwd(), videoFile.path),
+                            filePath: finalPath,
                             fileSize: videoFile.size,
                             mimeType: videoFile.mimetype,
                             imageType: VenueImageType.VIDEO,
@@ -556,7 +577,7 @@ export const updateVenue = async (req: Request, res: Response) => {
 
         // Handle File Uploads for Updates
         if (files) {
-            // ── Helper: append image files with 300KB compression ──────────────
+            // ── Helper: append image files ──────────────
             const appendImageField = async (fieldName: string, imageType: VenueImageType) => {
                 const fieldFiles = files[fieldName];
                 if (!fieldFiles || fieldFiles.length === 0) return;
@@ -564,13 +585,23 @@ export const updateVenue = async (req: Request, res: Response) => {
                     const currentCount = await VenueImage.count({ where: { venueId: venue.id, imageType } });
                     for (let i = 0; i < fieldFiles.length; i++) {
                         const imgFile = fieldFiles[i];
-                        const compressedPath = await compressImageTo300KB(imgFile.path);
-                        const compressedSize = fs.statSync(compressedPath).size;
+                        
+                        let finalPath = '';
+                        let finalSize = 0;
+                        if ((imgFile as any).url) {
+                            finalPath = (imgFile as any).url;
+                            finalSize = imgFile.size || 0;
+                        } else {
+                            const compressedPath = await compressImageTo300KB(imgFile.path);
+                            finalSize = fs.statSync(compressedPath).size;
+                            finalPath = path.relative(process.cwd(), compressedPath);
+                        }
+                        
                         await VenueImage.create({
                             venueId: venue.id,
-                            filePath: path.relative(process.cwd(), compressedPath),
-                            fileSize: compressedSize,
-                            mimeType: 'image/webp',
+                            filePath: finalPath,
+                            fileSize: finalSize,
+                            mimeType: (imgFile as any).url ? imgFile.mimetype : 'image/webp',
                             imageType,
                             isPrimary: false,
                             displayOrder: currentCount + i + 1,
@@ -586,14 +617,22 @@ export const updateVenue = async (req: Request, res: Response) => {
             if (hasNewCover) {
                 try {
                     const coverFile = files['coverImage'][0];
-                    const compressedPath = await compressImageTo300KB(coverFile.path);
-                    const compressedSize = fs.statSync(compressedPath).size;
+                    let finalPath = '';
+                    let finalSize = 0;
+                    if ((coverFile as any).url) {
+                        finalPath = (coverFile as any).url;
+                        finalSize = coverFile.size || 0;
+                    } else {
+                        const compressedPath = await compressImageTo300KB(coverFile.path);
+                        finalSize = fs.statSync(compressedPath).size;
+                        finalPath = path.relative(process.cwd(), compressedPath);
+                    }
 
                     await VenueImage.create({
                         venueId: venue.id,
-                        filePath: path.relative(process.cwd(), compressedPath),
-                        fileSize: compressedSize,
-                        mimeType: 'image/webp',
+                        filePath: finalPath,
+                        fileSize: finalSize,
+                        mimeType: (coverFile as any).url ? coverFile.mimetype : 'image/webp',
                         imageType: VenueImageType.COVER,
                         isPrimary: true,
                         displayOrder: 0,
@@ -624,9 +663,16 @@ export const updateVenue = async (req: Request, res: Response) => {
                     for (let i = 0; i < files['videos'].length; i++) {
                         const videoFile = files['videos'][i];
 
+                        let finalPath = '';
+                        if ((videoFile as any).url) {
+                            finalPath = (videoFile as any).url;
+                        } else {
+                            finalPath = path.relative(process.cwd(), videoFile.path);
+                        }
+
                         await VenueImage.create({
                             venueId: venue.id,
-                            filePath: path.relative(process.cwd(), videoFile.path),
+                            filePath: finalPath,
                             fileSize: videoFile.size,
                             mimeType: videoFile.mimetype,
                             imageType: VenueImageType.VIDEO,

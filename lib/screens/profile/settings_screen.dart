@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../../models/help_article.dart';
 import '../../models/community_guideline.dart';
 import '../../models/legal_document.dart';
 import '../../services/biometric_service.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -18,7 +20,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _hideProfile = false;
   bool _isLoading = true;
   bool _pushNotifications = true;
-  bool _biometricAuth = true;
+  bool _biometricAuth = false;
 
   @override
   void initState() {
@@ -27,15 +29,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
     final user = await ApiService.fetchProfile();
-    if (user != null && mounted) {
+    
+    if (mounted) {
       setState(() {
-        // If showMeInMatching is false, then profile is hidden
-        _hideProfile = !user.showMeInMatching;
+        _biometricAuth = prefs.getBool('biometric_enabled') ?? false;
+        
+        if (user != null) {
+          // If showMeInMatching is false, then profile is hidden
+          _hideProfile = !user.showMeInMatching;
+        }
         _isLoading = false;
       });
-    } else {
-      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -66,12 +72,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _buildSwitchTile('Biometric Authentication', _biometricAuth, (
                     v,
                   ) async {
+                    final prefs = await SharedPreferences.getInstance();
+                    
                     if (v) {
                       // Attempt to authenticate before turning on
                       final success = await BiometricService.authenticate(
                         reason: 'Verify your identity to enable biometrics',
                       );
                       if (success) {
+                        await prefs.setBool('biometric_enabled', true);
                         setState(() => _biometricAuth = true);
                       } else {
                         if (mounted) {
@@ -82,12 +91,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           );
                         }
-                        // Keep it off
-                        setState(() => _biometricAuth = false);
                       }
                     } else {
-                      // Disable it immediately
-                      setState(() => _biometricAuth = false);
+                      // Require authentication to disable it
+                      final success = await BiometricService.authenticate(
+                        reason: 'Verify your identity to disable biometrics',
+                      );
+                      if (success) {
+                        await prefs.setBool('biometric_enabled', false);
+                        setState(() => _biometricAuth = false);
+                      } else {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Verification failed. Cannot disable.'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                        // Revert switch to true visually since they failed to disable
+                        setState(() => _biometricAuth = true);
+                      }
                     }
                   }),
                   const SizedBox(height: 40),
@@ -755,70 +779,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showDataPermissionsSheet() {
-    _showFormSheet(
-      title: 'DATA & PERMISSIONS',
-      children: [
-        _infoTile(
-          Icons.location_on_outlined,
-          'Location',
-          'Enabled — used for nearby venues',
-        ),
-        _infoTile(
-          Icons.camera_alt_outlined,
-          'Camera',
-          'Enabled — used for profile photos',
-        ),
-        _infoTile(
-          Icons.photo_library_outlined,
-          'Photo Library',
-          'Enabled — used for uploads',
-        ),
-        _infoTile(Icons.notifications_none, 'Notifications', 'Enabled'),
-        const SizedBox(height: 32),
-        GestureDetector(
-          onTap: () {
-            Navigator.pop(context);
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Data export request sent. You\'ll receive an email shortly.',
-                ),
-                backgroundColor: LunaraTheme.electricViolet,
-              ),
-            );
-          },
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
-              ),
-            ),
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.download_rounded,
-                  color: LunaraTheme.electricViolet,
-                  size: 20,
-                ),
-                SizedBox(width: 12),
-                Text(
-                  'REQUEST DATA EXPORT',
-                  style: TextStyle(
-                    color: LunaraTheme.electricViolet,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 12,
-                    letterSpacing: 1,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+      ),
+      isScrollControlled: true,
+      builder: (ctx) {
+        return const PermissionsSheet();
+      },
     );
   }
 
@@ -1074,39 +1044,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
-
-  Widget _infoTile(IconData icon, String title, String subtitle) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 20),
-      child: Row(
-        children: [
-          Icon(icon, color: LunaraTheme.electricViolet, size: 24),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.black,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: const TextStyle(color: Colors.black, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
+
 
 class HelpCenterSheet extends StatefulWidget {
   const HelpCenterSheet({super.key});
@@ -2019,6 +1958,179 @@ class _LegalDocumentsSheetState extends State<LegalDocumentsSheet> {
               fontWeight: FontWeight.w500,
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+
+class PermissionsSheet extends StatefulWidget {
+  const PermissionsSheet({super.key});
+
+  @override
+  State<PermissionsSheet> createState() => _PermissionsSheetState();
+}
+
+class _PermissionsSheetState extends State<PermissionsSheet> with WidgetsBindingObserver {
+  String _locationStatus = 'Checking...';
+  String _cameraStatus = 'Checking...';
+  String _photoStatus = 'Checking...';
+  String _notificationStatus = 'Checking...';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _checkPermissions();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkPermissions();
+    }
+  }
+
+  Future<void> _checkPermissions() async {
+    final location = await Permission.location.status;
+    final camera = await Permission.camera.status;
+    final photos = await Permission.photos.status;
+    final notification = await Permission.notification.status;
+
+    if (mounted) {
+      setState(() {
+        _locationStatus = _getStatusText(location);
+        _cameraStatus = _getStatusText(camera);
+        _photoStatus = _getStatusText(photos);
+        _notificationStatus = _getStatusText(notification);
+      });
+    }
+  }
+
+  String _getStatusText(PermissionStatus status) {
+    if (status.isGranted) return 'Enabled';
+    if (status.isPermanentlyDenied) return 'Permanently Denied (Tap to open Settings)';
+    if (status.isDenied) return 'Denied (Tap to request)';
+    if (status.isRestricted) return 'Restricted';
+    return 'Not Determined';
+  }
+
+  Future<void> _handlePermissionTap(Permission permission) async {
+    final status = await permission.status;
+    if (status.isPermanentlyDenied) {
+      await openAppSettings();
+    } else {
+      await permission.request();
+      _checkPermissions();
+    }
+  }
+
+  Widget _permissionTile(IconData icon, String title, String subtitle, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+        child: Row(
+          children: [
+            Icon(icon, color: LunaraTheme.electricViolet, size: 24),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: subtitle.contains('Denied') ? Colors.redAccent : Colors.black54,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: Colors.grey[400], size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        24,
+        24,
+        24,
+        MediaQuery.of(context).viewInsets.bottom + 40,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 32),
+          const Text(
+            'DATA & PERMISSIONS',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 2,
+              color: Colors.black,
+            ),
+          ),
+          const SizedBox(height: 24),
+          _permissionTile(
+            Icons.location_on_outlined,
+            'Location',
+            _locationStatus,
+            () => _handlePermissionTap(Permission.location),
+          ),
+          _permissionTile(
+            Icons.camera_alt_outlined,
+            'Camera',
+            _cameraStatus,
+            () => _handlePermissionTap(Permission.camera),
+          ),
+          _permissionTile(
+            Icons.photo_library_outlined,
+            'Photo Library',
+            _photoStatus,
+            () => _handlePermissionTap(Permission.photos),
+          ),
+          _permissionTile(
+            Icons.notifications_none,
+            'Notifications',
+            _notificationStatus,
+            () => _handlePermissionTap(Permission.notification),
+          ),
+          const SizedBox(height: 16),
         ],
       ),
     );
