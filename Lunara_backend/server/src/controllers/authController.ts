@@ -280,8 +280,8 @@ export async function adminLogin(req: Request, res: Response) {
         const normalizedEmail = email.trim().toLowerCase();
 
         // ── Auto-seed admin from environment if not yet in DB ──
-        const adminEmail = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
-        const adminPassword = process.env.ADMIN_PASSWORD || '';
+        const adminEmail = (process.env.ADMIN_EMAIL || 'admin@lunara.com').trim().toLowerCase();
+        const adminPassword = process.env.ADMIN_PASSWORD || 'JaiGanesh@2026';
         if (adminEmail && adminPassword && normalizedEmail === adminEmail) {
             let existingAdmin = await User.findOne({ where: { email: adminEmail } });
             if (!existingAdmin) {

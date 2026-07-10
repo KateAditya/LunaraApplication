@@ -51,6 +51,75 @@ export const connectDatabase = async (): Promise<void> => {
             logger.warn('Dynamic table migration warning: ' + alterError.message);
         }
 
+        // ── Seed Default Admin User if None Exists ──
+        try {
+            const [existingAdmins]: any = await sequelize.query(
+                `SELECT id FROM users WHERE role = 'admin' OR email = 'admin@lunara.com' LIMIT 1;`
+            );
+            if (!existingAdmins || existingAdmins.length === 0) {
+                logger.info('No admin user found. Seeding default admin user...');
+                const bcrypt = require('bcryptjs');
+                const adminEmail = (process.env.ADMIN_EMAIL || 'admin@lunara.com').toLowerCase().trim();
+                const adminPassword = process.env.ADMIN_PASSWORD || 'JaiGanesh@2026';
+                const hashedPw = await bcrypt.hash(adminPassword, 10);
+                const adminId = require('crypto').randomUUID();
+                
+                await sequelize.query(`
+                    INSERT INTO users (
+                        id, email, phone, password_hash, first_name, last_name, 
+                        date_of_birth, role, is_verified, is_active, mfa_enabled, 
+                        is_online, no_show_count, block_count, is_autoblocked, 
+                        created_at, updated_at
+                    ) VALUES (
+                        :id, :email, :phone, :password_hash, :first_name, :last_name, 
+                        :date_of_birth, :role, :is_verified, :is_active, :mfa_enabled, 
+                        :is_online, :no_show_count, :block_count, :is_autoblocked, 
+                        NOW(), NOW()
+                    )
+                `, {
+                    replacements: {
+                        id: adminId,
+                        email: adminEmail,
+                        phone: process.env.ADMIN_PHONE || '9999999999',
+                        password_hash: hashedPw,
+                        first_name: 'Super',
+                        last_name: 'Admin',
+                        date_of_birth: '1990-01-01',
+                        role: 'admin',
+                        is_verified: true,
+                        is_active: true,
+                        mfa_enabled: false,
+                        is_online: false,
+                        no_show_count: 0,
+                        block_count: 0,
+                        is_autoblocked: false
+                    }
+                });
+
+                // Create default profile for the admin user
+                const profileId = require('crypto').randomUUID();
+                await sequelize.query(`
+                    INSERT INTO user_profiles (id, user_id, display_name, created_at, updated_at)
+                    VALUES (:id, :user_id, 'Super Admin', NOW(), NOW())
+                `, {
+                    replacements: { id: profileId, user_id: adminId }
+                });
+
+                // Create default preference for the admin user
+                const preferenceId = require('crypto').randomUUID();
+                await sequelize.query(`
+                    INSERT INTO user_preferences (id, user_id, created_at, updated_at)
+                    VALUES (:id, :user_id, NOW(), NOW())
+                `, {
+                    replacements: { id: preferenceId, user_id: adminId }
+                });
+
+                logger.info(`Default admin user seeded successfully: ${adminEmail}`);
+            }
+        } catch (seedError: any) {
+            logger.warn('Failed to seed default admin user: ' + seedError.message);
+        }
+
         if (process.env.NODE_ENV === 'development') {
             // Sync models in development (be careful in production)
             await sequelize.sync({ alter: true });
