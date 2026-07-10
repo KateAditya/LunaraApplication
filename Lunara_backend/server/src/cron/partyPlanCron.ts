@@ -3,6 +3,10 @@ import { Op } from 'sequelize';
 import PartyPlanRequest, { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
 import PartyPlan, { PartyPlanStatus } from '../models/PartyPlan';
 import User from '../models/User';
+import Venue from '../models/Venue';
+import UserProfile from '../models/UserProfile';
+import UserPhoto from '../models/UserPhoto';
+import VenueImage from '../models/VenueImage';
 import { logger } from '../config/logger';
 
 // Run every 5 minutes
@@ -38,14 +42,16 @@ export const startPartyPlanCron = () => {
                 if (!hostPaid) {
                     // Host did not pay within their 30 min acceptance window:
                     await request.update({ status: PartyPlanRequestStatus.PAYMENT_FAILED });
-                    await plan.update({ status: PartyPlanStatus.CANCELLED, isLive: false });
-                    logger.warn(`Plan ${plan.id} cancelled because host failed to pay deposit within 30m.`);
+                    await plan.update({ status: PartyPlanStatus.ACTIVE, isLive: true });
+                    logger.info(`Plan ${plan.id} is live again because host failed to pay deposit within 30m.`);
+                    await relistPartyPlanInSocket(plan.id);
                 } else if (hostPaid && !joinerPaid) {
                     // Joiner did not pay within their 30 min window (starts after host paid):
                     await request.update({ status: PartyPlanRequestStatus.PAYMENT_FAILED });
                     // Host remains paid, and plan goes back live publicly!
-                    await plan.update({ isLive: true });
+                    await plan.update({ status: PartyPlanStatus.ACTIVE, isLive: true });
                     logger.info(`Plan ${plan.id} is live again because joiner (req ${request.id}) did not pay within 30m. Host is already paid.`);
+                    await relistPartyPlanInSocket(plan.id);
 
                     // Send push notification to host
                     try {
@@ -153,3 +159,86 @@ export const startPartyPlanCron = () => {
         }
     });
 };
+
+async function relistPartyPlanInSocket(planId: string) {
+    try {
+        const relistedPlan = await PartyPlan.findByPk(planId, {
+            include: [
+                {
+                    model: User,
+                    as: 'creator',
+                    include: [
+                        { model: UserProfile, as: 'profile', required: false },
+                        { model: UserPhoto, as: 'photos', required: false },
+                    ]
+                },
+                {
+                    model: Venue,
+                    as: 'venue',
+                    include: [
+                        {
+                            model: VenueImage,
+                            as: 'images',
+                            where: { imageType: 'cover', isPrimary: true },
+                            required: false
+                        }
+                    ]
+                }
+            ]
+        });
+
+        if (relistedPlan) {
+            const creator = (relistedPlan as any).creator;
+            let photoUrl = creator?.profileImageUrl ?? null;
+            if (creator?.photos && creator.photos.length > 0) {
+                const primary = creator.photos.find((p: any) => p.isPrimary) || creator.photos[0];
+                if (primary && primary.filePath) {
+                    photoUrl = '/' + primary.filePath.replace(/\\/g, '/');
+                }
+            }
+
+            const venueObj = (relistedPlan as any).venue;
+
+            const responseData = {
+                id: relistedPlan.id,
+                status: relistedPlan.status,
+                paymentStatus: relistedPlan.paymentStatus,
+                visibility: relistedPlan.visibility,
+                selectedUsers: relistedPlan.selectedUsers,
+                message: relistedPlan.message,
+                planDateTime: relistedPlan.planDateTime,
+                createdAt: relistedPlan.createdAt,
+                hostPaymentStatus: relistedPlan.hostPaymentStatus,
+                hostRazorpayOrderId: relistedPlan.hostRazorpayOrderId,
+                isLive: relistedPlan.isLive,
+                depositAmount: relistedPlan.depositAmount,
+                expiresAt: relistedPlan.expiresAt,
+                user: creator ? {
+                    id: creator.id,
+                    firstName: creator.firstName,
+                    lastName: creator.lastName,
+                    email: creator.email,
+                    phone: creator.phone,
+                    profilePhotoUrl: photoUrl,
+                    bio: creator.profile?.bio ?? null,
+                    occupation: creator.profile?.occupation ?? null,
+                    gender: creator.profile?.gender ?? null,
+                    city: creator.profile?.city ?? null,
+                } : null,
+                venue: venueObj ? {
+                    id: venueObj.id,
+                    name: venueObj.name,
+                    addressLine1: venueObj.addressLine1,
+                    area: venueObj.area,
+                    city: venueObj.city,
+                    category: venueObj.category,
+                } : null,
+            };
+
+            const { io } = require('../server');
+            io.emit('party_plan_created', responseData);
+        }
+    } catch (socketErr) {
+        logger.warn('Socket emission failed for relistPartyPlanInSocket:', socketErr);
+    }
+}

@@ -167,14 +167,30 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
     }
   }
 
-  void _onAcceptRequest(String reqId, String planId) async {
+  void _onAcceptRequest(String reqId, Map<String, dynamic> plan) async {
     final result = await ApiService.acceptPartyPlanRequest(reqId);
     if (!mounted) return;
     if (result != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Request Accepted! Complete your deposit to lock match.')),
       );
-      _loadData();
+      await _loadData();
+      final hostOrderId = result['hostRazorpayOrderId']?.toString();
+      if (hostOrderId != null) {
+        final updatedPlan = _myPlans.firstWhere(
+          (p) => p['id']?.toString() == plan['id']?.toString(),
+          orElse: () => <String, dynamic>{},
+        );
+        if (updatedPlan.isNotEmpty) {
+          final newPlan = Map<String, dynamic>.from(updatedPlan);
+          newPlan['hostRazorpayOrderId'] = hostOrderId;
+          _onHostPayDeposit(newPlan);
+        } else {
+          final newPlan = Map<String, dynamic>.from(plan);
+          newPlan['hostRazorpayOrderId'] = hostOrderId;
+          _onHostPayDeposit(newPlan);
+        }
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Failed to accept request.'), backgroundColor: Colors.red),
@@ -491,7 +507,7 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                           ),
                           if (status == 'pending')
                             ElevatedButton(
-                              onPressed: () => _onAcceptRequest(req['id'], plan['id']),
+                              onPressed: () => _onAcceptRequest(req['id'], plan),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: LunaraTheme.electricViolet,
                                 foregroundColor: Colors.white,
