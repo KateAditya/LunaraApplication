@@ -99,6 +99,13 @@ router.post('/verify-email', verifyEmailValidation, authController.verifyEmail);
 router.post('/login', loginValidation, authController.login);
 
 /**
+ * @route   POST /api/auth/admin-login
+ * @desc    Admin-only login (validates role, auto-seeds admin from env on first run)
+ * @access  Public
+ */
+router.post('/admin-login', loginValidation, authController.adminLogin);
+
+/**
  * @route   POST /api/auth/forgot-password
  * @desc    Send password reset email
  * @access  Public
