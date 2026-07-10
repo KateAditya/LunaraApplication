@@ -22,9 +22,8 @@ class ApiService {
 
   // Uses your machine's local IP (192.168.0.169) for local dev on a real device
   static String get baseUrl {
-    if (!isLocal) return 'https://lunara-api-server-a8gfdvg0hjdec6gx.centralindia-01.azurewebsites.net';
-    if (kIsWeb) {
-      return 'http://localhost:9076';
+    if (!isLocal) {
+      return 'https://lunara-api-server-a8gfdvg0hjdec6gx.centralindia-01.azurewebsites.net';
     }
     return 'http://192.168.0.169:9076';
   }
