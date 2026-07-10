@@ -227,8 +227,6 @@ export async function login(req: Request, res: Response) {
 
         // Check if 2FA is enabled
         if (user.mfaEnabled) {
-            // Do not return tokens yet. Return a signal that 2FA is required.
-            // We can return a temporary token or just the userId so the frontend can submit the TOTP code
             return res.json({
                 success: true,
                 message: '2FA required',
@@ -263,6 +261,89 @@ export async function login(req: Request, res: Response) {
             message: 'Login failed',
             error: error.message,
         });
+    }
+}
+
+/**
+ * Admin Login — only allows users with role=admin
+ * POST /api/auth/admin-login
+ * Auto-creates the admin account from env vars if it doesn't exist (production cold-start).
+ */
+export async function adminLogin(req: Request, res: Response) {
+    try {
+        const { email, password } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({ success: false, message: 'Email and password are required' });
+        }
+
+        const normalizedEmail = email.trim().toLowerCase();
+
+        // ── Auto-seed admin from environment if not yet in DB ──
+        const adminEmail = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+        const adminPassword = process.env.ADMIN_PASSWORD || '';
+        if (adminEmail && adminPassword && normalizedEmail === adminEmail) {
+            let existingAdmin = await User.findOne({ where: { email: adminEmail } });
+            if (!existingAdmin) {
+                logger.info(`Admin account not found — auto-creating: ${adminEmail}`);
+                existingAdmin = await User.create({
+                    email: adminEmail,
+                    phone: process.env.ADMIN_PHONE || '9999999999',
+                    passwordHash: adminPassword,
+                    firstName: 'Super',
+                    lastName: 'Admin',
+                    dateOfBirth: new Date('1990-01-01'),
+                    role: UserRole.ADMIN,
+                    isVerified: true,
+                    isActive: true,
+                });
+                try { await UserProfile.create({ userId: existingAdmin.id, displayName: 'Super Admin' }); } catch (_) {}
+                try { await UserPreference.create({ userId: existingAdmin.id }); } catch (_) {}
+                logger.info(`Admin account created successfully: ${adminEmail}`);
+            }
+        }
+
+        const user = await User.findOne({ where: { email: normalizedEmail } });
+        if (!user) {
+            return res.status(401).json({ success: false, message: 'Invalid email or password' });
+        }
+
+        if (user.role !== UserRole.ADMIN) {
+            return res.status(403).json({ success: false, message: 'Access denied. Admin privileges required.' });
+        }
+
+        if (!user.isActive) {
+            return res.status(403).json({ success: false, message: 'Admin account is deactivated.' });
+        }
+
+        const isPasswordValid = await user.comparePassword(password);
+        if (!isPasswordValid) {
+            return res.status(401).json({ success: false, message: 'Invalid email or password' });
+        }
+
+        user.lastLoginAt = new Date();
+        await user.save({ fields: ['lastLoginAt'] });
+
+        if (user.mfaEnabled) {
+            return res.json({
+                success: true,
+                message: '2FA required',
+                data: { requires2FA: true, userId: user.id }
+            });
+        }
+
+        const tokens = generateTokenPair({ userId: user.id, email: user.email, role: user.role });
+
+        logger.info(`Admin logged in: ${email}`);
+
+        return res.json({
+            success: true,
+            message: 'Admin login successful',
+            data: { user: user.toJSON(), ...tokens },
+        });
+    } catch (error: any) {
+        logger.error('Admin login error:', error);
+        return res.status(500).json({ success: false, message: 'Admin login failed', error: error.message });
     }
 }
 

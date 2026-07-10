@@ -24,7 +24,7 @@ export interface AuthResponse {
 
 export const authApi = {
     login: (credentials: LoginCredentials): Promise<AuthResponse> => {
-        return apiClient.post('/api/auth/login', credentials);
+        return apiClient.post('/api/auth/admin-login', credentials);
     },
 
     getCurrentUser: (): Promise<{ success: boolean; data: User }> => {
