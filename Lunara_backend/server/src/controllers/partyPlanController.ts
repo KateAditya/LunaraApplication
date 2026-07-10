@@ -78,7 +78,6 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
         if (!venueId) errors.venueId = 'venueId is required';
         if (!message?.trim()) errors.message = 'Party message is required';
         if (!planDateTime) errors.planDateTime = 'planDateTime is required';
-        if (!mobileNumber?.trim()) errors.mobileNumber = 'mobileNumber is required';
 
         if (parsedVisibility === PartyPlanVisibility.PRIVATE) {
             if (!Array.isArray(selectedUsers) || selectedUsers.length === 0) {
@@ -97,10 +96,6 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             res.status(400).json({ success: false, message: 'planDateTime must be a valid ISO date string (e.g. "2025-06-01T22:00:00.000Z")' });
             return;
         }
-        // if (partyDate < new Date()) {
-        //     res.status(400).json({ success: false, message: 'planDateTime must be in the future' });
-        //     return;
-        // }
 
         // ── Verify user exists ────────────────────────────────────────────────
         const user = await User.findByPk(userId, {
@@ -112,6 +107,16 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
         });
         if (!user) {
             res.status(404).json({ success: false, message: 'User not found' });
+            return;
+        }
+
+        const finalMobileNumber = mobileNumber?.trim() || user.phone?.trim() || '';
+        if (!finalMobileNumber) {
+            res.status(400).json({
+                success: false,
+                message: 'Validation failed',
+                errors: { mobileNumber: 'Mobile number is required. Please set phone number in your profile first.' }
+            });
             return;
         }
 
@@ -174,7 +179,7 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             venueId,
             message: message.trim(),
             planDateTime: partyDate,
-            mobileNumber: mobileNumber.trim(),
+            mobileNumber: finalMobileNumber,
             optionalMobileNumber: optionalMobileNumber?.trim(),
             status: PartyPlanStatus.ACTIVE,
             visibility: parsedVisibility,

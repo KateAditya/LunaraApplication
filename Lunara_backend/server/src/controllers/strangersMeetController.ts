@@ -197,6 +197,16 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
         const user = await User.findByPk(userId, { attributes: USER_ATTRS });
         if (!user) { res.status(404).json({ success: false, message: 'User not found' }); return; }
 
+        const finalMobileNumber = mobileNumber?.trim() || user.phone?.trim() || '';
+        if (!finalMobileNumber) {
+            res.status(400).json({
+                success: false,
+                message: 'Validation failed',
+                errors: { mobileNumber: 'Mobile number is required. Please set phone number in your profile first.' }
+            });
+            return;
+        }
+
         // Verify venue
         const venue = await Venue.findByPk(venueId, { attributes: VENUE_ATTRS });
         if (!venue) { res.status(404).json({ success: false, message: 'Venue not found' }); return; }
@@ -216,7 +226,7 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
             eventDateTime: eventDate,
             numberOfPersons: Number(numberOfPersons),
             chargesPerHead: parsedCharges,
-            mobileNumber: mobileNumber.trim(),
+            mobileNumber: finalMobileNumber,
             alternateMobileNumber: alternateMobileNumber?.trim() || null,
         });
 
