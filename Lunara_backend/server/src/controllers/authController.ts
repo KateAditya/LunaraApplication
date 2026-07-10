@@ -297,16 +297,16 @@ export async function adminLogin(req: Request, res: Response) {
                     isVerified: true,
                     isActive: true,
                 });
-                try { await UserProfile.create({ userId: existingAdmin.id, displayName: 'Super Admin' }); } catch (_) {}
-                try { await UserPreference.create({ userId: existingAdmin.id }); } catch (_) {}
+                try { await UserProfile.create({ userId: existingAdmin.id, displayName: 'Super Admin' }); } catch (_) { }
+                try { await UserPreference.create({ userId: existingAdmin.id }); } catch (_) { }
                 logger.info(`Admin account created successfully: ${adminEmail}`);
             }
         }
 
         const user = await User.findOne({ where: { email: normalizedEmail } });
         if (!user) {
-            return res.status(401).json({ 
-                success: false, 
+            return res.status(401).json({
+                success: false,
                 message: 'Invalid email or password',
                 debug: {
                     errorLocation: 'user_not_found_in_db',
@@ -319,8 +319,8 @@ export async function adminLogin(req: Request, res: Response) {
         }
 
         if (user.role !== UserRole.ADMIN) {
-            return res.status(403).json({ 
-                success: false, 
+            return res.status(403).json({
+                success: false,
                 message: 'Access denied. Admin privileges required.',
                 debug: {
                     errorLocation: 'role_mismatch',
@@ -330,8 +330,8 @@ export async function adminLogin(req: Request, res: Response) {
         }
 
         if (!user.isActive) {
-            return res.status(403).json({ 
-                success: false, 
+            return res.status(403).json({
+                success: false,
                 message: 'Admin account is deactivated.',
                 debug: {
                     errorLocation: 'inactive_user'
@@ -341,8 +341,8 @@ export async function adminLogin(req: Request, res: Response) {
 
         const isPasswordValid = await user.comparePassword(password);
         if (!isPasswordValid) {
-            return res.status(401).json({ 
-                success: false, 
+            return res.status(401).json({
+                success: false,
                 message: 'Invalid email or password',
                 debug: {
                     errorLocation: 'invalid_password',
