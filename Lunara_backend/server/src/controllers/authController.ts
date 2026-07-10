@@ -305,20 +305,51 @@ export async function adminLogin(req: Request, res: Response) {
 
         const user = await User.findOne({ where: { email: normalizedEmail } });
         if (!user) {
-            return res.status(401).json({ success: false, message: 'Invalid email or password' });
+            return res.status(401).json({ 
+                success: false, 
+                message: 'Invalid email or password',
+                debug: {
+                    errorLocation: 'user_not_found_in_db',
+                    inputEmail: normalizedEmail,
+                    configuredAdminEmail: adminEmail,
+                    envAdminEmailSet: !!process.env.ADMIN_EMAIL,
+                    envAdminPasswordSet: !!process.env.ADMIN_PASSWORD
+                }
+            });
         }
 
         if (user.role !== UserRole.ADMIN) {
-            return res.status(403).json({ success: false, message: 'Access denied. Admin privileges required.' });
+            return res.status(403).json({ 
+                success: false, 
+                message: 'Access denied. Admin privileges required.',
+                debug: {
+                    errorLocation: 'role_mismatch',
+                    userRole: user.role
+                }
+            });
         }
 
         if (!user.isActive) {
-            return res.status(403).json({ success: false, message: 'Admin account is deactivated.' });
+            return res.status(403).json({ 
+                success: false, 
+                message: 'Admin account is deactivated.',
+                debug: {
+                    errorLocation: 'inactive_user'
+                }
+            });
         }
 
         const isPasswordValid = await user.comparePassword(password);
         if (!isPasswordValid) {
-            return res.status(401).json({ success: false, message: 'Invalid email or password' });
+            return res.status(401).json({ 
+                success: false, 
+                message: 'Invalid email or password',
+                debug: {
+                    errorLocation: 'invalid_password',
+                    passwordLength: password.length,
+                    storedHashStarts: user.passwordHash ? user.passwordHash.substring(0, 10) : 'null'
+                }
+            });
         }
 
         user.lastLoginAt = new Date();
