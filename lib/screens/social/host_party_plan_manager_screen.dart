@@ -439,9 +439,9 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                               children: [
                                 Text(name.isNotEmpty ? name : 'Lunara User', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                                 const SizedBox(height: 4),
-                                if (status == 'pending')
+                                if (status.toString().toLowerCase() == 'pending')
                                   const Text('Wants to join', style: TextStyle(color: Colors.orange, fontSize: 12, fontWeight: FontWeight.w600))
-                                else if (status == 'payment_pending') ...[
+                                else if (status.toString().toLowerCase() == 'payment_pending' || status.toString().toLowerCase() == 'accepted') ...[
                                   if (!hostPaid)
                                     const Text('Please pay your ₹99 deposit to lock match.', style: TextStyle(color: Colors.red, fontSize: 11, fontWeight: FontWeight.bold))
                                   else if (hostPaid && !joinerPaid)
@@ -472,40 +472,15 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                                       ),
                                     ),
                                   ]
-                                ] else if (status == 'accepted') ...[
-                                  const Text('Match Successful! Booking Confirmed 🎉', style: TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.bold)),
-                                  const SizedBox(height: 6),
-                                  ElevatedButton.icon(
-                                    onPressed: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) => PartyPlanTicketScreen(
-                                            request: req,
-                                            plan: plan,
-                                            isHost: true,
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                    icon: const Icon(Icons.qr_code_rounded, size: 14, color: Colors.white),
-                                    label: const Text('VIEW TICKET', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: LunaraTheme.electricViolet,
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                      minimumSize: const Size(0, 32),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                    ),
-                                  ),
                                 ]
-                                else if (status == 'payment_failed')
+                                else if (status.toString().toLowerCase() == 'payment_failed')
                                   const Text('Payment timeout or failed', style: TextStyle(color: Colors.grey, fontSize: 11))
-                                else if (status == 'rejected')
+                                else if (status.toString().toLowerCase() == 'rejected')
                                   const Text('Rejected', style: TextStyle(color: Colors.grey, fontSize: 11))
                               ],
                             ),
                           ),
-                          if (status == 'pending')
+                          if (status.toString().toLowerCase() == 'pending')
                             ElevatedButton(
                               onPressed: () => _onAcceptRequest(req['id'], plan),
                               style: ElevatedButton.styleFrom(
@@ -517,7 +492,7 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                               ),
                               child: const Text('ACCEPT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                             ),
-                          if (status == 'payment_pending' && !hostPaid)
+                          if ((status.toString().toLowerCase() == 'payment_pending' || status.toString().toLowerCase() == 'accepted') && !hostPaid)
                             ElevatedButton(
                               onPressed: () => _onHostPayDeposit(plan),
                               style: ElevatedButton.styleFrom(

@@ -11,6 +11,9 @@ import {
     initiateJoinPayment,
     confirmJoinPayment,
     completeMeet,
+    sendJoinRequest,
+    handleJoinRequest,
+    submitSettlementRequest,
 } from '../controllers/strangersMeetController';
 
 const router = Router();
@@ -137,6 +140,51 @@ router.patch(
         validate,
     ],
     completeMeet
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/strangers-meet/:id/join-request
+// Participant submits a request to join a Stranger Meet
+// ─────────────────────────────────────────────────────────────────────────────
+router.post(
+    '/:id/join-request',
+    [
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
+        validate,
+    ],
+    sendJoinRequest
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/mobile/strangers-meet/:id/join-request/:joinerId
+// Host accepts/rejects a participant's request to join
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch(
+    '/:id/join-request/:joinerId',
+    [
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        param('joinerId').isUUID().withMessage('joinerId must be a valid UUID'),
+        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
+        body('action').notEmpty().isIn(['accept', 'reject']).withMessage('action must be accept or reject'),
+        validate,
+    ],
+    handleJoinRequest
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/strangers-meet/:id/settlement-request
+// Host submits bank/UPI details to request meetup earnings settlement
+// ─────────────────────────────────────────────────────────────────────────────
+router.post(
+    '/:id/settlement-request',
+    [
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
+        body('bankDetails').notEmpty().withMessage('bankDetails is required'),
+        validate,
+    ],
+    submitSettlementRequest
 );
 
 export default router;

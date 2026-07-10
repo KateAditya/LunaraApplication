@@ -37,6 +37,20 @@ export const connectDatabase = async (): Promise<void> => {
         await sequelize.authenticate();
         logger.info('Database connection established successfully');
 
+        // Always ensure new columns are added safely
+        try {
+            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_status VARCHAR(50) DEFAULT 'none';`);
+            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS bank_details TEXT;`);
+            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_transaction_id VARCHAR(100);`);
+            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_amount DECIMAL(10,2);`);
+            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_date TIMESTAMP WITH TIME ZONE;`);
+            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_method VARCHAR(50);`);
+            
+            await sequelize.query(`ALTER TABLE strangers_meet_joiners ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'pending';`);
+        } catch (alterError: any) {
+            logger.warn('Dynamic table migration warning: ' + alterError.message);
+        }
+
         if (process.env.NODE_ENV === 'development') {
             // Sync models in development (be careful in production)
             await sequelize.sync({ alter: true });

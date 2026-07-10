@@ -935,6 +935,70 @@ class ApiService {
     return false;
   }
 
+  static Future<bool> sendStrangersMeetJoinRequest(String id) async {
+    final userId = currentUserId;
+    if (userId == null) return false;
+
+    try {
+      final response = await post(
+        '/api/mobile/strangers-meet/$id/join-request',
+        body: {'userId': userId},
+      );
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      debugPrint('sendStrangersMeetJoinRequest error: $e');
+    }
+    return false;
+  }
+
+  static Future<bool> handleStrangersMeetJoinRequest(
+    String id,
+    String joinerId,
+    String action,
+  ) async {
+    final userId = currentUserId;
+    if (userId == null) return false;
+
+    try {
+      final response = await patch(
+        '/api/mobile/strangers-meet/$id/join-request/$joinerId',
+        body: {'userId': userId, 'action': action},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      debugPrint('handleStrangersMeetJoinRequest error: $e');
+    }
+    return false;
+  }
+
+  static Future<bool> submitStrangersMeetSettlement(
+    String id,
+    String bankDetails,
+  ) async {
+    final userId = currentUserId;
+    if (userId == null) return false;
+
+    try {
+      final response = await post(
+        '/api/mobile/strangers-meet/$id/settlement-request',
+        body: {'userId': userId, 'bankDetails': bankDetails},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      debugPrint('submitStrangersMeetSettlement error: $e');
+    }
+    return false;
+  }
+
   // ───────────────────────────────────────────────────────────────────────────
 
   static Future<List<HelpArticle>> fetchHelpCenterArticles() async {

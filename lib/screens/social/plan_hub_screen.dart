@@ -1013,6 +1013,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     final subjectCtrl = TextEditingController();
     final taglineCtrl = TextEditingController();
     final chargesCtrl = TextEditingController(text: '0'); // default to 0
+    final mobileCtrl = TextEditingController();
+    final altMobileCtrl = TextEditingController();
     Venue? selectedVenue;
     String searchQuery = '';
     DateTime? selectedDate;
@@ -1761,12 +1763,20 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                           maxLines: 3,
                         ),
                         const SizedBox(height: 14),
-                        // Charges per head
+                        // Mobile Number
                         _sheetField(
-                          controller: chargesCtrl,
-                          hint: 'Enter Charges per Head (₹)...',
-                          icon: Icons.currency_rupee_rounded,
-                          keyboardType: TextInputType.number,
+                          controller: mobileCtrl,
+                          hint: 'Mobile Number *',
+                          icon: Icons.phone_android_rounded,
+                          keyboardType: TextInputType.phone,
+                        ),
+                        const SizedBox(height: 14),
+                        // Alternate Mobile Number
+                        _sheetField(
+                          controller: altMobileCtrl,
+                          hint: 'Alternate Mobile Number (Optional)',
+                          icon: Icons.phone_rounded,
+                          keyboardType: TextInputType.phone,
                         ),
                       ],
 
@@ -1885,27 +1895,17 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                       );
                                       return;
                                     }
-                                    final chargesText = chargesCtrl.text.trim();
-                                    final charges = double.tryParse(
-                                      chargesText,
-                                    );
-                                    if (chargesText.isEmpty ||
-                                        charges == null ||
-                                        charges < 0) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                            'Please enter a valid charges per head (min 0)',
-                                          ),
-                                          backgroundColor: Colors.redAccent,
-                                        ),
-                                      );
-                                      return;
-                                    }
                                   }
 
+                                  if (isStrangersMeet && mobileCtrl.text.trim().isEmpty) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Mobile number is required for Strangers Meet.'),
+                                        backgroundColor: Colors.redAccent,
+                                      ),
+                                    );
+                                    return;
+                                  }
                                   setSheetState(() => isPosting = true);
 
                                   if (isStrangersMeet) {
@@ -1920,13 +1920,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                                 .toIso8601String(),
                                             numberOfPersons:
                                                 selectedUserIds.length,
-                                            chargesPerHead:
-                                                double.tryParse(
-                                                  chargesCtrl.text.trim(),
-                                                ) ??
-                                                0.0,
-                                            mobileNumber: '',
-                                            alternateMobileNumber: '',
+                                            chargesPerHead: 0.0,
+                                            mobileNumber: mobileCtrl.text.trim(),
+                                            alternateMobileNumber: altMobileCtrl.text.trim(),
                                           );
 
                                       if (success) {
@@ -2334,14 +2330,6 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                         icon: Icons.subtitles_rounded,
                         maxLines: 3,
                       ),
-                      const SizedBox(height: 14),
-                      // Charges per head
-                      _sheetField(
-                        controller: chargesCtrl,
-                        hint: 'Enter Charges per Head (₹)...',
-                        icon: Icons.currency_rupee_rounded,
-                        keyboardType: TextInputType.number,
-                      ),
                       const SizedBox(height: 10),
 
                       // Date & Time Picker
@@ -2585,20 +2573,6 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               );
                               return;
                             }
-                            final chargesText = chargesCtrl.text.trim();
-                            final charges = double.tryParse(chargesText);
-                            if (chargesText.isEmpty ||
-                                charges == null ||
-                                charges < 0) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Please enter a valid charges per head (min 0)',
-                                  ),
-                                ),
-                              );
-                              return;
-                            }
                             if (selectedDate == null || selectedTime == null) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
@@ -2669,11 +2643,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                   tagline: taglineCtrl.text.trim(),
                                   eventDateTime: dt.toUtc().toIso8601String(),
                                   numberOfPersons: numberOfPersons,
-                                  chargesPerHead:
-                                      double.tryParse(
-                                        chargesCtrl.text.trim(),
-                                      ) ??
-                                      0.0,
+                                  chargesPerHead: 0.0,
                                   mobileNumber: mobileCtrl.text.trim(),
                                   alternateMobileNumber: altMobileCtrl.text
                                       .trim(),

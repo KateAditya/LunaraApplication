@@ -5,6 +5,7 @@ import {
     getAllRequests,
     approveRequest,
     rejectRequest,
+    paySettlement,
 } from '../controllers/strangersMeetController';
 
 const router = Router();
@@ -35,8 +36,11 @@ router.patch(
     [
         param('id').isUUID().withMessage('id must be a valid UUID'),
         body('paymentAmount')
-            .notEmpty().withMessage('paymentAmount is required')
+            .optional()
             .isFloat({ gt: 0 }).withMessage('paymentAmount must be greater than 0'),
+        body('chargesPerHead')
+            .optional()
+            .isFloat({ min: 0 }).withMessage('chargesPerHead must be 0 or greater'),
         body('adminNotes').optional().isString(),
         validate,
     ],
@@ -56,6 +60,23 @@ router.patch(
         validate,
     ],
     rejectRequest
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/admin/strangers-meet/:id/pay-settlement
+// Admin records settlement payout details
+// ─────────────────────────────────────────────────────────────────────────────
+router.post(
+    '/:id/pay-settlement',
+    [
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        body('transactionId').notEmpty().withMessage('transactionId is required'),
+        body('amount').notEmpty().isFloat({ gt: 0 }).withMessage('amount must be greater than 0'),
+        body('paymentDate').optional().isISO8601().withMessage('Invalid payment date'),
+        body('paymentMethod').optional().isString(),
+        validate,
+    ],
+    paySettlement
 );
 
 export default router;

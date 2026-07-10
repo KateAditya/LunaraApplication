@@ -93,6 +93,34 @@ function formatRequest(r: StrangersMeetRequest) {
         venueImageUrl = '/' + venue.images[0].filePath.replace(/\\/g, '/');
     }
 
+    // Dynamic calculations
+    const joinedJoiners = joiners.filter((j: any) => j.status === 'accepted' || j.status === 'paid' || j.paymentStatus === 'paid');
+    const paidJoiners = joiners.filter((j: any) => j.status === 'paid' || j.paymentStatus === 'paid');
+    const joinedCount = joinedJoiners.length;
+    const paymentCount = paidJoiners.length;
+    const remainingCount = Math.max(0, r.numberOfPersons - paymentCount);
+
+    const now = new Date();
+    const eventDate = new Date(r.eventDateTime);
+    let dynamicStatus = 'NEW';
+    
+    if (r.status === 'rejected') {
+        dynamicStatus = 'CANCELLED';
+    } else if (r.status === 'completed' || now > eventDate) {
+        dynamicStatus = 'CLOSED';
+    } else {
+        const percentage = r.numberOfPersons > 0 ? (paymentCount / r.numberOfPersons) * 100 : 0;
+        if (percentage >= 100) {
+            dynamicStatus = 'FULL';
+        } else if (percentage >= 75) {
+            dynamicStatus = 'ALMOST FULL';
+        } else if (percentage >= 25) {
+            dynamicStatus = 'FAST FILLING';
+        } else {
+            dynamicStatus = 'NEW';
+        }
+    }
+
     return {
         id: r.id,
         subject: r.subject,
@@ -108,6 +136,16 @@ function formatRequest(r: StrangersMeetRequest) {
         alternateMobileNumber: r.alternateMobileNumber ?? null,
         adminNotes: r.adminNotes ?? null,
         ticketId: r.ticketId ?? null,
+        settlementStatus: r.settlementStatus || 'none',
+        bankDetails: r.bankDetails ?? null,
+        settlementTransactionId: r.settlementTransactionId ?? null,
+        settlementAmount: r.settlementAmount ? Number(r.settlementAmount) : null,
+        settlementDate: r.settlementDate ?? null,
+        settlementMethod: r.settlementMethod ?? null,
+        joinedCount,
+        paymentCount,
+        remainingCount,
+        dynamicStatus,
         createdAt: r.createdAt,
         updatedAt: r.updatedAt,
         user: user ? {
@@ -140,13 +178,16 @@ function formatRequest(r: StrangersMeetRequest) {
             return {
                 id: j.id,
                 userId: j.userId,
+                status: j.status,
                 paymentStatus: j.paymentStatus,
                 paymentAmount: Number(j.paymentAmount || 0),
+                createdAt: j.createdAt,
                 user: ju ? {
                     id: ju.id,
                     firstName: ju.firstName,
                     lastName: ju.lastName,
                     photoUrl: juPhotoUrl,
+                    phone: ju.phone,
                 } : null
             };
         })
@@ -159,7 +200,7 @@ function formatRequest(r: StrangersMeetRequest) {
 // ─────────────────────────────────────────────────────────────────────────────
 export const createRequest = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { userId, venueId, subject, tagline, eventDateTime, numberOfPersons, chargesPerHead, mobileNumber, alternateMobileNumber } = req.body;
+        const { userId, venueId, subject, tagline, eventDateTime, numberOfPersons, mobileNumber, alternateMobileNumber } = req.body;
 
         // Validate required fields
         const errors: Record<string, string> = {};
@@ -172,11 +213,6 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
             errors.numberOfPersons = 'numberOfPersons is required';
         else if (numberOfPersons < 21 || numberOfPersons > 50)
             errors.numberOfPersons = 'numberOfPersons must be between 21 and 50';
-
-        const parsedCharges = Number(chargesPerHead || 0);
-        if (isNaN(parsedCharges) || parsedCharges < 0) {
-            errors.chargesPerHead = 'chargesPerHead must be a positive number';
-        }
 
         if (Object.keys(errors).length > 0) {
             res.status(400).json({ success: false, message: 'Validation failed', errors });
@@ -225,10 +261,28 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
             tagline: tagline.trim(),
             eventDateTime: eventDate,
             numberOfPersons: Number(numberOfPersons),
-            chargesPerHead: parsedCharges,
+            chargesPerHead: 0.0,
             mobileNumber: finalMobileNumber,
             alternateMobileNumber: alternateMobileNumber?.trim() || null,
         });
+
+        // Send request submitted push notification to creator
+        try {
+            const creator = await User.findByPk(userId);
+            if (creator?.fcmToken) {
+                const { sendPushNotification } = require('../services/fcmService');
+                await sendPushNotification(creator.fcmToken, {
+                    title: '📝 Request Submitted',
+                    body: 'Your Stranger Meet request has been submitted for admin approval.',
+                    data: {
+                        type: 'strangers_meet_request_submitted',
+                        requestId: request.id,
+                    }
+                });
+            }
+        } catch (notifErr: any) {
+            logger.warn('Failed to send request submitted notification: ' + notifErr.message);
+        }
 
         res.status(201).json({
             success: true,
@@ -413,6 +467,24 @@ export const confirmPayment = async (req: Request, res: Response): Promise<void>
                 razorpaySignature: razorpay_signature,
             });
 
+            // Send notification to host that the meet is now published
+            try {
+                const host = await User.findByPk(request.userId);
+                if (host?.fcmToken) {
+                    const { sendPushNotification } = require('../services/fcmService');
+                    await sendPushNotification(host.fcmToken, {
+                        title: '🚀 Stranger Meet Published!',
+                        body: `Your Stranger Meet "${request.subject}" is now live and public.`,
+                        data: {
+                            type: 'strangers_meet_published',
+                            requestId: request.id,
+                        }
+                    });
+                }
+            } catch (notifErr: any) {
+                logger.warn('Failed to send published notification: ' + notifErr.message);
+            }
+
             res.json({
                 success: true,
                 message: 'Payment confirmed! Your ticket is ready 🎟️',
@@ -531,29 +603,50 @@ export const getFeedRequests = async (req: Request, res: Response): Promise<void
 export const approveRequest = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const { paymentAmount, adminNotes } = req.body;
-
-        if (paymentAmount === undefined || paymentAmount === null) {
-            res.status(400).json({ success: false, message: 'paymentAmount is required' });
-            return;
-        }
-        if (Number(paymentAmount) <= 0) {
-            res.status(400).json({ success: false, message: 'paymentAmount must be greater than 0' });
-            return;
-        }
+        const { paymentAmount, chargesPerHead, adminNotes } = req.body;
 
         const request = await StrangersMeetRequest.findByPk(id);
-        if (!request) { res.status(404).json({ success: false, message: 'Request not found' }); return; }
+        if (!request) {
+            res.status(404).json({ success: false, message: 'Request not found' });
+            return;
+        }
+
         if (request.status !== StrangersMeetStatus.PENDING) {
             res.status(400).json({ success: false, message: `Cannot approve a request with status: ${request.status}` });
             return;
         }
 
+        const hostDepositAmount = paymentAmount !== undefined && paymentAmount !== null ? Number(paymentAmount) : 99.0;
+        const perHeadCharges = chargesPerHead !== undefined && chargesPerHead !== null ? Number(chargesPerHead) : 0.0;
+
         await request.update({
             status: StrangersMeetStatus.APPROVED,
-            paymentAmount: Number(paymentAmount),
+            paymentAmount: hostDepositAmount,
+            chargesPerHead: perHeadCharges,
             adminNotes: adminNotes?.trim() || null,
         });
+
+        // Send push notification to host
+        try {
+            const host = await User.findByPk(request.userId);
+            if (host?.fcmToken) {
+                const { sendPushNotification } = require('../services/fcmService');
+                await sendPushNotification(host.fcmToken, {
+                    title: '🎉 Stranger Meet Approved',
+                    body: 'Your Stranger Meet has been approved. Charges have been set by the admin. Please review the charges and publish your Stranger Meet.',
+                    data: {
+                        type: 'strangers_meet_approved',
+                        requestId: request.id,
+                        chargesPerHead: perHeadCharges.toString(),
+                        numberOfPersons: request.numberOfPersons.toString(),
+                        eventDate: request.eventDateTime.toISOString(),
+                        status: 'Payment Pending',
+                    }
+                });
+            }
+        } catch (notifErr: any) {
+            logger.warn('Failed to send stranger meet approval notification: ' + notifErr.message);
+        }
 
         res.json({
             success: true,
@@ -562,6 +655,7 @@ export const approveRequest = async (req: Request, res: Response): Promise<void>
                 id: request.id,
                 status: request.status,
                 paymentAmount: request.paymentAmount,
+                chargesPerHead: request.chargesPerHead,
                 adminNotes: request.adminNotes,
             },
         });
@@ -640,14 +734,16 @@ export const initiateJoinPayment = async (req: Request, res: Response): Promise<
         }
 
         // Check if already a paid joiner
-        const existingPaidJoiner = await StrangersMeetJoiner.findOne({
-            where: {
-                strangersMeetRequestId: id,
-                userId,
-                paymentStatus: StrangersMeetJoinerPaymentStatus.PAID,
-            }
+        const existingJoiner = await StrangersMeetJoiner.findOne({
+            where: { strangersMeetRequestId: id, userId }
         });
-        if (existingPaidJoiner) {
+
+        if (!existingJoiner || existingJoiner.status !== 'accepted') {
+            res.status(400).json({ success: false, message: 'You must have an accepted join request to make a payment' });
+            return;
+        }
+
+        if (existingJoiner.paymentStatus === StrangersMeetJoinerPaymentStatus.PAID) {
             res.status(400).json({ success: false, message: 'You have already joined this strangers meet' });
             return;
         }
@@ -761,6 +857,7 @@ export const confirmJoinPayment = async (req: Request, res: Response): Promise<v
         }
 
         await joiner.update({
+            status: 'paid' as any,
             paymentStatus: StrangersMeetJoinerPaymentStatus.PAID,
             razorpayPaymentId: razorpay_payment_id || 'free_or_mock',
             razorpaySignature: razorpay_signature || 'free_or_mock',
@@ -768,6 +865,52 @@ export const confirmJoinPayment = async (req: Request, res: Response): Promise<v
 
         await request.increment('slotsFilled', { by: 1 });
         await request.reload();
+
+        // Send notifications
+        try {
+            const host = await User.findByPk(request.userId);
+            const participant = await User.findByPk(joiner.userId);
+            if (participant?.fcmToken) {
+                const { sendPushNotification } = require('../services/fcmService');
+                await sendPushNotification(participant.fcmToken, {
+                    title: '💳 Payment Successful',
+                    body: `Your payment of ₹${request.chargesPerHead} for "${request.subject}" was successful!`,
+                    data: {
+                        type: 'strangers_meet_payment_success',
+                        requestId: request.id,
+                    }
+                });
+            }
+            if (host?.fcmToken && participant) {
+                const { sendPushNotification } = require('../services/fcmService');
+                await sendPushNotification(host.fcmToken, {
+                    title: '👥 New Participant Joined',
+                    body: `${participant.firstName} paid and joined your "${request.subject}" meet.`,
+                    data: {
+                        type: 'strangers_meet_participant_joined',
+                        requestId: request.id,
+                    }
+                });
+            }
+
+            // Check if meet is full
+            const paidCount = await StrangersMeetJoiner.count({
+                where: { strangersMeetRequestId: request.id, paymentStatus: 'paid' }
+            });
+            if (paidCount >= request.numberOfPersons && host?.fcmToken) {
+                const { sendPushNotification } = require('../services/fcmService');
+                await sendPushNotification(host.fcmToken, {
+                    title: '🔥 Stranger Meet Full!',
+                    body: `Your Stranger Meet "${request.subject}" has reached full capacity of ${request.numberOfPersons} persons!`,
+                    data: {
+                        type: 'strangers_meet_full',
+                        requestId: request.id,
+                    }
+                });
+            }
+        } catch (notifErr: any) {
+            logger.warn('Failed to send join confirmation notification: ' + notifErr.message);
+        }
 
         res.json({
             success: true,
@@ -831,5 +974,294 @@ export const completeMeet = async (req: Request, res: Response): Promise<void> =
     } catch (err: any) {
         logger.error('completeMeet error:', err);
         res.status(500).json({ success: false, message: 'Failed to complete strangers meet', error: err.message });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/strangers-meet/:id/join-request
+// Participant submits a request to join a Stranger Meet
+// ─────────────────────────────────────────────────────────────────────────────
+export const sendJoinRequest = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { userId } = req.body;
+
+        if (!userId) {
+            res.status(400).json({ success: false, message: 'userId is required' });
+            return;
+        }
+
+        const request = await StrangersMeetRequest.findByPk(id);
+        if (!request) {
+            res.status(404).json({ success: false, message: 'Strangers meet request not found' });
+            return;
+        }
+
+        if (request.userId === userId) {
+            res.status(400).json({ success: false, message: 'Host cannot join their own meetup' });
+            return;
+        }
+
+        // Check capacity limit
+        const joiners = await StrangersMeetJoiner.findAll({ where: { strangersMeetRequestId: id } });
+        const paidCount = joiners.filter((j: any) => j.status === 'paid' || j.paymentStatus === 'paid').length;
+        if (paidCount >= request.numberOfPersons) {
+            res.status(400).json({ success: false, message: 'This strangers meet is full' });
+            return;
+        }
+
+        // Check if already requested or joined
+        const existing = await StrangersMeetJoiner.findOne({
+            where: { strangersMeetRequestId: id, userId }
+        });
+
+        if (existing) {
+            if (existing.status === 'paid' || existing.paymentStatus === 'paid') {
+                res.status(400).json({ success: false, message: 'You have already joined this meetup' });
+                return;
+            }
+            if (existing.status === 'pending') {
+                res.status(400).json({ success: false, message: 'You have already sent a join request' });
+                return;
+            }
+        }
+
+        let joiner;
+        if (existing) {
+            await existing.update({ status: 'pending' as any });
+            joiner = existing;
+        } else {
+            joiner = await StrangersMeetJoiner.create({
+                strangersMeetRequestId: id,
+                userId,
+                status: 'pending' as any,
+                paymentStatus: StrangersMeetJoinerPaymentStatus.PENDING,
+                paymentAmount: 0.0,
+            });
+        }
+
+        // Notify host
+        try {
+            const host = await User.findByPk(request.userId);
+            const requester = await User.findByPk(userId);
+            if (host?.fcmToken && requester) {
+                const { sendPushNotification } = require('../services/fcmService');
+                await sendPushNotification(host.fcmToken, {
+                    title: '✨ Join Request Received',
+                    body: `${requester.firstName} wants to join your "${request.subject}" meet.`,
+                    data: {
+                        type: 'strangers_meet_join_request',
+                        requestId: request.id,
+                        joinerId: joiner.id,
+                    }
+                });
+            }
+        } catch (notifErr: any) {
+            logger.warn('Failed to send join request notification: ' + notifErr.message);
+        }
+
+        res.status(201).json({
+            success: true,
+            message: 'Join request sent successfully! Waiting for host approval. 🤞',
+            data: joiner,
+        });
+    } catch (err: any) {
+        logger.error('sendJoinRequest error:', err);
+        res.status(500).json({ success: false, message: 'Failed to send join request', error: err.message });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/mobile/strangers-meet/:id/join-request/:joinerId
+// Host accepts/rejects a participant's request to join
+// ─────────────────────────────────────────────────────────────────────────────
+export const handleJoinRequest = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id, joinerId } = req.params;
+        const { action, userId } = req.body; // userId is the host user verifying authorization
+
+        if (!userId) {
+            res.status(400).json({ success: false, message: 'userId (host) is required' });
+            return;
+        }
+        if (!action || !['accept', 'reject'].includes(action)) {
+            res.status(400).json({ success: false, message: 'action must be accept or reject' });
+            return;
+        }
+
+        const request = await StrangersMeetRequest.findByPk(id);
+        if (!request) {
+            res.status(404).json({ success: false, message: 'Strangers meet request not found' });
+            return;
+        }
+        if (request.userId !== userId) {
+            res.status(403).json({ success: false, message: 'Only the host can manage requests' });
+            return;
+        }
+
+        const joiner = await StrangersMeetJoiner.findByPk(joinerId);
+        if (!joiner || joiner.strangersMeetRequestId !== id) {
+            res.status(404).json({ success: false, message: 'Joiner request not found' });
+            return;
+        }
+
+        if (action === 'accept') {
+            await joiner.update({ status: 'accepted' as any });
+
+            // Notify participant
+            try {
+                const participant = await User.findByPk(joiner.userId);
+                if (participant?.fcmToken) {
+                    const { sendPushNotification } = require('../services/fcmService');
+                    await sendPushNotification(participant.fcmToken, {
+                        title: '🎉 Request Accepted!',
+                        body: `Your request to join "${request.subject}" has been accepted! Please complete the payment to secure your spot.`,
+                        data: {
+                            type: 'strangers_meet_request_accepted',
+                            requestId: request.id,
+                        }
+                    });
+                }
+            } catch (notifErr: any) {
+                logger.warn('Failed to send join request accepted notification: ' + notifErr.message);
+            }
+
+            res.json({ success: true, message: 'Join request accepted!', data: joiner });
+        } else {
+            await joiner.update({ status: 'rejected' as any });
+
+            res.json({ success: true, message: 'Join request rejected.', data: joiner });
+        }
+    } catch (err: any) {
+        logger.error('handleJoinRequest error:', err);
+        res.status(500).json({ success: false, message: 'Failed to handle join request', error: err.message });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/strangers-meet/:id/settlement-request
+// Host submits bank/UPI details to request meetup earnings settlement
+// ─────────────────────────────────────────────────────────────────────────────
+export const submitSettlementRequest = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { userId, bankDetails } = req.body;
+
+        if (!userId) {
+            res.status(400).json({ success: false, message: 'userId is required' });
+            return;
+        }
+        if (!bankDetails?.trim()) {
+            res.status(400).json({ success: false, message: 'bankDetails is required (UPI ID or Bank Account Details)' });
+            return;
+        }
+
+        const request = await StrangersMeetRequest.findByPk(id);
+        if (!request) {
+            res.status(404).json({ success: false, message: 'Strangers meet request not found' });
+            return;
+        }
+
+        if (request.userId !== userId) {
+            res.status(403).json({ success: false, message: 'Unauthorized' });
+            return;
+        }
+
+        // Ensure the event date has passed
+        const now = new Date();
+        const eventTime = new Date(request.eventDateTime);
+        if (now < eventTime) {
+            res.status(400).json({ success: false, message: 'Settlement can only be requested after the event date has passed' });
+            return;
+        }
+
+        await request.update({
+            settlementStatus: 'requested',
+            bankDetails: bankDetails.trim(),
+        });
+
+        res.json({
+            success: true,
+            message: 'Settlement requested successfully! Admin has been notified. ⏳',
+            data: {
+                id: request.id,
+                settlementStatus: 'requested',
+                bankDetails: request.bankDetails,
+            }
+        });
+    } catch (err: any) {
+        logger.error('submitSettlementRequest error:', err);
+        res.status(500).json({ success: false, message: 'Failed to request settlement', error: err.message });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/admin/strangers-meet/:id/pay-settlement
+// Admin records settlement payout details
+// ─────────────────────────────────────────────────────────────────────────────
+export const paySettlement = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { transactionId, amount, paymentDate, paymentMethod } = req.body;
+        
+        if (!transactionId) {
+            res.status(400).json({ success: false, message: 'transactionId is required' });
+            return;
+        }
+        if (!amount || Number(amount) <= 0) {
+            res.status(400).json({ success: false, message: 'amount must be a positive number' });
+            return;
+        }
+
+        const request = await StrangersMeetRequest.findByPk(id);
+        if (!request) {
+            res.status(404).json({ success: false, message: 'Request not found' });
+            return;
+        }
+
+        if (request.settlementStatus === 'paid') {
+            res.status(400).json({ success: false, message: 'Settlement already paid for this meetup' });
+            return;
+        }
+
+        await request.update({
+            settlementStatus: 'paid',
+            settlementTransactionId: transactionId,
+            settlementAmount: Number(amount),
+            settlementDate: paymentDate ? new Date(paymentDate) : new Date(),
+            settlementMethod: paymentMethod || 'Bank Transfer',
+        });
+
+        // Send push notification to host
+        try {
+            const creator = await User.findByPk(request.userId);
+            if (creator?.fcmToken) {
+                const { sendPushNotification } = require('../services/fcmService');
+                await sendPushNotification(creator.fcmToken, {
+                    title: '💰 Settlement Paid',
+                    body: `Your settlement of ₹${amount} for "${request.subject}" has been paid!`,
+                    data: {
+                        type: 'strangers_meet_settlement_paid',
+                        requestId: request.id,
+                    }
+                });
+            }
+        } catch (notifErr: any) {
+            logger.warn('Failed to send settlement paid push notification: ' + notifErr.message);
+        }
+
+        res.json({
+            success: true,
+            message: 'Settlement marked as paid successfully! 💸',
+            data: {
+                id: request.id,
+                settlementStatus: 'paid',
+                settlementTransactionId: transactionId,
+                settlementAmount: amount,
+            }
+        });
+    } catch (err: any) {
+        logger.error('paySettlement error:', err);
+        res.status(500).json({ success: false, message: 'Failed to process settlement payment', error: err.message });
     }
 };

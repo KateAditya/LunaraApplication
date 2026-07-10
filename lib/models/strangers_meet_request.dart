@@ -15,6 +15,14 @@ class StrangersMeetRequest {
   final String? mobileNumber;
   final String? alternateMobileNumber;
 
+  // Settlement info
+  final String settlementStatus;
+  final String? bankDetails;
+  final String? settlementTransactionId;
+  final double? settlementAmount;
+  final DateTime? settlementDate;
+  final String? settlementMethod;
+
   final Map<String, dynamic>? user;
   final Map<String, dynamic>? venue;
   final List<dynamic>? joiners;
@@ -35,6 +43,12 @@ class StrangersMeetRequest {
     this.createdAt,
     this.mobileNumber,
     this.alternateMobileNumber,
+    required this.settlementStatus,
+    this.bankDetails,
+    this.settlementTransactionId,
+    this.settlementAmount,
+    this.settlementDate,
+    this.settlementMethod,
     this.user,
     this.venue,
     this.joiners,
@@ -69,6 +83,18 @@ class StrangersMeetRequest {
           : null,
       mobileNumber: json['mobileNumber'],
       alternateMobileNumber: json['alternateMobileNumber'],
+      settlementStatus: json['settlementStatus'] ?? 'none',
+      bankDetails: json['bankDetails'],
+      settlementTransactionId: json['settlementTransactionId'],
+      settlementAmount: json['settlementAmount'] != null
+          ? (json['settlementAmount'] is String
+              ? double.tryParse(json['settlementAmount'])
+              : (json['settlementAmount'] as num).toDouble())
+          : null,
+      settlementDate: json['settlementDate'] != null
+          ? DateTime.parse(json['settlementDate'])
+          : null,
+      settlementMethod: json['settlementMethod'],
       user: json['user'],
       venue: json['venue'],
       joiners: json['joiners'],
