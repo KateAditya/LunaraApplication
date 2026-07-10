@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../models/venue.dart';
 
@@ -421,6 +422,122 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
   TimeOfDay? _selectedTime;
   final TextEditingController _dateController = TextEditingController();
 
+  String _formatTimeOfBooking(String? timeStr) {
+    if (timeStr == null || timeStr.isEmpty) return '';
+    try {
+      final parts = timeStr.split(':');
+      if (parts.length >= 2) {
+        final hour = int.parse(parts[0]);
+        final minute = int.parse(parts[1]);
+        final ampm = hour >= 12 ? 'PM' : 'AM';
+        final formattedHour = hour % 12 == 0 ? 12 : hour % 12;
+        final formattedMinute = minute.toString().padLeft(2, '0');
+        return '$formattedHour:$formattedMinute $ampm';
+      }
+    } catch (_) {}
+    return timeStr;
+  }
+
+  Future<void> _handleDateSelection(DateTime date) async {
+    final yyyy = date.year;
+    final mm = date.month.toString().padLeft(2, '0');
+    final dd = date.day.toString().padLeft(2, '0');
+    final dateStr = '$yyyy-$mm-$dd';
+    if (widget.venue.closedDates != null && widget.venue.closedDates!.contains(dateStr)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('The venue is closed on $dateStr (Holiday).'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    final weekdaysMap = {
+      1: 'Monday',
+      2: 'Tuesday',
+      3: 'Wednesday',
+      4: 'Thursday',
+      5: 'Friday',
+      6: 'Saturday',
+      7: 'Sunday',
+    };
+    final weekdayName = weekdaysMap[date.weekday];
+    final isOpenOnWeekday = weekdayName != null && widget.venue.daysOpen != null && widget.venue.daysOpen!.any((d) {
+      final str = d.toString().trim().toLowerCase();
+      final fullDay = weekdayName.toLowerCase();
+      final shortDay = weekdayName.substring(0, 3).toLowerCase();
+      return str.contains(fullDay) || str.contains(shortDay);
+    });
+    if (!isOpenOnWeekday && widget.venue.daysOpen != null && widget.venue.daysOpen!.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('The venue is not open on ${weekdayName}s.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    final time = await showTimePicker(
+      context: context,
+      initialTime: _selectedTime ?? TimeOfDay.now(),
+    );
+
+    if (time != null) {
+      final selectedDateTime = DateTime(
+        date.year,
+        date.month,
+        date.day,
+        time.hour,
+        time.minute,
+      );
+      if (selectedDateTime.isBefore(DateTime.now())) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Selected date and time cannot be in the past.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+        return;
+      }
+
+      final invalidReason = widget.venue.getInvalidReason(date, time);
+      if (invalidReason != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(invalidReason),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+        return;
+      }
+
+      setState(() {
+        _selectedDate = date;
+        _selectedTime = time;
+        final formattedTime = _formatTimeOfBooking(
+          '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
+        );
+        _dateController.text =
+            "${DateFormat('MMM dd, yyyy').format(date)} at $formattedTime";
+      });
+    }
+  }
+
+  Future<void> _handleCustomDateSelection() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate ?? DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 60)),
+    );
+
+    if (date != null) {
+      await _handleDateSelection(date);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -445,6 +562,111 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
     final double discountPercent = widget.venue.discountPercentage ?? 0;
     final double discountAmount = (subtotal * discountPercent) / 100;
     final double totalPrice = subtotal - discountAmount;
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final tomorrow = today.add(const Duration(days: 1));
+
+    int daysToFriday = (5 - now.weekday) % 7;
+    if (daysToFriday <= 0) daysToFriday += 7;
+    final nextFriday = today.add(Duration(days: daysToFriday));
+
+    int daysToSaturday = (6 - now.weekday) % 7;
+    if (daysToSaturday <= 0) daysToSaturday += 7;
+    final nextSaturday = today.add(Duration(days: daysToSaturday));
+
+    Widget buildDateChip(String label, DateTime dateVal, bool isSelected) {
+      return GestureDetector(
+        onTap: () => _handleDateSelection(dateVal),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? const Color(0xFF7C3AED) : Colors.grey[50],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected ? const Color(0xFF7C3AED) : Colors.grey[300]!,
+              width: 1,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: isSelected ? Colors.white : Colors.black87,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                DateFormat('MMM d').format(dateVal),
+                style: TextStyle(
+                  color: isSelected ? Colors.white70 : Colors.black54,
+                  fontSize: 10,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    Widget buildCustomChip(bool isSelected) {
+      return GestureDetector(
+        onTap: _handleCustomDateSelection,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? const Color(0xFF7C3AED) : Colors.grey[50],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected ? const Color(0xFF7C3AED) : Colors.grey[300]!,
+              width: 1,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.calendar_today_rounded,
+                    size: 12,
+                    color: isSelected ? Colors.white : Colors.black87,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Custom',
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : Colors.black87,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                _selectedDate != null &&
+                        _selectedDate != today &&
+                        _selectedDate != tomorrow &&
+                        _selectedDate != nextFriday &&
+                        _selectedDate != nextSaturday
+                    ? DateFormat('MMM d').format(_selectedDate!)
+                    : 'Choose Date',
+                style: TextStyle(
+                  color: isSelected ? Colors.white70 : Colors.black54,
+                  fontSize: 10,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Container(
       padding: EdgeInsets.only(
@@ -625,31 +847,37 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                       color: Colors.black54,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    child: Row(
+                      children: [
+                        buildDateChip('Today', today, _selectedDate == today),
+                        const SizedBox(width: 8),
+                        buildDateChip('Tomorrow', tomorrow, _selectedDate == tomorrow),
+                        const SizedBox(width: 8),
+                        buildDateChip(DateFormat('E, MMM d').format(nextFriday), nextFriday, _selectedDate == nextFriday),
+                        const SizedBox(width: 8),
+                        buildDateChip(DateFormat('E, MMM d').format(nextSaturday), nextSaturday, _selectedDate == nextSaturday),
+                        const SizedBox(width: 8),
+                        buildCustomChip(
+                          _selectedDate != null &&
+                          _selectedDate != today &&
+                          _selectedDate != tomorrow &&
+                          _selectedDate != nextFriday &&
+                          _selectedDate != nextSaturday
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   GestureDetector(
-                    onTap: () async {
-                      final date = await showDatePicker(
-                        context: context,
-                        initialDate: DateTime.now(),
-                        firstDate: DateTime.now(),
-                        lastDate: DateTime.now().add(const Duration(days: 60)),
-                      );
-                      if (date != null) {
-                        if (!context.mounted) return;
-                        final time = await showTimePicker(
-                          context: context,
-                          initialTime: TimeOfDay.now(),
-                        );
-                        if (time != null) {
-                          setState(() {
-                            _selectedDate = date;
-                            _selectedTime = time;
-                            final hour = time.hour % 12 == 0 ? 12 : time.hour % 12;
-                            final min = time.minute.toString().padLeft(2, '0');
-                            final ampm = time.hour >= 12 ? 'PM' : 'AM';
-                            _dateController.text = "${date.day}/${date.month}/${date.year} at $hour:$min $ampm";
-                          });
-                        }
+                    onTap: () {
+                      if (_selectedDate != null) {
+                        _handleDateSelection(_selectedDate!);
+                      } else {
+                        _handleCustomDateSelection();
                       }
                     },
                     child: AbsorbPointer(
@@ -662,7 +890,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                         child: TextField(
                           controller: _dateController,
                           decoration: InputDecoration(
-                            hintText: 'Select Date & Time *',
+                            hintText: 'Selected Date & Time *',
                             hintStyle: TextStyle(
                               color: Colors.grey[400],
                               fontSize: 13,
@@ -839,6 +1067,34 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text('Please select Date and Time.'),
+                            ),
+                          );
+                          return;
+                        }
+
+                        final selectedDateTime = DateTime(
+                          _selectedDate!.year,
+                          _selectedDate!.month,
+                          _selectedDate!.day,
+                          _selectedTime!.hour,
+                          _selectedTime!.minute,
+                        );
+                        if (selectedDateTime.isBefore(DateTime.now())) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Selected date and time cannot be in the past.'),
+                              backgroundColor: Colors.redAccent,
+                            ),
+                          );
+                          return;
+                        }
+
+                        final invalidReason = widget.venue.getInvalidReason(_selectedDate!, _selectedTime!);
+                        if (invalidReason != null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(invalidReason),
+                              backgroundColor: Colors.redAccent,
                             ),
                           );
                           return;
