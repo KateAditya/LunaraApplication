@@ -168,6 +168,7 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
   Widget _buildRequestCard(StrangersMeetRequest req) {
     final isApproved = req.status == 'approved';
     final isPaid = req.paymentStatus == 'paid';
+    final eventPassed = req.eventDateTime.isBefore(DateTime.now());
     
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -298,8 +299,138 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
                 ),
               ),
             ],
+
+            if (isApproved && isPaid && eventPassed) ...[
+              const SizedBox(height: 8),
+              if (req.settlementStatus == 'none')
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () => _onRequestSettlement(req),
+                    icon: const Icon(Icons.account_balance_wallet_rounded, color: Colors.white),
+                    label: const Text('REQUEST SETTLEMENT', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: LunaraTheme.electricViolet,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                )
+              else if (req.settlementStatus == 'requested')
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.hourglass_empty_rounded, color: Colors.orange, size: 16),
+                          SizedBox(width: 8),
+                          Text('Settlement Requested', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text('Details: ${req.bankDetails ?? ""}', style: TextStyle(color: Colors.grey[700], fontSize: 12)),
+                    ],
+                  ),
+                )
+              else if (req.settlementStatus == 'paid')
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.check_circle_rounded, color: Colors.green, size: 16),
+                          SizedBox(width: 8),
+                          Text('Settlement Paid', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text('Amount: ₹${req.settlementAmount?.toStringAsFixed(2) ?? "0.00"}', style: TextStyle(color: Colors.grey[800], fontSize: 13, fontWeight: FontWeight.w600)),
+                      Text('Method: ${req.settlementMethod ?? "N/A"}', style: TextStyle(color: Colors.grey[700], fontSize: 12)),
+                      Text('Txn ID: ${req.settlementTransactionId ?? "N/A"}', style: TextStyle(color: Colors.grey[700], fontSize: 12)),
+                      if (req.settlementDate != null)
+                        Text('Date: ${DateFormat('MMM dd, yyyy • hh:mm a').format(req.settlementDate!)}', style: TextStyle(color: Colors.grey[700], fontSize: 12)),
+                    ],
+                  ),
+                ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+
+  void _onRequestSettlement(StrangersMeetRequest req) {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Request Settlement', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Enter your bank details or UPI ID for payout settlement:'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                hintText: 'e.g. UPI ID: name@upi or Bank details',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('CANCEL'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final bankDetails = controller.text.trim();
+              if (bankDetails.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please enter bank details')),
+                );
+                return;
+              }
+              Navigator.pop(ctx);
+              setState(() => _isLoading = true);
+              final success = await ApiService.submitStrangersMeetSettlement(req.id, bankDetails);
+              if (!mounted) return;
+              if (success) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Settlement request submitted successfully')),
+                );
+                _loadRequests();
+              } else {
+                setState(() => _isLoading = false);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Failed to submit settlement request')),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: LunaraTheme.electricViolet),
+            child: const Text('SUBMIT'),
+          ),
+        ],
       ),
     );
   }
