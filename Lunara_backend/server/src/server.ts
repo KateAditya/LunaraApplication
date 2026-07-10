@@ -131,6 +131,7 @@ import adminBookingsRoutes from './routes/adminBookings';
 import adminSubscriptionRoutes from './routes/adminSubscription';
 import mobileSubscriptionRoutes from './routes/mobileSubscription';
 import { getAdminChatSettings, updateAdminChatSettings } from './controllers/chatSubscriptionController';
+import dbRestoreRoutes from './routes/dbRestore';
 
 app.get('/api', (_req, res) => {
     res.json({
@@ -177,6 +178,9 @@ app.use('/api/mobile/subscriptions', mobileSubscriptionRoutes); // Subscriptions
 // Admin — chat subscription settings
 app.get('/api/admin/settings/chat', getAdminChatSettings);
 app.put('/api/admin/settings/chat', updateAdminChatSettings);
+
+// TEMP: DB restore endpoint — REMOVE AFTER USE
+app.use('/api/db-restore', dbRestoreRoutes);
 
 // TODO: Import and use other route modules
 // app.use('/api/bookings', bookingRoutes);
