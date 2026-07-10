@@ -70,6 +70,7 @@ export interface VenueAttributes {
     openingTime?: string;
     closingTime?: string;
     daysOpen?: string[];
+    closedDates?: string[]; // Array of YYYY-MM-DD strings for holidays/closed dates
     ageLimit?: number;
     coverChargeMale?: number;
     coverChargeFemale?: number;
@@ -142,6 +143,7 @@ export interface VenueCreationAttributes
         | 'openingTime'
         | 'closingTime'
         | 'daysOpen'
+        | 'closedDates'
         | 'ageLimit'
         | 'coverChargeMale'
         | 'coverChargeFemale'
@@ -221,6 +223,7 @@ class Venue extends Model<VenueAttributes, VenueCreationAttributes> implements V
     public openingTime?: string;
     public closingTime?: string;
     public daysOpen?: string[];
+    public closedDates?: string[];
     public ageLimit?: number;
     public coverChargeMale?: number;
     public coverChargeFemale?: number;
@@ -476,6 +479,12 @@ Venue.init(
             type: DataTypes.JSONB,
             allowNull: true,
             field: 'days_open',
+            defaultValue: [],
+        },
+        closedDates: {
+            type: DataTypes.JSONB,
+            allowNull: true,
+            field: 'closed_dates',
             defaultValue: [],
         },
         ageLimit: {

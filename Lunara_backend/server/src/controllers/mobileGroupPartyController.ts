@@ -4,6 +4,7 @@ import Venue from '../models/Venue';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import { logger } from '../config/logger';
+import { validateVenueTimingAndHolidays } from '../utils/venueValidator';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -66,6 +67,13 @@ export const createGroupParty = async (req: Request, res: Response): Promise<voi
         const venue = await Venue.findByPk(venueId);
         if (!venue) {
             res.status(404).json({ success: false, message: 'Venue not found' });
+            return;
+        }
+
+        // ── Validate Venue Timings and Holidays ────────────────────────────────
+        const timingValidation = validateVenueTimingAndHolidays(venue, partyDate);
+        if (!timingValidation.isValid) {
+            res.status(400).json({ success: false, message: timingValidation.reason });
             return;
         }
 

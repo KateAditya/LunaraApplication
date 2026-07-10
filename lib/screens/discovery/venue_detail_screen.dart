@@ -69,11 +69,23 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
 
   Future<void> _checkLocationAndForce({bool requestIfNeeded = false, bool showLoader = false}) async {
     if (showLoader && mounted) {
-      await Future.delayed(const Duration(milliseconds: 600));
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(color: LunaraTheme.cyberCyan),
+        ),
+      );
     }
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
+        if (requestIfNeeded) {
+          await Geolocator.openLocationSettings();
+        }
+        if (showLoader && mounted) {
+          Navigator.pop(context);
+        }
         return;
       }
 
@@ -89,6 +101,9 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
       }
 
       if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        if (showLoader && mounted) {
+          Navigator.pop(context);
+        }
         return;
       }
 
@@ -101,8 +116,14 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
           _currentPosition = position;
         });
       }
+      if (showLoader && mounted) {
+        Navigator.pop(context);
+      }
     } catch (e) {
       debugPrint('Error in _checkLocationAndForce: $e');
+      if (showLoader && mounted) {
+        Navigator.pop(context);
+      }
     }
   }
 

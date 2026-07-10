@@ -12,6 +12,7 @@ import 'package:intl/intl.dart';
 import '../../widgets/lunara_profile_image.dart';
 import '../../services/app_tour_service.dart';
 import 'package:lunara_app/screens/social/live_feed_screen.dart';
+import 'swipe_intro_screen.dart';
 
 class PlanHubScreen extends StatefulWidget {
   const PlanHubScreen({super.key});
@@ -67,11 +68,13 @@ class _PlanHubScreenState extends State<PlanHubScreen>
       7: 'Sunday',
     };
     final weekdayName = weekdaysMap[date.weekday];
+    if (weekdayName == null) return false;
+    
     return daysOpen.any((d) {
       final str = d.toString().trim().toLowerCase();
-      final fullDay = weekdayName?.toLowerCase();
-      final shortDay = weekdayName?.substring(0, 3).toLowerCase();
-      return str == fullDay || str == shortDay;
+      final fullDay = weekdayName.toLowerCase();
+      final shortDay = weekdayName.substring(0, 3).toLowerCase();
+      return str.contains(fullDay) || str.contains(shortDay);
     });
   }
 
@@ -493,7 +496,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => const PlanManagerSimulationScreen(),
+                  builder: (_) => const SwipeIntroScreen(),
                 ),
               );
             },
@@ -523,7 +526,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
-                      Icons.science_outlined,
+                      Icons.local_fire_department,
                       color: Colors.white,
                       size: 20,
                     ),
@@ -534,7 +537,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          'PLAN STATE SIMULATOR',
+                          'NIGHT MATCH (LIVE)',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 13,
@@ -544,7 +547,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Test 30m timers, ₹99 safety deposit, geo checks & lifetime bans.',
+                          'Swipe left to skip, right to vibe. Find your next party match!',
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.8),
                             fontSize: 10,

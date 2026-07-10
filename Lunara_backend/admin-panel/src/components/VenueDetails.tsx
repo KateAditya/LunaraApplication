@@ -260,6 +260,20 @@ export const VenueDetails: React.FC<VenueDetailsProps> = ({ venue, onClose }) =>
                     ))}
                 </div>
             </div>
+            {venue.operations.closedDates && venue.operations.closedDates.length > 0 && (
+                <div style={{ marginBottom: '0.875rem' }}>
+                    <div style={{ fontSize: '0.6875rem', color: 'var(--vz-text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: '0.375rem' }}>Holidays / Closed Dates</div>
+                    <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
+                        {venue.operations.closedDates.map((d: string) => (
+                            <span key={d} style={{
+                                padding: '0.25rem 0.5rem', borderRadius: 'var(--vz-radius)',
+                                fontSize: '0.6875rem', fontWeight: 600,
+                                background: 'rgba(239,68,68,0.1)', color: '#ef4444',
+                            }}>{d}</span>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             <div style={sectionTitle}>Capacity & Pricing</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
