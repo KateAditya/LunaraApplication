@@ -8,6 +8,8 @@ import 'party_plan_detail_screen.dart';
 import '../discovery/payment_confirmation_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'party_plan_ticket_screen.dart';
+import '../../models/user.dart';
+import '../profile/profile_screen.dart';
 
 class LiveFeedScreen extends StatefulWidget {
   final bool isTab;
@@ -1287,6 +1289,60 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     );
   }
 
+  void _onHostPayDeposit(Map<String, dynamic> plan, String? hostRazorpayOrderId) {
+    final venue = plan['venue'] ?? {};
+    final planId = plan['id']?.toString() ?? '';
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PaymentConfirmationScreen(
+          venue: venue,
+          date: plan['planDateTime'] != null ? DateFormat('dd/MM/yyyy').format(DateTime.parse(plan['planDateTime'])) : 'Tonight',
+          package: 'Party Plan Safety Deposit',
+          time: plan['planDateTime'] != null ? DateFormat('hh:mm a').format(DateTime.parse(plan['planDateTime'])) : '21:00',
+          table: 'Host Table',
+          guests: '1 Head',
+          totalPrice: '₹99',
+          showSplitBill: false,
+          razorpayOrderId: hostRazorpayOrderId ?? plan['hostRazorpayOrderId'],
+          onRazorpayPaymentSuccess: (paymentId, signature) async {
+            try {
+              final orderId = hostRazorpayOrderId ?? plan['hostRazorpayOrderId'] ?? 'mock_order';
+              final success = await ApiService.verifyHostPayment(planId, orderId, paymentId, signature);
+              if (!mounted) return;
+              if (success) {
+                _loadFeed(showLoader: false);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Payment Verification Failed.'), backgroundColor: Colors.red),
+                );
+              }
+            } catch (e) {
+              debugPrint('Payment verification error: $e');
+            }
+          },
+          onPaymentSuccess: () async {
+            try {
+              final orderId = hostRazorpayOrderId ?? plan['hostRazorpayOrderId'] ?? 'mock_order';
+              final success = await ApiService.verifyHostPayment(planId, orderId, 'mock_payment', 'mock_signature');
+              if (!mounted) return;
+              if (success) {
+                _loadFeed(showLoader: false);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Payment Verification Failed.'), backgroundColor: Colors.red),
+                );
+              }
+            } catch (e) {
+              debugPrint('Payment verification error: $e');
+            }
+          },
+        ),
+      ),
+    );
+  }
+
   // Incoming Request = Host seeing someone asking to join
   Widget _buildIncomingRequestCard(Map<String, dynamic> req) {
     final requester = req['requester'] ?? {};
@@ -1316,21 +1372,62 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                 LunaraProfileImage(
                   userData: requester,
                   radius: 20,
-                  isInteractive: false,
+                  isInteractive: true,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        '${requester['firstName'] ?? 'User'} wants to join',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                          color: isDark ? Colors.white : Colors.black87,
+                      GestureDetector(
+                        onTap: () {
+                          try {
+                            final userObj = User.fromJson(requester);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => ProfileScreen(user: userObj),
+                              ),
+                            );
+                          } catch (e) {
+                            debugPrint('Error navigating to profile screen: $e');
+                          }
+                        },
+                        child: Text(
+                          '${requester['firstName'] ?? 'User'} wants to join',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
                         ),
                       ),
+                      const SizedBox(height: 2),
+                      GestureDetector(
+                        onTap: () {
+                          try {
+                            final userObj = User.fromJson(requester);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => ProfileScreen(user: userObj),
+                              ),
+                            );
+                          } catch (e) {
+                            debugPrint('Error navigating to profile screen: $e');
+                          }
+                        },
+                        child: Text(
+                          'View Profile',
+                          style: TextStyle(
+                            color: LunaraTheme.electricViolet,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
                       Text(
                         'Your ${req['requestType'] == 'table_plan' ? 'Table Plan' : 'Party Plan'}',
                         style: TextStyle(
@@ -1362,8 +1459,18 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                       outline: false,
                       onTap: () async {
                         setState(() => _optimisticStates[reqId] = 'accepted');
-                        await ApiService.acceptPartyPlanRequest(reqId);
-                        _loadFeed(showLoader: false);
+                        final result = await ApiService.acceptPartyPlanRequest(reqId);
+                        if (result != null) {
+                          final hostOrderId = result['hostRazorpayOrderId']?.toString();
+                          if (hostOrderId != null) {
+                            final plan = req['plan'] ?? {};
+                            _onHostPayDeposit(plan, hostOrderId);
+                          } else {
+                            _loadFeed(showLoader: false);
+                          }
+                        } else {
+                          _loadFeed(showLoader: false);
+                        }
                       },
                     ),
                   ),

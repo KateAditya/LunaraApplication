@@ -1135,9 +1135,7 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                   outerContext,
                                   MaterialPageRoute(
                                     builder: (_) => PaymentConfirmationScreen(
-                                      venue: Map<String, dynamic>.from(
-                                        widget.venue,
-                                      ),
+                                      venue: widget.venue,
                                       date:
                                           '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
                                       package: 'Confirmation Charges',
