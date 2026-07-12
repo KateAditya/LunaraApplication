@@ -14,6 +14,7 @@ import {
     sendJoinRequest,
     handleJoinRequest,
     submitSettlementRequest,
+    updateChargesPerHead,
 } from '../controllers/strangersMeetController';
 
 const router = Router();
@@ -185,6 +186,21 @@ router.post(
         validate,
     ],
     submitSettlementRequest
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/mobile/strangers-meet/:id/charges
+// Host sets/updates chargesPerHead
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch(
+    '/:id/charges',
+    [
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
+        body('chargesPerHead').notEmpty().isFloat({ min: 0 }).withMessage('chargesPerHead is required and must be >= 0'),
+        validate,
+    ],
+    updateChargesPerHead
 );
 
 export default router;

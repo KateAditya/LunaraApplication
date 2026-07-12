@@ -134,6 +134,15 @@ class StrangersMeetTicketScreen extends StatelessWidget {
                               ),
                             ],
                           ),
+                          const SizedBox(height: 20),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildTicketDetail('CHARGES PER HEAD', '₹${request.chargesPerHead.toStringAsFixed(0)}'),
+                              ),
+                              const Spacer(),
+                            ],
+                          ),
                         ],
                       ),
                     ),

@@ -1265,3 +1265,63 @@ export const paySettlement = async (req: Request, res: Response): Promise<void> 
         res.status(500).json({ success: false, message: 'Failed to process settlement payment', error: err.message });
     }
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/mobile/strangers-meet/:id/charges
+// Host sets/updates chargesPerHead after payment
+// ─────────────────────────────────────────────────────────────────────────────
+export const updateChargesPerHead = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { userId, chargesPerHead } = req.body;
+
+        if (!userId) {
+            res.status(400).json({ success: false, message: 'userId is required' });
+            return;
+        }
+
+        if (chargesPerHead === undefined || chargesPerHead === null || isNaN(Number(chargesPerHead))) {
+            res.status(400).json({ success: false, message: 'chargesPerHead must be a valid number' });
+            return;
+        }
+
+        const parsedCharges = Number(chargesPerHead);
+        if (parsedCharges < 0) {
+            res.status(400).json({ success: false, message: 'chargesPerHead cannot be negative' });
+            return;
+        }
+
+        const request = await StrangersMeetRequest.findByPk(id);
+        if (!request) {
+            res.status(404).json({ success: false, message: 'Request not found' });
+            return;
+        }
+
+        if (request.userId !== userId) {
+            res.status(403).json({ success: false, message: 'Unauthorized' });
+            return;
+        }
+
+        if (request.paymentStatus !== StrangersMeetPaymentStatus.PAID) {
+            res.status(400).json({ success: false, message: 'You must pay the deposit before setting charges per head' });
+            return;
+        }
+
+        await request.update({
+            chargesPerHead: parsedCharges,
+        });
+
+        res.json({
+            success: true,
+            message: 'Charges per head updated successfully',
+            data: {
+                id: request.id,
+                chargesPerHead: request.chargesPerHead,
+            }
+        });
+    } catch (err: any) {
+        logger.error('updateChargesPerHead error:', err);
+        res.status(500).json({ success: false, message: 'Failed to update charges per head', error: err.message });
+    }
+};
+

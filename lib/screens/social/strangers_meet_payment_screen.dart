@@ -133,42 +133,7 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
 
     if (result != null) {
       widget.onPaymentSuccess();
-      
-      // Update the request with ticket info before passing
-      final updatedReq = StrangersMeetRequest(
-        id: widget.request.id,
-        subject: widget.request.subject,
-        tagline: widget.request.tagline,
-        eventDateTime: widget.request.eventDateTime,
-        numberOfPersons: widget.request.numberOfPersons,
-        chargesPerHead: widget.request.chargesPerHead,
-        slotsFilled: widget.request.slotsFilled,
-        status: widget.request.status,
-        paymentAmount: widget.request.paymentAmount,
-        paymentStatus: 'paid',
-        adminNotes: widget.request.adminNotes,
-        ticketId: result['ticketId'],
-        createdAt: widget.request.createdAt,
-        mobileNumber: widget.request.mobileNumber,
-        alternateMobileNumber: widget.request.alternateMobileNumber,
-        settlementStatus: widget.request.settlementStatus,
-        bankDetails: widget.request.bankDetails,
-        settlementTransactionId: widget.request.settlementTransactionId,
-        settlementAmount: widget.request.settlementAmount,
-        settlementDate: widget.request.settlementDate,
-        settlementMethod: widget.request.settlementMethod,
-        user: widget.request.user,
-        venue: widget.request.venue,
-        joiners: widget.request.joiners,
-      );
-
-      // Replace current screen with Ticket Screen
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => StrangersMeetTicketScreen(request: updatedReq),
-        ),
-      );
+      _promptChargesPerHead(result);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -178,6 +143,263 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
       );
     }
   }
+
+  Future<void> _promptChargesPerHead(Map<String, dynamic> result) async {
+    final TextEditingController chargesController = TextEditingController(text: '199');
+    double selectedCharges = 199.0;
+    bool isSaving = false;
+
+    await showModalBottomSheet(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(28),
+                    topRight: Radius.circular(28),
+                  ),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Handle indicator
+                    Center(
+                      child: Container(
+                        width: 48,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    const Text(
+                      '💵 Decide Entry Price',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Set the charge per head (per seat) that other users will pay to join your Strangers Meet. Set ₹0 to make it free.',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Custom Input Field
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.grey[200]!),
+                      ),
+                      child: TextField(
+                        controller: chargesController,
+                        keyboardType: TextInputType.number,
+                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                        decoration: const InputDecoration(
+                          hintText: 'Enter charges per head',
+                          prefixText: '₹ ',
+                          border: InputBorder.none,
+                        ),
+                        onChanged: (val) {
+                          setModalState(() {
+                            selectedCharges = double.tryParse(val) ?? 0.0;
+                          });
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Quick Selection Chips
+                    const Text(
+                      'QUICK SELECTIONS',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        _buildQuickChip('Free', 0.0, selectedCharges, (val) {
+                          setModalState(() {
+                            selectedCharges = val;
+                            chargesController.text = val.toStringAsFixed(0);
+                          });
+                        }),
+                        const SizedBox(width: 8),
+                        _buildQuickChip('₹99', 99.0, selectedCharges, (val) {
+                          setModalState(() {
+                            selectedCharges = val;
+                            chargesController.text = val.toStringAsFixed(0);
+                          });
+                        }),
+                        const SizedBox(width: 8),
+                        _buildQuickChip('₹199', 199.0, selectedCharges, (val) {
+                          setModalState(() {
+                            selectedCharges = val;
+                            chargesController.text = val.toStringAsFixed(0);
+                          });
+                        }),
+                        const SizedBox(width: 8),
+                        _buildQuickChip('₹499', 499.0, selectedCharges, (val) {
+                          setModalState(() {
+                            selectedCharges = val;
+                            chargesController.text = val.toStringAsFixed(0);
+                          });
+                        }),
+                      ],
+                    ),
+                    const SizedBox(height: 32),
+
+                    // Confirm and Publish Button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 56,
+                      child: ElevatedButton(
+                        onPressed: isSaving
+                            ? null
+                            : () async {
+                                if (selectedCharges < 0) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Charges cannot be negative')),
+                                  );
+                                  return;
+                                }
+                                setModalState(() {
+                                  isSaving = true;
+                                });
+
+                                final success = await ApiService.updateStrangersMeetCharges(
+                                  widget.request.id,
+                                  selectedCharges,
+                                );
+
+                                if (success) {
+                                  Navigator.pop(context); // Close bottom sheet
+                                  
+                                  // Update the local request
+                                  final updatedReq = StrangersMeetRequest(
+                                    id: widget.request.id,
+                                    subject: widget.request.subject,
+                                    tagline: widget.request.tagline,
+                                    eventDateTime: widget.request.eventDateTime,
+                                    numberOfPersons: widget.request.numberOfPersons,
+                                    chargesPerHead: selectedCharges,
+                                    slotsFilled: widget.request.slotsFilled,
+                                    status: widget.request.status,
+                                    paymentAmount: widget.request.paymentAmount,
+                                    paymentStatus: 'paid',
+                                    adminNotes: widget.request.adminNotes,
+                                    ticketId: result['ticketId'],
+                                    createdAt: widget.request.createdAt,
+                                    mobileNumber: widget.request.mobileNumber,
+                                    alternateMobileNumber: widget.request.alternateMobileNumber,
+                                    settlementStatus: widget.request.settlementStatus,
+                                    bankDetails: widget.request.bankDetails,
+                                    settlementTransactionId: widget.request.settlementTransactionId,
+                                    settlementAmount: widget.request.settlementAmount,
+                                    settlementDate: widget.request.settlementDate,
+                                    settlementMethod: widget.request.settlementMethod,
+                                    user: widget.request.user,
+                                    venue: widget.request.venue,
+                                    joiners: widget.request.joiners,
+                                  );
+
+                                  // Push to Ticket Screen
+                                  if (mounted) {
+                                    Navigator.pushReplacement(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => StrangersMeetTicketScreen(request: updatedReq),
+                                      ),
+                                    );
+                                  }
+                                } else {
+                                  setModalState(() {
+                                    isSaving = false;
+                                  });
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Failed to update charges per head. Please try again.'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: LunaraTheme.electricViolet,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: isSaving
+                            ? const CircularProgressIndicator(color: Colors.white)
+                            : const Text(
+                                'PUBLISH MEETUP',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                  letterSpacing: 1,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildQuickChip(String label, double value, double currentValue, ValueChanged<double> onTap) {
+    final isSelected = value == currentValue;
+    return GestureDetector(
+      onTap: () => onTap(value),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? LunaraTheme.electricViolet : Colors.grey[100],
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? LunaraTheme.electricViolet : Colors.grey[200]!,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.white : Colors.grey[800],
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+        ),
+      ),
+    );
+  }
+
 
   @override
   Widget build(BuildContext context) {

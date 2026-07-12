@@ -861,6 +861,28 @@ class ApiService {
     return null;
   }
 
+  static Future<bool> updateStrangersMeetCharges(String id, double chargesPerHead) async {
+    final userId = currentUserId;
+    if (userId == null) return false;
+
+    try {
+      final response = await patch(
+        '/api/mobile/strangers-meet/$id/charges',
+        body: {
+          'userId': userId,
+          'chargesPerHead': chargesPerHead,
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      debugPrint('updateStrangersMeetCharges error: $e');
+    }
+    return false;
+  }
+
   static Future<Map<String, dynamic>?> initiateStrangersMeetJoinPayment(
     String id,
   ) async {
