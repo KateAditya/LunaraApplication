@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { 
-    BiLayout, BiPlus, BiPencil, BiTrash, BiCopy, BiArchive, 
-    BiCheckCircle, BiXCircle, BiRefresh, BiDollar, BiUserCheck, 
-    BiTrendingUp, BiTimeFive, BiShieldQuarter, BiCrown, BiRocket, 
-    BiCheck, BiSearch, BiSliders, BiListUl, BiTrendingDown, BiCalendar
+    BiPlus, BiPencil, BiTrash, BiCopy, BiArchive, 
+    BiCheckCircle, BiRefresh, BiDollar, BiUserCheck, 
+    BiTrendingUp, BiCrown, 
+    BiSlider, BiTrendingDown, BiCalendar
 } from 'react-icons/bi';
 import { 
     subscriptionsApi, 
@@ -32,7 +32,6 @@ export const SubscriptionManagement: React.FC = () => {
     const [txTotalPages, setTxTotalPages] = useState(1);
     const [txStatus, setTxStatus] = useState('');
     const [txType, setTxType] = useState('');
-    const [txSearch, setTxSearch] = useState('');
 
     // Modal state
     const [showPlanModal, setShowPlanModal] = useState(false);
@@ -309,7 +308,7 @@ export const SubscriptionManagement: React.FC = () => {
                 {[
                     { id: 'analytics', label: 'Overview & Stats', icon: <BiTrendingUp /> },
                     { id: 'plans', label: 'Subscription Tiers', icon: <BiCrown /> },
-                    { id: 'features', label: 'Feature Catalog & Matrix', icon: <BiSliders /> },
+                    { id: 'features', label: 'Feature Catalog & Matrix', icon: <BiSlider /> },
                     { id: 'transactions', label: 'Transactions & Invoices', icon: <BiCalendar /> }
                 ].map(t => (
                     <button
@@ -472,7 +471,7 @@ export const SubscriptionManagement: React.FC = () => {
                                                 <BiPencil /> Edit
                                             </button>
                                             <button onClick={() => handleOpenFeatureMatrix(p)} className="btn btn-sm btn-outline-primary" title="Edit Feature Matrix">
-                                                <BiSliders /> Features
+                                                <BiSlider /> Features
                                             </button>
                                             <button onClick={() => handleDuplicatePlan(p.id)} className="btn btn-sm btn-outline-info" title="Duplicate Plan">
                                                 <BiCopy />
@@ -637,6 +636,29 @@ export const SubscriptionManagement: React.FC = () => {
                                         ))}
                                     </tbody>
                                 </table>
+                            </div>
+                            
+                            {/* Pagination Controls */}
+                            <div className="d-flex justify-content-between align-items-center p-3 border-top" style={{ borderColor: colors.border }}>
+                                <div style={{ fontSize: '0.8rem', color: colors.textMuted }}>
+                                    Page {txPage} of {txTotalPages}
+                                </div>
+                                <div className="d-flex gap-2">
+                                    <button 
+                                        className="btn btn-sm btn-outline-secondary" 
+                                        disabled={txPage <= 1} 
+                                        onClick={() => setTxPage(prev => Math.max(1, prev - 1))}
+                                    >
+                                        Previous
+                                    </button>
+                                    <button 
+                                        className="btn btn-sm btn-outline-secondary" 
+                                        disabled={txPage >= txTotalPages} 
+                                        onClick={() => setTxPage(prev => Math.min(txTotalPages, prev + 1))}
+                                    >
+                                        Next
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
