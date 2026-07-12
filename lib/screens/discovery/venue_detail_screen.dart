@@ -10,6 +10,9 @@ import '../../services/google_places_service.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../services/app_tour_service.dart';
+import '../../services/api_service.dart';
+import 'package:intl/intl.dart';
+import 'upcoming_party_screen.dart';
 
 
 
@@ -29,6 +32,7 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
   int? _googleRatingCount;
   bool _isLoadingRating = true;
   Position? _currentPosition;
+  List<Map<String, dynamic>> _venueEvents = [];
 
   StreamSubscription<ServiceStatus>? _serviceStatusSubscription;
 
@@ -37,6 +41,7 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _loadGoogleRating();
+    _loadVenueEvents();
     _checkLocationAndForce(requestIfNeeded: false);
     if (!kIsWeb) {
       _serviceStatusSubscription = Geolocator.getServiceStatusStream().listen((status) {
@@ -143,6 +148,53 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
       }
     } else if (mounted) {
       setState(() => _isLoadingRating = false);
+    }
+  }
+
+  Future<void> _loadVenueEvents() async {
+    try {
+      final activeAds = await ApiService.fetchActiveAds(
+        city: ApiService.selectedCity,
+        type: 'Party',
+      );
+      if (activeAds.isNotEmpty && mounted) {
+        final venueId = venue['id'];
+        final matchingEvents = activeAds.where((ad) => ad['venueId'] == venueId).map((ad) {
+          final venueMap = ad['venue'] as Map<String, dynamic>? ?? {};
+          final imageUrl = ad['imagePath'] != null
+              ? (ad['imagePath'].toString().startsWith('http')
+                    ? ad['imagePath'].toString()
+                    : '${ApiService.baseUrl}${ad['imagePath']}')
+              : '';
+
+          String dateStr = ad['toDate'] ?? ad['fromDate'] ?? '';
+          if (dateStr.isNotEmpty) {
+            try {
+              final dt = DateTime.parse(dateStr);
+              dateStr = DateFormat('EEEE, MMM dd').format(dt);
+            } catch (_) {}
+          } else {
+            dateStr = 'Upcoming';
+          }
+
+          return {
+            'title': ad['title'] ?? ad['description'] ?? 'Special Event',
+            'date': dateStr,
+            'venue': venueMap['name'] ?? venue['name'] ?? 'Unknown Venue',
+            'image': imageUrl,
+            'isAsset': false,
+            'venueId': ad['venueId'],
+            'venueMap': venueMap.isNotEmpty ? venueMap : venue,
+            'aboutEvent': ad['aboutEvent'],
+          };
+        }).toList();
+
+        setState(() {
+          _venueEvents = matchingEvents;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading venue events: $e');
     }
   }
 
@@ -845,6 +897,12 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
                     _buildDiscountBanner(discountVal),
                     const SizedBox(height: 24),
                   ],
+                  if (_venueEvents.isNotEmpty) ...[
+                    _sectionHeading('UPCOMING NIGHTS'),
+                    const SizedBox(height: 16),
+                    _buildUpcomingNightsSection(),
+                    const SizedBox(height: 32),
+                  ],
                   if (interiorImages.isNotEmpty) ...[
                     _buildGallerySection('INTERIOR GALLERY', interiorImages),
                     const SizedBox(height: 32),
@@ -1010,6 +1068,194 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
             ),
           );
         }),
+      ),
+    );
+  }
+
+  Widget _buildUpcomingNightsSection() {
+    return SizedBox(
+      height: 240,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: _venueEvents.length,
+        itemBuilder: (context, index) {
+          final night = _venueEvents[index];
+          return RepaintBoundary(
+            child: Container(
+              width: 280,
+              margin: const EdgeInsets.only(right: 16),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: LunaraTheme.electricViolet.withValues(alpha: 0.15),
+                    blurRadius: 12,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+                border: Border.all(
+                  color: Colors.grey[200]!,
+                  width: 1,
+                ),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: night['image']!.isNotEmpty
+                          ? Image.network(
+                              night['image']!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  Container(
+                                    color: Colors.grey[900],
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.broken_image_outlined,
+                                        color: Colors.white54,
+                                        size: 40,
+                                      ),
+                                    ),
+                                  ),
+                              loadingBuilder:
+                                  (context, child, loadingProgress) {
+                                    if (loadingProgress == null) return child;
+                                    return Container(
+                                      color: Colors.grey[900],
+                                      child: const Center(
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                Colors.white,
+                                              ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                            )
+                          : Container(
+                              color: Colors.grey[900],
+                              child: const Center(
+                                child: Icon(
+                                  Icons.event_note,
+                                  color: Colors.white54,
+                                  size: 40,
+                                ),
+                              ),
+                            ),
+                    ),
+                    Positioned.fill(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.black.withValues(alpha: 0.1),
+                              Colors.black.withValues(alpha: 0.25),
+                              Colors.black.withValues(alpha: 0.8),
+                            ],
+                            stops: const [0.2, 0.5, 1.0],
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: 16,
+                      right: 16,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFE100FF), Color(0xFF7F00FF)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(10),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(
+                                0xFFE100FF,
+                              ).withValues(alpha: 0.3),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Text(
+                          night['date']!.toUpperCase(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 16,
+                      left: 16,
+                      right: 16,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            night['title']!.toUpperCase(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (night['aboutEvent'] != null && night['aboutEvent'].toString().trim().isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              night['aboutEvent'],
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 10,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    Positioned.fill(
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => UpcomingPartyScreen(
+                                  party: night,
+                                  venueMap: venue,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

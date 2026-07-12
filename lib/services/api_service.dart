@@ -1807,6 +1807,27 @@ class ApiService {
     return null;
   }
 
+  /// Host proceeds to pay deposit after accepting
+  static Future<Map<String, dynamic>?> initiateHostPayment(
+    String planId,
+  ) async {
+    final userId = currentUserId;
+    if (userId == null) return null;
+    try {
+      final response = await post(
+        '/api/mobile/party-plans/$planId/initiate-host-payment',
+        body: {'userId': userId},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) return data;
+      }
+    } catch (e) {
+      debugPrint('initiateHostPayment error: $e');
+    }
+    return null;
+  }
+
   static Future<http.Response> postMultipart(
     String endpoint, {
     Map<String, String>? fields,
@@ -1960,7 +1981,152 @@ class ApiService {
         return data['success'] == true;
       }
     } catch (e) {
-      debugPrint('updateAdminChatSettings error: \$e');
+      debugPrint('updateAdminChatSettings error: $e');
+    }
+    return false;
+  }
+
+  static Future<Map<String, dynamic>?> initiateLargePartyPayment(String bookingId) async {
+    try {
+      final response = await post(
+        '/api/mobile/bookings/$bookingId/initiate-large-party-payment',
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return Map<String, dynamic>.from(data);
+        }
+      }
+    } catch (e) {
+      debugPrint('initiateLargePartyPayment error: $e');
+    }
+    return null;
+  }
+
+  static Future<bool> verifyLargePartyPayment(
+    String bookingId, {
+    required String razorpayOrderId,
+    required String razorpayPaymentId,
+    required String razorpaySignature,
+  }) async {
+    try {
+      final response = await post(
+        '/api/mobile/bookings/$bookingId/verify-large-party-payment',
+        body: {
+          'razorpay_order_id': razorpayOrderId,
+          'razorpay_payment_id': razorpayPaymentId,
+          'razorpay_signature': razorpaySignature,
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      debugPrint('verifyLargePartyPayment error: $e');
+    }
+    return false;
+  }
+
+  // ── Swipe Status & Subscription Limits ────────────────────────────────────
+
+  /// Returns the current user's swipe action on [targetUserId] today,
+  /// and the plan limits so the UI can enforce them without a server round-trip.
+  /// Response: { alreadyLiked, alreadySuperLiked, dailyLikesLimit, dailyLikesUsed,
+  ///             superlikesRemaining, superlikesPerCycle }
+  static Future<Map<String, dynamic>> fetchSwipeStatus(String targetUserId) async {
+    final userId = currentUserId;
+    if (userId == null) return {};
+    try {
+      final response = await get(
+        '/api/mobile/user/swipe-status',
+        queryParameters: {'userId': userId, 'targetUserId': targetUserId},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return Map<String, dynamic>.from(data['data']);
+        }
+      }
+    } catch (e) {
+      debugPrint('fetchSwipeStatus error: $e');
+    }
+    return {};
+  }
+
+  /// Returns the current user's subscription summary:
+  /// dailyLikesLimit, dailyLikesUsed, superlikesRemaining, superlikesPerCycle
+  static Future<Map<String, dynamic>> fetchUserSubscription() async {
+    final userId = currentUserId;
+    if (userId == null) return {};
+    try {
+      final response = await get(
+        '/api/mobile/subscriptions/current',
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return Map<String, dynamic>.from(data['data']);
+        }
+      }
+    } catch (e) {
+      debugPrint('fetchUserSubscription error: $e');
+    }
+    return {};
+  }
+
+  static Future<Map<String, dynamic>?> createGroupParty({
+    required String venueId,
+    required int numberOfFriends,
+    required String partyDate,
+    required String mobileNumber,
+    String? optionalMobileNumber,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) return null;
+    try {
+      final response = await post(
+        '/api/mobile/group-parties',
+        body: {
+          'userId': userId,
+          'venueId': venueId,
+          'numberOfFriends': numberOfFriends,
+          'partyDate': partyDate,
+          'mobileNumber': mobileNumber.trim(),
+          if (optionalMobileNumber != null && optionalMobileNumber.trim().isNotEmpty)
+            'optionalMobileNumber': optionalMobileNumber.trim(),
+        },
+      );
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) return data;
+      }
+    } catch (e) {
+      debugPrint('createGroupParty error: $e');
+    }
+    return null;
+  }
+
+  static Future<bool> verifyGroupPartyPayment({
+    required String razorpayOrderId,
+    required String razorpayPaymentId,
+    required String razorpaySignature,
+  }) async {
+    try {
+      final response = await post(
+        '/api/mobile/group-parties/verify',
+        body: {
+          'razorpay_order_id': razorpayOrderId,
+          'razorpay_payment_id': razorpayPaymentId,
+          'razorpay_signature': razorpaySignature,
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      debugPrint('verifyGroupPartyPayment error: $e');
     }
     return false;
   }

@@ -182,12 +182,29 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
           if (isActive) {
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const CheckInAssistScreen()),
+              MaterialPageRoute(
+                builder: (_) => CheckInAssistScreen(
+                  venueName: ticket.venue,
+                  date: ticket.date,
+                  table: ticket.table,
+                  guests: ticket.guests.toString(),
+                  imageUrl: ticket.imageUrl,
+                  status: ticket.status,
+                ),
+              ),
             );
           } else {
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const DigitalTicketScreen()),
+              MaterialPageRoute(
+                builder: (_) => DigitalTicketScreen(
+                  venue: {'name': ticket.venue, 'imageUrl': ticket.imageUrl},
+                  date: ticket.date,
+                  table: ticket.table,
+                  guests: ticket.guests.toString(),
+                  package: 'Table Booking',
+                ),
+              ),
             );
           }
         },

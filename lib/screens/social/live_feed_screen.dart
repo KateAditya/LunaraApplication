@@ -13,7 +13,9 @@ import '../profile/profile_screen.dart';
 
 class LiveFeedScreen extends StatefulWidget {
   final bool isTab;
-  const LiveFeedScreen({super.key, this.isTab = false});
+  final VoidCallback? onCountChanged;
+  final int initialTabIndex;
+  const LiveFeedScreen({super.key, this.isTab = false, this.onCountChanged, this.initialTabIndex = 0});
 
   @override
   State<LiveFeedScreen> createState() => _LiveFeedScreenState();
@@ -34,10 +36,14 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
   final Map<String, String> _optimisticStates = {};
   final Set<String> _readRequestIds = {};
 
+  // Locally-read notification IDs — persist across polls so server stale data
+  // doesn't re-show the badge after the user has already dismissed it.
+  final Set<String> _localReadNotificationIds = {};
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 3, vsync: this, initialIndex: widget.initialTabIndex);
     _tabController.addListener(_handleTabChange);
     _pulseController = AnimationController(
       vsync: this,
@@ -252,14 +258,19 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     List<String> unreadIds = [];
     for (var n in _notifications) {
       final nId = n['id']?.toString() ?? '';
-      final isRead = n['isRead'] == true || n['read'] == true;
+      final isRead = n['isRead'] == true ||
+          n['read'] == true ||
+          _localReadNotificationIds.contains(nId);
       if (!isRead && nId.isNotEmpty) {
         unreadIds.add(nId);
       }
     }
     if (unreadIds.isEmpty) return;
 
-    // Optimistically mark all notifications as read
+    // Persist locally so future polls don't revert these to unread
+    _localReadNotificationIds.addAll(unreadIds);
+
+    // Optimistically mark all notifications as read in local state
     setState(() {
       for (var n in _notifications) {
         final nId = n['id']?.toString() ?? '';
@@ -270,24 +281,35 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
       }
     });
 
+    widget.onCountChanged?.call();
+
+    // Fire-and-forget: send to server; local state is already correct
     for (var nId in unreadIds) {
-      await ApiService.markNotificationRead(nId);
+      ApiService.markNotificationRead(nId);
     }
   }
 
   Future<void> _markNotificationAsRead(Map<String, dynamic> notif) async {
-    final isRead = notif['isRead'] == true || notif['read'] == true;
+    final nId = notif['id']?.toString() ?? '';
+    final isRead = notif['isRead'] == true ||
+        notif['read'] == true ||
+        _localReadNotificationIds.contains(nId);
     if (isRead) return;
 
-    final nId = notif['id']?.toString() ?? '';
     if (nId.isEmpty) return;
+
+    // Persist locally so future polls don't revert this
+    _localReadNotificationIds.add(nId);
 
     setState(() {
       notif['read'] = true;
       notif['isRead'] = true;
     });
 
-    await ApiService.markNotificationRead(nId);
+    widget.onCountChanged?.call();
+
+    // Fire-and-forget: local state already updated
+    ApiService.markNotificationRead(nId);
   }
 
   Future<void> _clearAllNotifications() async {
@@ -315,9 +337,16 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     );
 
     if (confirm == true) {
+      // Persist all current notification IDs locally so they don't reappear
+      // on the next poll even if the server hasn't cleared them yet.
+      for (final n in _notifications) {
+        final nId = n['id']?.toString() ?? '';
+        if (nId.isNotEmpty) _localReadNotificationIds.add(nId);
+      }
       setState(() {
         _notifications.clear();
       });
+      widget.onCountChanged?.call();
       final success = await ApiService.clearAllNotifications();
       if (!success) {
         if (mounted) {
@@ -339,8 +368,12 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
       final data = await ApiService.fetchLiveFeedData();
       final notifs = await ApiService.fetchNotifications();
 
+      final currentUserId = ApiService.currentUserId;
       List<Map<String, dynamic>> combined = [
-        ...List<Map<String, dynamic>>.from(data['feed'] ?? []),
+        ...List<Map<String, dynamic>>.from(data['feed'] ?? []).where((item) {
+          final hostId = (item['host']?['id'] ?? item['userId'] ?? '').toString();
+          return hostId == currentUserId;
+        }),
         ...List<Map<String, dynamic>>.from(data['myRequests'] ?? []),
         ...List<Map<String, dynamic>>.from(data['incomingRequests'] ?? []),
       ];
@@ -362,10 +395,18 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
       if (mounted) {
         setState(() {
           _feedItems = combined;
-          _notifications = notifs;
+          // Re-apply local read state so polling never reverts dismissed notifications
+          _notifications = notifs.map((n) {
+            final nId = n['id']?.toString() ?? '';
+            if (_localReadNotificationIds.contains(nId)) {
+              return {...n, 'read': true, 'isRead': true};
+            }
+            return n;
+          }).toList();
           _isLoading = false;
         });
         _markCurrentTabItemsAsRead();
+        widget.onCountChanged?.call();
       }
     } catch (e) {
       debugPrint('Error loading live feed: $e');
@@ -707,9 +748,17 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     final host = post['host'] ?? {};
     final venue = post['venue'] ?? {};
     final isMyPost = host['id']?.toString() == ApiService.currentUserId;
-    final formattedDate = _formatPlanDate(post['planDate']);
+    final formattedDate = _formatPlanDate(post['planDateTime'] ?? post['planDate']);
     final timeAgo = _formatTimeAgo(post['postedAt']);
-    final planTime = post['startTime'] ?? '21:00';
+    String planTime = '21:00';
+    if (post['planDateTime'] != null) {
+      try {
+        final parsedDt = DateTime.parse(post['planDateTime'].toString()).toLocal();
+        planTime = DateFormat('hh:mm a').format(parsedDt);
+      } catch (_) {}
+    } else if (post['startTime'] != null) {
+      planTime = post['startTime'];
+    }
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -972,9 +1021,17 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     final host = plan['host'] ?? {};
     final venue = plan['venue'] ?? {};
     final isMyPost = host['id']?.toString() == ApiService.currentUserId;
-    final formattedDate = _formatPlanDate(plan['planDate']);
+    final formattedDate = _formatPlanDate(plan['planDateTime'] ?? plan['planDate']);
     final timeAgo = _formatTimeAgo(plan['postedAt']);
-    final planTime = plan['startTime'] ?? '21:00';
+    String planTime = '21:00';
+    if (plan['planDateTime'] != null) {
+      try {
+        final parsedDt = DateTime.parse(plan['planDateTime'].toString()).toLocal();
+        planTime = DateFormat('hh:mm a').format(parsedDt);
+      } catch (_) {}
+    } else if (plan['startTime'] != null) {
+      planTime = plan['startTime'];
+    }
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -1298,9 +1355,9 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
       MaterialPageRoute(
         builder: (_) => PaymentConfirmationScreen(
           venue: venue,
-          date: plan['planDateTime'] != null ? DateFormat('dd/MM/yyyy').format(DateTime.parse(plan['planDateTime'])) : 'Tonight',
+          date: plan['planDateTime'] != null ? DateFormat('dd/MM/yyyy').format(DateTime.parse(plan['planDateTime']).toLocal()) : 'Tonight',
           package: 'Party Plan Safety Deposit',
-          time: plan['planDateTime'] != null ? DateFormat('hh:mm a').format(DateTime.parse(plan['planDateTime'])) : '21:00',
+          time: plan['planDateTime'] != null ? DateFormat('hh:mm a').format(DateTime.parse(plan['planDateTime']).toLocal()) : '21:00',
           table: 'Host Table',
           guests: '1 Head',
           totalPrice: '₹99',
@@ -1343,6 +1400,28 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     );
   }
 
+  void _startHostPayment(String planId, Map<String, dynamic> plan) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final data = await ApiService.initiateHostPayment(planId);
+    if (mounted) Navigator.pop(context);
+
+    if (data != null && mounted) {
+      final orderId = data['razorpayOrderId']?.toString();
+      _onHostPayDeposit(plan, orderId);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to initiate payment. Please try again.'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   // Incoming Request = Host seeing someone asking to join
   Widget _buildIncomingRequestCard(Map<String, dynamic> req) {
     final requester = req['requester'] ?? {};
@@ -1353,17 +1432,29 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
         req['status']?.toString().toLowerCase() ??
         'pending';
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final hostPaid = req['plan']?['hostPaymentStatus'] == 'paid' || req['planDetails']?['hostPaymentStatus'] == 'paid';
+    final joinerPaid = req['joinerPaymentStatus'] == 'paid';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: LunaraTheme.primaryDeep.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(18),
+          color: isDark ? const Color(0xFF1E1428) : Colors.white,
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: LunaraTheme.primaryDeep.withValues(alpha: 0.3),
+            color: isDark 
+                ? LunaraTheme.hotPink.withValues(alpha: 0.4) 
+                : LunaraTheme.hotPink.withValues(alpha: 0.3),
+            width: 1.5,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: LunaraTheme.hotPink.withValues(alpha: isDark ? 0.15 : 0.05),
+              blurRadius: 16,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
         child: Column(
           children: [
@@ -1399,31 +1490,6 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                             fontWeight: FontWeight.bold,
                             fontSize: 14,
                             color: isDark ? Colors.white : Colors.black87,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      GestureDetector(
-                        onTap: () {
-                          try {
-                            final userObj = User.fromJson(requester);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => ProfileScreen(user: userObj),
-                              ),
-                            );
-                          } catch (e) {
-                            debugPrint('Error navigating to profile screen: $e');
-                          }
-                        },
-                        child: Text(
-                          'View Profile',
-                          style: TextStyle(
-                            color: LunaraTheme.electricViolet,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                            decoration: TextDecoration.underline,
                           ),
                         ),
                       ),
@@ -1490,81 +1556,129 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                   ),
                 ],
               ),
-            ] else if (currentStatus == 'accepted' || currentStatus == 'paid') ...[
-              // Both payments confirmed — show VIEW TICKET for the host
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  children: [
-                    const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.check_circle, color: Colors.green, size: 16),
-                        SizedBox(width: 6),
-                        Text(
-                          'BOOKING CONFIRMED 🎉',
-                          style: TextStyle(
-                            color: Colors.green,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
+            ] else if (currentStatus == 'accepted' || currentStatus == 'paid' || currentStatus == 'payment_pending') ...[
+              if (hostPaid && joinerPaid) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    children: [
+                      const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.check_circle, color: Colors.green, size: 16),
+                          SizedBox(width: 6),
+                          Text(
+                            'BOOKING CONFIRMED 🎉',
+                            style: TextStyle(
+                              color: Colors.green,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 40,
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            final plan = req['plan'] ?? {};
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => PartyPlanTicketScreen(
+                                  request: req,
+                                  plan: plan,
+                                  isHost: true,
+                                ),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.qr_code_rounded, size: 16, color: Colors.white),
+                          label: const Text(
+                            'VIEW TICKET',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: LunaraTheme.electricViolet,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           ),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 40,
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          final plan = req['plan'] ?? {};
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => PartyPlanTicketScreen(
-                                request: req,
-                                plan: plan,
-                                isHost: true,
-                              ),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else if (!hostPaid) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: LunaraTheme.accentVivid.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    children: [
+                      const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.warning_amber_rounded, color: LunaraTheme.accentVivid, size: 16),
+                          SizedBox(width: 6),
+                          Text(
+                            'HOST DEPOSIT UNPAID',
+                            style: TextStyle(
+                              color: LunaraTheme.accentVivid,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
                             ),
-                          );
-                        },
-                        icon: const Icon(Icons.qr_code_rounded, size: 16, color: Colors.white),
-                        label: const Text(
-                          'VIEW TICKET',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: LunaraTheme.electricViolet,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 40,
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            final plan = req['plan'] ?? {};
+                            _startHostPayment(req['planId']?.toString() ?? '', plan);
+                          },
+                          icon: const Icon(Icons.payment, size: 16, color: Colors.white),
+                          label: const Text(
+                            'PAY NOW (₹99)',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: LunaraTheme.accentVivid,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ] else if (currentStatus == 'payment_pending') ...[
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Center(
-                  child: Text(
-                    'WAITING FOR PAYMENT',
-                    style: TextStyle(
-                      color: Colors.orange,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
+              ] else ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'AWAITING PARTICIPANT PAYMENT',
+                      style: TextStyle(
+                        color: Colors.orange,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
                     ),
                   ),
                 ),
-              ),
+              ],
             ] else ...[
               Container(
                 padding: const EdgeInsets.all(12),
@@ -1608,11 +1722,21 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: LunaraTheme.accentVivid.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(18),
+          color: isDark ? const Color(0xFF101E24) : Colors.white,
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: LunaraTheme.accentVivid.withValues(alpha: 0.3),
+            color: isDark 
+                ? LunaraTheme.cyberCyan.withValues(alpha: 0.4) 
+                : LunaraTheme.cyberCyan.withValues(alpha: 0.3),
+            width: 1.5,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: LunaraTheme.cyberCyan.withValues(alpha: isDark ? 0.12 : 0.05),
+              blurRadius: 16,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
         child: Column(
           children: [
@@ -1689,21 +1813,107 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
               ] else if (currentStatus == 'approved') ...[
                 Container(
                   padding: const EdgeInsets.all(12),
-                  width: double.infinity,
                   decoration: BoxDecoration(
                     color: Colors.blue.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
                   ),
-                  child: const Center(
-                    child: Text(
-                      'APPROVED! AWAITING PAYMENT LINK FROM ADMIN',
-                      style: TextStyle(
-                        color: Colors.blue,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 11,
+                  child: Column(
+                    children: [
+                      Text(
+                        'APPROVED! PAYMENT REQUIRED: ₹${booking['totalAmount'] ?? '0'}',
+                        style: const TextStyle(
+                          color: Colors.blue,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _actionButton(
+                              icon: Icons.payment,
+                              label: 'PAY NOW',
+                              color: Colors.blue,
+                              outline: false,
+                              onTap: () async {
+                                final bookingId = booking['id']?.toString() ?? '';
+                                if (bookingId.isEmpty) return;
+
+                                // Show loading spinner
+                                showDialog(
+                                  context: context,
+                                  barrierDismissible: false,
+                                  builder: (context) => const Center(
+                                    child: CircularProgressIndicator(
+                                      color: LunaraTheme.electricViolet,
+                                    ),
+                                  ),
+                                );
+
+                                final paymentInfo = await ApiService.initiateLargePartyPayment(bookingId);
+
+                                if (!mounted) return;
+                                Navigator.pop(context); // Close loading spinner
+
+                                if (paymentInfo != null && paymentInfo['success'] == true) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => PaymentConfirmationScreen(
+                                        venue: venue,
+                                        date: booking['bookingDate'] != null
+                                            ? DateFormat('dd/MM/yyyy').format(DateTime.parse(booking['bookingDate']))
+                                            : 'Tonight',
+                                        package: 'Large Party Booking Deposit',
+                                        time: booking['startTime'] ?? '21:00',
+                                        table: 'Large Party Table',
+                                        guests: '${booking['numberOfGuests'] ?? 1} Guests',
+                                        totalPrice: '₹${booking['totalAmount'] ?? '0'}',
+                                        showSplitBill: false,
+                                        razorpayOrderId: paymentInfo['razorpayOrderId'],
+                                        razorpayKeyId: paymentInfo['razorpayKeyId'],
+                                        razorpayAmount: paymentInfo['amount'],
+                                        onRazorpayPaymentSuccess: (paymentId, signature) async {
+                                          final success = await ApiService.verifyLargePartyPayment(
+                                            bookingId,
+                                            razorpayOrderId: paymentInfo['razorpayOrderId'],
+                                            razorpayPaymentId: paymentId,
+                                            razorpaySignature: signature,
+                                          );
+                                          if (!mounted) return;
+                                          if (success) {
+                                            setState(() {
+                                              _optimisticStates[reqId] = 'payment_done';
+                                            });
+                                            _loadFeed(showLoader: false);
+                                          } else {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              const SnackBar(
+                                                content: Text('Payment Verification Failed.'),
+                                                backgroundColor: Colors.red,
+                                              ),
+                                            );
+                                          }
+                                        },
+                                      ),
+                                    ),
+                                  );
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Failed to initiate payment. Please try again.'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ] else if (currentStatus == 'payment_sent') ...[
@@ -1963,9 +2173,12 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
 
     IconData icon = Icons.notifications;
     Color color = Colors.grey;
-    if (title.toLowerCase().contains('like')) {
+    if (title.toLowerCase().contains('super')) {
+      icon = Icons.star;
+      color = const Color(0xFFFFB800); // Gold/Amber for Super Like
+    } else if (title.toLowerCase().contains('like')) {
       icon = Icons.favorite;
-      color = Colors.red;
+      color = LunaraTheme.hotPink; // Hot Pink for Like
     } else if (title.toLowerCase().contains('payment')) {
       icon = Icons.payment;
       color = Colors.green;
@@ -1975,6 +2188,9 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
       color = Colors.blue;
     }
 
+    final sender = notif['sender'];
+    final hasSender = sender != null && sender['id'] != null;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: GestureDetector(
@@ -1982,11 +2198,25 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: color.withValues(alpha: isRead ? 0.05 : 0.12),
+            color: isDark 
+                ? (isRead ? const Color(0xFF1E1E24) : color.withValues(alpha: 0.15))
+                : (isRead ? Colors.grey[50] : color.withValues(alpha: 0.08)),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: isRead ? Colors.transparent : color.withValues(alpha: 0.3),
+              color: isRead 
+                  ? (isDark ? Colors.white10 : Colors.black12) 
+                  : color.withValues(alpha: 0.4),
+              width: isRead ? 1 : 1.5,
             ),
+            boxShadow: isRead 
+                ? null 
+                : [
+                    BoxShadow(
+                      color: color.withValues(alpha: isDark ? 0.15 : 0.06),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
           ),
           child: Row(
             children: [
@@ -2016,6 +2246,37 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                         fontSize: 12,
                       ),
                     ),
+                    if (hasSender) ...[
+                      const SizedBox(height: 8),
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          try {
+                            final userObj = User.fromJson(Map<String, dynamic>.from(sender));
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => ProfileScreen(user: userObj),
+                              ),
+                            );
+                          } catch (e) {
+                            debugPrint('Error navigating to profile: $e');
+                          }
+                        },
+                        icon: const Icon(Icons.person, size: 14, color: Colors.white),
+                        label: const Text(
+                          'VIEW PROFILE',
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 0.5),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: LunaraTheme.electricViolet,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -2180,10 +2441,10 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
     }
 
     final planDate = widget.plan['planDateTime'] != null
-        ? DateFormat('dd/MM/yyyy').format(DateTime.parse(widget.plan['planDateTime'].toString()))
+        ? DateFormat('dd/MM/yyyy').format(DateTime.parse(widget.plan['planDateTime'].toString()).toLocal())
         : 'Tonight';
     final planTime = widget.plan['planDateTime'] != null
-        ? DateFormat('hh:mm a').format(DateTime.parse(widget.plan['planDateTime'].toString()))
+        ? DateFormat('hh:mm a').format(DateTime.parse(widget.plan['planDateTime'].toString()).toLocal())
         : '21:00';
     final reqId = widget.myReq['id']?.toString() ?? '';
     final label = _secondsLeft > 0

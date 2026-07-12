@@ -8,6 +8,7 @@ import '../../core/theme.dart';
 import 'venue_detail_screen.dart';
 import 'all_venues_screen.dart';
 import 'upcoming_party_screen.dart';
+import 'booking_process_screen.dart';
 import '../social/all_posts_screen.dart';
 import '../../services/api_service.dart';
 import '../../models/venue.dart';
@@ -236,7 +237,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     plan['planDateTime'] ?? plan['createdAt'] ?? '';
                 if (timeStr.isNotEmpty) {
                   try {
-                    final dt = DateTime.parse(timeStr);
+                    final dt = DateTime.parse(timeStr).toLocal();
                     timeStr = DateFormat('MMM dd, hh:mm a').format(dt);
                   } catch (_) {}
                 }
@@ -275,7 +276,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     meet['eventDateTime'] ?? meet['createdAt'] ?? '';
                 if (timeStr.isNotEmpty) {
                   try {
-                    final dt = DateTime.parse(timeStr);
+                    final dt = DateTime.parse(timeStr).toLocal();
                     timeStr = DateFormat('MMM dd, hh:mm a').format(dt);
                   } catch (_) {}
                 }
@@ -1362,7 +1363,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     final venues = _filteredVenues;
 
     return SizedBox(
-      height: 340,
+      height: 385,
       child: ListView.builder(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         scrollDirection: Axis.horizontal,
@@ -1611,6 +1612,45 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                               ],
                             ],
                           ),
+                          const SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              GestureDetector(
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => BookingProcessScreen(venue: venue.toMap()),
+                                    ),
+                                  );
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    gradient: LunaraTheme.primaryGradient,
+                                    borderRadius: BorderRadius.circular(12),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: const Text(
+                                    'BOOK NOW',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1.5,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -1626,7 +1666,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   Widget _buildVenueSkeleton() {
     return SizedBox(
-      height: 340,
+      height: 385,
       child: ListView.builder(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         scrollDirection: Axis.horizontal,
@@ -1697,6 +1737,20 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                           color: Colors.grey[100],
                           borderRadius: BorderRadius.circular(4),
                         ),
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Container(
+                            height: 28,
+                            width: 90,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[100],
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),

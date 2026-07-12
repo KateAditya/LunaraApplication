@@ -9,6 +9,7 @@ import 'api_service.dart';
 import 'notification_navigator.dart';
 import '../screens/social/chat_screen.dart';
 import '../screens/discovery/venue_detail_screen.dart';
+import '../screens/social/live_feed_screen.dart';
 
 /// Top-level background message handler.
 /// Must be a top-level function (not a class method) for Firebase.
@@ -177,6 +178,13 @@ class PushNotificationService {
     // Encode the data payload into the notification so we can read it on tap
     final payload = jsonEncode(message.data);
 
+    Color? notificationColor;
+    if (notification.title?.toLowerCase().contains('super') == true) {
+      notificationColor = const Color(0xFFFFB800); // Gold/Amber
+    } else if (notification.title?.toLowerCase().contains('like') == true) {
+      notificationColor = const Color(0xFFE100FF); // Hot Pink
+    }
+
     _localNotifications.show(
       id: notification.hashCode,
       title: notification.title,
@@ -189,6 +197,7 @@ class PushNotificationService {
           importance: Importance.high,
           priority: Priority.high,
           icon: 'launcher_icon',
+          color: notificationColor,
         ),
         iOS: const DarwinNotificationDetails(
           presentAlert: true,
@@ -238,7 +247,19 @@ class PushNotificationService {
         break;
       case 'message':
       case 'new_message': // Backend sends 'new_message' for chat notifications
+      case 'match': // Navigate to chat on mutual match
         _navigateToChat(navigator, data);
+        break;
+      case 'new_party_plan':
+      case 'host_payment_successful':
+      case 'participant_payment_required':
+      case 'booking_confirmed':
+      case 'ticket_generated':
+        navigator.push(
+          MaterialPageRoute(
+            builder: (_) => const LiveFeedScreen(initialTabIndex: 1),
+          ),
+        );
         break;
       default:
         debugPrint('🔔 Unknown notification type: $type');

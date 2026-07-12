@@ -58,9 +58,9 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
       MaterialPageRoute(
         builder: (_) => PaymentConfirmationScreen(
           venue: venue,
-          date: plan['planDateTime'] != null ? DateFormat('dd/MM/yyyy').format(DateTime.parse(plan['planDateTime'])) : 'Tonight',
+          date: plan['planDateTime'] != null ? DateFormat('dd/MM/yyyy').format(DateTime.parse(plan['planDateTime']).toLocal()) : 'Tonight',
           package: 'Party Plan Safety Deposit',
-          time: plan['planDateTime'] != null ? DateFormat('hh:mm a').format(DateTime.parse(plan['planDateTime'])) : '21:00',
+          time: plan['planDateTime'] != null ? DateFormat('hh:mm a').format(DateTime.parse(plan['planDateTime']).toLocal()) : '21:00',
           table: 'Host Table',
           guests: '1 Head',
           totalPrice: '₹99',

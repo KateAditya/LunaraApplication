@@ -4,7 +4,7 @@ import { validate } from './validate';
 export const updateProfileValidation = [
     // Basic Info
     body('firstName').optional().trim().isLength({ min: 2, max: 100 }).withMessage('First name must be between 2 and 100 characters'),
-    body('lastName').optional().trim().isLength({ min: 2, max: 100 }).withMessage('Last name must be between 2 and 100 characters'),
+    body('lastName').optional().trim().isLength({ min: 1, max: 100 }).withMessage('Last name must be between 1 and 100 characters'),
     body('phone').optional().trim().matches(/^[6-9]\d{9}$/).withMessage('Must be a valid Indian phone number'),
     body('dateOfBirth').optional().isISO8601().toDate().withMessage('Must be a valid date').custom((value) => {
         if (value >= new Date()) {

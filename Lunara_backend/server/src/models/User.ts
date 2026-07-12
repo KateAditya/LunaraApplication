@@ -153,8 +153,8 @@ User.init(
             field: 'last_name',
             validate: {
                 len: {
-                    args: [2, 100],
-                    msg: 'Last name must be between 2 and 100 characters',
+                    args: [1, 100],
+                    msg: 'Last name must be between 1 and 100 characters',
                 },
             },
         },

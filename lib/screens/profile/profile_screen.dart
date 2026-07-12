@@ -32,6 +32,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
   User? _backtrackedUser;
   String _swipeAction = 'like';
 
+  // ── Like / SuperLike state per profile ───────────────────────────────────────
+  // Maps userId → action: 'like' | 'superlike' | 'noped'
+  final Map<String, String> _swipedActions = {};
+
+  // ── Plan limit state (loaded once per session) ────────────────────────────────
+  int _dailyLikesLimit = 999999; // fallback: unlimited
+  int _dailyLikesUsed = 0;
+  int _superlikesRemaining = 999999;
+  int _superlikesPerCycle = 0;
+  bool _limitsLoaded = false;
+
   @override
   void initState() {
     super.initState();
@@ -39,11 +50,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _loadAllProfiles();
   }
 
+  // ── Load subscription plan limits ────────────────────────────────────────────
+  Future<void> _loadPlanLimits() async {
+    try {
+      final sub = await ApiService.fetchUserSubscription();
+      if (!mounted) return;
+      // Parse dailyLikes from the nested features map
+      final features = sub['features'];
+      final dailyLikes = features?['daily_likes']?['limit'] ?? 7;
+      final usageMap = sub['usage'] as Map? ?? {};
+      final dailyLikesUsed = usageMap['daily_likes'] as int? ?? 0;
+
+      // superlikesRemaining comes from the subscription object itself
+      final subscriptionData = sub['subscription'];
+      int superlikesRemaining = 999999;
+      int superlikesPerCycle = 0;
+      if (subscriptionData != null) {
+        superlikesRemaining = (subscriptionData as Map)['superlikesRemaining'] as int? ?? 0;
+        final innerPkg = subscriptionData['package'];
+        superlikesPerCycle = innerPkg != null ? (innerPkg as Map)['superlikesPerCycle'] as int? ?? 0 : 0;
+      }
+
+      setState(() {
+        _dailyLikesLimit = dailyLikes == -1 ? 999999 : (dailyLikes as int? ?? 999999);
+        _dailyLikesUsed = dailyLikesUsed;
+        _superlikesRemaining = superlikesPerCycle == 0 ? 999999 : superlikesRemaining;
+        _superlikesPerCycle = superlikesPerCycle;
+        _limitsLoaded = true;
+      });
+    } catch (e) {
+      debugPrint('[ProfileScreen] Failed to load plan limits: $e');
+      if (mounted) setState(() => _limitsLoaded = true);
+    }
+  }
+
   Future<void> _loadAllProfiles() async {
     try {
       final me = await ApiService.fetchProfile();
       final String? myGender = me?.gender?.toLowerCase();
-      final String? selectedCity = ApiService.selectedCity;
       final String? myId = ApiService.currentUserId;
 
       final rawCustomers = await ApiService.fetchCustomers();
@@ -51,20 +95,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
       for (var c in rawCustomers) {
         try {
           final u = User.fromJson(c);
-
-          // Exclude logged-in user
-          if (myId != null && u.id == myId) {
-            continue;
-          }
-
-          // Filter out same gender
+          if (myId != null && u.id == myId) continue;
           if (myGender != null && myGender.isNotEmpty) {
             final uGender = u.gender?.toLowerCase();
-            if (uGender == null || uGender == myGender) {
-              continue;
-            }
+            if (uGender == null || uGender == myGender) continue;
           }
-          
           resolvedUsers.add(u);
         } catch (_) {}
       }
@@ -79,6 +114,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } catch (e) {
       debugPrint('[ProfileScreen] Error loading all profiles: $e');
     }
+
+    // Load plan limits after profiles are ready
+    _loadPlanLimits();
   }
 
   void _updateCurrentProfileIndex() {
@@ -96,21 +134,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _isMe = _displayUser!.id == ApiService.currentUserId;
       });
       _updateCurrentProfileIndex();
-      // Fetch full user profile to retrieve the photos list and details
-      debugPrint(
-        '[ProfileScreen] Fetching profile for user: ${widget.user!.id}',
-      );
+
       final fullUser = await ApiService.fetchProfile(userId: widget.user!.id);
       if (fullUser != null && mounted) {
-        debugPrint(
-          '[ProfileScreen] Profile loaded successfully with ${fullUser.photos.length} photos.',
-        );
         setState(() {
           _displayUser = fullUser;
         });
         _updateCurrentProfileIndex();
-      } else {
-        debugPrint('[ProfileScreen] Profile fetch returned null.');
+        // Also check if already liked today
+        _checkExistingSwipe(fullUser.id);
       }
     } else {
       setState(() => _isLoading = true);
@@ -123,6 +155,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
         });
         _updateCurrentProfileIndex();
       }
+    }
+  }
+
+  // ── Check if already liked a specific profile today ──────────────────────────
+  Future<void> _checkExistingSwipe(String targetUserId) async {
+    try {
+      final status = await ApiService.fetchSwipeStatus(targetUserId);
+      if (!mounted) return;
+      if (status['alreadySuperLiked'] == true) {
+        setState(() => _swipedActions[targetUserId] = 'superlike');
+      } else if (status['alreadyLiked'] == true) {
+        setState(() => _swipedActions[targetUserId] = 'like');
+      }
+      // Also sync limits from this call
+      if (!_limitsLoaded) {
+        setState(() {
+          _dailyLikesLimit = status['dailyLikesLimit'] ?? _dailyLikesLimit;
+          _dailyLikesUsed = status['dailyLikesUsed'] ?? _dailyLikesUsed;
+          _superlikesRemaining = status['superlikesRemaining'] ?? _superlikesRemaining;
+          _superlikesPerCycle = status['superlikesPerCycle'] ?? _superlikesPerCycle;
+          _limitsLoaded = true;
+        });
+      }
+    } catch (e) {
+      debugPrint('[ProfileScreen] checkExistingSwipe error: $e');
     }
   }
 
@@ -140,6 +197,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         setState(() {
           _displayUser = fullUser;
         });
+        // Check swipe status for this profile
+        _checkExistingSwipe(targetUser.id);
       }
     });
   }
@@ -147,44 +206,252 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _showNextProfile() {
     if (_allProfiles.isEmpty) {
       if (!_isProfilesLoading) {
-        setState(() {
-          _outOfProfiles = true;
-        });
+        setState(() => _outOfProfiles = true);
       }
       return;
     }
     int nextIndex = _currentProfileIndex;
-    if (nextIndex < 0 || nextIndex >= _allProfiles.length) {
-      nextIndex = 0;
-    }
+    if (nextIndex < 0 || nextIndex >= _allProfiles.length) nextIndex = 0;
     _navigateToProfile(nextIndex);
   }
 
-  void _handleSwipe(bool liked) {
+  // ── LIKE handler — stay on same page, change button colour ───────────────────
+  void _handleLike() {
     if (_displayUser == null) return;
-
     final targetUser = _displayUser!;
-    final action = liked ? _swipeAction : 'nope';
+    final targetId = targetUser.id;
 
-    // Reset default swipe action
-    _swipeAction = 'like';
+    // One-like-per-day-per-profile guard
+    if (_swipedActions.containsKey(targetId)) {
+      final action = _swipedActions[targetId];
+      if (action == 'like' || action == 'superlike') {
+        _showAlreadyLikedSnack(action!);
+        return;
+      }
+    }
 
-    // Trigger backend API call to register the swipe
-    ApiService.swipeUser(targetUserId: targetUser.id, action: action).then((
-      res,
-    ) {
+    // Daily like limit guard
+    if (_dailyLikesUsed >= _dailyLikesLimit) {
+      _showLimitReachedSnack();
+      return;
+    }
+
+    // Optimistically update UI immediately
+    setState(() {
+      _swipedActions[targetId] = 'like';
+      _dailyLikesUsed++;
+    });
+
+    // Show in-app notification
+    _showLikeNotification(targetUser.firstName, isSuperLike: false);
+
+    // Fire API
+    ApiService.swipeUser(targetUserId: targetId, action: 'like').then((res) {
       if (res != null && res['matched'] == true && mounted) {
         _showMatchDialog(targetUser);
       }
     });
+  }
 
+  // ── SUPERLIKE handler ─────────────────────────────────────────────────────────
+  void _handleSuperLike() {
+    if (_displayUser == null) return;
+    final targetUser = _displayUser!;
+    final targetId = targetUser.id;
+
+    // One-like-per-day-per-profile guard
+    if (_swipedActions.containsKey(targetId)) {
+      final action = _swipedActions[targetId];
+      if (action == 'like' || action == 'superlike') {
+        _showAlreadyLikedSnack(action!);
+        return;
+      }
+    }
+
+    // Superlikes remaining guard
+    if (_superlikesPerCycle > 0 && _superlikesRemaining <= 0) {
+      _showSuperLikeLimitSnack();
+      return;
+    }
+
+    // Optimistically update UI immediately
     setState(() {
+      _swipedActions[targetId] = 'superlike';
+      if (_superlikesPerCycle > 0) _superlikesRemaining--;
+      _dailyLikesUsed++;
+    });
+
+    // Show in-app notification
+    _showLikeNotification(targetUser.firstName, isSuperLike: true);
+
+    // Fire API
+    ApiService.swipeUser(targetUserId: targetId, action: 'superlike').then((res) {
+      if (res != null && res['matched'] == true && mounted) {
+        _showMatchDialog(targetUser);
+      }
+    });
+  }
+
+  // ── NOPE handler — go to next profile ────────────────────────────────────────
+  void _handleNope() {
+    if (_displayUser == null) return;
+    final targetUser = _displayUser!;
+
+    // Mark optimistically
+    setState(() {
+      _swipedActions[targetUser.id] = 'noped';
       _swipeHistory.add(targetUser);
-      _swipeDirections.add(liked);
+      _swipeDirections.add(false);
       _allProfiles.removeWhere((u) => u.id == targetUser.id);
     });
 
-    _showNextProfile();
+    // Fire swipe card animation (which will trigger _handleSwipeCardComplete)
+    _swipeAction = 'nope';
+    _swipeController.swipe(false);
+
+    ApiService.swipeUser(targetUserId: targetUser.id, action: 'nope');
+  }
+
+  // Called by BumbleSwipeWidget when physical card swipe completes
+  void _handleSwipe(bool liked) {
+    if (_displayUser == null) return;
+    final targetUser = _displayUser!;
+
+    if (liked) {
+      // Card swiped right from gesture — treat as Like
+      final action = _swipeAction == 'superlike' ? 'superlike' : 'like';
+      final alreadySwiped = _swipedActions.containsKey(targetUser.id);
+      if (!alreadySwiped) {
+        if (action == 'superlike') {
+          _handleSuperLike();
+        } else {
+          _handleLike();
+        }
+      }
+      // Don't remove profile from list — user stays on same card
+    } else {
+      // Card swiped left → Nope: go next
+      final targetId = targetUser.id;
+      setState(() {
+        _swipedActions[targetId] = 'noped';
+        _swipeHistory.add(targetUser);
+        _swipeDirections.add(false);
+        _allProfiles.removeWhere((u) => u.id == targetUser.id);
+      });
+      _swipeAction = 'like';
+      ApiService.swipeUser(targetUserId: targetId, action: 'nope');
+      _showNextProfile();
+    }
+  }
+
+  // ── Snack / in-app notification helpers ──────────────────────────────────────
+
+  void _showLikeNotification(String firstName, {required bool isSuperLike}) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        backgroundColor: isSuperLike
+            ? const Color(0xFF7F00FF)
+            : const Color(0xFF00B5FF),
+        duration: const Duration(seconds: 2),
+        content: Row(
+          children: [
+            Icon(
+              isSuperLike ? Icons.star : Icons.favorite,
+              color: Colors.white,
+              size: 20,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                isSuperLike
+                    ? 'You Super Liked $firstName! 🌟'
+                    : 'You Liked $firstName! ❤️',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAlreadyLikedSnack(String action) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        backgroundColor: Colors.grey[800],
+        duration: const Duration(seconds: 2),
+        content: Text(
+          action == 'superlike'
+              ? 'You already Super Liked this profile today.'
+              : 'You already Liked this profile today.',
+          style: const TextStyle(color: Colors.white),
+        ),
+      ),
+    );
+  }
+
+  void _showLimitReachedSnack() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        backgroundColor: Colors.red[700],
+        duration: const Duration(seconds: 3),
+        content: Row(
+          children: [
+            const Icon(Icons.lock, color: Colors.white, size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                "You've reached your daily like limit ($_dailyLikesLimit). Upgrade your plan for more likes!",
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showSuperLikeLimitSnack() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        backgroundColor: Colors.purple[700],
+        duration: const Duration(seconds: 3),
+        content: const Row(
+          children: [
+            Icon(Icons.star_border, color: Colors.white, size: 18),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                "No Super Likes remaining. Upgrade your plan to get more!",
+                style: TextStyle(color: Colors.white, fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showMatchDialog(User matchUser) {
@@ -196,7 +463,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: const Color(0xFF1F1235), // Slick premium dark violet
+            color: const Color(0xFF1F1235),
             borderRadius: BorderRadius.circular(30),
             border: Border.all(color: LunaraTheme.electricViolet, width: 2),
             boxShadow: [
@@ -229,44 +496,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Current user avatar
                   CircleAvatar(
                     radius: 45,
                     backgroundColor: Colors.grey[800],
                     backgroundImage:
-                        _me?.profilePhoto != null &&
-                            _me!.profilePhoto!.isNotEmpty
+                        _me?.profilePhoto != null && _me!.profilePhoto!.isNotEmpty
                         ? NetworkImage(_me!.profilePhoto!)
                         : null,
-                    child:
-                        _me?.profilePhoto == null || _me!.profilePhoto!.isEmpty
-                        ? const Icon(
-                            Icons.person,
-                            color: Colors.white,
-                            size: 40,
-                          )
+                    child: _me?.profilePhoto == null || _me!.profilePhoto!.isEmpty
+                        ? const Icon(Icons.person, color: Colors.white, size: 40)
                         : null,
                   ),
                   const SizedBox(width: 16),
                   const Icon(Icons.favorite, color: Colors.redAccent, size: 40),
                   const SizedBox(width: 16),
-                  // Matched user avatar
                   CircleAvatar(
                     radius: 45,
                     backgroundColor: Colors.grey[800],
                     backgroundImage:
-                        matchUser.profilePhoto != null &&
-                            matchUser.profilePhoto!.isNotEmpty
+                        matchUser.profilePhoto != null && matchUser.profilePhoto!.isNotEmpty
                         ? NetworkImage(matchUser.profilePhoto!)
                         : null,
-                    child:
-                        matchUser.profilePhoto == null ||
-                            matchUser.profilePhoto!.isEmpty
-                        ? const Icon(
-                            Icons.person,
-                            color: Colors.white,
-                            size: 40,
-                          )
+                    child: matchUser.profilePhoto == null || matchUser.profilePhoto!.isEmpty
+                        ? const Icon(Icons.person, color: Colors.white, size: 40)
                         : null,
                   ),
                 ],
@@ -276,33 +528,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: LunaraTheme.electricViolet,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 32,
-                    vertical: 14,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   elevation: 5,
                 ),
-                onPressed: () {
-                  Navigator.pop(context); // Close dialog
-                },
+                onPressed: () => Navigator.pop(context),
                 child: const Text(
                   "SAY HELLO",
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1),
                 ),
               ),
               const SizedBox(height: 8),
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text(
-                  "KEEP SWIPING",
-                  style: TextStyle(color: Colors.white54),
-                ),
+                child: const Text("KEEP SWIPING", style: TextStyle(color: Colors.white54)),
               ),
             ],
           ),
@@ -313,32 +552,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _undoLastSwipe() {
     if (_swipeHistory.isEmpty) return;
-
     final prevUser = _swipeHistory.removeLast();
-    final wasLiked = _swipeDirections.removeLast();
+    _swipeDirections.removeLast();
     _backtrackedUser = prevUser;
+    // Remove noped state for this user so they can be noped again
+    _swipedActions.remove(prevUser.id);
 
     final backtrackWidget = ProfileDetailView(
       key: ValueKey(prevUser.id),
       user: prevUser,
       isMe: prevUser.id == ApiService.currentUserId,
-      onNope: () {
-        _swipeAction = 'nope';
-        _swipeController.swipe(false);
-      },
-      onLike: () {
-        _swipeAction = 'like';
-        _swipeController.swipe(true);
-      },
-      onSuper: () {
-        _swipeAction = 'superlike';
-        _swipeController.swipe(true);
-      },
+      swipedAction: _swipedActions[prevUser.id],
+      isLikeDisabled: _dailyLikesUsed >= _dailyLikesLimit,
+      isSuperLikeDisabled: _superlikesPerCycle > 0 && _superlikesRemaining <= 0,
+      onNope: () => _handleNope(),
+      onLike: () => _handleLike(),
+      onSuper: () => _handleSuperLike(),
       onBacktrack: _undoLastSwipe,
       canBacktrack: _swipeHistory.isNotEmpty,
     );
 
-    _swipeController.backtrack(wasLiked, backtrackWidget);
+    _swipeController.backtrack(false, backtrackWidget);
   }
 
   void _handleBacktrackComplete() {
@@ -390,9 +624,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
 
-    if (_outOfProfiles) {
-      return emptyStateWidget;
-    }
+    if (_outOfProfiles) return emptyStateWidget;
 
     if (_displayUser == null) {
       return Scaffold(
@@ -402,12 +634,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     }
 
-    // When viewing own profile, don't wrap in swipe widget
     if (_isMe) {
       return ProfileDetailView(
         key: ValueKey(_displayUser!.id),
         user: _displayUser!,
         isMe: true,
+        swipedAction: null,
+        isLikeDisabled: false,
+        isSuperLikeDisabled: false,
         onNope: null,
         onLike: null,
         onSuper: null,
@@ -416,29 +650,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     }
 
+    final currentUserId = _displayUser!.id;
+    final currentSwipedAction = _swipedActions[currentUserId];
+    final isLikeDisabled = _dailyLikesUsed >= _dailyLikesLimit;
+    final isSuperLikeDisabled = _superlikesPerCycle > 0 && _superlikesRemaining <= 0;
+
     final currentProfileWidget = ProfileDetailView(
       key: ValueKey(_displayUser!.id),
       user: _displayUser!,
       isMe: _isMe,
-      onNope: () {
-        _swipeAction = 'nope';
-        _swipeController.swipe(false);
-      },
-      onLike: () {
-        _swipeAction = 'like';
-        _swipeController.swipe(true);
-      },
-      onSuper: () {
-        _swipeAction = 'superlike';
-        _swipeController.swipe(true);
-      },
+      swipedAction: currentSwipedAction,
+      isLikeDisabled: isLikeDisabled,
+      isSuperLikeDisabled: isSuperLikeDisabled,
+      onNope: () => _handleNope(),
+      onLike: () => _handleLike(),
+      onSuper: () => _handleSuperLike(),
       onBacktrack: _undoLastSwipe,
       canBacktrack: _swipeHistory.isNotEmpty,
     );
 
+    // Next profile (shown behind current card) — only for unswipped profiles
     User? nextUser;
     if (_allProfiles.isNotEmpty) {
-      if (_currentProfileIndex == -1) {
+      if (_currentProfileIndex < 0 || _currentProfileIndex >= _allProfiles.length) {
         nextUser = _allProfiles[0];
       } else {
         final nextIdx = (_currentProfileIndex + 1) % _allProfiles.length;
@@ -450,9 +684,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     final Widget? nextProfileWidget = nextUser != null
         ? ProfileDetailView(
-            key: ValueKey(nextUser.id),
+            key: ValueKey('next_${nextUser.id}'),
             user: nextUser,
             isMe: nextUser.id == ApiService.currentUserId,
+            swipedAction: null,
+            isLikeDisabled: false,
+            isSuperLikeDisabled: false,
             onNope: null,
             onLike: null,
             onSuper: null,

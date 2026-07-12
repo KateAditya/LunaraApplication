@@ -47,6 +47,127 @@ export const connectDatabase = async (): Promise<void> => {
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_method VARCHAR(50);`);
             
             await sequelize.query(`ALTER TABLE strangers_meet_joiners ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'pending';`);
+
+            // Additive Subscription tables
+            await sequelize.query(`
+                CREATE TABLE IF NOT EXISTS "SubscriptionFeatures" (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    key VARCHAR(100) UNIQUE NOT NULL,
+                    name VARCHAR(200) NOT NULL,
+                    description TEXT,
+                    category VARCHAR(50) NOT NULL DEFAULT 'general',
+                    value_type VARCHAR(20) NOT NULL DEFAULT 'boolean',
+                    display_order INTEGER NOT NULL DEFAULT 0,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    icon VARCHAR(100),
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            `);
+
+            await sequelize.query(`
+                CREATE TABLE IF NOT EXISTS "SubscriptionPlanFeatures" (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    package_id UUID NOT NULL REFERENCES "SubscriptionPackages"(id) ON DELETE CASCADE,
+                    feature_id UUID NOT NULL REFERENCES "SubscriptionFeatures"(id) ON DELETE CASCADE,
+                    value JSONB NOT NULL DEFAULT '{"enabled": false}',
+                    is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    UNIQUE (package_id, feature_id)
+                );
+            `);
+
+            await sequelize.query(`
+                CREATE TABLE IF NOT EXISTS "SubscriptionUsage" (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    feature_key VARCHAR(100) NOT NULL,
+                    period VARCHAR(20) NOT NULL,
+                    used INTEGER NOT NULL DEFAULT 0,
+                    reset_at TIMESTAMP,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    UNIQUE (user_id, feature_key, period)
+                );
+            `);
+
+            await sequelize.query(`
+                CREATE TABLE IF NOT EXISTS "SubscriptionTransactions" (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    package_id UUID REFERENCES "SubscriptionPackages"(id),
+                    type VARCHAR(30) NOT NULL,
+                    amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+                    currency VARCHAR(5) NOT NULL DEFAULT 'INR',
+                    payment_method VARCHAR(50),
+                    payment_gateway VARCHAR(50) NOT NULL DEFAULT 'razorpay',
+                    gateway_order_id VARCHAR(200),
+                    gateway_payment_id VARCHAR(200),
+                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                    invoice_number VARCHAR(50) UNIQUE,
+                    refund_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+                    refunded_at TIMESTAMP,
+                    metadata JSONB,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            `);
+
+            // Additive columns for SubscriptionPackages
+            const addCols = [
+                'display_name VARCHAR(200)',
+                'badge VARCHAR(50)',
+                "theme_color VARCHAR(20) DEFAULT '#7F00FF'",
+                'is_popular BOOLEAN DEFAULT FALSE',
+                'is_recommended BOOLEAN DEFAULT FALSE',
+                'is_archived BOOLEAN DEFAULT FALSE',
+                'display_order INTEGER DEFAULT 0',
+                'trial_days INTEGER DEFAULT 0',
+                'grace_period_days INTEGER DEFAULT 0',
+                "currency VARCHAR(5) DEFAULT 'INR'",
+                'discount_percent DECIMAL(5,2) DEFAULT 0',
+                'description TEXT',
+                'icon VARCHAR(100)',
+                "visibility VARCHAR(20) DEFAULT 'public'",
+                'created_by UUID',
+                'updated_by UUID'
+            ];
+
+            for (const colDef of addCols) {
+                const colName = colDef.split(' ')[0];
+                try {
+                    await sequelize.query(`ALTER TABLE "SubscriptionPackages" ADD COLUMN IF NOT EXISTS ${colDef};`);
+                } catch (colErr: any) {
+                    logger.debug(`Column ${colName} might already exist: ` + colErr.message);
+                }
+            }
+
+            // Seed default features if they do not exist
+            await sequelize.query(`
+                INSERT INTO "SubscriptionFeatures" (key, name, description, category, value_type, display_order, icon) VALUES
+                    ('daily_likes', 'Daily Likes', 'Number of profiles you can like per day', 'matching', 'integer', 1, 'heart'),
+                    ('daily_match_requests', 'Daily Match Requests', 'Number of match requests you can send per day', 'matching', 'integer', 2, 'handshake'),
+                    ('daily_posts', 'Daily Posts', 'Number of posts you can create per day', 'social', 'integer', 3, 'camera'),
+                    ('super_likes', 'Super Likes (per cycle)', 'Super likes included in each subscription cycle', 'matching', 'integer', 4, 'star'),
+                    ('boosts', 'Profile Boosts (per cycle)', 'Profile boost credits included per cycle', 'visibility', 'integer', 5, 'rocket'),
+                    ('hide_profile', 'Hide Profile', 'Ability to hide your profile from others', 'privacy', 'boolean', 6, 'eye-off'),
+                    ('priority_visibility', 'Priority Visibility', 'Appear at the top of discovery feeds', 'visibility', 'boolean', 7, 'trending-up'),
+                    ('trust_badge', 'Trust Badge', 'Display a verified trust badge on your profile', 'badge', 'boolean', 8, 'shield'),
+                    ('elite_badge', 'Elite Badge', 'Exclusive elite member badge', 'badge', 'boolean', 9, 'crown'),
+                    ('who_liked_me', 'See Who Liked Me', 'View profiles of people who liked you', 'insights', 'boolean', 10, 'eye'),
+                    ('who_viewed_me', 'See Who Viewed Me', 'View profiles of people who visited your profile', 'insights', 'boolean', 11, 'binoculars'),
+                    ('ai_features', 'AI-Powered Features', 'Access to AI-driven matching and suggestions', 'ai', 'boolean', 12, 'brain'),
+                    ('voice_calls', 'Voice Calls', 'Make voice calls with your matches', 'communication', 'boolean', 13, 'phone'),
+                    ('video_calls', 'Video Calls', 'Make video calls with your matches', 'communication', 'boolean', 14, 'video'),
+                    ('stranger_meet', 'Stranger Meet Access', 'Access the Stranger Meet feature', 'social', 'boolean', 15, 'users'),
+                    ('party_creation', 'Party Creation', 'Create group party plans on the live feed', 'events', 'boolean', 16, 'party-popper'),
+                    ('advanced_search', 'Advanced Search', 'Use advanced filters to find specific profiles', 'discovery', 'boolean', 17, 'search'),
+                    ('premium_filters', 'Premium Filters', 'Access premium discovery filters', 'discovery', 'boolean', 18, 'filter'),
+                    ('profile_boost', 'Profile Boost Purchase', 'Ability to purchase additional profile boosts', 'visibility', 'boolean', 19, 'zap'),
+                    ('storage', 'Photo Storage (GB)', 'Amount of storage for photos and media', 'storage', 'decimal', 20, 'database')
+                ON CONFLICT (key) DO NOTHING;
+            `);
         } catch (alterError: any) {
             logger.warn('Dynamic table migration warning: ' + alterError.message);
         }

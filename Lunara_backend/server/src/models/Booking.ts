@@ -74,6 +74,7 @@ export interface BookingAttributes {
     // Admin-sent payment link
     adminPaymentLink?: string;
     adminPaymentAmount?: number;
+    razorpayOrderId?: string;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -105,6 +106,7 @@ export interface BookingCreationAttributes
         | 'optionalMobileNumber'
         | 'adminPaymentLink'
         | 'adminPaymentAmount'
+        | 'razorpayOrderId'
         | 'createdAt'
         | 'updatedAt'
     > { }
@@ -143,6 +145,7 @@ class Booking extends Model<BookingAttributes, BookingCreationAttributes> implem
     public optionalMobileNumber?: string;
     public adminPaymentLink?: string;
     public adminPaymentAmount?: number;
+    public razorpayOrderId?: string;
     
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
@@ -351,6 +354,11 @@ Booking.init(
             type: DataTypes.DECIMAL(10, 2),
             allowNull: true,
             field: 'admin_payment_amount',
+        },
+        razorpayOrderId: {
+            type: DataTypes.STRING(255),
+            allowNull: true,
+            field: 'razorpay_order_id',
         },
     },
     {

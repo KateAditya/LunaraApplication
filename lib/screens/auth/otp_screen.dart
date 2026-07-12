@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../widgets/action_button.dart';
+import '../../widgets/top_error_banner.dart';
 import '../../services/auth_service.dart';
 import 'password_setup_screen.dart';
 import 'reset_password_screen.dart';
@@ -110,21 +111,13 @@ class _OtpScreenState extends State<OtpScreen>
                       onPressed: () async {
                         String otp = _controllers.map((c) => c.text).join();
                         if (otp.length != 4) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Please enter a valid 4-digit OTP'),
-                            ),
-                          );
+                          TopErrorBanner.show(context, 'Please enter a valid 4-digit OTP');
                           return;
                         }
 
                         String phone = widget.collectedData?['phone'] ?? '';
                         if (phone.isEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Phone number missing'),
-                            ),
-                          );
+                          TopErrorBanner.show(context, 'Phone number missing');
                           return;
                         }
 
@@ -135,12 +128,7 @@ class _OtpScreenState extends State<OtpScreen>
                         setState(() => _isLoading = false);
 
                         if (error != null) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(error),
-                              backgroundColor: LunaraTheme.primaryDeep,
-                            ),
-                          );
+                          TopErrorBanner.show(context, error);
                           return;
                         }
 

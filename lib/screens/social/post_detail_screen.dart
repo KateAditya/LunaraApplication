@@ -46,8 +46,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     super.dispose();
   }
 
-  Future<void> _loadStrangersMeetDetails() async {
-    setState(() => _isLoading = true);
+  Future<void> _loadStrangersMeetDetails({bool showFullScreenLoader = true}) async {
+    if (showFullScreenLoader) {
+      setState(() => _isLoading = true);
+    }
     final req = await ApiService.fetchStrangersMeetRequestById(widget.post['id']);
     if (mounted) {
       setState(() {
@@ -177,6 +179,31 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
+  Future<void> _sendJoinRequest() async {
+    if (_meetRequest == null) return;
+    setState(() => _isProcessing = true);
+    final success = await ApiService.sendStrangersMeetJoinRequest(_meetRequest!.id);
+    if (!mounted) return;
+    setState(() => _isProcessing = false);
+
+    if (success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Join request sent successfully! Waiting for host approval. 🤞'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      _loadStrangersMeetDetails(showFullScreenLoader: false);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to send join request. Please try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Future<void> _completeMeetFlow() async {
     if (_meetRequest == null) return;
     
@@ -262,12 +289,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final bool isMyPost = hostUserMap['id']?.toString() == ApiService.currentUserId;
     final String currentUserId = ApiService.currentUserId ?? '';
 
-    final bool isJoined = req.joiners?.any((j) {
-      if (j is Map) {
-        return j['userId']?.toString() == currentUserId || j['id']?.toString() == currentUserId;
+    Map<String, dynamic>? myJoinerInfo;
+    if (req.joiners != null) {
+      for (var j in req.joiners!) {
+        if (j is Map && (j['userId']?.toString() == currentUserId || j['id']?.toString() == currentUserId)) {
+          myJoinerInfo = Map<String, dynamic>.from(j);
+          break;
+        }
       }
-      return j.toString() == currentUserId;
-    }) ?? false;
+    }
 
     final isFastFilling = slotsFilled >= 2;
 
@@ -613,14 +643,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-          child: _buildStrangersMeetActionButton(isMyPost, isJoined, slotsFilled, maxPersons, req.status, req.eventDateTime, charges),
+          child: _buildStrangersMeetActionButton(isMyPost, myJoinerInfo, slotsFilled, maxPersons, req.status, req.eventDateTime, charges),
         ),
       ),
     );
   }
 
   Widget _buildParticipantsSection() {
-    final joiners = _meetRequest?.joiners ?? [];
+    final joiners = (_meetRequest?.joiners ?? []).where((j) {
+      if (j is Map) {
+        final status = j['status']?.toString();
+        final payStatus = j['paymentStatus']?.toString();
+        return status == 'accepted' || status == 'paid' || payStatus == 'paid';
+      }
+      return false;
+    }).toList();
     if (joiners.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -705,7 +742,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Widget _buildStrangersMeetActionButton(
     bool isMyPost,
-    bool isJoined,
+    Map<String, dynamic>? myJoinerInfo,
     int slotsFilled,
     int maxPersons,
     String status,
@@ -839,33 +876,140 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         );
       }
 
-      if (isJoined) {
-        return Container(
-          width: double.infinity,
-          height: 60,
-          decoration: BoxDecoration(
-            color: Colors.green.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: const Center(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.check_circle_outline_rounded, color: Colors.green),
-                SizedBox(width: 8),
-                Text(
-                  'JOINED',
-                  style: TextStyle(
-                    fontFamily: 'AllroundGothic',
-                    color: Colors.green,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+      if (myJoinerInfo != null) {
+        final jStatus = myJoinerInfo['status']?.toString();
+        final payStatus = myJoinerInfo['paymentStatus']?.toString();
+
+        if (jStatus == 'paid' || payStatus == 'paid') {
+          return Container(
+            width: double.infinity,
+            height: 60,
+            decoration: BoxDecoration(
+              color: Colors.green.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Center(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.check_circle_outline_rounded, color: Colors.green),
+                  SizedBox(width: 8),
+                  Text(
+                    'JOINED',
+                    style: TextStyle(
+                      fontFamily: 'AllroundGothic',
+                      color: Colors.green,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
+                ],
+              ),
+            ),
+          );
+        } else if (jStatus == 'pending') {
+          return Container(
+            width: double.infinity,
+            height: 60,
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.grey[300]!),
+            ),
+            child: const Center(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.hourglass_empty_rounded, color: Colors.grey),
+                  SizedBox(width: 8),
+                  Text(
+                    'REQUEST PENDING APPROVAL',
+                    style: TextStyle(
+                      fontFamily: 'AllroundGothic',
+                      color: Colors.grey,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        } else if (jStatus == 'accepted') {
+          final payText = charges > 0 ? 'PAY TO JOIN (₹${charges.toStringAsFixed(0)})' : 'CONFIRM JOIN (FREE)';
+          return Container(
+            width: double.infinity,
+            height: 60,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF00FF87), Color(0xFF60EFFF)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF00FF87).withValues(alpha: 0.3),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
                 ),
               ],
             ),
-          ),
-        );
+            child: ElevatedButton(
+              onPressed: _initiateJoinFlow,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                shadowColor: Colors.transparent,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.payment_rounded, color: Colors.black87),
+                  const SizedBox(width: 12),
+                  Text(
+                    payText,
+                    style: const TextStyle(
+                      fontFamily: 'AllroundGothic',
+                      color: Colors.black87,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        } else if (jStatus == 'rejected') {
+          return Container(
+            width: double.infinity,
+            height: 60,
+            decoration: BoxDecoration(
+              color: Colors.red.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.red[200]!),
+            ),
+            child: const Center(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.cancel_outlined, color: Colors.red),
+                  SizedBox(width: 8),
+                  Text(
+                    'REQUEST REJECTED BY HOST',
+                    style: TextStyle(
+                      fontFamily: 'AllroundGothic',
+                      color: Colors.red,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
       }
 
       if (slotsFilled >= maxPersons) {
@@ -890,8 +1034,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         );
       }
 
-      // Show Join Button
-      final text = charges > 0 ? 'JOIN MEET (₹${charges.toStringAsFixed(0)})' : 'JOIN MEET (FREE)';
+      // If user hasn't requested to join at all
       return Container(
         width: double.infinity,
         height: 60,
@@ -907,20 +1050,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ],
         ),
         child: ElevatedButton(
-          onPressed: _initiateJoinFlow,
+          onPressed: _sendJoinRequest,
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.transparent,
             shadowColor: Colors.transparent,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           ),
-          child: Row(
+          child: const Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.bolt, color: Colors.white),
+              Icon(Icons.person_add_alt_1_rounded, color: Colors.white),
               const SizedBox(width: 12),
               Text(
-                text,
-                style: const TextStyle(
+                'REQUEST TO JOIN',
+                style: TextStyle(
                   fontFamily: 'AllroundGothic',
                   color: Colors.white,
                   fontSize: 16,

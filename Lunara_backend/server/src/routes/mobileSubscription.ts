@@ -1,14 +1,30 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth';
-import * as mobileSubscriptionController from '../controllers/mobileSubscriptionController';
+import * as ctrl from '../controllers/mobileSubscriptionController';
 
 const router = Router();
 
+// All routes require mobile user auth
 router.use(authenticate);
 
-router.get('/packages', mobileSubscriptionController.getAvailablePackages);
-router.get('/current', mobileSubscriptionController.getCurrentSubscription);
-router.post('/purchase', mobileSubscriptionController.purchaseSubscription);
-router.post('/purchase-boost', mobileSubscriptionController.purchaseBoost);
+// ── Plan Listing ───────────────────────────────────────────────────────────────
+router.get('/packages', ctrl.getAvailablePackages);
+
+// ── Current Subscription ───────────────────────────────────────────────────────
+router.get('/current', ctrl.getCurrentSubscription);
+
+// ── Purchase Flow ──────────────────────────────────────────────────────────────
+router.post('/purchase', ctrl.purchaseSubscription);
+router.post('/renew', ctrl.renewSubscription);
+router.post('/cancel', ctrl.cancelSubscription);
+
+// ── Boost Purchase ─────────────────────────────────────────────────────────────
+router.post('/purchase-boost', ctrl.purchaseBoost);
+
+// ── History & Invoices ─────────────────────────────────────────────────────────
+router.get('/history', ctrl.getSubscriptionHistory);
+
+// ── Feature Access Check ───────────────────────────────────────────────────────
+router.get('/check/:featureKey', ctrl.checkFeatureAccess);
 
 export default router;

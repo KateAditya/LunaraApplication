@@ -84,7 +84,18 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
     } else {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => const DigitalTicketScreen()),
+        MaterialPageRoute(
+          builder: (context) => DigitalTicketScreen(
+            venue: widget.venue,
+            date: widget.date,
+            package: widget.package,
+            time: widget.time,
+            table: widget.table,
+            guests: widget.guests,
+            totalPrice: widget.totalPrice,
+            ticketId: widget.razorpayOrderId ?? 'TICKET',
+          ),
+        ),
       );
     }
   }
@@ -483,7 +494,16 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (context) => const DigitalTicketScreen(),
+              builder: (context) => DigitalTicketScreen(
+                venue: widget.venue,
+                date: widget.date,
+                package: widget.package,
+                time: widget.time,
+                table: widget.table,
+                guests: widget.guests,
+                totalPrice: widget.totalPrice,
+                ticketId: widget.razorpayOrderId ?? 'TICKET',
+              ),
             ),
           );
         }

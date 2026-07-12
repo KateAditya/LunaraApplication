@@ -81,13 +81,13 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
           date: plan['planDateTime'] != null
               ? DateFormat(
                   'dd/MM/yyyy',
-                ).format(DateTime.parse(plan['planDateTime']))
+                ).format(DateTime.parse(plan['planDateTime']).toLocal())
               : 'Tonight',
           package: 'Party Plan Safety Deposit',
           time: plan['planDateTime'] != null
               ? DateFormat(
                   'hh:mm a',
-                ).format(DateTime.parse(plan['planDateTime']))
+                ).format(DateTime.parse(plan['planDateTime']).toLocal())
               : '21:00',
           table: 'Strangers Table',
           guests: '1 Head',

@@ -12,7 +12,7 @@ const registerValidation = [
     body('phone').matches(/^[6-9]\d{9}$/).withMessage('Valid Indian phone number is required'),
     body('password').isLength({ min: 3 }).withMessage('Password must be at least 3 characters'),
     body('firstName').trim().isLength({ min: 2 }).withMessage('First name is required'),
-    body('lastName').trim().isLength({ min: 2 }).withMessage('Last name is required'),
+    body('lastName').trim().isLength({ min: 1 }).withMessage('Last name is required'),
     body('dateOfBirth').isISO8601().toDate().withMessage('Valid date of birth is required'),
     validate,
 ];
@@ -47,7 +47,7 @@ const changePasswordValidation = [
 
 const updateProfileValidation = [
     body('firstName').optional().trim().isLength({ min: 2 }).withMessage('First name must be at least 2 characters'),
-    body('lastName').optional().trim().isLength({ min: 2 }).withMessage('Last name must be at least 2 characters'),
+    body('lastName').optional().trim().isLength({ min: 1 }).withMessage('Last name must be at least 1 character'),
     body('phone').optional().matches(/^[6-9]\d{9}$/).withMessage('Valid Indian phone number is required'),
     body('dateOfBirth').optional().isISO8601().toDate().withMessage('Valid date of birth is required'),
     body('displayName').optional().trim().isLength({ min: 2, max: 100 }),

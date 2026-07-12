@@ -76,6 +76,13 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
                 displayOrder: i,
             });
 
+            if (i === 0) {
+                await User.update(
+                    { profileImageUrl: '/' + relativePath.replace(/\\/g, '/') },
+                    { where: { id: userId } }
+                );
+            }
+
             if (file.path && fs.existsSync(file.path)) {
                 fs.unlinkSync(file.path);
             }
@@ -954,9 +961,25 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                             matchedUser: currentUser.get({ plain: true }),
                             conversationId: conversation.id
                         });
+
+                        // Send push notification to targetUser
+                        if (targetUser.fcmToken) {
+                            const { sendPushNotification } = require('../services/fcmService');
+                            await sendPushNotification(targetUser.fcmToken, {
+                                title: 'New Match!',
+                                body: `You and ${currentUser.firstName} are a match! 🎉`,
+                                data: {
+                                    type: 'match',
+                                    senderId: currentUser.id,
+                                    senderName: `${currentUser.firstName} ${currentUser.lastName}`,
+                                    senderImage: currentUser.profileImageUrl || '',
+                                    conversationId: conversation.id,
+                                }
+                            });
+                        }
                     }
                 } catch (emitErr) {
-                    logger.error('[swipeUser] Failed to emit new_match socket event:', emitErr);
+                    logger.error('[swipeUser] Failed to emit new_match socket event / push notification:', emitErr);
                 }
 
                 return res.status(200).json({
@@ -981,9 +1004,24 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                     io.to(`user_${targetUserId}`).emit('new_match', {
                         matchedUser: currentUser.get({ plain: true })
                     });
+
+                    // Send push notification to targetUser
+                    if (targetUser.fcmToken) {
+                        const { sendPushNotification } = require('../services/fcmService');
+                        await sendPushNotification(targetUser.fcmToken, {
+                            title: 'New Match!',
+                            body: `You and ${currentUser.firstName} are a match! 🎉`,
+                            data: {
+                                type: 'match',
+                                senderId: currentUser.id,
+                                senderName: `${currentUser.firstName} ${currentUser.lastName}`,
+                                senderImage: currentUser.profileImageUrl || '',
+                            }
+                        });
+                    }
                 }
             } catch (emitErr) {
-                logger.error('[swipeUser] Failed to emit new_match socket event:', emitErr);
+                logger.error('[swipeUser] Failed to emit new_match socket event / push notification:', emitErr);
             }
 
             return res.status(200).json({ success: true, data: mySwipe, matched: true });
@@ -999,6 +1037,33 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
             matchReason: action === 'superlike' ? 'superlike' : undefined,
             expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
         });
+
+        // Send push notification for Like or Super Like
+        try {
+            const currentUser = await User.findByPk(userId);
+            const targetUser = await User.findByPk(targetUserId);
+            if (currentUser && targetUser && targetUser.fcmToken) {
+                const { sendPushNotification } = require('../services/fcmService');
+                const senderName = `${currentUser.firstName} ${currentUser.lastName}`;
+                const isSuper = action === 'superlike';
+                const title = isSuper ? 'Super Like' : 'Like';
+                const body = isSuper 
+                    ? `${senderName} super liked your profile 🌟`
+                    : `${senderName} liked your profile ❤️`;
+                await sendPushNotification(targetUser.fcmToken, {
+                    title,
+                    body,
+                    data: {
+                        type: isSuper ? 'superlike' : 'like',
+                        senderId: currentUser.id,
+                        senderName: senderName,
+                        senderImage: currentUser.profileImageUrl || '',
+                    }
+                });
+            }
+        } catch (fcmErr) {
+            logger.error('[swipeUser] Failed to send push notification:', fcmErr);
+        }
 
         return res.status(200).json({ success: true, data: match, matched: false });
 
@@ -1035,6 +1100,97 @@ export const getMyLikesAndMatches = async (req: Request, res: Response): Promise
     }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/mobile/user/swipe-status
+// Returns whether the current user has already liked/superliked a target today,
+// and the plan's daily limits so the UI can enforce them dynamically.
+// ─────────────────────────────────────────────────────────────────────────────
+export const getSwipeStatus = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const userId = (req.query.userId as string) || req.user?.id;
+        const targetUserId = req.query.targetUserId as string;
+
+        if (!userId || !targetUserId) {
+            return res.status(400).json({ success: false, message: 'userId and targetUserId are required' });
+        }
+
+        // Check today's swipe on this specific target (per-day, per-profile limit)
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+
+        const existingSwipe = await UserMatch.findOne({
+            where: {
+                user1Id: userId,
+                user2Id: targetUserId,
+                createdAt: { [Op.gte]: todayStart },
+            }
+        });
+
+        const alreadyLiked = !!existingSwipe && ['pending', 'connected'].includes(existingSwipe.status as string);
+        const alreadySuperLiked = alreadyLiked && existingSwipe?.matchReason === 'superlike';
+        const alreadyNoped = !!existingSwipe && existingSwipe.status === 'declined';
+
+        // Get today's total like count for this user
+        const todayLikeCount = await UserMatch.count({
+            where: {
+                user1Id: userId,
+                status: { [Op.in]: ['pending', 'connected'] },
+                createdAt: { [Op.gte]: todayStart },
+            }
+        });
+
+        // Get subscription limits
+        let dailyLikesLimit = 7; // Default free tier
+        let superlikesRemaining = 0;
+        let superlikesPerCycle = 0;
+
+        try {
+            const UserSubscription = require('../models/UserSubscription').default;
+            const SubscriptionPackage = require('../models/SubscriptionPackage').default;
+
+            const activeSub = await UserSubscription.findOne({
+                where: {
+                    userId,
+                    status: 'active',
+                    endDate: { [Op.gt]: new Date() },
+                },
+                include: [{ model: SubscriptionPackage, as: 'package' }],
+                order: [['createdAt', 'DESC']],
+            });
+
+            if (activeSub) {
+                const pkg = (activeSub as any).package;
+                if (pkg) {
+                    dailyLikesLimit = pkg.dailyLikes === -1 ? 999999 : (pkg.dailyLikes || 7);
+                }
+                superlikesRemaining = activeSub.superlikesRemaining || 0;
+                superlikesPerCycle = (activeSub as any).package?.superlikesPerCycle || 0;
+            }
+        } catch (subErr) {
+            logger.warn('[swipeStatus] Could not fetch subscription limits:', subErr);
+        }
+
+        return res.status(200).json({
+            success: true,
+            data: {
+                alreadyLiked,
+                alreadySuperLiked,
+                alreadyNoped,
+                dailyLikesLimit,
+                dailyLikesUsed: todayLikeCount,
+                dailyLikesRemaining: Math.max(0, dailyLikesLimit - todayLikeCount),
+                superlikesRemaining,
+                superlikesPerCycle,
+                limitReached: todayLikeCount >= dailyLikesLimit,
+                superLimitReached: superlikesRemaining <= 0 && superlikesPerCycle > 0,
+            },
+        });
+    } catch (error: any) {
+        logger.error('[MobileUser] getSwipeStatus error:', error);
+        return res.status(500).json({ success: false, message: 'Failed to get swipe status' });
+    }
+};
+
 export default {
     uploadPhotos,
     completeProfileSetup,
@@ -1049,5 +1205,6 @@ export default {
     getBlockedUsers,
     getBlockedUsersDetails,
     swipeUser,
-    getMyLikesAndMatches
+    getMyLikesAndMatches,
+    getSwipeStatus,
 };

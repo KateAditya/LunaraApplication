@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
 import '../../core/theme.dart';
 import '../../widgets/action_button.dart';
+import '../../widgets/top_error_banner.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import 'otp_screen.dart';
@@ -290,15 +291,25 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                       text: 'NEXT STEP',
                       onPressed: () async {
                         String? errorMessage;
-                        if (_firstNameController.text.trim().isEmpty) {
+                        final firstName = _firstNameController.text.trim();
+                        final lastName = _lastNameController.text.trim();
+                        final email = _emailController.text.trim();
+                        final phone = _phoneController.text.trim();
+
+                        if (firstName.isEmpty) {
                           errorMessage = 'Please enter your first name';
-                        } else if (_lastNameController.text.trim().isEmpty) {
+                        } else if (firstName.length < 2) {
+                          errorMessage = 'First name must be at least 2 characters';
+                        } else if (lastName.isEmpty) {
                           errorMessage = 'Please enter your last name';
-                        } else if (_emailController.text.trim().isEmpty ||
-                            !_emailController.text.contains('@')) {
+                        } else if (email.isEmpty) {
+                          errorMessage = 'Please enter your email address';
+                        } else if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
                           errorMessage = 'Please enter a valid email address';
-                        } else if (_phoneController.text.trim().isEmpty) {
+                        } else if (phone.isEmpty) {
                           errorMessage = 'Please enter your phone number';
+                        } else if (!RegExp(r'^[6-9]\d{9}$').hasMatch(phone)) {
+                          errorMessage = 'Please enter a valid 10-digit Indian phone number (starting with 6–9)';
                         } else if (_selectedDob == null) {
                           errorMessage = 'Please select your date of birth';
                         } else if (_selectedGender.isEmpty) {
@@ -306,51 +317,42 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                         } else if (_selectedCity.isEmpty) {
                           errorMessage = 'Please select your city';
                         } else if (!_acceptedTerms) {
-                          errorMessage =
-                              'Please accept the Terms and Conditions';
+                          errorMessage = 'Please accept the Terms and Conditions';
+                        } else {
+                          // Validate age (must be >= 18)
+                          final birthDate = _selectedDob!;
+                          final today = DateTime.now();
+                          int age = today.year - birthDate.year;
+                          if (today.month < birthDate.month || (today.month == birthDate.month && today.day < birthDate.day)) {
+                            age--;
+                          }
+                          if (age < 18) {
+                            errorMessage = 'You must be at least 18 years old to register';
+                          }
                         }
 
                         if (errorMessage != null) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(errorMessage),
-                              backgroundColor: LunaraTheme.primaryDeep,
-                            ),
-                          );
+                          TopErrorBanner.show(context, errorMessage);
                           return;
                         }
 
                         setState(() => _isLoading = true);
 
-                        final emailError = await AuthService.checkEmail(
-                          _emailController.text.trim(),
-                        );
+                        final emailError = await AuthService.checkEmail(email);
                         if (emailError != null) {
                           if (!mounted) return;
                           setState(() => _isLoading = false);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(emailError),
-                              backgroundColor: LunaraTheme.primaryDeep,
-                            ),
-                          );
+                          TopErrorBanner.show(context, emailError);
                           return;
                         }
 
-                        final error = await AuthService.sendOtp(
-                          _phoneController.text.trim(),
-                        );
+                        final error = await AuthService.sendOtp(phone);
 
                         if (!mounted) return;
                         setState(() => _isLoading = false);
 
                         if (error != null) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(error),
-                              backgroundColor: LunaraTheme.primaryDeep,
-                            ),
-                          );
+                          TopErrorBanner.show(context, error);
                           return;
                         }
 

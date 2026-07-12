@@ -3,7 +3,24 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 
 class CheckInAssistScreen extends StatefulWidget {
-  const CheckInAssistScreen({super.key});
+  final String? venueName;
+  final String? table;
+  final String? guests;
+  final String? date;
+  final String? time;
+  final String? status;
+  final String? imageUrl;
+
+  const CheckInAssistScreen({
+    super.key,
+    this.venueName,
+    this.table,
+    this.guests,
+    this.date,
+    this.time,
+    this.status,
+    this.imageUrl,
+  });
 
   @override
   State<CheckInAssistScreen> createState() => _CheckInAssistScreenState();
@@ -29,6 +46,82 @@ class _CheckInAssistScreenState extends State<CheckInAssistScreen>
     _pulseAnimation = Tween<double>(begin: 0.2, end: 0.8).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
+
+    // Dynamic countdown if date/time are provided and future
+    if (widget.date != null) {
+      try {
+        // Try parsing the date/time string
+        // If it starts with a weekday like "SAT, FEB 22 • 10:30 PM", split or clean it.
+        String dateStr = widget.date!;
+        if (dateStr.contains('•')) {
+          final parts = dateStr.split('•');
+          dateStr = parts[0].trim();
+        }
+        // If it has day of week like "SAT, FEB 22", remove weekday
+        if (dateStr.contains(',')) {
+          final parts = dateStr.split(',');
+          if (parts.length > 1) {
+            dateStr = parts[1].trim();
+          }
+        }
+
+        // Try to parse the clean dateStr
+        // We'll append current year if year is missing
+        if (!dateStr.contains(RegExp(r'\d{4}'))) {
+          dateStr = '$dateStr, ${DateTime.now().year}';
+        }
+
+        final timeStr = widget.time ?? '10:30 PM';
+        // Parse "10:30 PM"
+        final timeParts = timeStr.trim().split(RegExp(r'[: ]'));
+        int hour = 22;
+        int minute = 30;
+        if (timeParts.length >= 2) {
+          hour = int.tryParse(timeParts[0]) ?? 22;
+          minute = int.tryParse(timeParts[1]) ?? 30;
+          if (timeStr.toUpperCase().contains('PM') && hour < 12) {
+            hour += 12;
+          } else if (timeStr.toUpperCase().contains('AM') && hour == 12) {
+            hour = 0;
+          }
+        }
+
+        // Standardize month names to digits for simple parsing
+        final months = {
+          'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4, 'MAY': 5, 'JUN': 6,
+          'JUL': 7, 'AUG': 8, 'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12
+        };
+
+        final dateUpper = dateStr.toUpperCase();
+        int month = DateTime.now().month;
+        for (final m in months.keys) {
+          if (dateUpper.contains(m)) {
+            month = months[m]!;
+            break;
+          }
+        }
+
+        final dayMatch = RegExp(r'\b\d{1,2}\b').firstMatch(dateUpper);
+        int day = DateTime.now().day;
+        if (dayMatch != null) {
+          day = int.tryParse(dayMatch.group(0) ?? '') ?? day;
+        }
+
+        final yearMatch = RegExp(r'\b\d{4}\b').firstMatch(dateUpper);
+        int year = DateTime.now().year;
+        if (yearMatch != null) {
+          year = int.tryParse(yearMatch.group(0) ?? '') ?? year;
+        }
+
+        final targetDateTime = DateTime(year, month, day, hour, minute);
+        final diff = targetDateTime.difference(DateTime.now());
+        if (diff.inSeconds > 0) {
+          _countdown = diff;
+        }
+      } catch (e) {
+        debugPrint('Error parsing event countdown date: $e');
+      }
+    }
 
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_countdown.inSeconds > 0) {
@@ -113,9 +206,9 @@ class _CheckInAssistScreenState extends State<CheckInAssistScreen>
   Widget _buildCountdown() {
     return Column(
       children: [
-        Text(
+        const Text(
           'EVENT STARTS IN',
-          style: const TextStyle(
+          style: TextStyle(
             color: Colors.black,
             fontSize: 11,
             fontWeight: FontWeight.w900,
@@ -137,6 +230,10 @@ class _CheckInAssistScreenState extends State<CheckInAssistScreen>
   }
 
   Widget _buildQRSection() {
+    final String cleanVenue = widget.venueName ?? 'ELARA';
+    final String cleanDate = widget.date ?? '20260222';
+    final String qrData = 'LUNARA-CHECKIN-$cleanVenue-$cleanDate'.replaceAll(RegExp(r'\s+'), '-');
+
     return AnimatedBuilder(
       animation: _pulseAnimation,
       builder: (context, child) {
@@ -180,7 +277,7 @@ class _CheckInAssistScreenState extends State<CheckInAssistScreen>
                 border: Border.all(color: Colors.grey[100]!),
               ),
               child: Image.network(
-                'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=LUNARA-CHECKIN-ELARA-V1-20260222',
+                'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=$qrData',
                 width: 200,
                 height: 200,
                 errorBuilder: (_, _, _) => Container(
@@ -196,9 +293,9 @@ class _CheckInAssistScreenState extends State<CheckInAssistScreen>
               ),
             ),
             const SizedBox(height: 20),
-            Text(
+            const Text(
               'SCAN AT ENTRY',
-              style: const TextStyle(
+              style: TextStyle(
                 color: Colors.black,
                 fontSize: 11,
                 fontWeight: FontWeight.w900,
@@ -212,6 +309,13 @@ class _CheckInAssistScreenState extends State<CheckInAssistScreen>
   }
 
   Widget _buildVenueInfo() {
+    final String cleanVenueName = widget.venueName ?? 'ELARA VELVET';
+    final String cleanTable = widget.table ?? 'VIP V1';
+    final String cleanGuests = widget.guests ?? '6';
+    final String cleanDate = widget.date ?? 'FEB 22, 2026';
+    final String cleanTime = widget.time ?? '10:30 PM';
+    final String cleanStatus = widget.status ?? 'VERIFIED';
+
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -225,18 +329,18 @@ class _CheckInAssistScreenState extends State<CheckInAssistScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _labelValue('VENUE', 'ELARA VELVET'),
-              _labelValue('TABLE', 'VIP V1'),
-              _labelValue('GUESTS', '6'),
+              _labelValue('VENUE', cleanVenueName),
+              _labelValue('TABLE', cleanTable),
+              _labelValue('GUESTS', cleanGuests),
             ],
           ),
           const SizedBox(height: 24),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _labelValue('DATE', 'FEB 22, 2026'),
-              _labelValue('TIME', '10:30 PM'),
-              _labelValue('STATUS', 'VERIFIED'),
+              _labelValue('DATE', cleanDate),
+              _labelValue('TIME', cleanTime),
+              _labelValue('STATUS', cleanStatus),
             ],
           ),
         ],
@@ -309,9 +413,9 @@ class _CheckInAssistScreenState extends State<CheckInAssistScreen>
                   ),
                 ),
                 const SizedBox(height: 6),
-                Text(
+                const Text(
                   'Hold your phone screen-up at the entrance. The host will scan your code.',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Colors.black,
                     fontSize: 11,
                     fontWeight: FontWeight.w500,
@@ -327,16 +431,16 @@ class _CheckInAssistScreenState extends State<CheckInAssistScreen>
   }
 
   Widget _buildBrightnessIndicator() {
-    return Row(
+    return const Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        const Icon(
+        Icon(
           Icons.brightness_high_rounded,
           color: LunaraTheme.electricViolet,
           size: 18,
         ),
-        const SizedBox(width: 10),
-        const Text(
+        SizedBox(width: 10),
+        Text(
           'AUTO-BRIGHTNESS ACTIVE',
           style: TextStyle(
             color: LunaraTheme.electricViolet,

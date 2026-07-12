@@ -17,6 +17,15 @@ class ProfileDetailView extends StatefulWidget {
   final VoidCallback? onBacktrack;
   final bool canBacktrack;
 
+  /// 'like' | 'superlike' | 'noped' | null (not yet acted on)
+  final String? swipedAction;
+
+  /// True when the user has hit their daily like quota
+  final bool isLikeDisabled;
+
+  /// True when the user has no superlike credits remaining
+  final bool isSuperLikeDisabled;
+
   const ProfileDetailView({
     super.key,
     required this.user,
@@ -26,6 +35,9 @@ class ProfileDetailView extends StatefulWidget {
     this.onSuper,
     this.onBacktrack,
     this.canBacktrack = false,
+    this.swipedAction,
+    this.isLikeDisabled = false,
+    this.isSuperLikeDisabled = false,
   });
 
   @override
@@ -804,6 +816,12 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
   Widget _buildActionButtons() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    final isLiked = widget.swipedAction == 'like';
+    final isSuperLiked = widget.swipedAction == 'superlike';
+    final isActed = isLiked || isSuperLiked; // already acted on this profile
+    final likeDisabled = widget.isLikeDisabled && !isActed;
+    final superLikeDisabled = widget.isSuperLikeDisabled && !isSuperLiked;
+
     if (widget.isMe) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -842,6 +860,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
+        // ── Backtrack button ──────────────────────────────────────────────────
         Opacity(
           opacity: widget.canBacktrack ? 1.0 : 0.4,
           child: Column(
@@ -855,9 +874,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                   gradient: LunaraTheme.amberGlow,
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.amber.withValues(
-                        alpha: isDark ? 0.35 : 0.15,
-                      ),
+                      color: Colors.amber.withValues(alpha: isDark ? 0.35 : 0.15),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),
@@ -881,7 +898,8 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
           ),
         ),
         const SizedBox(width: 16),
-        // Nope button with label
+
+        // ── Nope button ───────────────────────────────────────────────────────
         Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -897,9 +915,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(
-                      0xFFFF2A6D,
-                    ).withValues(alpha: isDark ? 0.35 : 0.15),
+                    color: const Color(0xFFFF2A6D).withValues(alpha: isDark ? 0.35 : 0.15),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
@@ -922,87 +938,138 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
           ],
         ),
         const SizedBox(width: 16),
-        // Like button (larger) with label
-        Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF00B5FF), Color(0xFF00E5FF)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+
+        // ── Like button ───────────────────────────────────────────────────────
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: isLiked ? 64 : 56,
+                height: isLiked ? 64 : 56,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  // Green when liked, disabled grey when limit reached, default cyan
+                  gradient: isLiked
+                      ? const LinearGradient(
+                          colors: [Color(0xFF00C853), Color(0xFF69F0AE)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        )
+                      : likeDisabled
+                          ? LinearGradient(
+                              colors: [Colors.grey.shade400, Colors.grey.shade500],
+                            )
+                          : const LinearGradient(
+                              colors: [Color(0xFF00B5FF), Color(0xFF00E5FF)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: isLiked
+                          ? const Color(0xFF00C853).withValues(alpha: 0.5)
+                          : const Color(0xFF00B5FF).withValues(alpha: isDark ? 0.4 : 0.2),
+                      blurRadius: isLiked ? 16 : 12,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(
-                      0xFF00B5FF,
-                    ).withValues(alpha: isDark ? 0.4 : 0.2),
-                    blurRadius: 12,
-                    offset: const Offset(0, 5),
+                child: IconButton(
+                  icon: Icon(
+                    isLiked ? Icons.favorite : Icons.favorite_border,
+                    color: Colors.white,
                   ),
-                ],
+                  iconSize: isLiked ? 34 : 32,
+                  // Only allow tap if not already liked/superliked AND not limit-hit
+                  onPressed: (isActed || likeDisabled) ? null : widget.onLike,
+                ),
               ),
-              child: IconButton(
-                icon: const Icon(Icons.favorite, color: Colors.white),
-                iconSize: 32,
-                onPressed: widget.onLike,
+              const SizedBox(height: 6),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                child: Text(
+                  isLiked ? 'LIKED' : 'Like',
+                  key: ValueKey(isLiked),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isLiked
+                        ? const Color(0xFF00C853)
+                        : (isDark ? Colors.white60 : Colors.black54),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Like',
-              style: TextStyle(
-                fontSize: 11,
-                color: isDark ? Colors.white60 : Colors.black54,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
         const SizedBox(width: 16),
-        // Super button with label
-        Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF7F00FF), Color(0xFFB952EB)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+
+        // ── Super Like button ─────────────────────────────────────────────────
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: isSuperLiked ? 56 : 48,
+                height: isSuperLiked ? 56 : 48,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  // Gold when superliked, disabled grey when no credits, default purple
+                  gradient: isSuperLiked
+                      ? const LinearGradient(
+                          colors: [Color(0xFFFFD700), Color(0xFFFF8C00)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        )
+                      : superLikeDisabled
+                          ? LinearGradient(
+                              colors: [Colors.grey.shade400, Colors.grey.shade500],
+                            )
+                          : const LinearGradient(
+                              colors: [Color(0xFF7F00FF), Color(0xFFB952EB)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: isSuperLiked
+                          ? const Color(0xFFFFD700).withValues(alpha: 0.6)
+                          : const Color(0xFF7F00FF).withValues(alpha: isDark ? 0.35 : 0.15),
+                      blurRadius: isSuperLiked ? 18 : 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(
-                      0xFF7F00FF,
-                    ).withValues(alpha: isDark ? 0.35 : 0.15),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
+                child: IconButton(
+                  icon: Icon(
+                    isSuperLiked ? Icons.star : Icons.star_border,
+                    color: Colors.white,
                   ),
-                ],
+                  onPressed: (isActed || superLikeDisabled) ? null : widget.onSuper,
+                ),
               ),
-              child: IconButton(
-                icon: const Icon(Icons.star, color: Colors.white),
-                onPressed: widget.onSuper,
+              const SizedBox(height: 6),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                child: Text(
+                  isSuperLiked ? 'SUPER LIKED' : 'Super',
+                  key: ValueKey(isSuperLiked),
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: isSuperLiked
+                        ? const Color(0xFFFFD700)
+                        : (isDark ? Colors.white60 : Colors.black54),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Super',
-              style: TextStyle(
-                fontSize: 11,
-                color: isDark ? Colors.white60 : Colors.black54,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ],
     );
@@ -1784,7 +1851,7 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
                           final description =
                               plan['description'] as String? ?? '';
                           final formattedDate = _formatDateTime(
-                            plan['planDate'] ?? plan['planDateTime'],
+                            plan['planDateTime'] ?? plan['planDate'],
                           );
                           final hasRequested = _requestedPlanIds.contains(
                             planId,

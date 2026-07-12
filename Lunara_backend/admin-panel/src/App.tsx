@@ -20,6 +20,7 @@ import { HelpCenter } from './pages/HelpCenter';
 import { CommunityGuidelines } from './pages/CommunityGuidelines';
 import { LegalTerms } from './pages/LegalTerms';
 import ChatSettings from './pages/ChatSettings';
+import { SubscriptionManagement } from './pages/SubscriptionManagement';
 import { ThemeProvider, useThemeMode } from './context/ThemeContext';
 
 // Create React Query client
@@ -88,6 +89,7 @@ function AppContent() {
             <Route path="community-guidelines" element={<CommunityGuidelines />} />
             <Route path="legal-terms" element={<LegalTerms />} />
             <Route path="chat-settings" element={<ChatSettings />} />
+            <Route path="subscriptions" element={<SubscriptionManagement />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

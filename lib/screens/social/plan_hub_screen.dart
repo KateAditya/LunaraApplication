@@ -13,6 +13,8 @@ import '../../widgets/lunara_profile_image.dart';
 import '../../services/app_tour_service.dart';
 import 'package:lunara_app/screens/social/live_feed_screen.dart';
 import 'swipe_intro_screen.dart';
+import '../../widgets/venue_timing_error_dialog.dart';
+
 
 class PlanHubScreen extends StatefulWidget {
   const PlanHubScreen({super.key});
@@ -1038,13 +1040,77 @@ class _PlanHubScreenState extends State<PlanHubScreen>
             final today = DateTime(now.year, now.month, now.day);
             final tomorrow = today.add(const Duration(days: 1));
 
-            int daysToFriday = (5 - now.weekday) % 7;
-            if (daysToFriday <= 0) daysToFriday += 7;
-            final nextFriday = today.add(Duration(days: daysToFriday));
+            bool isDateOpen(DateTime date) {
+              if (selectedVenue == null) return true;
+              
+              // Check closed dates
+              final closedDates = selectedVenue!.closedDates;
+              if (closedDates != null) {
+                final yyyy = date.year;
+                final mm = date.month.toString().padLeft(2, '0');
+                final dd = date.day.toString().padLeft(2, '0');
+                final dateStr = '$yyyy-$mm-$dd';
+                if (closedDates.contains(dateStr)) {
+                  return false;
+                }
+              }
 
-            int daysToSaturday = (6 - now.weekday) % 7;
-            if (daysToSaturday <= 0) daysToSaturday += 7;
-            final nextSaturday = today.add(Duration(days: daysToSaturday));
+              // Check weekdays
+              final weekdaysMap = {
+                1: 'Monday',
+                2: 'Tuesday',
+                3: 'Wednesday',
+                4: 'Thursday',
+                5: 'Friday',
+                6: 'Saturday',
+                7: 'Sunday',
+              };
+              final weekdayName = weekdaysMap[date.weekday];
+              if (selectedVenue!.daysOpen != null && selectedVenue!.daysOpen!.isNotEmpty) {
+                final isOpenOnWeekday = weekdayName != null && selectedVenue!.daysOpen!.any((d) {
+                  final str = d.toString().trim().toLowerCase();
+                  final fullDay = weekdayName.toLowerCase();
+                  final shortDay = weekdayName.substring(0, 3).toLowerCase();
+                  return str.contains(fullDay) || str.contains(shortDay);
+                });
+                if (!isOpenOnWeekday) {
+                  return false;
+                }
+              }
+              return true;
+            }
+
+            bool isTimeSlotValid(TimeOfDay time, [DateTime? specificDate]) {
+              final activeDate = specificDate ?? selectedDate;
+              if (activeDate == null) return true;
+              if (selectedVenue == null) return true;
+
+              final invalidReason = selectedVenue!.getInvalidReason(activeDate, time);
+              if (invalidReason != null) {
+                return false;
+              }
+
+              final selectedDateTime = DateTime(
+                activeDate.year,
+                activeDate.month,
+                activeDate.day,
+                time.hour,
+                time.minute,
+              );
+              final minAllowedDateTime = DateTime.now().add(const Duration(hours: 1));
+              if (selectedDateTime.isBefore(minAllowedDateTime)) {
+                return false;
+              }
+              return true;
+            }
+            final List<DateTime> dynamicDates = [];
+            DateTime checkDate = today;
+            while (dynamicDates.length < 6) {
+              if (isDateOpen(checkDate)) {
+                dynamicDates.add(checkDate);
+              }
+              checkDate = checkDate.add(const Duration(days: 1));
+            }
 
             Future<void> handleDateSelection(DateTime date) async {
               if (selectedVenue == null) {
@@ -1062,11 +1128,13 @@ class _PlanHubScreenState extends State<PlanHubScreen>
               final dd = date.day.toString().padLeft(2, '0');
               final dateStr = '$yyyy-$mm-$dd';
               if (selectedVenue!.closedDates != null && selectedVenue!.closedDates!.contains(dateStr)) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('The venue is closed on $dateStr (Holiday).'),
-                    backgroundColor: Colors.redAccent,
-                  ),
+                VenueTimingErrorDialog.show(
+                  context,
+                  venueName: selectedVenue!.name,
+                  daysOpen: selectedVenue!.daysOpen,
+                  openingTime: selectedVenue!.openingTime,
+                  closingTime: selectedVenue!.closingTime,
+                  closedDates: selectedVenue!.closedDates,
                 );
                 return;
               }
@@ -1088,11 +1156,13 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                 return str.contains(fullDay) || str.contains(shortDay);
               });
               if (!isOpenOnWeekday && selectedVenue!.daysOpen != null && selectedVenue!.daysOpen!.isNotEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('The venue is not open on ${weekdayName}s.'),
-                    backgroundColor: Colors.redAccent,
-                  ),
+                VenueTimingErrorDialog.show(
+                  context,
+                  venueName: selectedVenue!.name,
+                  daysOpen: selectedVenue!.daysOpen,
+                  openingTime: selectedVenue!.openingTime,
+                  closingTime: selectedVenue!.closingTime,
+                  closedDates: selectedVenue!.closedDates,
                 );
                 return;
               }
@@ -1122,11 +1192,13 @@ class _PlanHubScreenState extends State<PlanHubScreen>
 
                 final invalidReason = selectedVenue!.getInvalidReason(date, time);
                 if (invalidReason != null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(invalidReason),
-                      backgroundColor: Colors.redAccent,
-                    ),
+                  VenueTimingErrorDialog.show(
+                    context,
+                    venueName: selectedVenue!.name,
+                    daysOpen: selectedVenue!.daysOpen,
+                    openingTime: selectedVenue!.openingTime,
+                    closingTime: selectedVenue!.closingTime,
+                    closedDates: selectedVenue!.closedDates,
                   );
                   return;
                 }
@@ -1168,7 +1240,35 @@ class _PlanHubScreenState extends State<PlanHubScreen>
 
             Widget buildDateChip(String label, DateTime dateVal, bool isSelected) {
               return GestureDetector(
-                onTap: () => handleDateSelection(dateVal),
+                onTap: () {
+                  if (selectedVenue == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Please select a venue first.'),
+                        backgroundColor: Colors.orangeAccent,
+                      ),
+                    );
+                    return;
+                  }
+                  setSheetState(() {
+                    selectedDate = dateVal;
+                    if (selectedTime != null && !isTimeSlotValid(selectedTime!, dateVal)) {
+                      selectedTime = null;
+                    }
+                    if (selectedDate != null && selectedTime != null) {
+                      final formattedTime = _formatTimeOfBooking(
+                        '${selectedTime!.hour.toString().padLeft(2, '0')}:${selectedTime!.minute.toString().padLeft(2, '0')}',
+                      );
+                      dateCtrl.text =
+                          "${DateFormat('MMM dd, yyyy').format(selectedDate!)} at $formattedTime";
+                    } else if (selectedDate != null) {
+                      dateCtrl.text =
+                          "${DateFormat('MMM dd, yyyy').format(selectedDate!)}";
+                    } else {
+                      dateCtrl.text = '';
+                    }
+                  });
+                },
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   decoration: BoxDecoration(
@@ -1242,10 +1342,10 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       const SizedBox(height: 2),
                       Text(
                         selectedDate != null &&
-                                selectedDate != today &&
-                                selectedDate != tomorrow &&
-                                selectedDate != nextFriday &&
-                                selectedDate != nextSaturday
+                                !dynamicDates.any((d) =>
+                                    d.year == selectedDate!.year &&
+                                    d.month == selectedDate!.month &&
+                                    d.day == selectedDate!.day)
                             ? DateFormat('MMM d').format(selectedDate!)
                             : 'Choose Date',
                         style: TextStyle(
@@ -1470,23 +1570,196 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                         physics: const BouncingScrollPhysics(),
                         child: Row(
                           children: [
-                            buildDateChip('Today', today, selectedDate == today),
-                            const SizedBox(width: 8),
-                            buildDateChip('Tomorrow', tomorrow, selectedDate == tomorrow),
-                            const SizedBox(width: 8),
-                            buildDateChip(DateFormat('E, MMM d').format(nextFriday), nextFriday, selectedDate == nextFriday),
-                            const SizedBox(width: 8),
-                            buildDateChip(DateFormat('E, MMM d').format(nextSaturday), nextSaturday, selectedDate == nextSaturday),
-                            const SizedBox(width: 8),
+                            ...dynamicDates.map((dateVal) {
+                              String label = '';
+                              if (dateVal.year == today.year &&
+                                  dateVal.month == today.month &&
+                                  dateVal.day == today.day) {
+                                label = 'Today';
+                              } else if (dateVal.year == tomorrow.year &&
+                                  dateVal.month == tomorrow.month &&
+                                  dateVal.day == tomorrow.day) {
+                                label = 'Tomorrow';
+                              } else {
+                                label = DateFormat('E').format(dateVal);
+                              }
+
+                              final isSelected = selectedDate != null &&
+                                  selectedDate!.year == dateVal.year &&
+                                  selectedDate!.month == dateVal.month &&
+                                  selectedDate!.day == dateVal.day;
+
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 8.0),
+                                child: buildDateChip(label, dateVal, isSelected),
+                              );
+                            }),
                             buildCustomChip(
                               selectedDate != null &&
-                              selectedDate != today &&
-                              selectedDate != tomorrow &&
-                              selectedDate != nextFriday &&
-                              selectedDate != nextSaturday
+                              !dynamicDates.any((d) =>
+                                  d.year == selectedDate!.year &&
+                                  d.month == selectedDate!.month &&
+                                  d.day == selectedDate!.day)
                             ),
                           ],
                         ),
+                      ),
+                      const SizedBox(height: 10),
+                      const Text(
+                        'SELECT TIME SLOT',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.5,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Builder(
+                        builder: (context) {
+                          final predefinedTimes = [
+                            const TimeOfDay(hour: 19, minute: 0), // 7 PM
+                            const TimeOfDay(hour: 20, minute: 0), // 8 PM
+                            const TimeOfDay(hour: 21, minute: 0), // 9 PM
+                            const TimeOfDay(hour: 22, minute: 0), // 10 PM
+                            const TimeOfDay(hour: 23, minute: 0), // 11 PM
+                            const TimeOfDay(hour: 0, minute: 0),  // 12 AM
+                          ];
+
+                          final validTimes = predefinedTimes.where((t) => isTimeSlotValid(t)).toList();
+
+                          String formatTimeOfDay(TimeOfDay tod) {
+                            final hour = tod.hour == 0 ? 12 : (tod.hour > 12 ? tod.hour - 12 : tod.hour);
+                            final ampm = tod.hour >= 12 ? 'PM' : 'AM';
+                            return '$hour:00 $ampm';
+                          }
+
+                          Widget buildTimeChip(String label, TimeOfDay tod, bool isSelected) {
+                            return GestureDetector(
+                              onTap: () {
+                                setSheetState(() {
+                                  selectedTime = tod;
+                                  if (selectedDate != null) {
+                                    final formattedTime = _formatTimeOfBooking(
+                                      '${tod.hour.toString().padLeft(2, '0')}:${tod.minute.toString().padLeft(2, '0')}',
+                                    );
+                                    dateCtrl.text =
+                                        "${DateFormat('MMM dd, yyyy').format(selectedDate!)} at $formattedTime";
+                                  }
+                                });
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: isSelected ? LunaraTheme.electricViolet : Colors.grey[50],
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: isSelected ? LunaraTheme.electricViolet : Colors.grey[300]!,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Text(
+                                  label,
+                                  style: TextStyle(
+                                    color: isSelected ? Colors.white : Colors.black87,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
+
+                          // Determine if selected time is a custom time (not in validTimes)
+                          bool isCustomSelected = false;
+                          if (selectedTime != null) {
+                            isCustomSelected = !validTimes.any((t) => t.hour == selectedTime!.hour && t.minute == selectedTime!.minute);
+                          }
+
+                          return SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            physics: const BouncingScrollPhysics(),
+                            child: Row(
+                              children: [
+                                ...validTimes.map((tod) {
+                                  final label = formatTimeOfDay(tod);
+                                  final isSelected = selectedTime != null &&
+                                      selectedTime!.hour == tod.hour &&
+                                      selectedTime!.minute == tod.minute;
+
+                                  return Padding(
+                                    padding: const EdgeInsets.only(right: 8.0),
+                                    child: buildTimeChip(label, tod, isSelected),
+                                  );
+                                }),
+                                GestureDetector(
+                                  onTap: () async {
+                                    final TimeOfDay? picked = await showTimePicker(
+                                      context: context,
+                                      initialTime: selectedTime ?? const TimeOfDay(hour: 22, minute: 0),
+                                    );
+                                    if (picked != null) {
+                                      if (!isTimeSlotValid(picked)) {
+                                        VenueTimingErrorDialog.show(
+                                          context,
+                                          venueName: selectedVenue!.name,
+                                          daysOpen: selectedVenue!.daysOpen,
+                                          openingTime: selectedVenue!.openingTime,
+                                          closingTime: selectedVenue!.closingTime,
+                                          closedDates: selectedVenue!.closedDates,
+                                        );
+                                        return;
+                                      }
+                                      setSheetState(() {
+                                        selectedTime = picked;
+                                        if (selectedDate != null) {
+                                          final formattedTime = _formatTimeOfBooking(
+                                            '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}',
+                                          );
+                                          dateCtrl.text =
+                                              "${DateFormat('MMM dd, yyyy').format(selectedDate!)} at $formattedTime";
+                                        }
+                                      });
+                                    }
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                    decoration: BoxDecoration(
+                                      color: isCustomSelected ? LunaraTheme.electricViolet : Colors.grey[50],
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: isCustomSelected ? LunaraTheme.electricViolet : Colors.grey[300]!,
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.access_time,
+                                          size: 12,
+                                          color: isCustomSelected ? Colors.white : Colors.black87,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          isCustomSelected
+                                              ? _formatTimeOfBooking(
+                                                  '${selectedTime!.hour.toString().padLeft(2, '0')}:${selectedTime!.minute.toString().padLeft(2, '0')}')
+                                              : 'Custom',
+                                          style: TextStyle(
+                                            color: isCustomSelected ? Colors.white : Colors.black87,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
                       ),
                       const SizedBox(height: 10),
                       _sheetField(
@@ -2359,13 +2632,13 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                           if (date != null) {
                             if (!context.mounted) return;
                             if (!_isVenueOpenOnDate(selectedVenue!, date)) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'The venue is closed (holiday) on ${['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][date.weekday - 1]}.',
-                                  ),
-                                  backgroundColor: Colors.redAccent,
-                                ),
+                              VenueTimingErrorDialog.show(
+                                context,
+                                venueName: selectedVenue!.name,
+                                daysOpen: selectedVenue!.daysOpen,
+                                openingTime: selectedVenue!.openingTime,
+                                closingTime: selectedVenue!.closingTime,
+                                closedDates: selectedVenue!.closedDates,
                               );
                               return;
                             }
@@ -2380,19 +2653,13 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                 selectedVenue!.openingTime,
                                 selectedVenue!.closingTime,
                               )) {
-                                final openStr = _formatTimeOfBooking(
-                                  selectedVenue!.openingTime,
-                                );
-                                final closeStr = _formatTimeOfBooking(
-                                  selectedVenue!.closingTime,
-                                );
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'Venue is closed at this time. Working hours: $openStr - $closeStr',
-                                    ),
-                                    backgroundColor: Colors.redAccent,
-                                  ),
+                                VenueTimingErrorDialog.show(
+                                  context,
+                                  venueName: selectedVenue!.name,
+                                  daysOpen: selectedVenue!.daysOpen,
+                                  openingTime: selectedVenue!.openingTime,
+                                  closingTime: selectedVenue!.closingTime,
+                                  closedDates: selectedVenue!.closedDates,
                                 );
                                 return;
                               }

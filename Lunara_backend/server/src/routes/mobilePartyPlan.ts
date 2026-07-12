@@ -15,6 +15,8 @@ import {
     verifyJoinerPayment,
     cancelPartyPlan,
     getJoinerRequests,
+    initiateHostPayment,
+    initiateJoinerPayment,
 } from '../controllers/partyPlanController';
 
 const router = Router();
@@ -269,8 +271,20 @@ router.post(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/party-plans/:id/initiate-host-payment
+// ─────────────────────────────────────────────────────────────────────────────
+router.post(
+    '/:id/initiate-host-payment',
+    [
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
+        validate,
+    ],
+    initiateHostPayment
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // POST /api/mobile/party-plans/requests/:reqId/initiate-joiner-payment
-// Initiate Joiner Payment
 // ─────────────────────────────────────────────────────────────────────────────
 router.post(
     '/requests/:reqId/initiate-joiner-payment',
@@ -279,14 +293,7 @@ router.post(
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         validate,
     ],
-    async (_req: Request, res: Response) => {
-        try {
-            // Return a mock amount of 99 for testing
-            return res.json({ success: true, amount: 99 });
-        } catch (error) {
-            return res.status(500).json({ success: false, message: 'Error initiating payment', error });
-        }
-    }
+    initiateJoinerPayment
 );
 
 export default router;

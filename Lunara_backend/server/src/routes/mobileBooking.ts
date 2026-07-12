@@ -83,6 +83,32 @@ router.post(
 );
 
 /**
+ * POST /api/mobile/bookings/:id/initiate-large-party-payment
+ * Create Razorpay Order for Large Party Booking.
+ */
+router.post(
+    '/:id/initiate-large-party-payment',
+    [param('id').isUUID(), validate],
+    ctrl.initiateLargePartyPayment
+);
+
+/**
+ * POST /api/mobile/bookings/:id/verify-large-party-payment
+ * Verify signature of Razorpay Payment for Large Party Booking.
+ */
+router.post(
+    '/:id/verify-large-party-payment',
+    [
+        param('id').isUUID(),
+        body('razorpay_order_id').notEmpty().withMessage('razorpay_order_id is required'),
+        body('razorpay_payment_id').notEmpty().withMessage('razorpay_payment_id is required'),
+        body('razorpay_signature').notEmpty().withMessage('razorpay_signature is required'),
+        validate,
+    ],
+    ctrl.verifyLargePartyPayment
+);
+
+/**
  * POST /api/mobile/bookings/:id/split-bill
  * Set up split payment with named members.
  */

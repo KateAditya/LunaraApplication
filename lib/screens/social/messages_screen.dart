@@ -311,26 +311,77 @@ class _MessagesScreenState extends State<MessagesScreen> {
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 18,
-                    color: Color(0xFF008069),
+                    color: Color(0xFF7F00FF),
                   ),
                 ),
               ),
               const Divider(),
               Expanded(
-                child: FutureBuilder<List<Map<String, dynamic>>>(
-                  future: ApiService.fetchCustomers(),
+                child: FutureBuilder<List<dynamic>>(
+                  future: Future.wait([
+                    ApiService.fetchCustomers(),
+                    ApiService.fetchMyLikesAndMatches(),
+                  ]),
                   builder: (context, snapshot) {
-                    final users = snapshot.data ?? [];
-                    if (snapshot.connectionState == ConnectionState.waiting && users.isEmpty) {
-                      return const Center(child: CircularProgressIndicator(color: Color(0xFF008069)));
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator(color: Color(0xFF7F00FF)));
                     }
-                    if (users.isEmpty) {
-                      return const Center(child: Text('No contacts found'));
+                    if (snapshot.hasError || snapshot.data == null || snapshot.data!.length < 2) {
+                      return const Center(child: Text('Error loading contacts'));
                     }
+
+                    final allUsers = List<Map<String, dynamic>>.from(snapshot.data![0] as List);
+                    final swipes = List<Map<String, dynamic>>.from(snapshot.data![1] as List);
+                    final myId = ApiService.currentUserId;
+
+                    final Set<String> matchedUserIds = {};
+                    for (var s in swipes) {
+                      final status = s['status']?.toString().toLowerCase();
+                      if (status == 'connected') {
+                        final u1 = s['user1Id']?.toString();
+                        final u2 = s['user2Id']?.toString();
+                        if (u1 == myId && u2 != null) {
+                          matchedUserIds.add(u2);
+                        } else if (u2 == myId && u1 != null) {
+                          matchedUserIds.add(u1);
+                        }
+                      }
+                    }
+
+                    final matchedUsers = allUsers.where((u) {
+                      final uid = u['id']?.toString() ?? u['_id']?.toString();
+                      return uid != null && matchedUserIds.contains(uid);
+                    }).toList();
+
+                    if (matchedUsers.isEmpty) {
+                      return const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.people_outline, size: 48, color: Colors.grey),
+                              SizedBox(height: 12),
+                              Text(
+                                'No matched users found',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black54),
+                              ),
+                              SizedBox(height: 6),
+                              Text(
+                                'You can only start chats with users you have matched with.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.grey, fontSize: 13),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
+
                     return ListView.builder(
-                      itemCount: users.length,
+                      itemCount: matchedUsers.length,
                       itemBuilder: (context, index) {
-                        final u = users[index];
+                        final u = matchedUsers[index];
                         final firstName = u['firstName']?.toString() ?? u['name']?.toString() ?? '';
                         final lastName = u['lastName']?.toString() ?? '';
                         final displayName = '$firstName $lastName'.trim();

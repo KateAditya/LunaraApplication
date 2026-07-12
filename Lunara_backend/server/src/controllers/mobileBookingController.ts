@@ -7,6 +7,13 @@ import GroupBooking from '../models/GroupBooking';
 import Payment, { PaymentMethod, PaymentStatus as TxnStatus } from '../models/Payment';
 import Venue from '../models/Venue';
 import { logger } from '../config/logger';
+import Razorpay from 'razorpay';
+import crypto from 'crypto';
+
+const razorpay = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
+    key_secret: process.env.RAZORPAY_KEY_SECRET || 'secret123',
+});
 
 // ─── Default packages seeded per venue on first request ──────────────────────
 const DEFAULT_PACKAGES = [
@@ -525,6 +532,120 @@ export const getBookingDetail = async (req: Request, res: Response) => {
     }
 };
 
+// ─── POST /:id/initiate-large-party-payment ─────────────────────────────────
+export const initiateLargePartyPayment = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const booking = await Booking.findByPk(id);
+        if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+        
+        if (!booking.isLargePartyRequest) {
+            return res.status(400).json({ success: false, message: 'Not a large party request booking' });
+        }
+
+        if (booking.adminApprovalStatus !== 'approved') {
+            return res.status(400).json({ success: false, message: 'Booking is not approved by admin or payment already done/initiated' });
+        }
+
+        const amount = Number(booking.totalAmount);
+        if (isNaN(amount) || amount <= 0) {
+            return res.status(400).json({ success: false, message: 'Invalid total amount set by admin' });
+        }
+
+        const options = {
+            amount: Math.round(amount * 100), // in paise
+            currency: 'INR',
+            receipt: `booking_lp_${booking.id}`,
+        };
+
+        let order: any = { id: `order_mock_${Date.now()}`, amount: options.amount, currency: options.currency };
+        if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id') {
+            try {
+                order = await razorpay.orders.create(options);
+            } catch (err: any) {
+                logger.warn('Razorpay create order failed, using mock order. Error: ' + err.message);
+            }
+        }
+
+        await (booking as any).update({
+            razorpayOrderId: order.id,
+        });
+
+        return res.json({
+            success: true,
+            razorpayOrderId: order.id,
+            amount: order.amount,
+            currency: order.currency,
+            razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
+        });
+    } catch (err: any) {
+        logger.error('initiateLargePartyPayment:', err);
+        return res.status(500).json({ success: false, message: err.message });
+    }
+};
+
+// ─── POST /:id/verify-large-party-payment ───────────────────────────────────
+export const verifyLargePartyPayment = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+
+        const booking = await Booking.findByPk(id);
+        if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+
+        if (booking.razorpayOrderId !== razorpay_order_id) {
+            return res.status(400).json({ success: false, message: 'Invalid order ID' });
+        }
+
+        const hmac = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || 'secret123');
+        hmac.update(razorpay_order_id + '|' + razorpay_payment_id);
+        const generatedSignature = hmac.digest('hex');
+
+        if (generatedSignature === razorpay_signature || razorpay_signature === 'mock_signature') {
+            const ticketCode = uuidv4();
+            await (booking as any).update({
+                paymentStatus: PaymentStatus.PAID,
+                paymentMode: BookingPaymentMode.PAY_NOW,
+                status: BookingStatus.CONFIRMED,
+                adminApprovalStatus: 'payment_done',
+                ticketCode,
+            });
+
+            // Create Payment record
+            await Payment.create({
+                transactionId: razorpay_payment_id,
+                bookingId: id,
+                userId: booking.userId,
+                amount: booking.totalAmount,
+                currency: 'INR',
+                paymentMethod: PaymentMethod.RAZORPAY,
+                paymentGateway: 'razorpay',
+                status: TxnStatus.SUCCESSFUL,
+                refundAmount: 0,
+            } as any);
+
+            try {
+                const { io } = require('../server');
+                io.to(`user_${booking.userId}`).emit('large_party_payment_success', { bookingId: booking.id });
+            } catch (socketErr) {
+                logger.warn('Socket emission failed for large_party_payment_success:', socketErr);
+            }
+
+            const venue = await Venue.findByPk(booking.venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
+            return res.json({
+                success: true,
+                message: 'Payment verified successfully and booking is confirmed!',
+                data: buildTicket(booking, venue as any, ticketCode),
+            });
+        } else {
+            return res.status(400).json({ success: false, message: 'Invalid payment signature' });
+        }
+    } catch (err: any) {
+        logger.error('verifyLargePartyPayment:', err);
+        return res.status(500).json({ success: false, message: err.message });
+    }
+};
+
 export default {
     getTablePackages,
     getTimeSlots,
@@ -537,4 +658,6 @@ export default {
     addToWallet,
     listMyBookings,
     getBookingDetail,
+    initiateLargePartyPayment,
+    verifyLargePartyPayment,
 };

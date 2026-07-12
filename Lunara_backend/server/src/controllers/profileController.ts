@@ -136,7 +136,30 @@ export const deletePhoto = async (req: Request, res: Response): Promise<Response
             return res.status(404).json({ success: false, message: 'Photo not found' });
         }
 
+        const wasPrimary = photo.isPrimary;
         await photo.destroy();
+
+        if (wasPrimary) {
+            // Find the next photo to set as primary
+            const nextPhoto = await UserPhoto.findOne({
+                where: { userId },
+                order: [['displayOrder', 'ASC'], ['uploadedAt', 'DESC']],
+            });
+
+            if (nextPhoto) {
+                nextPhoto.isPrimary = true;
+                await nextPhoto.save();
+                await User.update(
+                    { profileImageUrl: '/' + nextPhoto.filePath.replace(/\\/g, '/') },
+                    { where: { id: userId } }
+                );
+            } else {
+                await User.update(
+                    { profileImageUrl: null as any },
+                    { where: { id: userId } }
+                );
+            }
+        }
 
         return res.status(200).json({
             success: true,
@@ -163,6 +186,11 @@ export const setPrimaryPhoto = async (req: Request, res: Response): Promise<Resp
         }
 
         await UserPhoto.setAsPrimary(id, userId);
+
+        await User.update(
+            { profileImageUrl: '/' + photo.filePath.replace(/\\/g, '/') },
+            { where: { id: userId } }
+        );
 
         return res.status(200).json({
             success: true,

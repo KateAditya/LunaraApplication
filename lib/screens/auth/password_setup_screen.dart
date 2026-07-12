@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../widgets/action_button.dart';
+import '../../widgets/top_error_banner.dart';
 import '../../services/auth_service.dart';
 import '../../services/biometric_service.dart';
 import '../profile_setup/profile_photos_screen.dart';
@@ -46,17 +47,11 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
 
   Future<void> _handleCompleteSetup() async {
     if (_passwordController.text.length < 3) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Password must contain minimum 3 characters'),
-        ),
-      );
+      TopErrorBanner.show(context, 'Password must contain minimum 3 characters');
       return;
     }
     if (_passwordController.text != _confirmController.text) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Passwords do not match')));
+      TopErrorBanner.show(context, 'Passwords do not match');
       return;
     }
 
@@ -79,12 +74,7 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
           ),
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(error),
-            backgroundColor: LunaraTheme.primaryDeep,
-          ),
-        );
+        TopErrorBanner.show(context, error);
       }
     }
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../models/venue.dart';
 import 'venue_detail_screen.dart';
+import 'booking_process_screen.dart';
 import '../../widgets/light_map_view.dart';
 import '../../services/api_service.dart';
 import 'advanced_filters_screen.dart';
@@ -428,20 +429,58 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
                   ),
                   const SizedBox(height: 16),
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Icon(
-                        Icons.location_on_rounded,
-                        color: Colors.grey,
-                        size: 16,
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.location_on_rounded,
+                            color: Colors.grey,
+                            size: 16,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            venue.city,
+                            style: const TextStyle(
+                              fontFamily: 'AllroundGothic',
+                              color: Colors.black,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 6),
-                      Text(
-                        venue.city,
-                        style: const TextStyle(
-                          fontFamily: 'AllroundGothic',
-                          color: Colors.black,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => BookingProcessScreen(venue: venue.toMap()),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
+                            gradient: LunaraTheme.primaryGradient,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                                blurRadius: 8,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: const Text(
+                            'BOOK NOW',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.5,
+                            ),
+                          ),
                         ),
                       ),
                     ],

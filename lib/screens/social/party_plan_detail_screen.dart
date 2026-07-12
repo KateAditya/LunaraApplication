@@ -206,7 +206,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
             .join(', ');
 
     final description = plan['description'] as String? ?? '';
-    final planDateRaw = plan['planDate'] ?? plan['planDateTime'];
+    final planDateRaw = plan['planDateTime'] ?? plan['planDate'];
     final formattedDate = _formatDateTime(planDateRaw);
     final visibility = (plan['visibility'] as String? ?? 'public').toUpperCase();
     final status = (plan['status'] as String? ?? 'active').toUpperCase();

@@ -22,6 +22,7 @@ import {
     BiUserPin,
     BiChat,
     BiBlock,
+    BiCrown,
 } from 'react-icons/bi';
 import { useAuthStore } from '../store/authStore';
 import { useThemeMode } from '../context/ThemeContext';
@@ -57,6 +58,7 @@ const navGroups: NavGroup[] = [
             { text: 'Group Parties', icon: <BiGroup />, path: '/group-parties' },
             { text: 'Strangers Meet', icon: <BiUserPin />, path: '/strangers-meet' },
             { text: 'Chat Settings', icon: <BiChat />, path: '/chat-settings' },
+            { text: 'Subscription Manage', icon: <BiCrown />, path: '/subscriptions' },
         ],
     },
     {

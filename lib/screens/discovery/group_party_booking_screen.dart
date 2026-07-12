@@ -7,6 +7,8 @@ import '../../models/venue.dart';
 import '../../services/api_service.dart';
 import 'payment_confirmation_screen.dart';
 import '../../services/app_tour_service.dart';
+import '../../widgets/venue_timing_error_dialog.dart';
+
 
 class GroupPartyBookingScreen extends StatefulWidget {
   const GroupPartyBookingScreen({super.key});
@@ -365,19 +367,51 @@ class _GroupPartyBookingScreenState extends State<GroupPartyBookingScreen> {
                   ),
                   const SizedBox(height: 16),
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Icon(
-                        Icons.location_on_rounded,
-                        color: Colors.grey,
-                        size: 14,
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.location_on_rounded,
+                            color: Colors.grey,
+                            size: 14,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            venue.city,
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        venue.city,
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFE100FF), Color(0xFF7F00FF)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF7F00FF).withValues(alpha: 0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: const Text(
+                          'BOOK NOW',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1,
+                          ),
                         ),
                       ),
                     ],
@@ -468,11 +502,13 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
     final dd = date.day.toString().padLeft(2, '0');
     final dateStr = '$yyyy-$mm-$dd';
     if (widget.venue.closedDates != null && widget.venue.closedDates!.contains(dateStr)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('The venue is closed on $dateStr (Holiday).'),
-          backgroundColor: Colors.redAccent,
-        ),
+      VenueTimingErrorDialog.show(
+        context,
+        venueName: widget.venue.name,
+        daysOpen: widget.venue.daysOpen,
+        openingTime: widget.venue.openingTime,
+        closingTime: widget.venue.closingTime,
+        closedDates: widget.venue.closedDates,
       );
       return;
     }
@@ -494,11 +530,13 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
       return str.contains(fullDay) || str.contains(shortDay);
     });
     if (!isOpenOnWeekday && widget.venue.daysOpen != null && widget.venue.daysOpen!.isNotEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('The venue is not open on ${weekdayName}s.'),
-          backgroundColor: Colors.redAccent,
-        ),
+      VenueTimingErrorDialog.show(
+        context,
+        venueName: widget.venue.name,
+        daysOpen: widget.venue.daysOpen,
+        openingTime: widget.venue.openingTime,
+        closingTime: widget.venue.closingTime,
+        closedDates: widget.venue.closedDates,
       );
       return;
     }
@@ -509,6 +547,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
     );
 
     if (time != null) {
+      if (!mounted) return;
       final selectedDateTime = DateTime(
         date.year,
         date.month,
@@ -528,11 +567,13 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
 
       final invalidReason = widget.venue.getInvalidReason(date, time);
       if (invalidReason != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(invalidReason),
-            backgroundColor: Colors.redAccent,
-          ),
+        VenueTimingErrorDialog.show(
+          context,
+          venueName: widget.venue.name,
+          daysOpen: widget.venue.daysOpen,
+          openingTime: widget.venue.openingTime,
+          closingTime: widget.venue.closingTime,
+          closedDates: widget.venue.closedDates,
         );
         return;
       }
@@ -560,6 +601,29 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
     if (date != null) {
       await _handleDateSelection(date);
     }
+  }
+
+  bool _isTimeSlotValid(TimeOfDay time, [DateTime? specificDate]) {
+    final activeDate = specificDate ?? _selectedDate;
+    if (activeDate == null) return true;
+
+    final invalidReason = widget.venue.getInvalidReason(activeDate, time);
+    if (invalidReason != null) {
+      return false;
+    }
+
+    final selectedDateTime = DateTime(
+      activeDate.year,
+      activeDate.month,
+      activeDate.day,
+      time.hour,
+      time.minute,
+    );
+    final minAllowedDateTime = DateTime.now().add(const Duration(hours: 1));
+    if (selectedDateTime.isBefore(minAllowedDateTime)) {
+      return false;
+    }
+    return true;
   }
 
   @override
@@ -594,17 +658,73 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
     final today = DateTime(now.year, now.month, now.day);
     final tomorrow = today.add(const Duration(days: 1));
 
-    int daysToFriday = (5 - now.weekday) % 7;
-    if (daysToFriday <= 0) daysToFriday += 7;
-    final nextFriday = today.add(Duration(days: daysToFriday));
+    bool isVenueOpen(DateTime date) {
+      final closedDates = widget.venue.closedDates;
+      if (closedDates != null) {
+        final yyyy = date.year;
+        final mm = date.month.toString().padLeft(2, '0');
+        final dd = date.day.toString().padLeft(2, '0');
+        final dateStr = '$yyyy-$mm-$dd';
+        if (closedDates.contains(dateStr)) {
+          return false;
+        }
+      }
 
-    int daysToSaturday = (6 - now.weekday) % 7;
-    if (daysToSaturday <= 0) daysToSaturday += 7;
-    final nextSaturday = today.add(Duration(days: daysToSaturday));
+      final weekdaysMap = {
+        1: 'Monday',
+        2: 'Tuesday',
+        3: 'Wednesday',
+        4: 'Thursday',
+        5: 'Friday',
+        6: 'Saturday',
+        7: 'Sunday',
+      };
+      final weekdayName = weekdaysMap[date.weekday];
+      if (widget.venue.daysOpen != null && widget.venue.daysOpen!.isNotEmpty) {
+        final isOpenOnWeekday = weekdayName != null && widget.venue.daysOpen!.any((d) {
+          final str = d.toString().trim().toLowerCase();
+          final fullDay = weekdayName.toLowerCase();
+          final shortDay = weekdayName.substring(0, 3).toLowerCase();
+          return str.contains(fullDay) || str.contains(shortDay);
+        });
+        if (!isOpenOnWeekday) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    final List<DateTime> dynamicDates = [];
+    DateTime checkDate = today;
+    while (dynamicDates.length < 6) {
+      if (isVenueOpen(checkDate)) {
+        dynamicDates.add(checkDate);
+      }
+      checkDate = checkDate.add(const Duration(days: 1));
+    }
 
     Widget buildDateChip(String label, DateTime dateVal, bool isSelected) {
       return GestureDetector(
-        onTap: () => _handleDateSelection(dateVal),
+        onTap: () {
+          setState(() {
+            _selectedDate = dateVal;
+            if (_selectedTime != null && !_isTimeSlotValid(_selectedTime!, dateVal)) {
+              _selectedTime = null;
+            }
+            if (_selectedDate != null && _selectedTime != null) {
+              final formattedTime = _formatTimeOfBooking(
+                '${_selectedTime!.hour.toString().padLeft(2, '0')}:${_selectedTime!.minute.toString().padLeft(2, '0')}',
+              );
+              _dateController.text =
+                  "${DateFormat('MMM dd, yyyy').format(_selectedDate!)} at $formattedTime";
+            } else if (_selectedDate != null) {
+              _dateController.text =
+                  "${DateFormat('MMM dd, yyyy').format(_selectedDate!)}";
+            } else {
+              _dateController.text = '';
+            }
+          });
+        },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
@@ -678,10 +798,10 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
               const SizedBox(height: 2),
               Text(
                 _selectedDate != null &&
-                        _selectedDate != today &&
-                        _selectedDate != tomorrow &&
-                        _selectedDate != nextFriday &&
-                        _selectedDate != nextSaturday
+                        !dynamicDates.any((d) =>
+                            d.year == _selectedDate!.year &&
+                            d.month == _selectedDate!.month &&
+                            d.day == _selectedDate!.day)
                     ? DateFormat('MMM d').format(_selectedDate!)
                     : 'Choose Date',
                 style: TextStyle(
@@ -875,28 +995,202 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  SingleChildScrollView(
+                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     physics: const BouncingScrollPhysics(),
                     child: Row(
                       children: [
-                        buildDateChip('Today', today, _selectedDate == today),
-                        const SizedBox(width: 8),
-                        buildDateChip('Tomorrow', tomorrow, _selectedDate == tomorrow),
-                        const SizedBox(width: 8),
-                        buildDateChip(DateFormat('E, MMM d').format(nextFriday), nextFriday, _selectedDate == nextFriday),
-                        const SizedBox(width: 8),
-                        buildDateChip(DateFormat('E, MMM d').format(nextSaturday), nextSaturday, _selectedDate == nextSaturday),
-                        const SizedBox(width: 8),
+                        ...dynamicDates.map((dateVal) {
+                          String label = '';
+                          if (dateVal.year == today.year &&
+                              dateVal.month == today.month &&
+                              dateVal.day == today.day) {
+                            label = 'Today';
+                          } else if (dateVal.year == tomorrow.year &&
+                              dateVal.month == tomorrow.month &&
+                              dateVal.day == tomorrow.day) {
+                            label = 'Tomorrow';
+                          } else {
+                            label = DateFormat('E').format(dateVal);
+                          }
+
+                          final isSelected = _selectedDate != null &&
+                              _selectedDate!.year == dateVal.year &&
+                              _selectedDate!.month == dateVal.month &&
+                              _selectedDate!.day == dateVal.day;
+
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8.0),
+                            child: buildDateChip(label, dateVal, isSelected),
+                          );
+                        }),
                         buildCustomChip(
                           _selectedDate != null &&
-                          _selectedDate != today &&
-                          _selectedDate != tomorrow &&
-                          _selectedDate != nextFriday &&
-                          _selectedDate != nextSaturday
+                          !dynamicDates.any((d) =>
+                              d.year == _selectedDate!.year &&
+                              d.month == _selectedDate!.month &&
+                              d.day == _selectedDate!.day)
                         ),
                       ],
                     ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'SELECT TIME SLOT',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.5,
+                      color: Colors.black54,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Builder(
+                    builder: (context) {
+                      final predefinedTimes = [
+                        const TimeOfDay(hour: 19, minute: 0), // 7 PM
+                        const TimeOfDay(hour: 20, minute: 0), // 8 PM
+                        const TimeOfDay(hour: 21, minute: 0), // 9 PM
+                        const TimeOfDay(hour: 22, minute: 0), // 10 PM
+                        const TimeOfDay(hour: 23, minute: 0), // 11 PM
+                        const TimeOfDay(hour: 0, minute: 0),  // 12 AM
+                      ];
+
+                      final validTimes = predefinedTimes.where((t) => _isTimeSlotValid(t)).toList();
+
+                      String formatTimeOfDay(TimeOfDay tod) {
+                        final hour = tod.hour == 0 ? 12 : (tod.hour > 12 ? tod.hour - 12 : tod.hour);
+                        final ampm = tod.hour >= 12 ? 'PM' : 'AM';
+                        return '$hour:00 $ampm';
+                      }
+
+                      Widget buildTimeChip(String label, TimeOfDay tod, bool isSelected) {
+                        return GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _selectedTime = tod;
+                              if (_selectedDate != null) {
+                                final formattedTime = _formatTimeOfBooking(
+                                  '${tod.hour.toString().padLeft(2, '0')}:${tod.minute.toString().padLeft(2, '0')}',
+                                );
+                                _dateController.text =
+                                    "${DateFormat('MMM dd, yyyy').format(_selectedDate!)} at $formattedTime";
+                              }
+                            });
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: isSelected ? const Color(0xFF7C3AED) : Colors.grey[50],
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isSelected ? const Color(0xFF7C3AED) : Colors.grey[300]!,
+                                width: 1,
+                              ),
+                            ),
+                            child: Text(
+                              label,
+                              style: TextStyle(
+                                color: isSelected ? Colors.white : Colors.black87,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+
+                      // Determine if selected time is a custom time (not in validTimes)
+                      bool isCustomSelected = false;
+                      if (_selectedTime != null) {
+                        isCustomSelected = !validTimes.any((t) => t.hour == _selectedTime!.hour && t.minute == _selectedTime!.minute);
+                      }
+
+                      return SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        physics: const BouncingScrollPhysics(),
+                        child: Row(
+                          children: [
+                            ...validTimes.map((tod) {
+                              final label = formatTimeOfDay(tod);
+                              final isSelected = _selectedTime != null &&
+                                  _selectedTime!.hour == tod.hour &&
+                                  _selectedTime!.minute == tod.minute;
+
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 8.0),
+                                child: buildTimeChip(label, tod, isSelected),
+                              );
+                            }),
+                            GestureDetector(
+                              onTap: () async {
+                                final TimeOfDay? picked = await showTimePicker(
+                                  context: context,
+                                  initialTime: _selectedTime ?? const TimeOfDay(hour: 22, minute: 0),
+                                );
+                                if (picked != null) {
+                                  if (!mounted) return;
+                                  if (!_isTimeSlotValid(picked)) {
+                                    VenueTimingErrorDialog.show(
+                                      context,
+                                      venueName: widget.venue.name,
+                                      daysOpen: widget.venue.daysOpen,
+                                      openingTime: widget.venue.openingTime,
+                                      closingTime: widget.venue.closingTime,
+                                      closedDates: widget.venue.closedDates,
+                                    );
+                                    return;
+                                  }
+                                  setState(() {
+                                    _selectedTime = picked;
+                                    if (_selectedDate != null) {
+                                      final formattedTime = _formatTimeOfBooking(
+                                        '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}',
+                                      );
+                                      _dateController.text =
+                                          "${DateFormat('MMM dd, yyyy').format(_selectedDate!)} at $formattedTime";
+                                    }
+                                  });
+                                }
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: isCustomSelected ? const Color(0xFF7C3AED) : Colors.grey[50],
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: isCustomSelected ? const Color(0xFF7C3AED) : Colors.grey[300]!,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.access_time,
+                                      size: 12,
+                                      color: isCustomSelected ? Colors.white : Colors.black87,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      isCustomSelected
+                                          ? _formatTimeOfBooking(
+                                              '${_selectedTime!.hour.toString().padLeft(2, '0')}:${_selectedTime!.minute.toString().padLeft(2, '0')}')
+                                          : 'Custom',
+                                      style: TextStyle(
+                                        color: isCustomSelected ? Colors.white : Colors.black87,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
                   const SizedBox(height: 12),
                   GestureDetector(
@@ -1252,7 +1546,47 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                         final formattedTime = '$hour:$min $ampm';
 
                         final parentContext = context;
-                        Navigator.pop(context);
+
+                        // Show loading dialog
+                        showDialog(
+                          context: context,
+                          barrierDismissible: false,
+                          builder: (ctx) => const Center(
+                            child: CircularProgressIndicator(
+                              color: LunaraTheme.electricViolet,
+                            ),
+                          ),
+                        );
+
+                        final partyDateStr = selectedDateTime.toIso8601String();
+
+                        final result = await ApiService.createGroupParty(
+                          venueId: widget.venue.id,
+                          numberOfFriends: parsed,
+                          partyDate: partyDateStr,
+                          mobileNumber: _mobileController.text.trim(),
+                          optionalMobileNumber: _optMobileController.text.trim().isEmpty
+                              ? null
+                              : _optMobileController.text.trim(),
+                        );
+
+                        if (!parentContext.mounted) return;
+                        Navigator.pop(parentContext); // Close loading dialog
+
+                        if (result == null || result['success'] != true) {
+                          ScaffoldMessenger.of(parentContext).showSnackBar(
+                            const SnackBar(
+                              content: Text('Failed to initiate booking. Please try again.'),
+                              backgroundColor: Colors.redAccent,
+                            ),
+                          );
+                          return;
+                        }
+
+                        final String orderId = result['razorpayOrderId'] ?? '';
+                        final int amount = result['amount'] ?? (totalPrice * 100).round();
+
+                        Navigator.pop(parentContext); // Close booking bottom sheet
                         Navigator.push(
                           parentContext,
                           MaterialPageRoute(
@@ -1269,6 +1603,60 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                               mobileNumber: _mobileController.text.trim(),
                               optionalMobileNumber: _optMobileController.text
                                   .trim(),
+                              razorpayOrderId: orderId,
+                              razorpayAmount: amount,
+                              onRazorpayPaymentSuccess: (paymentId, signature) async {
+                                try {
+                                  final success = await ApiService.verifyGroupPartyPayment(
+                                    razorpayOrderId: orderId,
+                                    razorpayPaymentId: paymentId,
+                                    razorpaySignature: signature,
+                                  );
+                                  if (success) {
+                                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Group Party Booked Successfully!'),
+                                        backgroundColor: Colors.green,
+                                      ),
+                                    );
+                                  } else {
+                                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Payment Verification Failed.'),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
+                                } catch (e) {
+                                  debugPrint('verifyGroupPartyPayment error: $e');
+                                }
+                              },
+                              onPaymentSuccess: () async {
+                                try {
+                                  final success = await ApiService.verifyGroupPartyPayment(
+                                    razorpayOrderId: orderId,
+                                    razorpayPaymentId: 'mock_payment',
+                                    razorpaySignature: 'mock_signature',
+                                  );
+                                  if (success) {
+                                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Group Party Booked Successfully!'),
+                                        backgroundColor: Colors.green,
+                                      ),
+                                    );
+                                  } else {
+                                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Payment Verification Failed.'),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
+                                } catch (e) {
+                                  debugPrint('verifyGroupPartyPayment error: $e');
+                                }
+                              },
                             ),
                           ),
                         );

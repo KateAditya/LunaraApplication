@@ -230,6 +230,12 @@ async function getUserNotifications(uId: string): Promise<any[]> {
             body,
             createdAt: match.createdAt ? match.createdAt.toISOString() : new Date().toISOString(),
             read: isRead,
+            sender: {
+                id: sender.id,
+                firstName: sender.firstName,
+                lastName: sender.lastName,
+                profileImageUrl: sender.profileImageUrl,
+            }
         });
     }
 
@@ -324,6 +330,12 @@ async function getUserNotifications(uId: string): Promise<any[]> {
             body: `${name} viewed your profile`,
             createdAt: new Date(Date.now() - timeDiff).toISOString(),
             read: readNotificationIds.has(notificationId),
+            sender: {
+                id: user.id,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                profileImageUrl: user.profileImageUrl,
+            }
         });
     });
 
@@ -489,6 +501,13 @@ router.post('/swipe', mobileUserController.swipeUser);
  * Fetch all likes/matches for a user
  */
 router.get('/likes-matches', mobileUserController.getMyLikesAndMatches);
+
+/**
+ * GET /api/mobile/user/swipe-status
+ * Check if current user already liked/superliked a target today, and get plan limits.
+ * Query: userId, targetUserId
+ */
+router.get('/swipe-status', mobileUserController.getSwipeStatus);
 
 // ── Chat Subscription Routes ──────────────────────────────────────────────────
 import * as chatSubCtrl from '../controllers/chatSubscriptionController';

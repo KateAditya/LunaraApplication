@@ -420,7 +420,8 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                         status: r.status,
                         createdAt: r.createdAt,
                         requester: { ...reqUser?.toJSON(), profileImageUrl },
-                        planDetails: plan
+                        planDetails: plan,
+                        plan: plan
                     };
                 }));
             }
@@ -456,7 +457,8 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                         joinerPaymentStatus: r.joinerPaymentStatus,
                         joinerRazorpayOrderId: r.joinerRazorpayOrderId,
                         requester: { ...reqUser?.toJSON(), profileImageUrl },
-                        planDetails: plan
+                        planDetails: plan,
+                        plan: plan
                     };
                 }));
             }

@@ -31,14 +31,22 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   int _chatCount = 0;
 
   bool _isInitialized = false;
+  late final List<Widget> _screens;
 
   @override
   void initState() {
     super.initState();
+    _screens = [
+      const DiscoveryScreen(),
+      LiveFeedScreen(isTab: true, onCountChanged: _onLiveFeedRead),
+      const SizedBox.shrink(), // Placeholder for center button
+      const MessagesScreen(),
+      const ProfileHubScreen(),
+    ];
     WidgetsBinding.instance.addObserver(this);
     _initApp();
     _badgeTimer = Timer.periodic(
-      const Duration(seconds: 15),
+      const Duration(seconds: 30), // chat count synced from server
       (_) => _fetchBadges(),
     );
     _initSocketListeners();
@@ -61,6 +69,19 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     }
   }
 
+  /// Called by the LiveFeedScreen whenever the user views/marks notifications.
+  /// Immediately zeroes the live-feed badge (local-first) so the red dot
+  /// disappears without waiting for a server round-trip.
+  void _onLiveFeedRead() {
+    if (!mounted) return;
+    setState(() {
+      _liveFeedCount = 0;
+    });
+    _updateAppBadge(0 + _chatCount);
+    // Background sync to reconcile chat count from server
+    _fetchBadges();
+  }
+
   Future<void> _fetchBadges() async {
     final counts = await ApiService.fetchBadgeCounts();
     if (mounted) {
@@ -68,18 +89,21 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         _liveFeedCount = counts['liveFeedCount'] ?? 0;
         _chatCount = counts['chatCount'] ?? 0;
       });
-      final total = counts['totalCount'] ?? 0;
-      try {
-        if (!kIsWeb && await FlutterAppBadger.isAppBadgeSupported()) {
-          if (total > 0) {
-            FlutterAppBadger.updateBadgeCount(total);
-          } else {
-            FlutterAppBadger.removeBadge();
-          }
+      _updateAppBadge(counts['totalCount'] ?? 0);
+    }
+  }
+
+  Future<void> _updateAppBadge(int total) async {
+    try {
+      if (!kIsWeb && await FlutterAppBadger.isAppBadgeSupported()) {
+        if (total > 0) {
+          FlutterAppBadger.updateBadgeCount(total);
+        } else {
+          FlutterAppBadger.removeBadge();
         }
-      } catch (e) {
-        debugPrint('FlutterAppBadger error: $e');
       }
+    } catch (e) {
+      debugPrint('FlutterAppBadger error: $e');
     }
   }
 
@@ -157,14 +181,6 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       AppTourService.showDashboardTour(context);
     });
   }
-
-  final List<Widget> _screens = [
-    const DiscoveryScreen(),
-    const LiveFeedScreen(isTab: true),
-    const SizedBox.shrink(), // Placeholder for center button
-    const MessagesScreen(),
-    const ProfileHubScreen(),
-  ];
 
   @override
   Widget build(BuildContext context) {

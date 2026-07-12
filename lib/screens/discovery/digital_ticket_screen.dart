@@ -1,9 +1,30 @@
 import 'package:flutter/material.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import '../../core/theme.dart';
 import '../../widgets/action_button.dart';
+import '../../services/api_service.dart';
 
 class DigitalTicketScreen extends StatelessWidget {
-  const DigitalTicketScreen({super.key});
+  final Map<dynamic, dynamic>? venue;
+  final String? date;
+  final String? package;
+  final String? time;
+  final String? table;
+  final String? guests;
+  final String? totalPrice;
+  final String? ticketId;
+
+  const DigitalTicketScreen({
+    super.key,
+    this.venue,
+    this.date,
+    this.package,
+    this.time,
+    this.table,
+    this.guests,
+    this.totalPrice,
+    this.ticketId,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -63,6 +84,19 @@ class DigitalTicketScreen extends StatelessWidget {
   }
 
   Widget _buildGlowingTicket() {
+    final String venueName = venue?['name']?.toString() ?? 'ELARA VELVET';
+    final String venueImage = (venue?['imageUrl'] ?? venue?['images']?[0]?['filePath'] ?? 'https://picsum.photos/seed/29/600/400').toString();
+    final String cleanVenueImage = venueImage.startsWith('/') ? '${ApiService.baseUrl}$venueImage' : venueImage;
+
+    final String displayDate = date ?? 'SAT, OCT 24';
+    final String displayTime = time ?? '10:30 PM';
+    final String displayDateTime = '$displayDate • $displayTime';
+
+    final String displayTable = table ?? 'VIP V1';
+    final String displayGuests = guests != null ? '$guests GUESTS' : '6 GUESTS';
+    final String displayStatus = 'VERIFIED';
+    final String finalTicketId = (ticketId ?? 'TICKET').toUpperCase();
+
     return Column(
       children: [
         Container(
@@ -81,10 +115,8 @@ class DigitalTicketScreen extends StatelessWidget {
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(32),
                   ),
-                  image: const DecorationImage(
-                    image: NetworkImage(
-                      'https://picsum.photos/seed/29/600/400',
-                    ),
+                  image: DecorationImage(
+                    image: NetworkImage(cleanVenueImage),
                     fit: BoxFit.cover,
                   ),
                 ),
@@ -108,18 +140,18 @@ class DigitalTicketScreen extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'ELARA VELVET',
-                        style: TextStyle(
+                      Text(
+                        venueName.toUpperCase(),
+                        style: const TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.w900,
                           color: Colors.white,
                           letterSpacing: 1,
                         ),
                       ),
-                      const Text(
-                        'SAT, OCT 24 • 10:30 PM',
-                        style: TextStyle(
+                      Text(
+                        displayDateTime.toUpperCase(),
+                        style: const TextStyle(
                           color: LunaraTheme.electricViolet,
                           fontSize: 12,
                           fontWeight: FontWeight.w900,
@@ -136,10 +168,11 @@ class DigitalTicketScreen extends StatelessWidget {
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    Icon(
-                      Icons.qr_code_2,
-                      size: 180,
-                      color: Colors.black.withValues(alpha: 0.9),
+                    QrImageView(
+                      data: 'LUNARA_TICKET_$finalTicketId',
+                      version: QrVersions.auto,
+                      size: 180.0,
+                      backgroundColor: Colors.white,
                     ),
                     Positioned(
                       top: 0,
@@ -168,9 +201,9 @@ class DigitalTicketScreen extends StatelessWidget {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        _ticketLabelValue('TABLE', 'VIP V1'),
-                        _ticketLabelValue('GUESTS', '6 GUESTS'),
-                        _ticketLabelValue('STATUS', 'VERIFIED'),
+                        _ticketLabelValue('TABLE', displayTable),
+                        _ticketLabelValue('GUESTS', displayGuests),
+                        _ticketLabelValue('STATUS', displayStatus),
                       ],
                     ),
                     const SizedBox(height: 24),

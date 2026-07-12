@@ -4,6 +4,8 @@ import '../../widgets/action_button.dart';
 import 'payment_confirmation_screen.dart';
 import '../../services/api_service.dart';
 import '../../models/venue.dart';
+import '../../widgets/venue_timing_error_dialog.dart';
+
 
 class BookingProcessScreen extends StatefulWidget {
   final Map<dynamic, dynamic> venue;
@@ -92,6 +94,25 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
     }
   }
 
+  bool _isTimeSlotValid(TimeOfDay time) {
+    final venueObj = Venue.fromJson(Map<String, dynamic>.from(widget.venue));
+    if (!_isTimeWithinVenueHours(time, venueObj.openingTime, venueObj.closingTime)) {
+      return false;
+    }
+    final selectedDateTime = DateTime(
+      _selectedDate.year,
+      _selectedDate.month,
+      _selectedDate.day,
+      time.hour,
+      time.minute,
+    );
+    final minAllowedDateTime = DateTime.now().add(const Duration(hours: 1));
+    if (selectedDateTime.isBefore(minAllowedDateTime)) {
+      return false;
+    }
+    return true;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -176,7 +197,6 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                           child: GestureDetector(
                             onTap: () {
                               setState(() => _isGoingSolo = true);
-                              _showBookingPopup(context, isSolo: true);
                             },
                             child: _buildModeBox(
                               title: 'Going solo',
@@ -191,7 +211,6 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                           child: GestureDetector(
                             onTap: () {
                               setState(() => _isGoingSolo = false);
-                              _showBookingPopup(context, isSolo: false);
                             },
                             child: _buildModeBox(
                               title: 'With Friends',
@@ -203,6 +222,14 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 40),
+                    LunaraActionButton(
+                      text: 'BOOK NOW',
+                      onPressed: () {
+                        _showBookingPopup(context, isSolo: _isGoingSolo);
+                      },
+                    ),
+                    const SizedBox(height: 20),
                   ],
                 ),
               ),
@@ -350,6 +377,15 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
   // ─────────────────────────────────────────────────────────
 
   Widget _buildDateSelection() {
+    final List<DateTime> openDates = [];
+    DateTime checkDate = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+    while (openDates.length < 7) {
+      if (_isVenueOpenOnDate(checkDate)) {
+        openDates.add(checkDate);
+      }
+      checkDate = checkDate.add(const Duration(days: 1));
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -369,28 +405,23 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
             scrollDirection: Axis.horizontal,
             itemCount: 7,
             itemBuilder: (context, index) {
-              final date = DateTime.now().add(Duration(days: index));
+              final date = openDates[index];
               final isSelected =
                   _selectedDate.day == date.day &&
                   _selectedDate.month == date.month;
-              final isOpen = _isVenueOpenOnDate(date);
+              const isOpen = true;
 
               return GestureDetector(
                 onTap: () {
                   if (!isOpen) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('The venue is closed (holiday) on ${[
-                          'Monday',
-                          'Tuesday',
-                          'Wednesday',
-                          'Thursday',
-                          'Friday',
-                          'Saturday',
-                          'Sunday'
-                        ][date.weekday - 1]}.'),
-                        backgroundColor: Colors.redAccent,
-                      ),
+                    final venueObj = Venue.fromJson(Map<String, dynamic>.from(widget.venue));
+                    VenueTimingErrorDialog.show(
+                      context,
+                      venueName: venueObj.name,
+                      daysOpen: venueObj.daysOpen,
+                      openingTime: venueObj.openingTime,
+                      closingTime: venueObj.closingTime,
+                      closedDates: venueObj.closedDates,
                     );
                     return;
                   }
@@ -482,6 +513,63 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
   // ─────────────────────────────────────────────────────────
 
   Widget _buildTimeSelection() {
+    final predefinedTimes = [
+      const TimeOfDay(hour: 19, minute: 0), // 7 PM
+      const TimeOfDay(hour: 20, minute: 0), // 8 PM
+      const TimeOfDay(hour: 21, minute: 0), // 9 PM
+      const TimeOfDay(hour: 22, minute: 0), // 10 PM
+      const TimeOfDay(hour: 23, minute: 0), // 11 PM
+      const TimeOfDay(hour: 0, minute: 0),  // 12 AM
+    ];
+
+    final validTimes = predefinedTimes.where((t) => _isTimeSlotValid(t)).toList();
+
+    String formatTimeOfDay(TimeOfDay tod) {
+      final hour = tod.hour == 0 ? 12 : (tod.hour > 12 ? tod.hour - 12 : tod.hour);
+      final ampm = tod.hour >= 12 ? 'PM' : 'AM';
+      return '$hour:00 $ampm';
+    }
+
+    Widget buildTimeChip(String label, TimeOfDay tod, bool isSelected) {
+      return GestureDetector(
+        onTap: () {
+          setState(() {
+            _selectedTime = '${tod.hour.toString().padLeft(2, '0')}:${tod.minute.toString().padLeft(2, '0')}';
+          });
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? LunaraTheme.electricViolet : Colors.grey[50],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected ? LunaraTheme.electricViolet : Colors.grey[300]!,
+              width: 1,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? Colors.white : Colors.black87,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Determine if selected time is a custom time (not in validTimes)
+    bool isCustomSelected = false;
+    if (_selectedTime != null) {
+      final parts = _selectedTime!.split(':');
+      if (parts.length >= 2) {
+        final selHour = int.tryParse(parts[0]) ?? -1;
+        final selMin = int.tryParse(parts[1]) ?? -1;
+        isCustomSelected = !validTimes.any((t) => t.hour == selHour && t.minute == selMin);
+      }
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -495,115 +583,101 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
           ),
         ),
         const SizedBox(height: 16),
-        GestureDetector(
-          onTap: () async {
-            final TimeOfDay? picked = await showTimePicker(
-              context: context,
-              initialTime: const TimeOfDay(hour: 22, minute: 0),
-              builder: (context, child) {
-                return Theme(
-                  data: ThemeData.light().copyWith(
-                    colorScheme: const ColorScheme.light(
-                      primary: LunaraTheme.electricViolet,
-                      onPrimary: Colors.white,
-                      surface: Colors.white,
-                      onSurface: Colors.black,
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          child: Row(
+            children: [
+              ...validTimes.map((tod) {
+                final label = formatTimeOfDay(tod);
+                final parts = _selectedTime?.split(':');
+                final isSelected = parts != null &&
+                    parts.length >= 2 &&
+                    int.tryParse(parts[0]) == tod.hour &&
+                    int.tryParse(parts[1]) == tod.minute;
+
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: buildTimeChip(label, tod, isSelected),
+                );
+              }),
+              GestureDetector(
+                onTap: () async {
+                  final TimeOfDay? picked = await showTimePicker(
+                    context: context,
+                    initialTime: const TimeOfDay(hour: 22, minute: 0),
+                    builder: (context, child) {
+                      return Theme(
+                        data: ThemeData.light().copyWith(
+                          colorScheme: const ColorScheme.light(
+                            primary: LunaraTheme.electricViolet,
+                            onPrimary: Colors.white,
+                            surface: Colors.white,
+                            onSurface: Colors.black,
+                          ),
+                          timePickerTheme: TimePickerThemeData(
+                            backgroundColor: Colors.white,
+                            dialHandColor: LunaraTheme.electricViolet,
+                            dialBackgroundColor: Colors.grey[100],
+                            hourMinuteTextColor: Colors.black,
+                            dayPeriodTextColor: Colors.black,
+                            entryModeIconColor: LunaraTheme.electricViolet,
+                          ),
+                        ),
+                        child: child!,
+                      );
+                    },
+                  );
+                  if (picked != null) {
+                    if (!_isTimeSlotValid(picked)) {
+                      final venueObj = Venue.fromJson(Map<String, dynamic>.from(widget.venue));
+                      VenueTimingErrorDialog.show(
+                        context,
+                        venueName: venueObj.name,
+                        daysOpen: venueObj.daysOpen,
+                        openingTime: venueObj.openingTime,
+                        closingTime: venueObj.closingTime,
+                        closedDates: venueObj.closedDates,
+                      );
+                      return;
+                    }
+                    setState(() {
+                      _selectedTime = '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+                    });
+                  }
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isCustomSelected ? LunaraTheme.electricViolet : Colors.grey[50],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isCustomSelected ? LunaraTheme.electricViolet : Colors.grey[300]!,
+                      width: 1,
                     ),
-                    timePickerTheme: TimePickerThemeData(
-                      backgroundColor: Colors.white,
-                      dialHandColor: LunaraTheme.electricViolet,
-                      dialBackgroundColor: Colors.grey[100],
-                      hourMinuteTextColor: Colors.black,
-                      dayPeriodTextColor: Colors.black,
-                      entryModeIconColor: LunaraTheme.electricViolet,
-                    ),
                   ),
-                  child: child!,
-                );
-              },
-            );
-            if (picked != null) {
-              final selectedDateTime = DateTime(
-                _selectedDate.year,
-                _selectedDate.month,
-                _selectedDate.day,
-                picked.hour,
-                picked.minute,
-              );
-              final minAllowedDateTime = DateTime.now().add(const Duration(hours: 1));
-
-              if (selectedDateTime.isBefore(minAllowedDateTime)) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Please select a time slot at least 1 hour from now.'),
-                    backgroundColor: Colors.redAccent,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.access_time,
+                        size: 12,
+                        color: isCustomSelected ? Colors.white : Colors.black87,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        isCustomSelected ? _formatTimeOfBooking(_selectedTime) : 'Custom',
+                        style: TextStyle(
+                          color: isCustomSelected ? Colors.white : Colors.black87,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
-                );
-                return;
-              }
-
-              final venueObj = Venue.fromJson(Map<String, dynamic>.from(widget.venue));
-              final invalidReason = venueObj.getInvalidReason(_selectedDate, picked);
-              if (invalidReason != null) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(invalidReason),
-                    backgroundColor: Colors.redAccent,
-                  ),
-                );
-                return;
-              }
-
-              setState(() {
-                _selectedTime =
-                    '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
-              });
-            }
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            decoration: BoxDecoration(
-              gradient: _selectedTime != null ? LunaraTheme.cardGradient : null,
-              color: _selectedTime != null ? null : Colors.grey[50],
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: _selectedTime != null
-                  ? LunaraTheme.premiumCardShadow
-                  : [],
-              border: Border.all(
-                color: _selectedTime != null
-                    ? LunaraTheme.electricViolet
-                    : Colors.grey[200]!,
-                width: 1,
+                ),
               ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.access_time,
-                  color: _selectedTime != null
-                      ? LunaraTheme.electricViolet
-                      : Colors.grey[400],
-                  size: 20,
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  _selectedTime != null
-                      ? _formatTimeOfBooking(_selectedTime)
-                      : 'TAP TO SELECT TIME',
-                  style: TextStyle(
-                    color: _selectedTime != null
-                        ? Colors.black
-                        : Colors.grey[500],
-                    fontWeight: _selectedTime != null
-                        ? FontWeight.w900
-                        : FontWeight.normal,
-                    fontSize: 16,
-                    letterSpacing: 1,
-                  ),
-                ),
-              ],
-            ),
+            ],
           ),
         ),
       ],
