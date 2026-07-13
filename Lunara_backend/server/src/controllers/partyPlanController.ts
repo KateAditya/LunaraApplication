@@ -1,5 +1,4 @@
 import { Request, Response } from 'express';
-import { v4 as uuidv4 } from 'uuid';
 import PartyPlan, { PartyPlanStatus, PartyPlanVisibility } from '../models/PartyPlan';
 import { Op } from 'sequelize';
 import User from '../models/User';
@@ -1642,10 +1641,10 @@ export const initiateHostPayment = async (req: Request, res: Response): Promise<
                 order = await razorpay.orders.create(options);
             } catch (err: any) {
                 logger.error('Razorpay host order creation failed, falling back to mock:', err);
-                order = { id: `order_mock_${uuidv4().replace(/-/g, '').substring(0, 14)}` };
+                order = { id: `order_mock_${Date.now()}_${Math.random().toString(36).substring(2, 10)}` };
             }
         } else {
-            order = { id: `order_mock_${uuidv4().replace(/-/g, '').substring(0, 14)}` };
+            order = { id: `order_mock_${Date.now()}_${Math.random().toString(36).substring(2, 10)}` };
         }
 
         await (plan as any).update({
@@ -1701,10 +1700,10 @@ export const initiateJoinerPayment = async (req: Request, res: Response): Promis
                 order = await razorpay.orders.create(options);
             } catch (err: any) {
                 logger.error('Razorpay joiner order creation failed, falling back to mock:', err);
-                order = { id: `order_mock_${uuidv4().replace(/-/g, '').substring(0, 14)}` };
+                order = { id: `order_mock_${Date.now()}_${Math.random().toString(36).substring(2, 10)}` };
             }
         } else {
-            order = { id: `order_mock_${uuidv4().replace(/-/g, '').substring(0, 14)}` };
+            order = { id: `order_mock_${Date.now()}_${Math.random().toString(36).substring(2, 10)}` };
         }
 
         await (request as any).update({
