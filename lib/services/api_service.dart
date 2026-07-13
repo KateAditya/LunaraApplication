@@ -1031,6 +1031,25 @@ class ApiService {
     return false;
   }
 
+  static Future<bool> completeStrangersMeet(String id) async {
+    final userId = currentUserId;
+    if (userId == null) return false;
+
+    try {
+      final response = await patch(
+        '/api/mobile/strangers-meet/$id/complete',
+        body: {'userId': userId},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      debugPrint('completeStrangersMeet error: $e');
+    }
+    return false;
+  }
+
   /// Fetch financial breakdown for a Strangers Meet (platform fee, host profit, settlement)
   static Future<Map<String, dynamic>?> fetchStrangersMeetFinancials(String id) async {
     try {
