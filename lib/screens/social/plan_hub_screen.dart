@@ -2386,6 +2386,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     DateTime? selectedDate;
     TimeOfDay? selectedTime;
     int numberOfPersons = 21;
+    bool useUPI = true; // Toggle between UPI and bank account
 
     final subjectCtrl = TextEditingController();
     final taglineCtrl = TextEditingController();
@@ -2393,6 +2394,12 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     final mobileCtrl = TextEditingController();
     final altMobileCtrl = TextEditingController();
     final chargesCtrl = TextEditingController(text: '0');
+    // Bank / UPI fields
+    final upiCtrl = TextEditingController();
+    final bankNameCtrl = TextEditingController();
+    final accountNumberCtrl = TextEditingController();
+    final accountHolderCtrl = TextEditingController();
+    final ifscCtrl = TextEditingController();
 
     showModalBottomSheet(
       context: context,
@@ -2695,6 +2702,117 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                         icon: Icons.phone_rounded,
                         keyboardType: TextInputType.phone,
                       ),
+                      const SizedBox(height: 20),
+
+                      // ── PAYMENT DETAILS SECTION ──────────────────────
+                      const Text(
+                        'PAYMENT DETAILS',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.5,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Add your bank details so admin can settle your earnings after the meet.',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // UPI / Bank toggle
+                      Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => setSheetState(() => useUPI = true),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: useUPI ? const Color(0xFF7C3AED) : Colors.grey[100],
+                                  borderRadius: const BorderRadius.only(
+                                    topLeft: Radius.circular(10),
+                                    bottomLeft: Radius.circular(10),
+                                  ),
+                                  border: Border.all(color: Colors.grey[200]!),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    'UPI ID',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: useUPI ? Colors.white : Colors.black54,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => setSheetState(() => useUPI = false),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: !useUPI ? const Color(0xFF7C3AED) : Colors.grey[100],
+                                  borderRadius: const BorderRadius.only(
+                                    topRight: Radius.circular(10),
+                                    bottomRight: Radius.circular(10),
+                                  ),
+                                  border: Border.all(color: Colors.grey[200]!),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    'Bank Account',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: !useUPI ? Colors.white : Colors.black54,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+
+                      if (useUPI) ...[
+                        _sheetField(
+                          controller: upiCtrl,
+                          hint: 'Enter UPI ID (e.g. name@upi)',
+                          icon: Icons.qr_code_rounded,
+                          keyboardType: TextInputType.emailAddress,
+                        ),
+                      ] else ...[
+                        _sheetField(
+                          controller: bankNameCtrl,
+                          hint: 'Bank Name',
+                          icon: Icons.account_balance_rounded,
+                        ),
+                        const SizedBox(height: 10),
+                        _sheetField(
+                          controller: accountHolderCtrl,
+                          hint: 'Account Holder Name',
+                          icon: Icons.person_rounded,
+                        ),
+                        const SizedBox(height: 10),
+                        _sheetField(
+                          controller: accountNumberCtrl,
+                          hint: 'Account Number',
+                          icon: Icons.credit_card_rounded,
+                          keyboardType: TextInputType.number,
+                        ),
+                        const SizedBox(height: 10),
+                        _sheetField(
+                          controller: ifscCtrl,
+                          hint: 'IFSC Code',
+                          icon: Icons.code_rounded,
+                        ),
+                      ],
                       const SizedBox(height: 16),
 
                       // Number of Persons
@@ -2912,8 +3030,13 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                   numberOfPersons: numberOfPersons,
                                   chargesPerHead: 0.0,
                                   mobileNumber: mobileCtrl.text.trim(),
-                                  alternateMobileNumber: altMobileCtrl.text
-                                      .trim(),
+                                  alternateMobileNumber: altMobileCtrl.text.trim(),
+                                  // Bank/UPI details
+                                  upiId: useUPI ? upiCtrl.text.trim() : null,
+                                  bankName: !useUPI ? bankNameCtrl.text.trim() : null,
+                                  accountNumber: !useUPI ? accountNumberCtrl.text.trim() : null,
+                                  accountHolderName: !useUPI ? accountHolderCtrl.text.trim() : null,
+                                  ifscCode: !useUPI ? ifscCtrl.text.trim() : null,
                                 );
 
                             if (context.mounted) {

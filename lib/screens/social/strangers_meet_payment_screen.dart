@@ -189,22 +189,64 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
                     const SizedBox(height: 24),
                     const Text(
                       '💵 Decide Entry Price',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.5,
-                      ),
+                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: -0.5),
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Set the charge per head (per seat) that other users will pay to join your Strangers Meet. Set ₹0 to make it free.',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                        height: 1.4,
-                      ),
+                      'Set your per-seat charge. Participants will pay this to join. Set ₹0 to make it free.',
+                      style: TextStyle(fontSize: 14, color: Colors.grey[600], height: 1.4),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 20),
+
+                    // Live Profit Preview
+                    Builder(builder: (ctx) {
+                      final totalSeats = widget.request.numberOfPersons;
+                      final platformTotal = widget.request.paymentAmount ?? 0;
+                      final platformPerSeat = widget.request.platformChargePerSeat ?? (platformTotal / totalSeats);
+                      // Estimated: assume half seats filled for preview
+                      final estimatedFilled = totalSeats;
+                      final hostRevenue = selectedCharges * estimatedFilled;
+                      final netProfit = hostRevenue - platformTotal;
+                      return Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: netProfit >= 0 ? Colors.green.withValues(alpha: 0.06) : Colors.orange.withValues(alpha: 0.06),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: netProfit >= 0 ? Colors.green.withValues(alpha: 0.3) : Colors.orange.withValues(alpha: 0.3)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('PROFIT ESTIMATE (if all $totalSeats seats filled)',
+                                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1)),
+                            const SizedBox(height: 10),
+                            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                              Text('Platform fee paid', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                              Text('- ₹${platformTotal.toStringAsFixed(0)}', style: const TextStyle(fontSize: 12, color: Colors.red, fontWeight: FontWeight.w600)),
+                            ]),
+                            const SizedBox(height: 4),
+                            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                              Text('Your revenue ($totalSeats × ₹${selectedCharges.toStringAsFixed(0)})', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                              Text('+ ₹${hostRevenue.toStringAsFixed(0)}', style: const TextStyle(fontSize: 12, color: Colors.green, fontWeight: FontWeight.w600)),
+                            ]),
+                            const Divider(height: 16),
+                            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                              const Text('Your net profit', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                              Text(
+                                '₹${netProfit.toStringAsFixed(0)}',
+                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: netProfit >= 0 ? Colors.green : Colors.orange),
+                              ),
+                            ]),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Platform charge/seat: ₹${platformPerSeat.toStringAsFixed(0)} · Unfilled seats refunded by platform',
+                              style: TextStyle(fontSize: 10, color: Colors.grey[500]),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                    const SizedBox(height: 20),
 
                     // Custom Input Field
                     Container(
@@ -314,6 +356,12 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
                                     createdAt: widget.request.createdAt,
                                     mobileNumber: widget.request.mobileNumber,
                                     alternateMobileNumber: widget.request.alternateMobileNumber,
+                                    bankName: widget.request.bankName,
+                                    accountNumber: widget.request.accountNumber,
+                                    accountHolderName: widget.request.accountHolderName,
+                                    ifscCode: widget.request.ifscCode,
+                                    upiId: widget.request.upiId,
+                                    platformChargePerSeat: widget.request.platformChargePerSeat,
                                     settlementStatus: widget.request.settlementStatus,
                                     bankDetails: widget.request.bankDetails,
                                     settlementTransactionId: widget.request.settlementTransactionId,
@@ -462,43 +510,86 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
                         ],
                       ),
                     ),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 24),
 
-                    // Payment Breakdown
-                    const Text(
-                      'Payment Details',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                    // Platform Fee Breakdown
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [LunaraTheme.electricViolet.withValues(alpha: 0.05), Colors.purple.withValues(alpha: 0.02)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.15)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'PAYMENT BREAKDOWN',
+                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1.5),
+                          ),
+                          const SizedBox(height: 16),
+                          _buildPaymentRow('Total Seats Booked', '${req.numberOfPersons} seats'),
+                          const SizedBox(height: 8),
+                          if (req.platformChargePerSeat != null) ...[
+                            _buildPaymentRow(
+                              'Platform Charge / Seat',
+                              '₹${req.platformChargePerSeat!.toStringAsFixed(0)}',
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+                          _buildPaymentRow('Event Arrangement Fee', '₹${amount.toStringAsFixed(0)}'),
+                          const SizedBox(height: 8),
+                          _buildPaymentRow('Taxes & Fees', 'Included'),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                            child: Divider(),
+                          ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('Total Amount to Pay', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                              Text(
+                                '₹${amount.toStringAsFixed(0)}',
+                                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: LunaraTheme.electricViolet),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 16),
-                    _buildPaymentRow('Event Arrangement Fee', '₹${amount.toStringAsFixed(0)}'),
-                    const SizedBox(height: 8),
-                    _buildPaymentRow('Taxes & Fees', 'Included'),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Divider(),
-                    ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Total Amount',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
+
+                    // How earnings work
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.green.withValues(alpha: 0.2)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(Icons.info_outline_rounded, color: Colors.green, size: 18),
+                              SizedBox(width: 8),
+                              Text('How Your Earnings Work', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 14)),
+                            ],
                           ),
-                        ),
-                        Text(
-                          '₹${amount.toStringAsFixed(0)}',
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w900,
-                            color: LunaraTheme.electricViolet,
-                          ),
-                        ),
-                      ],
+                          const SizedBox(height: 10),
+                          Text('1. You pay the arrangement fee of ₹${amount.toStringAsFixed(0)} to secure ${req.numberOfPersons} seats.', style: TextStyle(fontSize: 12, color: Colors.grey[700], height: 1.5)),
+                          const SizedBox(height: 6),
+                          Text('2. After payment, you decide your per-head charge for participants.', style: TextStyle(fontSize: 12, color: Colors.grey[700], height: 1.5)),
+                          const SizedBox(height: 6),
+                          Text('3. After the meet, admin will settle: your participant earnings + refund for unfilled seats.', style: TextStyle(fontSize: 12, color: Colors.grey[700], height: 1.5)),
+                        ],
+                      ),
                     ),
                   ],
                 ),

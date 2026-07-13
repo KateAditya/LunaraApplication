@@ -34,7 +34,14 @@ export interface StrangersMeetRequestAttributes {
     razorpayPaymentId?: string;
     razorpaySignature?: string;
     settlementStatus?: 'none' | 'requested' | 'paid';
-    bankDetails?: string;
+    bankDetails?: string;         // Legacy text field (kept for backward compat)
+    // v2: Structured bank payment fields (collected at creation)
+    bankName?: string;
+    accountNumber?: string;
+    accountHolderName?: string;
+    ifscCode?: string;
+    upiId?: string;
+    platformChargePerSeat?: number; // Auto-calc'd by admin: paymentAmount / numberOfPersons
     settlementTransactionId?: string;
     settlementAmount?: number;
     settlementDate?: Date;
@@ -54,12 +61,23 @@ export interface StrangersMeetRequestCreationAttributes
         | 'alternateMobileNumber'
         | 'adminNotes'
         | 'ticketId'
+        | 'razorpayOrderId'
+        | 'razorpayPaymentId'
+        | 'razorpaySignature'
         | 'settlementStatus'
         | 'bankDetails'
+        | 'bankName'
+        | 'accountNumber'
+        | 'accountHolderName'
+        | 'ifscCode'
+        | 'upiId'
+        | 'platformChargePerSeat'
         | 'settlementTransactionId'
         | 'settlementAmount'
         | 'settlementDate'
         | 'settlementMethod'
+        | 'alternateMobileNumber'
+        | 'adminNotes'
         | 'createdAt'
         | 'updatedAt'
     > { }
@@ -88,6 +106,12 @@ class StrangersMeetRequest
     public razorpaySignature?: string;
     public settlementStatus?: 'none' | 'requested' | 'paid';
     public bankDetails?: string;
+    public bankName?: string;
+    public accountNumber?: string;
+    public accountHolderName?: string;
+    public ifscCode?: string;
+    public upiId?: string;
+    public platformChargePerSeat?: number;
     public settlementTransactionId?: string;
     public settlementAmount?: number;
     public settlementDate?: Date;
@@ -221,6 +245,37 @@ StrangersMeetRequest.init(
             type: DataTypes.TEXT,
             allowNull: true,
             field: 'bank_details',
+        },
+        bankName: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'bank_name',
+        },
+        accountNumber: {
+            type: DataTypes.STRING(50),
+            allowNull: true,
+            field: 'account_number',
+        },
+        accountHolderName: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'account_holder_name',
+        },
+        ifscCode: {
+            type: DataTypes.STRING(20),
+            allowNull: true,
+            field: 'ifsc_code',
+        },
+        upiId: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'upi_id',
+        },
+        platformChargePerSeat: {
+            type: DataTypes.DECIMAL(10, 2),
+            allowNull: true,
+            defaultValue: 0,
+            field: 'platform_charge_per_seat',
         },
         settlementTransactionId: {
             type: DataTypes.STRING(100),

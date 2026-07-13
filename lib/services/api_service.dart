@@ -732,6 +732,12 @@ class ApiService {
     required double chargesPerHead,
     required String mobileNumber,
     String? alternateMobileNumber,
+    // v2: Structured bank/UPI payment fields
+    String? bankName,
+    String? accountNumber,
+    String? accountHolderName,
+    String? ifscCode,
+    String? upiId,
   }) async {
     final userId = currentUserId;
     if (userId == null) return false;
@@ -750,6 +756,11 @@ class ApiService {
           'mobileNumber': mobileNumber,
           if (alternateMobileNumber != null && alternateMobileNumber.isNotEmpty)
             'alternateMobileNumber': alternateMobileNumber,
+          if (bankName != null && bankName.isNotEmpty) 'bankName': bankName,
+          if (accountNumber != null && accountNumber.isNotEmpty) 'accountNumber': accountNumber,
+          if (accountHolderName != null && accountHolderName.isNotEmpty) 'accountHolderName': accountHolderName,
+          if (ifscCode != null && ifscCode.isNotEmpty) 'ifscCode': ifscCode,
+          if (upiId != null && upiId.isNotEmpty) 'upiId': upiId,
         },
       );
       if (response.statusCode == 201) {
@@ -1018,6 +1029,20 @@ class ApiService {
       debugPrint('submitStrangersMeetSettlement error: $e');
     }
     return false;
+  }
+
+  /// Fetch financial breakdown for a Strangers Meet (platform fee, host profit, settlement)
+  static Future<Map<String, dynamic>?> fetchStrangersMeetFinancials(String id) async {
+    try {
+      final response = await get('/api/mobile/strangers-meet/$id/financials');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) return data['data'];
+      }
+    } catch (e) {
+      debugPrint('fetchStrangersMeetFinancials error: $e');
+    }
+    return null;
   }
 
   // ───────────────────────────────────────────────────────────────────────────

@@ -15,6 +15,7 @@ import {
     handleJoinRequest,
     submitSettlementRequest,
     updateChargesPerHead,
+    getMeetFinancials,
 } from '../controllers/strangersMeetController';
 
 const router = Router();
@@ -36,6 +37,12 @@ router.post(
             .isInt({ min: 21, max: 50 }).withMessage('numberOfPersons must be between 21 and 50'),
         body('mobileNumber').notEmpty().isString().withMessage('mobileNumber is required'),
         body('alternateMobileNumber').optional().isString(),
+        // v2: optional structured bank/UPI payment details
+        body('bankName').optional().isString().isLength({ max: 100 }),
+        body('accountNumber').optional().isString().isLength({ max: 50 }),
+        body('accountHolderName').optional().isString().isLength({ max: 100 }),
+        body('ifscCode').optional().isString().isLength({ max: 20 }),
+        body('upiId').optional().isString().isLength({ max: 100 }),
         validate,
     ],
     createRequest
@@ -58,6 +65,16 @@ router.get(
 router.get(
     '/feed',
     getFeedRequests
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/mobile/strangers-meet/:id/financials
+// Get financial breakdown (platform fee, host profit, settlement amount)
+// ─────────────────────────────────────────────────────────────────────────────
+router.get(
+    '/:id/financials',
+    [param('id').isUUID().withMessage('id must be a valid UUID'), validate],
+    getMeetFinancials
 );
 
 // ─────────────────────────────────────────────────────────────────────────────

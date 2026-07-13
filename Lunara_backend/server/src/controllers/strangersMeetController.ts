@@ -138,6 +138,13 @@ function formatRequest(r: StrangersMeetRequest) {
         ticketId: r.ticketId ?? null,
         settlementStatus: r.settlementStatus || 'none',
         bankDetails: r.bankDetails ?? null,
+        // v2 structured bank fields
+        bankName: r.bankName ?? null,
+        accountNumber: r.accountNumber ?? null,
+        accountHolderName: r.accountHolderName ?? null,
+        ifscCode: r.ifscCode ?? null,
+        upiId: r.upiId ?? null,
+        platformChargePerSeat: r.platformChargePerSeat ? Number(r.platformChargePerSeat) : null,
         settlementTransactionId: r.settlementTransactionId ?? null,
         settlementAmount: r.settlementAmount ? Number(r.settlementAmount) : null,
         settlementDate: r.settlementDate ?? null,
@@ -200,7 +207,12 @@ function formatRequest(r: StrangersMeetRequest) {
 // ─────────────────────────────────────────────────────────────────────────────
 export const createRequest = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { userId, venueId, subject, tagline, eventDateTime, numberOfPersons, mobileNumber, alternateMobileNumber } = req.body;
+        const {
+            userId, venueId, subject, tagline, eventDateTime, numberOfPersons,
+            mobileNumber, alternateMobileNumber,
+            // v2: Structured bank/UPI payment details collected up-front
+            bankName, accountNumber, accountHolderName, ifscCode, upiId,
+        } = req.body;
 
         // Validate required fields
         const errors: Record<string, string> = {};
@@ -264,6 +276,12 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
             chargesPerHead: 0.0,
             mobileNumber: finalMobileNumber,
             alternateMobileNumber: alternateMobileNumber?.trim() || null,
+            // Store bank/UPI details provided at creation
+            bankName: bankName?.trim() || null,
+            accountNumber: accountNumber?.trim() || null,
+            accountHolderName: accountHolderName?.trim() || null,
+            ifscCode: ifscCode?.trim() || null,
+            upiId: upiId?.trim() || null,
         });
 
         // Send request submitted push notification to creator
@@ -573,7 +591,8 @@ export const getFeedRequests = async (req: Request, res: Response): Promise<void
             where: {
                 status: StrangersMeetStatus.APPROVED,
                 paymentStatus: StrangersMeetPaymentStatus.PAID,
-                eventDateTime: { [Op.gte]: new Date() },
+                // Hide events that start within 45 minutes from now (or have already started)
+                eventDateTime: { [Op.gte]: new Date(Date.now() + 45 * 60 * 1000) },
             },
             include: buildIncludes(),
             order: [['createdAt', 'DESC']],
@@ -617,12 +636,15 @@ export const approveRequest = async (req: Request, res: Response): Promise<void>
         }
 
         const hostDepositAmount = paymentAmount !== undefined && paymentAmount !== null ? Number(paymentAmount) : 99.0;
-        const perHeadCharges = chargesPerHead !== undefined && chargesPerHead !== null ? Number(chargesPerHead) : 0.0;
+        // Auto-calculate platform charge per seat from total deposit / number of seats
+        const platformChargePerSeat = hostDepositAmount > 0 && request.numberOfPersons > 0
+            ? parseFloat((hostDepositAmount / request.numberOfPersons).toFixed(2))
+            : 0;
 
         await request.update({
             status: StrangersMeetStatus.APPROVED,
             paymentAmount: hostDepositAmount,
-            chargesPerHead: perHeadCharges,
+            platformChargePerSeat,
             adminNotes: adminNotes?.trim() || null,
         });
 
@@ -655,8 +677,10 @@ export const approveRequest = async (req: Request, res: Response): Promise<void>
                 id: request.id,
                 status: request.status,
                 paymentAmount: request.paymentAmount,
+                platformChargePerSeat: request.platformChargePerSeat,
                 chargesPerHead: request.chargesPerHead,
                 adminNotes: request.adminNotes,
+                numberOfPersons: request.numberOfPersons,
             },
         });
     } catch (err: any) {
@@ -952,10 +976,12 @@ export const completeMeet = async (req: Request, res: Response): Promise<void> =
             return;
         }
 
+        // Allow host to mark as complete if the event is within 60 minutes from now or has already started
         const now = new Date();
         const eventTime = new Date(request.eventDateTime);
-        if (now < eventTime) {
-            res.status(400).json({ success: false, message: 'Cannot mark completed before event time ends' });
+        const sixtyMinsBefore = new Date(eventTime.getTime() - 60 * 60 * 1000);
+        if (now < sixtyMinsBefore) {
+            res.status(400).json({ success: false, message: 'You can only mark the meet as completed within 60 minutes of the event time' });
             return;
         }
 
@@ -965,7 +991,7 @@ export const completeMeet = async (req: Request, res: Response): Promise<void> =
 
         res.json({
             success: true,
-            message: 'Strangers meet completed successfully! 🏆',
+            message: 'Strangers meet marked as completed! 🏆',
             data: {
                 id: request.id,
                 status: request.status,
@@ -974,6 +1000,71 @@ export const completeMeet = async (req: Request, res: Response): Promise<void> =
     } catch (err: any) {
         logger.error('completeMeet error:', err);
         res.status(500).json({ success: false, message: 'Failed to complete strangers meet', error: err.message });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/mobile/strangers-meet/:id/financials
+// Get full financial breakdown for host: platform fee, participant income, profit
+// ─────────────────────────────────────────────────────────────────────────────
+export const getMeetFinancials = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const request = await StrangersMeetRequest.findByPk(id, {
+            include: [{
+                model: StrangersMeetJoiner,
+                as: 'joiners',
+                required: false,
+            }]
+        });
+        if (!request) {
+            res.status(404).json({ success: false, message: 'Request not found' });
+            return;
+        }
+
+        const joiners = (request as any).joiners || [];
+        const paidJoiners = joiners.filter((j: any) => j.paymentStatus === 'paid' || j.status === 'paid');
+        const paidSlots = paidJoiners.length;
+        const totalSeats = request.numberOfPersons;
+        const unfilledSeats = Math.max(0, totalSeats - paidSlots);
+
+        // Platform fee the host paid (covers all seats)
+        const platformDepositTotal = Number(request.paymentAmount || 0);
+        const platformChargePerSeat = Number(request.platformChargePerSeat || 0);
+
+        // Revenue host earns from participants (their chargesPerHead)
+        const hostChargePerHead = Number(request.chargesPerHead || 0);
+        const hostRevenueFromParticipants = paidSlots * hostChargePerHead;
+
+        // Platform settlement back to host:
+        // For each UNFILLED seat that host already paid platform for → platform returns that cost
+        // + host's own profit from participants (since platform paid for all seats, and host collected per-head)
+        // Settlement = (unfilledSeats * platformChargePerSeat) + hostRevenueFromParticipants
+        const platformSettlementToHost = (unfilledSeats * platformChargePerSeat) + hostRevenueFromParticipants;
+
+        // Net position of host
+        // Host paid: platformDepositTotal
+        // Host receives from participants: hostRevenueFromParticipants
+        // Platform pays back: (unfilledSeats * platformChargePerSeat)
+        const netHostProfit = hostRevenueFromParticipants + (unfilledSeats * platformChargePerSeat) - platformDepositTotal;
+
+        res.json({
+            success: true,
+            data: {
+                totalSeats,
+                paidSlots,
+                unfilledSeats,
+                platformDepositTotal,           // What host paid to platform
+                platformChargePerSeat,          // Cost per seat that platform charged
+                hostChargePerHead,              // What host charges participants
+                hostRevenueFromParticipants,    // paidSlots × hostChargePerHead
+                platformSettlementToHost,       // What platform will pay back to host
+                netHostProfit,                  // hostRevenueFromParticipants - platformDepositTotal + (unfilled×platformCharge)
+            }
+        });
+    } catch (err: any) {
+        logger.error('getMeetFinancials error:', err);
+        res.status(500).json({ success: false, message: 'Failed to calculate financials', error: err.message });
     }
 };
 
