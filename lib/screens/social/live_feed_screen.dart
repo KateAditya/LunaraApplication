@@ -2628,8 +2628,33 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
         : 'PAY NOW';
 
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () async {
-        final data = await ApiService.initiateJoinerPayment(reqId);
+        if (reqId.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Invalid request ID.'), backgroundColor: Colors.red),
+          );
+          return;
+        }
+
+        // Show loading spinner
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const Center(
+            child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+          ),
+        );
+
+        Map<String, dynamic>? data;
+        try {
+          data = await ApiService.initiateJoinerPayment(reqId);
+        } catch (e) {
+          debugPrint('Error initiating joiner payment: $e');
+        } finally {
+          if (mounted) Navigator.pop(context); // Close loading spinner
+        }
+
         if (data != null && mounted) {
           // Use the FRESH orderId returned by the server (it may differ from cached one)
           final freshOrderId = data['razorpayOrderId']?.toString() ?? '';
@@ -2647,17 +2672,26 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
                 date: planDate,
                 time: planTime,
                 package: 'Party Plan Safety Deposit',
-                totalPrice: '₹${data['amount'] ?? 99}',
+                totalPrice: '₹${data?['amount'] ?? 99}',
                 showSplitBill: false,
                 razorpayOrderId: freshOrderId,
                 razorpayKeyId: razorpayKeyId,
                 razorpayAmount: razorpayAmount,
                 onRazorpayPaymentSuccess: (paymentId, signature) async {
                   try {
+                    // Show loading spinner for verification
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (context) => const Center(
+                        child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+                      ),
+                    );
                     final success = await ApiService.verifyJoinerPayment(
                       reqId, freshOrderId, paymentId, signature,
                     );
                     if (!mounted) return;
+                    Navigator.pop(context); // Close verification spinner
                     if (success) {
                       widget.onPaymentSuccess();
                       Navigator.pushReplacement(
@@ -2681,10 +2715,19 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
                 },
                 onPaymentSuccess: () async {
                   try {
+                    // Show loading spinner for verification
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (context) => const Center(
+                        child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+                      ),
+                    );
                     final success = await ApiService.verifyJoinerPayment(
                       reqId, freshOrderId, 'mock_payment', 'mock_signature',
                     );
                     if (!mounted) return;
+                    Navigator.pop(context); // Close verification spinner
                     if (success) {
                       widget.onPaymentSuccess();
                       Navigator.pushReplacement(
@@ -2709,6 +2752,15 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
               ),
             ),
           );
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Failed to initiate payment. Please try again.'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
         }
       },
       child: Container(
