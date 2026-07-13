@@ -2152,4 +2152,69 @@ class ApiService {
     }
     return false;
   }
+
+  // ── Subscription API Methods ──────────────────────────────────────────────
+
+  static Future<List<dynamic>> fetchSubscriptionPackages() async {
+    try {
+      final response = await get('/api/mobile/subscriptions/packages');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return List<dynamic>.from(data['data']);
+        }
+      }
+    } catch (e) {
+      debugPrint('fetchSubscriptionPackages error: $e');
+    }
+    return [];
+  }
+
+  static Future<Map<String, dynamic>?> purchaseSubscription({
+    required String packageId,
+    required String gatewayOrderId,
+    required String gatewayPaymentId,
+    String paymentMethod = 'razorpay',
+  }) async {
+    try {
+      final response = await post(
+        '/api/mobile/subscriptions/purchase',
+        body: {
+          'packageId': packageId,
+          'gatewayOrderId': gatewayOrderId,
+          'gatewayPaymentId': gatewayPaymentId,
+          'paymentMethod': paymentMethod,
+        },
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return Map<String, dynamic>.from(data['data']);
+        }
+      }
+    } catch (e) {
+      debugPrint('purchaseSubscription error: $e');
+    }
+    return null;
+  }
+
+  static Future<Map<String, dynamic>?> purchaseBoost(int boostCount) async {
+    try {
+      final response = await post(
+        '/api/mobile/subscriptions/purchase-boost',
+        body: {
+          'boostCount': boostCount,
+        },
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return Map<String, dynamic>.from(data);
+        }
+      }
+    } catch (e) {
+      debugPrint('purchaseBoost error: $e');
+    }
+    return null;
+  }
 }

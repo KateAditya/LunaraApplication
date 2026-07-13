@@ -388,7 +388,12 @@ export const purchaseBoost = async (req: Request, res: Response): Promise<void> 
             return;
         }
 
-        const boostPrice = boostCount * 49; // ₹49 per boost
+        let boostPrice = 49;
+        if (boostCount === 1) boostPrice = 49;
+        else if (boostCount === 2) boostPrice = 90;
+        else if (boostCount === 3) boostPrice = 140;
+        else if (boostCount === 5) boostPrice = 160;
+
         await sub.update({ boostsRemaining: sub.boostsRemaining + boostCount });
 
         await SubscriptionTransaction.create({
