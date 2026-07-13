@@ -20,7 +20,6 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
   bool _isProcessing = false;
   
   List<dynamic> _allPackages = [];
-  Map<String, dynamic>? _currentSubscription;
   String? _activePackageId;
   int _activeRemainingDays = 0;
 
@@ -64,7 +63,6 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
 
       setState(() {
         _allPackages = packages;
-        _currentSubscription = currentSub;
         if (currentSub['subscription'] != null) {
           _activePackageId = currentSub['subscription']['packageId'];
           _activeRemainingDays = currentSub['remainingDays'] ?? 0;
@@ -118,8 +116,8 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
       if (pkg != null) {
         _confirmPackagePurchase(
           pkg['id'],
-          response.orderId ?? 'order_mock_${Date.now()}',
-          response.paymentId ?? 'pay_mock_${Date.now()}',
+          response.orderId ?? 'order_mock_${DateTime.now().millisecondsSinceEpoch}',
+          response.paymentId ?? 'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
         );
       }
     } else {
@@ -127,8 +125,8 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
       final boost = _boostOptions[_selectedBoostOption];
       _confirmBoostPurchase(
         boost['count'],
-        response.orderId ?? 'order_mock_${Date.now()}',
-        response.paymentId ?? 'pay_mock_${Date.now()}',
+        response.orderId ?? 'order_mock_${DateTime.now().millisecondsSinceEpoch}',
+        response.paymentId ?? 'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
       );
     }
   }
@@ -362,7 +360,6 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
     }
 
     final double price = double.tryParse(pkg['price'].toString()) ?? 0.0;
-    final int duration = pkg['durationDays'] ?? 0;
     final String tier = pkg['tier'];
     final bool isActive = _activePackageId == pkg['id'];
 
@@ -470,7 +467,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
                     children: [
                       Text(
                         'BOOST YOUR VISIBILITY',
-                        style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.black, letterSpacing: -0.5),
+                        style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900, letterSpacing: -0.5),
                       ),
                       SizedBox(height: 8),
                       Text(
@@ -649,7 +646,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
           ),
           const SizedBox(height: 12),
           Row(
-            alignment: PlaceholderAlignment.baseline,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
               Text(
@@ -787,7 +784,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            margin: const EdgeInsets.top(2),
+            margin: const EdgeInsets.only(top: 2),
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(color: color.withValues(alpha: 0.15), shape: BoxShape.circle),
             child: Icon(Icons.check_rounded, color: color, size: 14),
@@ -839,7 +836,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(color: Colors.white80, fontSize: 13),
+              style: const TextStyle(color: Color(0xCCFFFFFF), fontSize: 13),
             ),
           ),
         ],
