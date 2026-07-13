@@ -886,6 +886,14 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
             return res.status(400).json({ success: false, message: 'Invalid action. Must be like, superlike, or nope' });
         }
 
+        // Check if there is already a swipe from this user to target
+        const existingMySwipe = await UserMatch.findOne({
+            where: {
+                user1Id: userId,
+                user2Id: targetUserId,
+            }
+        });
+
         // Check if there is already a swipe from the target user back to this user
         const existingOppositeSwipe = await UserMatch.findOne({
             where: {
@@ -894,35 +902,78 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
             }
         });
 
-        if (action === 'nope') {
-            // Create a declined match record
-            const match = await UserMatch.create({
-                user1Id: userId,
-                user2Id: targetUserId,
-                compatibilityScore: 0,
-                status: 'declined' as any,
-                expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-            });
-            return res.status(200).json({ success: true, data: match, matched: false });
+        // Helper to check swipe types
+        const isSuperlikeRecord = (swipe: any) => swipe && swipe.matchReason === 'superlike';
+        const isLikeRecord = (swipe: any) => swipe && swipe.status !== 'declined' && swipe.matchReason !== 'superlike';
+        const isNopeRecord = (swipe: any) => swipe && swipe.status === 'declined';
+
+        // 1. Handle toggle/remove swipe if they click the same button again
+        if (existingMySwipe) {
+            const isDuplicateLike = (action === 'like' && isLikeRecord(existingMySwipe));
+            const isDuplicateSuperlike = (action === 'superlike' && isSuperlikeRecord(existingMySwipe));
+            const isDuplicateNope = (action === 'nope' && isNopeRecord(existingMySwipe));
+
+            if (isDuplicateLike || isDuplicateSuperlike || isDuplicateNope) {
+                // If it was connected, downgrade the opposite swipe back to pending
+                if (existingMySwipe.status === 'connected' && existingOppositeSwipe) {
+                    existingOppositeSwipe.status = 'pending' as any;
+                    await existingOppositeSwipe.save();
+                }
+                await existingMySwipe.destroy();
+                return res.status(200).json({ success: true, message: 'Swipe removed', data: null, matched: false, action: 'removed' });
+            }
         }
 
-        // If the opposite user has liked or superliked this user, we have a mutual match!
-        if (existingOppositeSwipe && (existingOppositeSwipe.status === 'pending' || existingOppositeSwipe.status === 'connected')) {
+        // 2. If action is nope (declining/ignoring)
+        if (action === 'nope') {
+            if (existingMySwipe) {
+                // Update to nope
+                existingMySwipe.status = 'declined' as any;
+                existingMySwipe.compatibilityScore = 0;
+                existingMySwipe.matchReason = undefined;
+                await existingMySwipe.save();
+                return res.status(200).json({ success: true, data: existingMySwipe, matched: false });
+            } else {
+                const match = await UserMatch.create({
+                    user1Id: userId,
+                    user2Id: targetUserId,
+                    compatibilityScore: 0,
+                    status: 'declined' as any,
+                    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+                });
+                return res.status(200).json({ success: true, data: match, matched: false });
+            }
+        }
+
+        // 3. Handle like / superlike (including updates/upgrades from existing swipe)
+        const isMutualMatch = existingOppositeSwipe && (existingOppositeSwipe.status === 'pending' || existingOppositeSwipe.status === 'connected');
+
+        if (isMutualMatch) {
+            // Update opposite swipe to connected
             existingOppositeSwipe.status = 'connected' as any;
             if (action === 'superlike') {
                 existingOppositeSwipe.matchReason = 'superlike';
             }
             await existingOppositeSwipe.save();
 
-            // Also ensure we create/update the reverse record for easy querying
-            const mySwipe = await UserMatch.create({
-                user1Id: userId,
-                user2Id: targetUserId,
-                compatibilityScore: existingOppositeSwipe.compatibilityScore || 85,
-                status: 'connected' as any,
-                matchReason: action === 'superlike' ? 'superlike' : undefined,
-                expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-            });
+            let mySwipe;
+            if (existingMySwipe) {
+                // Update existing swipe
+                existingMySwipe.status = 'connected' as any;
+                existingMySwipe.compatibilityScore = action === 'superlike' ? 95 : (existingOppositeSwipe.compatibilityScore || 85);
+                existingMySwipe.matchReason = action === 'superlike' ? 'superlike' : undefined;
+                mySwipe = await existingMySwipe.save();
+            } else {
+                // Create new connected swipe
+                mySwipe = await UserMatch.create({
+                    user1Id: userId,
+                    user2Id: targetUserId,
+                    compatibilityScore: action === 'superlike' ? 95 : (existingOppositeSwipe.compatibilityScore || 85),
+                    status: 'connected' as any,
+                    matchReason: action === 'superlike' ? 'superlike' : undefined,
+                    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+                });
+            }
 
             // ── Auto-init free chat subscription on mutual match ──────────────
             try {
@@ -931,7 +982,6 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                 const ChatSubscriptionModel = ChatSub as any;
                 const ConversationModel = Conv as any;
 
-                // Find or create a conversation between both users
                 let conversation = await ConversationModel.findOne({
                     where: {
                         [Op.or]: [
@@ -949,7 +999,6 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                     });
                 }
 
-                // Only create free subscription if one doesn't already exist
                 const existingFreeSub = await ChatSubscriptionModel.findOne({
                     where: { conversationId: conversation.id, subscriptionType: 'free' }
                 });
@@ -986,7 +1035,6 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                             conversationId: conversation.id
                         });
 
-                        // Send push notification to targetUser
                         if (targetUser.fcmToken) {
                             const { sendPushNotification } = require('../services/fcmService');
                             await sendPushNotification(targetUser.fcmToken, {
@@ -1016,51 +1064,27 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                 logger.error('[swipeUser] Failed to init free chat, but match still created:', chatErr);
             }
 
-            // Emit live new_match events if chat failed but match still created
-            try {
-                const currentUser = await User.findByPk(userId);
-                const targetUser = await User.findByPk(targetUserId);
-                if (currentUser && targetUser) {
-                    const { io } = require('../server');
-                    io.to(`user_${userId}`).emit('new_match', {
-                        matchedUser: targetUser.get({ plain: true })
-                    });
-                    io.to(`user_${targetUserId}`).emit('new_match', {
-                        matchedUser: currentUser.get({ plain: true })
-                    });
-
-                    // Send push notification to targetUser
-                    if (targetUser.fcmToken) {
-                        const { sendPushNotification } = require('../services/fcmService');
-                        await sendPushNotification(targetUser.fcmToken, {
-                            title: 'New Match!',
-                            body: `You and ${currentUser.firstName} are a match! 🎉`,
-                            data: {
-                                type: 'match',
-                                senderId: currentUser.id,
-                                senderName: `${currentUser.firstName} ${currentUser.lastName}`,
-                                senderImage: currentUser.profileImageUrl || '',
-                            }
-                        });
-                    }
-                }
-            } catch (emitErr) {
-                logger.error('[swipeUser] Failed to emit new_match socket event / push notification:', emitErr);
-            }
-
             return res.status(200).json({ success: true, data: mySwipe, matched: true });
         }
 
-        // Otherwise, create a pending match record
+        // 4. Otherwise (no mutual match yet), create/update to pending match record
+        let match;
         const score = action === 'superlike' ? 95 : 75;
-        const match = await UserMatch.create({
-            user1Id: userId,
-            user2Id: targetUserId,
-            compatibilityScore: score,
-            status: 'pending' as any,
-            matchReason: action === 'superlike' ? 'superlike' : undefined,
-            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-        });
+        if (existingMySwipe) {
+            existingMySwipe.status = 'pending' as any;
+            existingMySwipe.compatibilityScore = score;
+            existingMySwipe.matchReason = action === 'superlike' ? 'superlike' : undefined;
+            match = await existingMySwipe.save();
+        } else {
+            match = await UserMatch.create({
+                user1Id: userId,
+                user2Id: targetUserId,
+                compatibilityScore: score,
+                status: 'pending' as any,
+                matchReason: action === 'superlike' ? 'superlike' : undefined,
+                expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+            });
+        }
 
         // Send push notification for Like or Super Like
         try {

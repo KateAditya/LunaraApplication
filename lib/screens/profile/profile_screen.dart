@@ -220,18 +220,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (_displayUser == null) return;
     final targetUser = _displayUser!;
     final targetId = targetUser.id;
+    final currentAction = _swipedActions[targetId];
 
-    // One-like-per-day-per-profile guard
-    if (_swipedActions.containsKey(targetId)) {
-      final action = _swipedActions[targetId];
-      if (action == 'like' || action == 'superlike') {
-        _showAlreadyLikedSnack(action!);
-        return;
-      }
+    // If already liked, clicking "like" again removes it (unlike)
+    if (currentAction == 'like') {
+      setState(() {
+        _swipedActions.remove(targetId);
+        if (_dailyLikesUsed > 0) _dailyLikesUsed--;
+      });
+      // Fire API (backend will toggle/destroy)
+      ApiService.swipeUser(targetUserId: targetId, action: 'like');
+      return;
     }
 
-    // Daily like limit guard
-    if (_dailyLikesUsed >= _dailyLikesLimit) {
+    // Daily like limit guard (only if not downgrading from superlike)
+    if (currentAction != 'superlike' && _dailyLikesUsed >= _dailyLikesLimit) {
       _showLimitReachedSnack();
       return;
     }
@@ -239,7 +242,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     // Optimistically update UI immediately
     setState(() {
       _swipedActions[targetId] = 'like';
-      _dailyLikesUsed++;
+      if (currentAction == 'superlike') {
+        // Return the superlike count
+        if (_superlikesPerCycle > 0) _superlikesRemaining++;
+      } else {
+        _dailyLikesUsed++;
+      }
     });
 
     // Show in-app notification
@@ -258,18 +266,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (_displayUser == null) return;
     final targetUser = _displayUser!;
     final targetId = targetUser.id;
+    final currentAction = _swipedActions[targetId];
 
-    // One-like-per-day-per-profile guard
-    if (_swipedActions.containsKey(targetId)) {
-      final action = _swipedActions[targetId];
-      if (action == 'like' || action == 'superlike') {
-        _showAlreadyLikedSnack(action!);
-        return;
-      }
+    // If already superliked, clicking "superlike" again removes it
+    if (currentAction == 'superlike') {
+      setState(() {
+        _swipedActions.remove(targetId);
+        if (_superlikesPerCycle > 0) _superlikesRemaining++;
+        if (_dailyLikesUsed > 0) _dailyLikesUsed--;
+      });
+      // Fire API (backend will toggle/destroy)
+      ApiService.swipeUser(targetUserId: targetId, action: 'superlike');
+      return;
     }
 
-    // Superlikes remaining guard
-    if (_superlikesPerCycle > 0 && _superlikesRemaining <= 0) {
+    // Superlikes remaining guard (only if not upgrading from like)
+    if (currentAction != 'like' && _superlikesPerCycle > 0 && _superlikesRemaining <= 0) {
       _showSuperLikeLimitSnack();
       return;
     }
@@ -277,8 +289,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     // Optimistically update UI immediately
     setState(() {
       _swipedActions[targetId] = 'superlike';
-      if (_superlikesPerCycle > 0) _superlikesRemaining--;
-      _dailyLikesUsed++;
+      if (currentAction == 'like') {
+        // Upgrading: consume one superlike
+        if (_superlikesPerCycle > 0) _superlikesRemaining--;
+      } else {
+        if (_superlikesPerCycle > 0) _superlikesRemaining--;
+        _dailyLikesUsed++;
+      }
     });
 
     // Show in-app notification
