@@ -302,6 +302,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
 
             return {
                 planId: p.id,
+                id: p.id,
                 type: 'party_plan',
                 host: {
                     id: creator?.id,
@@ -313,11 +314,15 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 },
                 venue: (p as any).venue,
                 planDate: p.planDateTime,
+                planDateTime: p.planDateTime,
                 startTime: planTimeStr,
                 description: p.message,
                 visibility: p.visibility,
                 status: p.status,
                 paymentStatus: p.paymentStatus,
+                hostPaymentStatus: p.hostPaymentStatus,
+                hostRazorpayOrderId: p.hostRazorpayOrderId,
+                depositAmount: p.depositAmount,
                 currentJoiners: 0,
                 maxJoiners: 1,
                 spotsLeft: 1,
@@ -349,6 +354,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 include: [
                     {
                         model: PartyPlan, as: 'plan',
+                        attributes: ['id', 'userId', 'message', 'planDateTime', 'hostPaymentStatus', 'hostRazorpayOrderId', 'depositAmount', 'status', 'isLive', 'paymentStatus'],
                         include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }]
                     }
                 ]
@@ -383,7 +389,19 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                     paymentTimeoutAt: r.paymentTimeoutAt,
                     joinerPaymentStatus: r.joinerPaymentStatus,
                     joinerRazorpayOrderId: r.joinerRazorpayOrderId,
-                    plan: r.plan
+                    plan: r.plan ? {
+                        id: r.plan.id,
+                        userId: r.plan.userId,
+                        message: r.plan.message,
+                        planDateTime: r.plan.planDateTime,
+                        hostPaymentStatus: r.plan.hostPaymentStatus,
+                        hostRazorpayOrderId: r.plan.hostRazorpayOrderId,
+                        depositAmount: r.plan.depositAmount,
+                        status: r.plan.status,
+                        isLive: r.plan.isLive,
+                        paymentStatus: r.plan.paymentStatus,
+                        venue: (r.plan as any).venue,
+                    } : null,
                 })),
                 ...myLargePartyBookings.map((b: any) => ({
                     id: b.id,

@@ -686,31 +686,40 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     return RefreshIndicator(
       onRefresh: () => _loadFeed(showLoader: false),
       child: _notifications.isEmpty
-          ? _buildEmptyState('No recent activity.')
+          ? _buildEmptyState('No recent activity.', icon: Icons.notifications_paused_rounded)
           : Column(
               children: [
                 Padding(
-                  padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 12.0, bottom: 4.0),
+                  padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 16.0, bottom: 8.0),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
+                      Text(
+                        'Recent Activity',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.onSurface,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
                       TextButton.icon(
                         onPressed: _clearAllNotifications,
-                        icon: const Icon(Icons.clear_all, color: LunaraTheme.accentVivid, size: 20),
+                        icon: const Icon(Icons.clear_all_rounded, color: LunaraTheme.electricViolet, size: 18),
                         label: const Text(
                           'CLEAR ALL',
                           style: TextStyle(
-                            color: LunaraTheme.accentVivid,
+                            color: LunaraTheme.electricViolet,
                             fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                            letterSpacing: 1.1,
+                            fontSize: 11,
+                            letterSpacing: 0.5,
                           ),
                         ),
                         style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          backgroundColor: LunaraTheme.accentVivid.withValues(alpha: 0.1),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          backgroundColor: LunaraTheme.electricViolet.withValues(alpha: 0.1),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(20),
                           ),
                         ),
                       ),
@@ -732,13 +741,38 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     );
   }
 
-  Widget _buildEmptyState(String text) {
+  Widget _buildEmptyState(String text, {IconData icon = Icons.notifications_none_rounded}) {
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
-        SizedBox(height: MediaQuery.of(context).size.height * 0.3),
+        SizedBox(height: MediaQuery.of(context).size.height * 0.22),
         Center(
-          child: Text(text, style: const TextStyle(color: Colors.grey)),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
+                ),
+                child: Icon(
+                  icon,
+                  size: 48,
+                  color: LunaraTheme.electricViolet.withValues(alpha: 0.4),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                text,
+                style: const TextStyle(
+                  color: Colors.grey,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -1124,6 +1158,53 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
               style: const TextStyle(color: Colors.white70, fontSize: 12),
             ),
             const SizedBox(height: 14),
+            // Host PAY NOW button — visible only to the plan's own host when unpaid
+            if (isMyPost && plan['hostPaymentStatus']?.toString().toLowerCase() != 'paid') ...([
+              Builder(
+                builder: (context) {
+                  final planId = plan['id']?.toString() ?? '';
+                  // Only show Pay Now if the host hasn't paid yet
+                  return SizedBox(
+                    width: double.infinity,
+                    child: GestureDetector(
+                      onTap: () => _startHostPayment(planId, plan),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [LunaraTheme.accentVivid, LunaraTheme.electricViolet],
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: LunaraTheme.accentVivid.withValues(alpha: 0.35),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            )
+                          ],
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.payment_rounded, color: Colors.white, size: 15),
+                            SizedBox(width: 8),
+                            Text(
+                              'PAY HOST DEPOSIT (₹99)',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 10),
+            ]),
             Row(
               children: [
                 Expanded(
@@ -2171,25 +2252,32 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     final isRead = notif['isRead'] == true || notif['read'] == true;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    IconData icon = Icons.notifications;
-    Color color = Colors.grey;
+    IconData icon = Icons.notifications_rounded;
+    Color color = LunaraTheme.electricViolet;
     if (title.toLowerCase().contains('super')) {
-      icon = Icons.star;
+      icon = Icons.star_rounded;
       color = const Color(0xFFFFB800); // Gold/Amber for Super Like
     } else if (title.toLowerCase().contains('like')) {
-      icon = Icons.favorite;
+      icon = Icons.favorite_rounded;
       color = LunaraTheme.hotPink; // Hot Pink for Like
     } else if (title.toLowerCase().contains('payment')) {
-      icon = Icons.payment;
-      color = Colors.green;
+      icon = Icons.payment_rounded;
+      color = const Color(0xFF00E676); // Beautiful emerald green
     } else if (title.toLowerCase().contains('visit') ||
         title.toLowerCase().contains('view')) {
-      icon = Icons.visibility;
-      color = Colors.blue;
+      icon = Icons.visibility_rounded;
+      color = LunaraTheme.electricViolet; // Purple matching theme color instead of blue
     }
 
     final sender = notif['sender'];
     final hasSender = sender != null && sender['id'] != null;
+
+    final cardBg = isDark
+        ? (isRead ? const Color(0xFF16161E) : const Color(0xFF221A30))
+        : (isRead ? Colors.white : const Color(0xFFF9F5FF));
+    final borderCol = isRead
+        ? (isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05))
+        : LunaraTheme.electricViolet.withValues(alpha: 0.3);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -2198,30 +2286,88 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: isDark 
-                ? (isRead ? const Color(0xFF1E1E24) : color.withValues(alpha: 0.15))
-                : (isRead ? Colors.grey[50] : color.withValues(alpha: 0.08)),
+            color: cardBg,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: isRead 
-                  ? (isDark ? Colors.white10 : Colors.black12) 
-                  : color.withValues(alpha: 0.4),
-              width: isRead ? 1 : 1.5,
+              color: borderCol,
+              width: isRead ? 1.0 : 1.5,
             ),
             boxShadow: isRead 
                 ? null 
                 : [
                     BoxShadow(
-                      color: color.withValues(alpha: isDark ? 0.15 : 0.06),
+                      color: LunaraTheme.electricViolet.withValues(alpha: isDark ? 0.15 : 0.04),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),
                   ],
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(icon, color: isRead ? color.withValues(alpha: 0.6) : color, size: 24),
-              const SizedBox(width: 16),
+              // Left Section: Avatar or Icon Badge
+              if (hasSender)
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    LunaraProfileImage(
+                      userData: sender,
+                      radius: 20,
+                      showGradientBorder: !isRead,
+                      isInteractive: true,
+                    ),
+                    Positioned(
+                      bottom: -2,
+                      right: -2,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF16161E) : Colors.white,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: isDark ? const Color(0xFF16161E) : Colors.white,
+                            width: 1,
+                          ),
+                        ),
+                        child: Icon(
+                          icon,
+                          color: isRead ? color.withValues(alpha: 0.6) : color,
+                          size: 10,
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+              else
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        color.withValues(alpha: 0.15),
+                        color.withValues(alpha: 0.05),
+                      ],
+                    ),
+                    border: Border.all(
+                      color: color.withValues(alpha: 0.25),
+                      width: 1,
+                    ),
+                  ),
+                  child: Center(
+                    child: Icon(
+                      icon,
+                      color: isRead ? color.withValues(alpha: 0.6) : color,
+                      size: 20,
+                    ),
+                  ),
+                ),
+              const SizedBox(width: 14),
+
+              // Middle Section: Content
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -2233,7 +2379,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                         fontSize: 14,
                         color: isDark 
                             ? (isRead ? Colors.white70 : Colors.white)
-                            : (isRead ? Colors.black54 : Colors.black87),
+                            : (isRead ? Colors.black87 : Colors.black87),
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -2242,14 +2388,15 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                       style: TextStyle(
                         color: isDark 
                             ? (isRead ? Colors.white54 : Colors.white70)
-                            : (isRead ? Colors.black45 : Colors.black87),
-                        fontSize: 12,
+                            : (isRead ? Colors.black54 : Colors.black87),
+                        fontSize: 12.5,
+                        height: 1.3,
                       ),
                     ),
                     if (hasSender) ...[
-                      const SizedBox(height: 8),
-                      ElevatedButton.icon(
-                        onPressed: () {
+                      const SizedBox(height: 10),
+                      GestureDetector(
+                        onTap: () {
                           try {
                             final userObj = User.fromJson(Map<String, dynamic>.from(sender));
                             Navigator.push(
@@ -2262,36 +2409,64 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                             debugPrint('Error navigating to profile: $e');
                           }
                         },
-                        icon: const Icon(Icons.person, size: 14, color: Colors.white),
-                        label: const Text(
-                          'VIEW PROFILE',
-                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 0.5),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: LunaraTheme.electricViolet,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [LunaraTheme.electricViolet, LunaraTheme.hotPink],
+                            ),
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              )
+                            ],
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.person_outline_rounded, size: 12, color: Colors.white),
+                              SizedBox(width: 4),
+                              Text(
+                                'View Profile',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
+
+              // Right Section: Unread indicator & Time
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   if (!isRead)
                     Container(
-                      margin: const EdgeInsets.only(bottom: 6),
+                      margin: const EdgeInsets.only(bottom: 6, top: 4),
                       width: 8,
                       height: 8,
                       decoration: const BoxDecoration(
-                        color: LunaraTheme.accentVivid,
+                        color: LunaraTheme.hotPink,
                         shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: LunaraTheme.hotPink,
+                            blurRadius: 4,
+                            spreadRadius: 1,
+                          )
+                        ],
                       ),
                     ),
                   Text(
@@ -2299,6 +2474,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                     style: TextStyle(
                       color: isDark ? Colors.white38 : Colors.black38,
                       fontSize: 10,
+                      fontWeight: isRead ? FontWeight.normal : FontWeight.w500,
                     ),
                   ),
                 ],
@@ -2455,6 +2631,14 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
       onTap: () async {
         final data = await ApiService.initiateJoinerPayment(reqId);
         if (data != null && mounted) {
+          // Use the FRESH orderId returned by the server (it may differ from cached one)
+          final freshOrderId = data['razorpayOrderId']?.toString() ?? '';
+          final razorpayKeyId = data['razorpayKeyId']?.toString();
+          final razorpayAmount = data['amount'] is int
+              ? (data['amount'] as int) * 100
+              : int.tryParse(data['amount']?.toString() ?? '') != null
+                  ? (int.parse(data['amount'].toString())) * 100
+                  : 9900;
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -2463,13 +2647,16 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
                 date: planDate,
                 time: planTime,
                 package: 'Party Plan Safety Deposit',
-                totalPrice: data['amount']?.toString() ?? '99',
+                totalPrice: '₹${data['amount'] ?? 99}',
                 showSplitBill: false,
-                razorpayOrderId: widget.myReq['joinerRazorpayOrderId'],
+                razorpayOrderId: freshOrderId,
+                razorpayKeyId: razorpayKeyId,
+                razorpayAmount: razorpayAmount,
                 onRazorpayPaymentSuccess: (paymentId, signature) async {
                   try {
-                    final orderId = widget.myReq['joinerRazorpayOrderId'] ?? 'mock_order';
-                    final success = await ApiService.verifyJoinerPayment(reqId, orderId, paymentId, signature);
+                    final success = await ApiService.verifyJoinerPayment(
+                      reqId, freshOrderId, paymentId, signature,
+                    );
                     if (!mounted) return;
                     if (success) {
                       widget.onPaymentSuccess();
@@ -2494,8 +2681,9 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
                 },
                 onPaymentSuccess: () async {
                   try {
-                    final orderId = widget.myReq['joinerRazorpayOrderId'] ?? 'mock_order';
-                    final success = await ApiService.verifyJoinerPayment(reqId, orderId, 'mock_payment', 'mock_signature');
+                    final success = await ApiService.verifyJoinerPayment(
+                      reqId, freshOrderId, 'mock_payment', 'mock_signature',
+                    );
                     if (!mounted) return;
                     if (success) {
                       widget.onPaymentSuccess();

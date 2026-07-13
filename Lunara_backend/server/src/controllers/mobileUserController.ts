@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import sharp from 'sharp';
 import { UserProfile, UserPreference, UserPhoto, UserMatch, PartyPlan } from '../models';
 import User, { UserRole } from '../models/User';
+import sequelize from '../config/database';
 
 import { logger } from '../config/logger';
 import { Op } from 'sequelize';
@@ -481,34 +482,57 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
 
         const totalPages = Math.ceil(count / limit);
 
-        const data = await Promise.all(rows.map(async user => {
+        const userIds = rows.map(u => u.id);
+        const superLikesMap: Record<string, number> = {};
+        const plansMap: Record<string, number> = {};
+
+        if (userIds.length > 0) {
+            const superLikesCounts = await UserMatch.findAll({
+                attributes: [
+                    'user2Id',
+                    [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+                ],
+                where: {
+                    user2Id: { [Op.in]: userIds },
+                    matchReason: 'superlike',
+                    status: { [Op.in]: ['pending', 'connected'] }
+                },
+                group: ['user2Id']
+            });
+
+            const plansCounts = await PartyPlan.findAll({
+                attributes: [
+                    'userId',
+                    [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+                ],
+                where: {
+                    userId: { [Op.in]: userIds },
+                    status: 'active'
+                },
+                group: ['userId']
+            });
+
+            superLikesCounts.forEach((c: any) => {
+                const u2Id = c.getDataValue('user2Id');
+                superLikesMap[u2Id] = parseInt(c.getDataValue('count')) || 0;
+            });
+
+            plansCounts.forEach((c: any) => {
+                const uId = c.getDataValue('userId');
+                plansMap[uId] = parseInt(c.getDataValue('count')) || 0;
+            });
+        }
+
+        const data = rows.map(user => {
             const u = user as any;
-            // Compute age from dateOfBirth
             const age = user.dateOfBirth
                 ? Math.floor((Date.now() - new Date(user.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
                 : null;
 
-            // Build photo URL
             const photo = u.photos?.[0];
             const photoUrl = photo
                 ? '/' + photo.filePath.replace(/\\/g, '/')
                 : (user.profileImageUrl ?? null);
-
-            // Fetch actual superLikesCount and plansCount
-            const superLikesCount = await UserMatch.count({
-                where: {
-                    user2Id: user.id,
-                    matchReason: 'superlike',
-                    status: { [Op.in]: ['pending', 'connected'] }
-                }
-            });
-
-            const plansCount = await PartyPlan.count({
-                where: {
-                    userId: user.id,
-                    status: 'active'
-                }
-            });
 
             return {
                 id: user.id,
@@ -527,10 +551,10 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                 lastLoginAt: (user as any).lastLoginAt ?? null,
                 profile: u.profile ?? null,
                 preferences: u.preferences ?? null,
-                superLikesCount,
-                plansCount,
+                superLikesCount: superLikesMap[user.id] || 0,
+                plansCount: plansMap[user.id] || 0,
             };
-        }));
+        });
 
         return res.status(200).json({
             success: true,

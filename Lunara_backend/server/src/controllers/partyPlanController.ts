@@ -445,7 +445,7 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
             const activeRequests = await PartyPlanRequest.findAll({
                 where: {
                     planId: id,
-                    status: PartyPlanRequestStatus.ACCEPTED
+                    status: PartyPlanRequestStatus.PAYMENT_PENDING
                 }
             });
 
@@ -522,6 +522,18 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
 
                         // Create Booking & Payments
                         await createBookingAndPayments(plan, activeReq);
+
+                        // Reject all other requests now that match is fully confirmed
+                        await PartyPlanRequest.update(
+                            { status: PartyPlanRequestStatus.REJECTED },
+                            {
+                                where: {
+                                    planId: plan.id,
+                                    id: { [Op.ne]: activeReq.id },
+                                    status: { [Op.in]: [PartyPlanRequestStatus.PENDING, PartyPlanRequestStatus.PAYMENT_PENDING] }
+                                }
+                            }
+                        );
 
                         // Notify both about confirmed booking and ticket
                         setImmediate(async () => {
@@ -1119,6 +1131,34 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
             return;
         }
 
+        // Check if there is already an active unpaid request on this plan
+        const activeReq = await PartyPlanRequest.findOne({
+            where: {
+                planId: plan.id,
+                status: PartyPlanRequestStatus.PAYMENT_PENDING,
+                paymentTimeoutAt: { [Op.gt]: new Date() }
+            }
+        });
+        if (activeReq) {
+            res.status(400).json({
+                success: false,
+                message: 'You already accepted another request. Please complete the payment or wait for the 30-minute window to expire.'
+            });
+            return;
+        }
+
+        // Clean up any expired requests in the DB for this plan in real-time
+        const expiredReqs = await PartyPlanRequest.findAll({
+            where: {
+                planId: plan.id,
+                status: PartyPlanRequestStatus.PAYMENT_PENDING,
+                paymentTimeoutAt: { [Op.lte]: new Date() }
+            }
+        });
+        for (const expiredReq of expiredReqs) {
+            await expiredReq.update({ status: PartyPlanRequestStatus.PAYMENT_FAILED });
+        }
+
         const hostAlreadyPaid = plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID;
 
         // Generate Razorpay Order for the Joiner
@@ -1157,11 +1197,11 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
         const timeout = new Date();
         timeout.setMinutes(timeout.getMinutes() + 30);
 
-        // Mark request as accepted immediately.
+        // Mark request as PAYMENT_PENDING.
         await request.update({
-            status: PartyPlanRequestStatus.ACCEPTED,
+            status: PartyPlanRequestStatus.PAYMENT_PENDING,
             joinerRazorpayOrderId: joinerOrder.id,
-            paymentTimeoutAt: timeout, // This will be reset for Joiner when Host pays
+            paymentTimeoutAt: timeout, // Reset for Joiner when Host pays
             joinerPaymentStatus: PartyPlanJoinerPaymentStatus.UNPAID,
         });
 
@@ -1172,18 +1212,6 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
             hostRazorpayOrderId: hostOrder ? hostOrder.id : plan.hostRazorpayOrderId,
             paymentStatus: hostAlreadyPaid ? 'Awaiting Participant Payment' : 'Awaiting Host Payment',
         });
-
-        // Remove/reject all other pending requests immediately
-        await PartyPlanRequest.update(
-            { status: PartyPlanRequestStatus.REJECTED },
-            {
-                where: {
-                    planId: plan.id,
-                    id: { [Op.ne]: request.id },
-                    status: PartyPlanRequestStatus.PENDING,
-                }
-            }
-        );
 
         // Emit socket events
         try {
@@ -1342,6 +1370,18 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
 
                 // Create Booking & Payments
                 await createBookingAndPayments(plan, request);
+
+                // Reject all other requests now that match is fully confirmed
+                await PartyPlanRequest.update(
+                    { status: PartyPlanRequestStatus.REJECTED },
+                    {
+                        where: {
+                            planId: plan.id,
+                            id: { [Op.ne]: request.id },
+                            status: { [Op.in]: [PartyPlanRequestStatus.PENDING, PartyPlanRequestStatus.PAYMENT_PENDING] }
+                        }
+                    }
+                );
 
                 // Notify both about confirmed booking and ticket
                 setImmediate(async () => {

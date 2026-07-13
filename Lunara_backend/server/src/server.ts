@@ -1,5 +1,7 @@
 import express, { Application } from 'express';
 import dotenv from 'dotenv';
+import cluster from 'cluster';
+import { cpus } from 'os';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -274,16 +276,26 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 // Sync database and start server after database connection
+// Sync database and start server after database connection
 const startServer = async () => {
     try {
         await connectDatabase();
         httpServer.listen(PORT, () => {
-            logger.info(`Server running on http://${HOST}:${PORT}`);
+            logger.info(`Worker ${process.pid} running server on http://${HOST}:${PORT}`);
             logger.info(`Environment: ${process.env.NODE_ENV}`);
         });
 
         // Start Background Cron Jobs
-        startPartyPlanCron();
+        // Only run on the master process (if native cluster is disabled) AND only on instance 0 (if PM2 cluster)
+        const isMasterProcess = cluster.isPrimary || (cluster as any).isMaster;
+        const isFirstPm2Instance = !process.env.NODE_APP_INSTANCE || process.env.NODE_APP_INSTANCE === '0';
+        
+        if (isMasterProcess && isFirstPm2Instance) {
+            startPartyPlanCron();
+            logger.info('Background Cron Jobs started on process/instance.');
+        } else {
+            logger.info(`Background Cron Jobs bypassed on worker/instance (Process ID: ${process.pid}).`);
+        }
     } catch (error) {
         logger.error('Failed to start server:', error);
         process.exit(1);
@@ -291,7 +303,34 @@ const startServer = async () => {
 };
 
 if (process.env.NODE_ENV !== 'test') {
-    startServer();
+    const enableCluster = process.env.ENABLE_CLUSTER === 'true' && (cluster.isPrimary || (cluster as any).isMaster);
+    
+    if (enableCluster) {
+        const numCPUs = cpus().length;
+        logger.info(`Primary process ${process.pid} is running. Forking ${numCPUs} CPU cores for load balancing...`);
+        
+        for (let i = 0; i < numCPUs; i++) {
+            cluster.fork();
+        }
+        
+        cluster.on('exit', (worker) => {
+            logger.warn(`Worker ${worker.process.pid} died. Forking a new worker...`);
+            cluster.fork();
+        });
+        
+        // Connect to database and start cron on primary process
+        const isFirstPm2Instance = !process.env.NODE_APP_INSTANCE || process.env.NODE_APP_INSTANCE === '0';
+        if (isFirstPm2Instance) {
+            connectDatabase().then(() => {
+                startPartyPlanCron();
+                logger.info('Primary process database connected & initiated background Cron Jobs.');
+            }).catch((err) => {
+                logger.error('Primary process failed to connect to database for Cron Jobs:', err);
+            });
+        }
+    } else {
+        startServer();
+    }
 }
 
 // Graceful shutdown
