@@ -181,8 +181,185 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Future<void> _sendJoinRequest() async {
     if (_meetRequest == null) return;
+    await _showPreferencesBottomSheet(context);
+  }
+
+  Future<void> _showPreferencesBottomSheet(BuildContext context) async {
+    String foodPref = 'Both';
+    String drinkPref = 'Both';
+
+    final result = await showModalBottomSheet<Map<String, String>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx2, setStateSheet) {
+            return Container(
+              padding: EdgeInsets.fromLTRB(
+                24,
+                20,
+                24,
+                24 + MediaQuery.of(ctx2).viewInsets.bottom,
+              ),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 45,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'SELECT PREFERENCES',
+                    style: TextStyle(
+                      fontFamily: 'AllroundGothic',
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Please share your food and drink preferences with the host.',
+                    style: TextStyle(fontSize: 12, color: Colors.black54),
+                  ),
+                  const SizedBox(height: 20),
+                  
+                  // Food preference dropdown
+                  const Text(
+                    'Food Preference',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[50],
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey[200]!),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButtonFormField<String>(
+                        value: foodPref,
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.restaurant, color: LunaraTheme.electricViolet, size: 18),
+                          prefixIconConstraints: BoxConstraints(minWidth: 28, minHeight: 18),
+                          border: InputBorder.none,
+                          contentPadding: EdgeInsets.symmetric(vertical: 10),
+                        ),
+                        items: const ['Veg', 'Non-Veg', 'Both'].map((String val) {
+                          return DropdownMenuItem<String>(
+                            value: val,
+                            child: Text(val, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                          );
+                        }).toList(),
+                        onChanged: (val) {
+                          if (val != null) {
+                            setStateSheet(() => foodPref = val);
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Drink preference dropdown
+                  const Text(
+                    'Drink Preference',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[50],
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey[200]!),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButtonFormField<String>(
+                        value: drinkPref,
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.local_bar, color: LunaraTheme.electricViolet, size: 18),
+                          prefixIconConstraints: BoxConstraints(minWidth: 28, minHeight: 18),
+                          border: InputBorder.none,
+                          contentPadding: EdgeInsets.symmetric(vertical: 10),
+                        ),
+                        items: const ['Alcoholic', 'Non-Alcoholic', 'Both'].map((String val) {
+                          return DropdownMenuItem<String>(
+                            value: val,
+                            child: Text(val, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                          );
+                        }).toList(),
+                        onChanged: (val) {
+                          if (val != null) {
+                            setStateSheet(() => drinkPref = val);
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  
+                  // Proceed Button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(ctx, {'food': foodPref, 'drink': drinkPref});
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: LunaraTheme.electricViolet,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: const Text(
+                        'SUBMIT REQUEST',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (result != null) {
+      await _sendJoinRequestWithPreferences(result['food']!, result['drink']!);
+    }
+  }
+
+  Future<void> _sendJoinRequestWithPreferences(String foodPref, String drinkPref) async {
+    if (_meetRequest == null) return;
     setState(() => _isProcessing = true);
-    final success = await ApiService.sendStrangersMeetJoinRequest(_meetRequest!.id);
+    final success = await ApiService.sendStrangersMeetJoinRequest(
+      _meetRequest!.id,
+      foodPreference: foodPref,
+      drinkPreference: drinkPref,
+    );
     if (!mounted) return;
     setState(() => _isProcessing = false);
 

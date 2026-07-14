@@ -38,6 +38,8 @@ export interface PartyPlanAttributes {
     paymentStatus: string;
     mobileNumber: string;
     optionalMobileNumber?: string;
+    foodPreference?: string;
+    drinkPreference?: string;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -45,7 +47,7 @@ export interface PartyPlanAttributes {
 export interface PartyPlanCreationAttributes
     extends Optional<
         PartyPlanAttributes,
-        'id' | 'status' | 'visibility' | 'createdAt' | 'updatedAt' | 'selectedUsers' | 'depositAmount' | 'hostPaymentStatus' | 'isLive' | 'expiresAt' | 'hostLatLangCheckIn' | 'paymentStatus' | 'optionalMobileNumber'
+        'id' | 'status' | 'visibility' | 'createdAt' | 'updatedAt' | 'selectedUsers' | 'depositAmount' | 'hostPaymentStatus' | 'isLive' | 'expiresAt' | 'hostLatLangCheckIn' | 'paymentStatus' | 'optionalMobileNumber' | 'foodPreference' | 'drinkPreference'
     > { }
 
 class PartyPlan
@@ -69,6 +71,8 @@ class PartyPlan
     public paymentStatus!: string;
     public mobileNumber!: string;
     public optionalMobileNumber?: string;
+    public foodPreference?: string;
+    public drinkPreference?: string;
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 }
@@ -178,6 +182,16 @@ PartyPlan.init(
             type: DataTypes.STRING,
             allowNull: true,
             field: 'optional_mobile_number',
+        },
+        foodPreference: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            field: 'food_preference',
+        },
+        drinkPreference: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            field: 'drink_preference',
         },
     },
     {

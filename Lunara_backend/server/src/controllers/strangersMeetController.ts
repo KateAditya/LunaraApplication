@@ -212,6 +212,7 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
             mobileNumber, alternateMobileNumber,
             // v2: Structured bank/UPI payment details collected up-front
             bankName, accountNumber, accountHolderName, ifscCode, upiId,
+            foodPreference, drinkPreference,
         } = req.body;
 
         // Validate required fields
@@ -282,6 +283,8 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
             accountHolderName: accountHolderName?.trim() || null,
             ifscCode: ifscCode?.trim() || null,
             upiId: upiId?.trim() || null,
+            foodPreference: foodPreference?.trim() || null,
+            drinkPreference: drinkPreference?.trim() || null,
         });
 
         // Send request submitted push notification to creator
@@ -1076,7 +1079,7 @@ export const getMeetFinancials = async (req: Request, res: Response): Promise<vo
 export const sendJoinRequest = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const { userId } = req.body;
+        const { userId, foodPreference, drinkPreference } = req.body;
 
         if (!userId) {
             res.status(400).json({ success: false, message: 'userId is required' });
@@ -1120,7 +1123,11 @@ export const sendJoinRequest = async (req: Request, res: Response): Promise<void
 
         let joiner;
         if (existing) {
-            await existing.update({ status: 'pending' as any });
+            await existing.update({
+                status: 'pending' as any,
+                foodPreference: foodPreference?.trim() || null,
+                drinkPreference: drinkPreference?.trim() || null,
+            });
             joiner = existing;
         } else {
             joiner = await StrangersMeetJoiner.create({
@@ -1129,6 +1136,8 @@ export const sendJoinRequest = async (req: Request, res: Response): Promise<void
                 status: 'pending' as any,
                 paymentStatus: StrangersMeetJoinerPaymentStatus.PENDING,
                 paymentAmount: 0.0,
+                foodPreference: foodPreference?.trim() || null,
+                drinkPreference: drinkPreference?.trim() || null,
             });
         }
 

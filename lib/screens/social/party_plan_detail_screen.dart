@@ -429,6 +429,16 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                   ),
                   const SizedBox(height: 12),
 
+                  // Preferences Card
+                  _infoCard(
+                    icon: Icons.restaurant_menu_rounded,
+                    title: 'FOOD & DRINK PREFERENCES',
+                    value: 'Food: ${plan['foodPreference'] ?? 'Both'}',
+                    subtitle: 'Drink: ${plan['drinkPreference'] ?? 'Both'}',
+                    iconColor: Colors.amber,
+                  ),
+                  const SizedBox(height: 12),
+
                   // Venue Card
                   _infoCard(
                     icon: Icons.location_on_rounded,

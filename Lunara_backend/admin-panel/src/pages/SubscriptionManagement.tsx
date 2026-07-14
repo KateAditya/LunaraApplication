@@ -20,14 +20,27 @@ export const SubscriptionManagement: React.FC = () => {
     const isDark = mode === 'dark';
 
     // State
-    const [activeTab, setActiveTab] = useState<'analytics' | 'plans' | 'features' | 'transactions'>('analytics');
+    const [activeTab, setActiveTab] = useState<'analytics' | 'plans' | 'features' | 'transactions' | 'users'>('analytics');
     const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
     const [features, setFeatures] = useState<SubscriptionFeature[]>([]);
     const [transactions, setTransactions] = useState<SubscriptionTransaction[]>([]);
     const [analytics, setAnalytics] = useState<AnalyticsOverview | null>(null);
     const [loading, setLoading] = useState(true);
 
-    // Pagination/Filters
+    // Subscribed Users State
+    const [subscribedUsers, setSubscribedUsers] = useState<any[]>([]);
+    const [usersPage, setUsersPage] = useState(1);
+    const [usersTotalPages, setUsersTotalPages] = useState(1);
+    const [usersLoading, setUsersLoading] = useState(false);
+
+    // Extend / Expire Modals State
+    const [showExtendModal, setShowExtendModal] = useState(false);
+    const [showExpireModal, setShowExpireModal] = useState(false);
+    const [selectedUser, setSelectedUser] = useState<any | null>(null);
+    const [actionDays, setActionDays] = useState<number>(30);
+    const [actionReason, setActionReason] = useState<string>('');
+
+    // Pagination/Filters for Transactions
     const [txPage, setTxPage] = useState(1);
     const [txTotalPages, setTxTotalPages] = useState(1);
     const [txStatus, setTxStatus] = useState('');
@@ -48,6 +61,12 @@ export const SubscriptionManagement: React.FC = () => {
             fetchTransactions();
         }
     }, [activeTab, txPage, txStatus, txType]);
+
+    useEffect(() => {
+        if (activeTab === 'users') {
+            fetchSubscribedUsers();
+        }
+    }, [activeTab, usersPage]);
 
     const fetchInitialData = async () => {
         setLoading(true);
@@ -82,6 +101,52 @@ export const SubscriptionManagement: React.FC = () => {
             }
         } catch (error) {
             console.error('Error fetching transactions:', error);
+        }
+    };
+
+    const fetchSubscribedUsers = async () => {
+        setUsersLoading(true);
+        try {
+            const res = await subscriptionsApi.getSubscribedUsers({
+                page: usersPage,
+                limit: 10
+            });
+            if (res.success) {
+                setSubscribedUsers(res.data.subscriptions);
+                setUsersTotalPages(res.data.pagination.totalPages);
+            }
+        } catch (error) {
+            console.error('Error fetching subscribed users:', error);
+        } finally {
+            setUsersLoading(false);
+        }
+    };
+
+    const handleForceExpire = async (userId: string, reason: string) => {
+        try {
+            const res = await subscriptionsApi.forceExpireUserSubscription(userId, reason);
+            if (res.success) {
+                alert('Subscription force-expired successfully.');
+                setShowExpireModal(false);
+                setActionReason('');
+                fetchSubscribedUsers();
+            }
+        } catch (error: any) {
+            alert(error.response?.data?.message || 'Failed to force-expire subscription.');
+        }
+    };
+
+    const handleExtend = async (userId: string, days: number, reason: string) => {
+        try {
+            const res = await subscriptionsApi.extendUserSubscription(userId, days, reason);
+            if (res.success) {
+                alert(`Subscription extended successfully by ${days} days.`);
+                setShowExtendModal(false);
+                setActionReason('');
+                fetchSubscribedUsers();
+            }
+        } catch (error: any) {
+            alert(error.response?.data?.message || 'Failed to extend subscription.');
         }
     };
 
@@ -309,7 +374,8 @@ export const SubscriptionManagement: React.FC = () => {
                     { id: 'analytics', label: 'Overview & Stats', icon: <BiTrendingUp /> },
                     { id: 'plans', label: 'Subscription Tiers', icon: <BiCrown /> },
                     { id: 'features', label: 'Feature Catalog & Matrix', icon: <BiSlider /> },
-                    { id: 'transactions', label: 'Transactions & Invoices', icon: <BiCalendar /> }
+                    { id: 'transactions', label: 'Transactions & Invoices', icon: <BiCalendar /> },
+                    { id: 'users', label: 'Subscribed Users', icon: <BiUserCheck /> }
                 ].map(t => (
                     <button
                         key={t.id}
@@ -665,6 +731,139 @@ export const SubscriptionManagement: React.FC = () => {
                 </div>
             )}
 
+            {/* TAB 5: SUBSCRIBED USERS */}
+            {activeTab === 'users' && (
+                <div className="animate-in animate-in-2">
+                    <div className="vz-card mb-3">
+                        <div className="vz-card-body d-flex justify-content-between align-items-center" style={{ background: colors.cardBg }}>
+                            <h5 className="mb-0" style={{ fontWeight: 700 }}>Active Subscribed Users</h5>
+                            <button onClick={fetchSubscribedUsers} className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-2">
+                                <BiRefresh size={16} /> Reload Users
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="vz-card">
+                        <div className="vz-card-body" style={{ background: colors.cardBg, padding: 0 }}>
+                            {usersLoading ? (
+                                <div className="d-flex justify-content-center align-items-center py-5">
+                                    <div className="spinner-border text-primary" role="status">
+                                        <span className="visually-hidden">Loading users...</span>
+                                    </div>
+                                </div>
+                            ) : subscribedUsers.length === 0 ? (
+                                <div className="text-center py-5">
+                                    <BiUserCheck size={48} className="text-muted mb-3" />
+                                    <h6>No Active Subscriptions Found</h6>
+                                    <p className="text-muted small">No users are currently subscribed to a VIP package.</p>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="table-responsive">
+                                        <table className="table mb-0 align-middle">
+                                            <thead>
+                                                <tr>
+                                                    <th>User Details</th>
+                                                    <th>Package Tier</th>
+                                                    <th>Billing Cycle</th>
+                                                    <th>Status</th>
+                                                    <th className="text-end px-4">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {subscribedUsers.map((sub: any) => {
+                                                    const name = sub.user ? `${sub.user.firstName} ${sub.user.lastName}` : 'N/A';
+                                                    const email = sub.user?.email || 'N/A';
+                                                    const planName = sub.package?.name || 'Unknown Plan';
+                                                    const planTier = (sub.package?.tier || 'free').toUpperCase();
+                                                    const isActive = sub.status === 'active';
+
+                                                    return (
+                                                        <tr key={sub.id}>
+                                                            <td>
+                                                                <div style={{ fontWeight: 700 }}>{name}</div>
+                                                                <div style={{ fontSize: '0.75rem', color: colors.textMuted }}>{email}</div>
+                                                            </td>
+                                                            <td>
+                                                                <span className="badge bg-primary-subtle text-primary">{planName}</span>
+                                                                <span className="badge bg-secondary ms-2">{planTier}</span>
+                                                            </td>
+                                                            <td>
+                                                                <div style={{ fontSize: '0.85rem' }}>
+                                                                    <strong>Start:</strong> {new Date(sub.startDate).toLocaleDateString()}
+                                                                </div>
+                                                                <div style={{ fontSize: '0.85rem' }}>
+                                                                    <strong>Expires:</strong> {new Date(sub.endDate).toLocaleDateString()}
+                                                                </div>
+                                                            </td>
+                                                            <td>
+                                                                <span className={`badge bg-${isActive ? 'success' : 'danger'}-subtle text-${isActive ? 'success' : 'danger'}`}>
+                                                                    {sub.status.toUpperCase()}
+                                                                </span>
+                                                            </td>
+                                                            <td className="text-end px-4">
+                                                                <div className="d-flex justify-content-end gap-2">
+                                                                    <button
+                                                                        className="btn btn-sm btn-outline-primary d-flex align-items-center gap-1"
+                                                                        disabled={!isActive}
+                                                                        onClick={() => {
+                                                                            setSelectedUser(sub);
+                                                                            setActionDays(30);
+                                                                            setActionReason('');
+                                                                            setShowExtendModal(true);
+                                                                        }}
+                                                                    >
+                                                                        <BiPlus /> Extend
+                                                                    </button>
+                                                                    <button
+                                                                        className="btn btn-sm btn-outline-danger d-flex align-items-center gap-1"
+                                                                        disabled={!isActive}
+                                                                        onClick={() => {
+                                                                            setSelectedUser(sub);
+                                                                            setActionReason('');
+                                                                            setShowExpireModal(true);
+                                                                        }}
+                                                                    >
+                                                                        <BiTrash /> Revoke
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    {/* Pagination Controls */}
+                                    <div className="d-flex justify-content-between align-items-center p-3 border-top" style={{ borderColor: colors.border }}>
+                                        <div style={{ fontSize: '0.8rem', color: colors.textMuted }}>
+                                            Page {usersPage} of {usersTotalPages}
+                                        </div>
+                                        <div className="d-flex gap-2">
+                                            <button
+                                                className="btn btn-sm btn-outline-secondary"
+                                                disabled={usersPage <= 1}
+                                                onClick={() => setUsersPage(prev => Math.max(1, prev - 1))}
+                                            >
+                                                Previous
+                                            </button>
+                                            <button
+                                                className="btn btn-sm btn-outline-secondary"
+                                                disabled={usersPage >= usersTotalPages}
+                                                onClick={() => setUsersPage(prev => Math.min(usersTotalPages, prev + 1))}
+                                            >
+                                                Next
+                                            </button>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* MODAL 1: PLAN PROPERTIES CREATION / EDITOR */}
             {showPlanModal && editingPlan && (
                 <div className="modal fade show d-block" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
@@ -879,6 +1078,124 @@ export const SubscriptionManagement: React.FC = () => {
                             <div className="modal-footer">
                                 <button type="button" onClick={() => setShowFeatureMatrixPlan(null)} className="btn btn-outline-secondary">Cancel</button>
                                 <button type="button" onClick={handleSaveMatrix} className="btn btn-primary px-4">Save Matrix Updates</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* MODAL 3: EXTEND USER SUBSCRIPTION */}
+            {showExtendModal && selectedUser && (
+                <div className="modal fade show d-block" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
+                    <div className="modal-dialog modal-dialog-centered">
+                        <div className="modal-content" style={{ background: isDark ? '#151515' : '#fff', borderColor: colors.border }}>
+                            <div className="modal-header">
+                                <h5 className="modal-title" style={{ fontWeight: 800 }}>
+                                    Extend VIP Subscription
+                                </h5>
+                                <button onClick={() => setShowExtendModal(false)} className="btn-close btn-close-white" />
+                            </div>
+                            <div className="modal-body">
+                                <div className="mb-3 animate-in animate-in-1">
+                                    <p className="small text-muted mb-1" style={{ fontSize: '0.65rem', letterSpacing: '1px', fontWeight: 700 }}>USER</p>
+                                    <h6 className="mb-1" style={{ fontWeight: 700 }}>
+                                        {selectedUser.user ? `${selectedUser.user.firstName} ${selectedUser.user.lastName}` : 'N/A'}
+                                    </h6>
+                                    <span style={{ fontSize: '0.75rem', color: colors.textMuted }}>{selectedUser.user?.email}</span>
+                                </div>
+                                <div className="mb-4 animate-in animate-in-2">
+                                    <p className="small text-muted mb-1" style={{ fontSize: '0.65rem', letterSpacing: '1px', fontWeight: 700 }}>CURRENT PLAN</p>
+                                    <h6 className="mb-1">{selectedUser.package?.name} ({selectedUser.package?.tier?.toUpperCase()})</h6>
+                                    <span style={{ fontSize: '0.75rem', color: colors.textMuted }}>
+                                        Expires: {new Date(selectedUser.endDate).toLocaleDateString()}
+                                    </span>
+                                </div>
+                                <div className="row g-3">
+                                    <div className="col-12">
+                                        <label className="form-label" style={{ fontWeight: 700, fontSize: '0.8rem' }}>Days to Add</label>
+                                        <input
+                                            type="number"
+                                            className="form-control"
+                                            value={actionDays}
+                                            onChange={e => setActionDays(Math.max(1, Number(e.target.value)))}
+                                            min={1}
+                                            required
+                                        />
+                                    </div>
+                                    <div className="col-12">
+                                        <label className="form-label" style={{ fontWeight: 700, fontSize: '0.8rem' }}>Reason for Extension</label>
+                                        <textarea
+                                            className="form-control"
+                                            rows={2}
+                                            placeholder="e.g. Compensating for platform outage"
+                                            value={actionReason}
+                                            onChange={e => setActionReason(e.target.value)}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="modal-footer">
+                                <button type="button" onClick={() => setShowExtendModal(false)} className="btn btn-outline-secondary">Cancel</button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleExtend(selectedUser.userId, actionDays, actionReason)}
+                                    className="btn btn-primary px-4"
+                                >
+                                    Confirm Extension
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* MODAL 4: FORCE EXPIRE USER SUBSCRIPTION */}
+            {showExpireModal && selectedUser && (
+                <div className="modal fade show d-block" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
+                    <div className="modal-dialog modal-dialog-centered">
+                        <div className="modal-content" style={{ background: isDark ? '#151515' : '#fff', borderColor: colors.border }}>
+                            <div className="modal-header">
+                                <h5 className="modal-title text-danger" style={{ fontWeight: 800 }}>
+                                    Revoke VIP Subscription
+                                </h5>
+                                <button onClick={() => setShowExpireModal(false)} className="btn-close btn-close-white" />
+                            </div>
+                            <div className="modal-body">
+                                <div className="alert alert-danger mb-3" style={{ fontSize: '0.8rem', background: 'rgba(220,53,69,0.1)', color: '#dc3545', borderColor: 'transparent' }}>
+                                    Warning: This will immediately set the user's subscription to Expired and revoke VIP feature access.
+                                </div>
+                                <div className="mb-3 animate-in animate-in-1">
+                                    <p className="small text-muted mb-1" style={{ fontSize: '0.65rem', letterSpacing: '1px', fontWeight: 700 }}>USER</p>
+                                    <h6 className="mb-1" style={{ fontWeight: 700 }}>
+                                        {selectedUser.user ? `${selectedUser.user.firstName} ${selectedUser.user.lastName}` : 'N/A'}
+                                    </h6>
+                                    <span style={{ fontSize: '0.75rem', color: colors.textMuted }}>{selectedUser.user?.email}</span>
+                                </div>
+                                <div className="mb-4 animate-in animate-in-2">
+                                    <p className="small text-muted mb-1" style={{ fontSize: '0.65rem', letterSpacing: '1px', fontWeight: 700 }}>PLAN TO EXPIRE</p>
+                                    <h6>{selectedUser.package?.name} ({selectedUser.package?.tier?.toUpperCase()})</h6>
+                                </div>
+                                <div className="col-12">
+                                    <label className="form-label" style={{ fontWeight: 700, fontSize: '0.8rem' }}>Reason for Revocation</label>
+                                    <textarea
+                                        className="form-control"
+                                        rows={2}
+                                        placeholder="e.g. Terms of Service violation / Chargeback"
+                                        value={actionReason}
+                                        onChange={e => setActionReason(e.target.value)}
+                                        required
+                                    />
+                                </div>
+                            </div>
+                            <div className="modal-footer">
+                                <button type="button" onClick={() => setShowExpireModal(false)} className="btn btn-outline-secondary">Cancel</button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleForceExpire(selectedUser.userId, actionReason)}
+                                    className="btn btn-danger px-4"
+                                >
+                                    Force Expire
+                                </button>
                             </div>
                         </div>
                     </div>

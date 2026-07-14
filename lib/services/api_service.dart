@@ -758,6 +758,8 @@ class ApiService {
     String? accountHolderName,
     String? ifscCode,
     String? upiId,
+    String? foodPreference,
+    String? drinkPreference,
   }) async {
     final userId = currentUserId;
     if (userId == null) return false;
@@ -781,6 +783,8 @@ class ApiService {
           if (accountHolderName != null && accountHolderName.isNotEmpty) 'accountHolderName': accountHolderName,
           if (ifscCode != null && ifscCode.isNotEmpty) 'ifscCode': ifscCode,
           if (upiId != null && upiId.isNotEmpty) 'upiId': upiId,
+          if (foodPreference != null && foodPreference.isNotEmpty) 'foodPreference': foodPreference,
+          if (drinkPreference != null && drinkPreference.isNotEmpty) 'drinkPreference': drinkPreference,
         },
       );
       if (response.statusCode == 201) {
@@ -987,14 +991,22 @@ class ApiService {
     return false;
   }
 
-  static Future<bool> sendStrangersMeetJoinRequest(String id) async {
+  static Future<bool> sendStrangersMeetJoinRequest(
+    String id, {
+    String? foodPreference,
+    String? drinkPreference,
+  }) async {
     final userId = currentUserId;
     if (userId == null) return false;
 
     try {
       final response = await post(
         '/api/mobile/strangers-meet/$id/join-request',
-        body: {'userId': userId},
+        body: {
+          'userId': userId,
+          if (foodPreference != null && foodPreference.isNotEmpty) 'foodPreference': foodPreference,
+          if (drinkPreference != null && drinkPreference.isNotEmpty) 'drinkPreference': drinkPreference,
+        },
       );
       if (response.statusCode == 201 || response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -2230,6 +2242,8 @@ class ApiService {
     required String partyDate,
     required String mobileNumber,
     String? optionalMobileNumber,
+    String? foodPreference,
+    String? drinkPreference,
   }) async {
     final userId = currentUserId;
     if (userId == null) return null;
@@ -2244,6 +2258,10 @@ class ApiService {
           'mobileNumber': mobileNumber.trim(),
           if (optionalMobileNumber != null && optionalMobileNumber.trim().isNotEmpty)
             'optionalMobileNumber': optionalMobileNumber.trim(),
+          if (foodPreference != null && foodPreference.trim().isNotEmpty)
+            'foodPreference': foodPreference.trim(),
+          if (drinkPreference != null && drinkPreference.trim().isNotEmpty)
+            'drinkPreference': drinkPreference.trim(),
         },
       );
       if (response.statusCode == 201 || response.statusCode == 200) {
@@ -2344,4 +2362,73 @@ class ApiService {
     }
     return null;
   }
+
+  /// Fetches all subscription transactions for the current user
+  static Future<List<Map<String, dynamic>>> fetchSubscriptionHistory({
+    int page = 1,
+    int limit = 20,
+  }) async {
+    try {
+      final response = await get(
+        '/api/mobile/subscriptions/history',
+        queryParameters: {'page': page.toString(), 'limit': limit.toString()},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          final txns = data['data']['transactions'] as List? ?? [];
+          return txns.map((t) => Map<String, dynamic>.from(t)).toList();
+        }
+      }
+    } catch (e) {
+      debugPrint('fetchSubscriptionHistory error: $e');
+    }
+    return [];
+  }
+
+  // ── Admin helpers ─────────────────────────────────────────────────────────────
+
+  /// Admin: Force-expire a user's active subscription immediately
+  static Future<bool> adminForceExpireSubscription(
+    String userId, {
+    String? reason,
+  }) async {
+    try {
+      final response = await patch(
+        '/api/admin/subscriptions/users/$userId/force-expire',
+        body: {'reason': reason ?? 'Admin action'},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      debugPrint('adminForceExpireSubscription error: $e');
+    }
+    return false;
+  }
+
+  /// Admin: Extend a user's active subscription by N days
+  static Future<Map<String, dynamic>?> adminExtendSubscription(
+    String userId, {
+    required int days,
+    String? reason,
+  }) async {
+    try {
+      final response = await patch(
+        '/api/admin/subscriptions/users/$userId/extend',
+        body: {'days': days, 'reason': reason ?? 'Admin extension'},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return Map<String, dynamic>.from(data);
+        }
+      }
+    } catch (e) {
+      debugPrint('adminExtendSubscription error: $e');
+    }
+    return null;
+  }
 }
+

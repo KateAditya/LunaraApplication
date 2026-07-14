@@ -8,6 +8,7 @@ import SubscriptionTransaction from '../models/SubscriptionTransaction';
 import User from '../models/User';
 import { logger } from '../config/logger';
 import { SubscriptionService } from '../services/subscriptionService';
+import { sendPushNotification } from '../services/fcmService';
 
 // ─── Plans CRUD ───────────────────────────────────────────────────────────────
 
@@ -633,3 +634,136 @@ export const getSubscribedUsers = async (req: Request, res: Response): Promise<v
         res.status(500).json({ success: false, message: 'Server error' });
     }
 };
+
+// ─── Admin: Force-expire a user's active subscription ────────────────────────
+
+// @route PATCH /api/admin/subscriptions/users/:userId/force-expire
+export const forceExpireUserSubscription = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { userId } = req.params;
+        const { reason } = req.body;
+
+        const activeSubs = await UserSubscription.findAll({
+            where: { userId, status: SubscriptionStatus.ACTIVE },
+            include: [{ model: SubscriptionPackage, as: 'package' }],
+        });
+
+        if (!activeSubs.length) {
+            res.status(404).json({ success: false, message: 'No active subscription found for this user' });
+            return;
+        }
+
+        for (const sub of activeSubs) {
+            await sub.update({ status: SubscriptionStatus.EXPIRED, endDate: new Date() });
+
+            await SubscriptionTransaction.create({
+                userId,
+                packageId: sub.packageId,
+                type: 'expire' as any,
+                amount: 0,
+                status: 'cancelled' as any,
+                invoiceNumber: `ADMIN-EXP-${Date.now().toString(36).toUpperCase()}`,
+                metadata: {
+                    adminAction: 'force_expire',
+                    reason: reason || 'Admin forced expiry',
+                    planName: (sub as any).package?.name,
+                },
+            });
+        }
+
+        SubscriptionService.invalidateCache(userId);
+
+        // Fetch user and dispatch push notification
+        const user = await User.findByPk(userId);
+        if (user && user.fcmToken) {
+            await sendPushNotification(user.fcmToken, {
+                title: 'VIP Subscription Expired',
+                body: `Your VIP Subscription (${(activeSubs[0] as any).package?.name || 'VIP Package'}) has expired or has been revoked.`,
+                data: {
+                    type: 'subscription_expired',
+                    userId: userId,
+                }
+            });
+        }
+
+        logger.info(`Admin force-expired subscriptions for user ${userId}`);
+        res.status(200).json({
+            success: true,
+            message: `Force-expired ${activeSubs.length} subscription(s) for user ${userId}`,
+        });
+    } catch (error: any) {
+        logger.error('Error force-expiring subscription:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// @route PATCH /api/admin/subscriptions/users/:userId/extend
+export const extendUserSubscription = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { userId } = req.params;
+        const { days, reason } = req.body;
+
+        if (!days || days <= 0) {
+            res.status(400).json({ success: false, message: 'days must be a positive integer' });
+            return;
+        }
+
+        const sub = await UserSubscription.findOne({
+            where: { userId, status: SubscriptionStatus.ACTIVE },
+            include: [{ model: SubscriptionPackage, as: 'package' }],
+            order: [['createdAt', 'DESC']],
+        });
+
+        if (!sub) {
+            res.status(404).json({ success: false, message: 'No active subscription found' });
+            return;
+        }
+
+        const newEnd = new Date(sub.endDate);
+        newEnd.setDate(newEnd.getDate() + days);
+        await sub.update({ endDate: newEnd });
+
+        await SubscriptionTransaction.create({
+            userId,
+            packageId: sub.packageId,
+            type: 'renew' as any,
+            amount: 0,
+            status: 'success' as any,
+            invoiceNumber: `ADMIN-EXT-${Date.now().toString(36).toUpperCase()}`,
+            metadata: {
+                adminAction: 'extend',
+                daysAdded: days,
+                reason: reason || 'Admin extension',
+                planName: (sub as any).package?.name,
+            },
+        });
+
+        SubscriptionService.invalidateCache(userId);
+
+        // Fetch user and dispatch push notification
+        const user = await User.findByPk(userId);
+        if (user && user.fcmToken) {
+            await sendPushNotification(user.fcmToken, {
+                title: 'VIP Subscription Extended!',
+                body: `Your VIP Subscription (${(sub as any).package?.name || 'VIP Package'}) has been extended by ${days} days by support.`,
+                data: {
+                    type: 'subscription_extended',
+                    userId: userId,
+                    daysAdded: String(days),
+                    newEndDate: newEnd.toISOString()
+                }
+            });
+        }
+
+        logger.info(`Admin extended subscription for user ${userId} by ${days} days`);
+        res.status(200).json({
+            success: true,
+            message: `Extended subscription by ${days} days. New expiry: ${newEnd.toISOString()}`,
+            data: { newEndDate: newEnd },
+        });
+    } catch (error: any) {
+        logger.error('Error extending subscription:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+

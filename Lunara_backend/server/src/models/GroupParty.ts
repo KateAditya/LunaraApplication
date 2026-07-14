@@ -27,6 +27,8 @@ export interface GroupPartyAttributes {
     partyDate: Date;
     mobileNumber: string;
     optionalMobileNumber?: string;
+    foodPreference?: string;
+    drinkPreference?: string;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -34,7 +36,7 @@ export interface GroupPartyAttributes {
 export interface GroupPartyCreationAttributes
     extends Optional<
         GroupPartyAttributes,
-        'id' | 'status' | 'paymentStatus' | 'paymentId' | 'createdAt' | 'updatedAt' | 'optionalMobileNumber'
+        'id' | 'status' | 'paymentStatus' | 'paymentId' | 'createdAt' | 'updatedAt' | 'optionalMobileNumber' | 'foodPreference' | 'drinkPreference'
     > { }
 
 class GroupParty
@@ -53,6 +55,8 @@ class GroupParty
     public partyDate!: Date;
     public mobileNumber!: string;
     public optionalMobileNumber?: string;
+    public foodPreference?: string;
+    public drinkPreference?: string;
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 }
@@ -132,6 +136,16 @@ GroupParty.init(
             type: DataTypes.STRING,
             allowNull: true,
             field: 'optional_mobile_number',
+        },
+        foodPreference: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'food_preference',
+        },
+        drinkPreference: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'drink_preference',
         },
     },
     {

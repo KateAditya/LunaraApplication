@@ -16,17 +16,20 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
   bool _isLoading = true;
   List<dynamic> _incompleteEvents = [];
   List<dynamic> _transactions = [];
+  List<dynamic> _subscriptionTransactions = [];
   Map<String, dynamic> _summary = {
     'totalIncompleteEvents': 0,
     'totalTransactions': 0,
     'totalSpent': 0.0,
     'totalRefunded': 0.0,
+    'totalSubscriptionSpent': 0.0,
+    'totalSubscriptionPayments': 0,
   };
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _loadWalletData();
   }
 
@@ -43,7 +46,11 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
       if (data != null) {
         setState(() {
           _incompleteEvents = data['incompleteEvents'] ?? [];
-          _transactions = data['transactions'] ?? [];
+          // All transactions (plan payments) minus subscription ones
+          final allTxns = (data['transactions'] as List? ?? []);
+          _subscriptionTransactions = data['subscriptionTransactions'] as List? ?? [];
+          // Filter out subscription from main list (they appear in their own tab)
+          _transactions = allTxns.where((t) => t['type'] != 'subscription').toList();
           _summary = data['summary'] ?? _summary;
           _isLoading = false;
         });
@@ -90,6 +97,7 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
                     children: [
                       _buildIncompleteEventsList(),
                       _buildTransactionsList(),
+                      _buildSubscriptionTransactionsList(),
                     ],
                   ),
                 ),
@@ -213,6 +221,16 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
                 '${_incompleteEvents.length}',
                 Colors.amber,
               ),
+              Container(
+                height: 30,
+                width: 1,
+                color: Colors.white.withOpacity(0.1),
+              ),
+              _walletStatItem(
+                'VIP SPENDING',
+                '₹${double.tryParse(_summary['totalSubscriptionSpent']?.toString() ?? '0')?.toStringAsFixed(0) ?? '0'}',
+                const Color(0xFFE100FF),
+              ),
             ],
           ),
         ],
@@ -271,14 +289,45 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
         labelColor: Colors.black,
         unselectedLabelColor: Colors.grey[500],
         labelStyle: const TextStyle(
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: FontWeight.w900,
-          letterSpacing: 1.5,
+          letterSpacing: 1.0,
         ),
         dividerHeight: 0,
-        tabs: const [
-          Tab(text: 'INCOMPLETE'),
-          Tab(text: 'TRANSACTIONS'),
+        tabs: [
+          const Tab(text: 'EVENTS'),
+          const Tab(text: 'PAYMENTS'),
+          Tab(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text(
+                  'VIP',
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.0),
+                ),
+                if (_subscriptionTransactions.isNotEmpty) ...[
+                  const SizedBox(width: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFE100FF), Color(0xFF7F00FF)],
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${_subscriptionTransactions.length}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 8,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -703,6 +752,11 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
       iconBg = Colors.teal.withOpacity(0.1);
       iconColor = Colors.teal[800]!;
       displayTitle = contextData['label'] ?? 'Joiner Fee';
+    } else if (type == 'subscription') {
+      icon = Icons.workspace_premium_rounded;
+      iconBg = const Color(0xFFE100FF).withOpacity(0.1);
+      iconColor = const Color(0xFFE100FF);
+      displayTitle = contextData['label'] ?? 'VIP Subscription';
     } else {
       icon = Icons.local_activity_rounded;
       iconBg = LunaraTheme.electricViolet.withOpacity(0.1);
@@ -815,8 +869,13 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
     final String txnId = txn['txnId'] ?? 'N/A';
     final String type = txn['type'] ?? 'booking';
     final contextData = txn['context'] ?? {};
-    final String venueName = contextData['venueName'] ?? 'Lunara Partner Venue';
-    final String venueCity = contextData['venueCity'] ?? '';
+    
+    // Customize text fields based on transaction type
+    final isSubscription = type == 'subscription';
+    final String venueName = isSubscription 
+        ? (contextData['planName'] ?? 'VIP Subscription')
+        : (contextData['venueName'] ?? 'Lunara Partner Venue');
+    final String venueCity = isSubscription ? '' : (contextData['venueCity'] ?? '');
 
     String dateStr = 'N/A';
     if (txn['createdAt'] != null) {
@@ -891,12 +950,21 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
                 ),
               ),
               const SizedBox(height: 32),
-              _detailRow('VENUE', venueName),
+              _detailRow(isSubscription ? 'PACKAGE / ITEM' : 'VENUE', venueName),
               if (venueCity.isNotEmpty) _detailRow('LOCATION', venueCity),
               _detailRow('TRANSACTION ID', txnId),
               _detailRow('DATE & TIME', dateStr),
               _detailRow('PAYMENT METHOD', method),
-              _detailRow('TYPE', type == 'party_plan_deposit' || type == 'strangers_meet_deposit' ? 'Safety Deposit' : type == 'strangers_meet_join' ? 'Joiner Payment' : 'Booking Payment'),
+              _detailRow(
+                'TYPE', 
+                isSubscription 
+                    ? (contextData['label'] ?? 'VIP Subscription')
+                    : (type == 'party_plan_deposit' || type == 'strangers_meet_deposit' 
+                        ? 'Safety Deposit' 
+                        : type == 'strangers_meet_join' 
+                            ? 'Joiner Payment' 
+                            : 'Booking Payment'),
+              ),
               if (refundAmount > 0)
                 _detailRow('REFUND AMOUNT', '₹${refundAmount.toStringAsFixed(2)}'),
               const SizedBox(height: 20),
@@ -938,6 +1006,199 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSubscriptionTransactionsList() {
+    if (_subscriptionTransactions.isEmpty) {
+      return _buildEmptyState(
+        Icons.workspace_premium_rounded,
+        'NO VIP TRANSACTIONS',
+        'You have not subscribed to any Lunara VIP plan yet.',
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      itemCount: _subscriptionTransactions.length,
+      itemBuilder: (context, index) {
+        final txn = _subscriptionTransactions[index];
+        final double amount = double.tryParse(txn['amount']?.toString() ?? '0.0') ?? 0.0;
+        final String status = (txn['status'] ?? 'success').toString().toLowerCase();
+        final contextData = txn['context'] ?? {};
+        final String planName = contextData['planName'] ?? 'VIP Package';
+        final String label = contextData['label'] ?? 'Subscription';
+        final String planTier = (contextData['planTier'] ?? 'CORE').toString().toUpperCase();
+
+        // Color configurations based on Tier for a beautiful VIP feel
+        Color tierColor = const Color(0xFF7F00FF);
+        Color accentColor = const Color(0xFFE100FF);
+        bool isElite = planTier == 'ELITE';
+        bool isPro = planTier == 'PRO';
+
+        if (isElite) {
+          tierColor = const Color(0xFFFFD700);
+          accentColor = const Color(0xFFFFA500);
+        } else if (isPro) {
+          tierColor = const Color(0xFF8A2BE2);
+          accentColor = const Color(0xFFFF007F);
+        }
+
+        // Format Date
+        String dateStr = 'TBD';
+        if (txn['createdAt'] != null) {
+          try {
+            final dt = DateTime.parse(txn['createdAt']);
+            dateStr = DateFormat('MMM d, yyyy • h:mm a').format(dt);
+          } catch (_) {}
+        }
+
+        Color statusColor;
+        if (status == 'successful' || status == 'success') {
+          statusColor = const Color(0xFF10B981);
+        } else if (status == 'refunded') {
+          statusColor = Colors.blueAccent;
+        } else {
+          statusColor = Colors.redAccent;
+        }
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isElite || isPro
+                  ? tierColor.withOpacity(0.3)
+                  : Colors.grey.withOpacity(0.12),
+              width: isElite || isPro ? 1.5 : 1.0,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: isElite || isPro 
+                    ? tierColor.withOpacity(0.06) 
+                    : Colors.black.withOpacity(0.01),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: InkWell(
+            onTap: () => _showTransactionDetailsBottomSheet(txn),
+            borderRadius: BorderRadius.circular(20),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  // VIP Gradient Badge
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [tierColor, accentColor],
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      isElite ? Icons.star_rounded : Icons.workspace_premium_rounded,
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  // Plan & date details
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              planName.toUpperCase(),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 13,
+                                color: Colors.black,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: tierColor.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                planTier,
+                                style: TextStyle(
+                                  color: tierColor,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 8,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          label,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          dateStr,
+                          style: const TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Price and status
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        '₹${amount.toStringAsFixed(0)}',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.black,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+                        decoration: BoxDecoration(
+                          color: statusColor.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          status.toUpperCase(),
+                          style: TextStyle(
+                            color: statusColor,
+                            fontSize: 7,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 

@@ -176,9 +176,15 @@ const PROFILE_ATTRS = ['bio', 'occupation', 'city', 'gender'];
 // ─────────────────────────────────────────────────────────────────────────────
 export const createPartyPlan = async (req: Request, res: Response): Promise<void> => {
     try {
-        const rawVisibility = req.body.visibility || req.body.privacyType || 'public';
-        const parsedVisibility = String(rawVisibility).toLowerCase() === 'private' ? PartyPlanVisibility.PRIVATE : PartyPlanVisibility.PUBLIC;
-        const { userId, venueId, message, planDateTime, mobileNumber, optionalMobileNumber } = req.body;
+        const rawVisibility = String(req.body.visibility || req.body.privacyType || 'public').toLowerCase();
+        let parsedVisibility = PartyPlanVisibility.PUBLIC;
+        if (rawVisibility === 'private') {
+            parsedVisibility = PartyPlanVisibility.PRIVATE;
+        } else if (rawVisibility === 'both') {
+            parsedVisibility = PartyPlanVisibility.BOTH;
+        }
+
+        const { userId, venueId, message, planDateTime, mobileNumber, optionalMobileNumber, foodPreference, drinkPreference } = req.body;
         const selectedUsers = req.body.selectedUsers || req.body.selectedUserIds;
 
         // ── Validate required fields ─────────────────────────────────────────
@@ -188,9 +194,9 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
         if (!message?.trim()) errors.message = 'Party message is required';
         if (!planDateTime) errors.planDateTime = 'planDateTime is required';
 
-        if (parsedVisibility === PartyPlanVisibility.PRIVATE) {
+        if (parsedVisibility === PartyPlanVisibility.PRIVATE || parsedVisibility === PartyPlanVisibility.BOTH) {
             if (!Array.isArray(selectedUsers) || selectedUsers.length === 0) {
-                errors.selectedUsers = 'selectedUsers array is required and cannot be empty when visibility is private';
+                errors.selectedUsers = `selectedUsers array is required and cannot be empty when visibility is ${parsedVisibility}`;
             }
         }
 
@@ -292,17 +298,19 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             optionalMobileNumber: optionalMobileNumber?.trim(),
             status: PartyPlanStatus.ACTIVE,
             visibility: parsedVisibility,
-            selectedUsers: parsedVisibility === PartyPlanVisibility.PRIVATE ? selectedUsers : null,
+            selectedUsers: (parsedVisibility === PartyPlanVisibility.PRIVATE || parsedVisibility === PartyPlanVisibility.BOTH) ? selectedUsers : null,
             depositAmount: depositAmount,
             hostPaymentStatus: PartyPlanPaymentStatus.UNPAID,
             hostRazorpayOrderId: order.id,
-            isLive: parsedVisibility === PartyPlanVisibility.PRIVATE ? false : true, // Private plans are not shown in public feed
+            isLive: parsedVisibility === PartyPlanVisibility.PRIVATE ? false : true, // Private plans are not shown in public feed, both and public are
             expiresAt: partyDate,
             paymentStatus: 'pending',
+            foodPreference: foodPreference || 'Both',
+            drinkPreference: drinkPreference || 'Both',
         });
 
-        // Auto-generate accepted requests for invited users of private plan
-        if (parsedVisibility === PartyPlanVisibility.PRIVATE && Array.isArray(selectedUsers) && selectedUsers.length > 0) {
+        // Auto-generate accepted requests for invited users of private or both plan
+        if ((parsedVisibility === PartyPlanVisibility.PRIVATE || parsedVisibility === PartyPlanVisibility.BOTH) && Array.isArray(selectedUsers) && selectedUsers.length > 0) {
             for (const invitedUserId of selectedUsers) {
                 // Generate a joiner order ID
                 const joinerOptions = {
@@ -315,7 +323,7 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                     try {
                         joinerOrder = await razorpay.orders.create(joinerOptions);
                     } catch (err: any) {
-                        logger.warn('Razorpay create joiner order failed for private invite, using mock. Error: ' + err.message);
+                        logger.warn('Razorpay create joiner order failed for invite, using mock. Error: ' + err.message);
                     }
                 }
                 
@@ -344,6 +352,8 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             isLive: partyPlan.isLive,
             depositAmount: partyPlan.depositAmount,
             expiresAt: partyPlan.expiresAt,
+            foodPreference: partyPlan.foodPreference,
+            drinkPreference: partyPlan.drinkPreference,
             user: buildUserData({ creator: user } as any),
             venue: {
                 id: venue.id,
@@ -723,6 +733,8 @@ export const getAllPartyPlans = async (req: Request, res: Response): Promise<voi
             optionalMobileNumber: p.optionalMobileNumber,
             expiresAt: p.expiresAt,
             paymentStatus: p.paymentStatus,
+            foodPreference: p.foodPreference,
+            drinkPreference: p.drinkPreference,
             user: buildUserData(p),
             venue: buildVenueData(p),
         }));
@@ -818,6 +830,8 @@ export const getPlansByUser = async (req: Request, res: Response): Promise<void>
             optionalMobileNumber: p.optionalMobileNumber,
             expiresAt: p.expiresAt,
             paymentStatus: p.paymentStatus,
+            foodPreference: p.foodPreference,
+            drinkPreference: p.drinkPreference,
             user: buildUserData(p),
             venue: buildVenueData(p),
         }));
@@ -895,6 +909,8 @@ export const getPartyPlanById = async (req: Request, res: Response): Promise<voi
                 optionalMobileNumber: plan.optionalMobileNumber,
                 expiresAt: plan.expiresAt,
                 paymentStatus: plan.paymentStatus,
+                foodPreference: plan.foodPreference,
+                drinkPreference: plan.drinkPreference,
                 user: buildUserData(plan),
                 venue: buildVenueData(plan),
             },

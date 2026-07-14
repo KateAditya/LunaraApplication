@@ -12,6 +12,8 @@ import { Op } from 'sequelize';
 import { getUserGalleryDir } from '../middleware/upload';
 import SocialConnection, { ConnectionStatus } from '../models/SocialConnection';
 import UserPenalty from '../models/UserPenalty';
+import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription';
+import SubscriptionPackage from '../models/SubscriptionPackage';
 
 // ─── Image compression constants ──────────────────────────────────────────────
 const PHOTO_MAX_WIDTH = 1080;   // px
@@ -292,6 +294,18 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
             }
         });
 
+        // Fetch active subscription tier for golden ring / badge rendering
+        const activeSub = await UserSubscription.findOne({
+            where: {
+                userId,
+                status: SubscriptionStatus.ACTIVE,
+                endDate: { [Op.gt]: new Date() },
+            },
+            include: [{ model: SubscriptionPackage, as: 'package', attributes: ['tier'] }],
+            order: [['createdAt', 'DESC']],
+        });
+        const subscriptionTier: string = (activeSub as any)?.package?.tier ?? 'FREE';
+
         return res.status(200).json({
             success: true,
             data: {
@@ -299,6 +313,7 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
                 id: user.id,
                 superLikesCount,
                 plansCount,
+                subscriptionTier,
                 firstName: user.firstName,
                 lastName: user.lastName,
                 fullName: `${user.firstName} ${user.lastName}`,
@@ -553,6 +568,7 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                 preferences: u.preferences ?? null,
                 superLikesCount: superLikesMap[user.id] || 0,
                 plansCount: plansMap[user.id] || 0,
+                subscriptionTier: 'FREE', // Individual fetch avoided in list; resolved per user in profile detail
             };
         });
 

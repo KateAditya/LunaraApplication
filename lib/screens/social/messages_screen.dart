@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/api_service.dart';
 import 'chat_screen.dart';
+import 'plan_hub_screen.dart';
 
 class MessagesScreen extends StatefulWidget {
   const MessagesScreen({super.key});
@@ -12,6 +13,7 @@ class MessagesScreen extends StatefulWidget {
 class _MessagesScreenState extends State<MessagesScreen> {
   bool _isLoading = true;
   List<Map<String, dynamic>> _conversations = [];
+  bool _hasCreatedOrJoinedPlans = false;
 
   @override
   void initState() {
@@ -68,9 +70,28 @@ class _MessagesScreenState extends State<MessagesScreen> {
         debugPrint('[MessagesScreen] No conversations returned');
       }
 
+      bool hasPlans = false;
+      if (conversations.isEmpty) {
+        try {
+          final results = await Future.wait([
+            ApiService.fetchMyPartyPlans(),
+            ApiService.fetchMyPartyPlanRequests(),
+            ApiService.fetchMyStrangersMeetRequests(),
+          ]);
+          final myPartyPlans = results[0];
+          final myPartyRequests = results[1];
+          final myStrangersMeets = results[2];
+          
+          hasPlans = myPartyPlans.isNotEmpty || myPartyRequests.isNotEmpty || myStrangersMeets.isNotEmpty;
+        } catch (e) {
+          debugPrint('Error fetching plans check: $e');
+        }
+      }
+
       if (mounted) {
         setState(() {
           _conversations = conversations;
+          _hasCreatedOrJoinedPlans = hasPlans;
           _isLoading = false;
         });
       }
@@ -450,6 +471,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 
   Widget _buildEmpty() {
+    if (!_hasCreatedOrJoinedPlans) {
+      return _buildNoPlansEmptyState();
+    }
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
@@ -468,6 +492,155 @@ class _MessagesScreenState extends State<MessagesScreen> {
           style: TextStyle(color: Colors.grey[500], fontSize: 14),
         ),
       ],
+    );
+  }
+
+  Widget _buildNoPlansEmptyState() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      alignment: Alignment.center,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Elegant glow circle behind icon
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFF7F00FF).withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.forum_outlined,
+              size: 72,
+              color: Color(0xFF7F00FF),
+            ),
+          ),
+          const SizedBox(height: 28),
+          const Text(
+            'Connect & Chat',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.black87,
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'You haven\'t created or joined any plans yet. Start or join a plan to open chat rooms and connect with other users!',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.grey[600],
+              fontSize: 15,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 36),
+          // Gradient Create Button
+          Container(
+            width: double.infinity,
+            height: 52,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF7F00FF), Color(0xFF9F33FF)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF7F00FF).withValues(alpha: 0.3),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: ElevatedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  PageRouteBuilder(
+                    pageBuilder: (_, _, _) => const PlanHubScreen(autoShowCreatePlan: true),
+                    transitionsBuilder: (_, anim, _, child) {
+                      return SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0, 1),
+                          end: Offset.zero,
+                        ).animate(
+                          CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
+                        ),
+                        child: child,
+                      );
+                    },
+                    transitionDuration: const Duration(milliseconds: 350),
+                  ),
+                ).then((_) => _loadConversations());
+              },
+              icon: const Icon(Icons.add_circle_outline_rounded, color: Colors.white),
+              label: const Text(
+                'Create a Party Plan',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                shadowColor: Colors.transparent,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Outlined Browse Button
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: OutlinedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  PageRouteBuilder(
+                    pageBuilder: (_, _, _) => const PlanHubScreen(),
+                    transitionsBuilder: (_, anim, _, child) {
+                      return SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0, 1),
+                          end: Offset.zero,
+                        ).animate(
+                          CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
+                        ),
+                        child: child,
+                      );
+                    },
+                    transitionDuration: const Duration(milliseconds: 350),
+                  ),
+                ).then((_) => _loadConversations());
+              },
+              icon: const Icon(Icons.search_rounded, color: Color(0xFF7F00FF)),
+              label: const Text(
+                'Browse & Join Plans',
+                style: TextStyle(
+                  color: Color(0xFF7F00FF),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Color(0xFF7F00FF), width: 1.5),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

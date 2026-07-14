@@ -46,6 +46,8 @@ export interface StrangersMeetRequestAttributes {
     settlementAmount?: number;
     settlementDate?: Date;
     settlementMethod?: string;
+    foodPreference?: string;
+    drinkPreference?: string;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -76,8 +78,8 @@ export interface StrangersMeetRequestCreationAttributes
         | 'settlementAmount'
         | 'settlementDate'
         | 'settlementMethod'
-        | 'alternateMobileNumber'
-        | 'adminNotes'
+        | 'foodPreference'
+        | 'drinkPreference'
         | 'createdAt'
         | 'updatedAt'
     > { }
@@ -116,6 +118,8 @@ class StrangersMeetRequest
     public settlementAmount?: number;
     public settlementDate?: Date;
     public settlementMethod?: string;
+    public foodPreference?: string;
+    public drinkPreference?: string;
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 }
@@ -296,6 +300,16 @@ StrangersMeetRequest.init(
             type: DataTypes.STRING(50),
             allowNull: true,
             field: 'settlement_method',
+        },
+        foodPreference: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'food_preference',
+        },
+        drinkPreference: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'drink_preference',
         },
     },
     {

@@ -39,6 +39,7 @@ class User {
   final bool isVerified;
   final int superLikesCount;
   final int plansCount;
+  final String subscriptionTier; // FREE, CORE, PLUS, PRO, ELITE
 
   User({
     required this.id,
@@ -77,9 +78,35 @@ class User {
     this.isVerified = false,
     this.superLikesCount = 0,
     this.plansCount = 0,
+    this.subscriptionTier = 'FREE',
   });
 
   String get fullName => '$firstName $lastName';
+
+  /// Returns true if the user has PRO or ELITE tier subscription
+  bool get isPro {
+    final t = subscriptionTier.toUpperCase();
+    return t == 'PRO' || t == 'ELITE';
+  }
+
+  /// Returns true if the user has ELITE tier subscription
+  bool get isElite => subscriptionTier.toUpperCase() == 'ELITE';
+
+  /// Returns the tier colour for badge / ring rendering
+  String get tierColor {
+    switch (subscriptionTier.toUpperCase()) {
+      case 'ELITE':
+        return '#FFB703';
+      case 'PRO':
+        return '#E100FF';
+      case 'PLUS':
+        return '#7F00FF';
+      case 'CORE':
+        return '#00A9FF';
+      default:
+        return '#9E9E9E';
+    }
+  }
 
   factory User.fromJson(Map<String, dynamic> json) {
     // Traverse nested structures to find user fields
@@ -222,6 +249,7 @@ class User {
           : (data['plansCount'] != null
               ? int.tryParse(data['plansCount'].toString()) ?? 0
               : 0),
+      subscriptionTier: (data['subscriptionTier'] ?? json['subscriptionTier'] ?? 'FREE').toString(),
     );
   }
 

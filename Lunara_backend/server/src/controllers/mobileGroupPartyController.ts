@@ -52,7 +52,7 @@ export const calculatePricing = async (req: Request, res: Response): Promise<voi
 // Create Group Party & Razorpay Order
 export const createGroupParty = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { userId, venueId, numberOfFriends, partyDate, mobileNumber, optionalMobileNumber } = req.body;
+        const { userId, venueId, numberOfFriends, partyDate, mobileNumber, optionalMobileNumber, foodPreference, drinkPreference } = req.body;
 
         if (!mobileNumber?.trim()) {
             res.status(400).json({ success: false, message: 'Mobile number is required' });
@@ -103,6 +103,8 @@ export const createGroupParty = async (req: Request, res: Response): Promise<voi
             partyDate,
             mobileNumber: mobileNumber.trim(),
             optionalMobileNumber: optionalMobileNumber?.trim(),
+            foodPreference: foodPreference?.trim(),
+            drinkPreference: drinkPreference?.trim(),
             status: GroupPartyStatus.PENDING,
             paymentStatus: GroupPartyPaymentStatus.PENDING,
             paymentId: order.id

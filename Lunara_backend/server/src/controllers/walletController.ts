@@ -14,6 +14,8 @@ import { PartyPlanPaymentStatus } from '../models/PartyPlan';
 import { PartyPlanRequestStatus, PartyPlanJoinerPaymentStatus } from '../models/PartyPlanRequest';
 import StrangersMeetRequest, { StrangersMeetStatus, StrangersMeetPaymentStatus } from '../models/StrangersMeetRequest';
 import StrangersMeetJoiner, { StrangersMeetJoinerPaymentStatus } from '../models/StrangersMeetJoiner';
+import SubscriptionTransaction from '../models/SubscriptionTransaction';
+import SubscriptionPackage from '../models/SubscriptionPackage';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/mobile/wallet?userId=<uuid>
@@ -710,23 +712,93 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
         // Sort by createdAt descending
         transactions.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
+        // ── 2b. Subscription Transactions ──────────────────────────────────────
+        const subTransactions = await SubscriptionTransaction.findAll({
+            where: { userId },
+            include: [{ model: SubscriptionPackage, as: 'package', attributes: ['id', 'name', 'tier', 'themeColor'] }],
+            order: [['created_at', 'DESC']],
+        });
+
+        // Tier → icon mapping (sent to client for rendering)
+        const tierIconMap: Record<string, string> = {
+            FREE: 'free_badge',
+            CORE: 'core_badge',
+            PLUS: 'plus_badge',
+            PRO: 'pro_badge',
+            ELITE: 'elite_badge',
+        };
+
+        const subscriptionTxns: any[] = subTransactions.map(st => {
+            const pkg = (st as any).package;
+            const txnTypeDisplay: Record<string, string> = {
+                purchase: 'New Subscription',
+                upgrade: 'Plan Upgrade',
+                downgrade: 'Plan Downgrade',
+                renew: 'Subscription Renewal',
+                cancel: 'Cancellation',
+                expire: 'Plan Expired',
+                boost: 'Profile Boost',
+                refund: 'Refund',
+                trial: 'Trial Activation',
+            };
+
+            return {
+                txnId: st.id,
+                paymentId: st.id,
+                invoiceNumber: st.invoiceNumber,
+                type: 'subscription',
+                subType: st.type,
+                amount: Number(st.amount),
+                currency: st.currency || 'INR',
+                status: st.status,
+                paymentMethod: st.paymentMethod || 'razorpay',
+                paymentGateway: st.paymentGateway || 'razorpay',
+                refundAmount: Number(st.refundAmount ?? 0),
+                refundedAt: st.refundedAt,
+                createdAt: st.createdAt,
+                context: {
+                    label: txnTypeDisplay[st.type] ?? 'Subscription',
+                    planName: pkg?.name ?? 'Lunara VIP',
+                    planTier: pkg?.tier ?? 'FREE',
+                    planColor: pkg?.themeColor ?? '#7F00FF',
+                    tierIcon: tierIconMap[pkg?.tier ?? 'FREE'] ?? 'core_badge',
+                    gatewayOrderId: st.gatewayOrderId,
+                    gatewayPaymentId: st.gatewayPaymentId,
+                    metadata: st.metadata,
+                },
+            };
+        });
+
+
         // ── 3. Summary stats ─────────────────────────────────────────────────
-        const totalSpent = transactions
-            .filter(t => t.status === 'successful')
+        // Merge all transactions (plan payments + subscription) into a unified list
+        const allTransactions = [...transactions, ...subscriptionTxns].sort(
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+
+        const totalSpent = allTransactions
+            .filter(t => t.status === 'successful' || t.status === 'success')
             .reduce((sum, t) => sum + t.amount, 0);
-        const totalRefunded = transactions.reduce((sum, t) => sum + (t.refundAmount ?? 0), 0);
+        const totalRefunded = allTransactions.reduce((sum, t) => sum + (t.refundAmount ?? 0), 0);
+        const totalSubscriptionSpent = subscriptionTxns
+            .filter(t => t.status === 'success')
+            .reduce((sum, t) => sum + t.amount, 0);
 
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
         res.json({
             success: true,
             data: {
                 incompleteEvents,
-                transactions,
+                transactions: allTransactions,
+                subscriptionTransactions: subscriptionTxns,
                 summary: {
                     totalIncompleteEvents: incompleteEvents.length,
-                    totalTransactions: transactions.length,
+                    totalTransactions: allTransactions.length,
                     totalSpent: Math.round(totalSpent * 100) / 100,
                     totalRefunded: Math.round(totalRefunded * 100) / 100,
+                    totalSubscriptionSpent: Math.round(totalSubscriptionSpent * 100) / 100,
+                    totalPlanPayments: transactions.length,
+                    totalSubscriptionPayments: subscriptionTxns.length,
                 },
             },
         });

@@ -172,6 +172,12 @@ export const subscriptionsApi = {
 
     getSubscribedUsers: (params?: { page?: number; limit?: number }): Promise<any> =>
         apiClient.get('/api/admin/subscriptions/users', { params }),
+
+    forceExpireUserSubscription: (userId: string, reason?: string): Promise<{ success: boolean; message: string }> =>
+        apiClient.patch(`/api/admin/subscriptions/users/${userId}/force-expire`, { reason }),
+
+    extendUserSubscription: (userId: string, days: number, reason?: string): Promise<{ success: boolean; message: string; data?: any }> =>
+        apiClient.patch(`/api/admin/subscriptions/users/${userId}/extend`, { days, reason }),
 };
 
 export default subscriptionsApi;

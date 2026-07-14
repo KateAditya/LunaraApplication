@@ -17,7 +17,14 @@ import '../../widgets/venue_timing_error_dialog.dart';
 
 
 class PlanHubScreen extends StatefulWidget {
-  const PlanHubScreen({super.key});
+  final bool autoShowCreatePlan;
+  final bool autoShowStrangersMeet;
+
+  const PlanHubScreen({
+    super.key,
+    this.autoShowCreatePlan = false,
+    this.autoShowStrangersMeet = false,
+  });
 
   @override
   State<PlanHubScreen> createState() => _PlanHubScreenState();
@@ -53,6 +60,13 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     _loadVenues();
     _loadProfile();
     _loadCustomers();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.autoShowCreatePlan) {
+        _showCreatePlanSheet(context);
+      } else if (widget.autoShowStrangersMeet) {
+        _showArrangeStrangersMeetSheet(context);
+      }
+    });
   }
 
   bool _isVenueOpenOnDate(Venue venue, DateTime date) {
@@ -1025,6 +1039,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     String selectedPrivacy = 'Public';
     String userSearchQuery = '';
     final List<String> selectedUserIds = [];
+    String selectedFoodPref = 'Both';
+    String selectedDrinkPref = 'Both';
 
     showModalBottomSheet(
       context: context,
@@ -1788,7 +1804,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       ),
                       const SizedBox(height: 8),
                       Row(
-                        children: ['Public', 'Private'].map((type) {
+                        children: ['Public', 'Private', 'Both'].map((type) {
                           final isSelected = selectedPrivacy == type;
                           return Expanded(
                             child: GestureDetector(
@@ -1835,7 +1851,122 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                         }).toList(),
                       ),
 
-                      if (selectedPrivacy == 'Private') ...[
+                      const SizedBox(height: 14),
+                      const Text(
+                        'FOOD & DRINK PREFERENCES',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.5,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Food Preference',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black54,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[50],
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.grey[200]!),
+                                  ),
+                                  child: DropdownButtonHideUnderline(
+                                    child: DropdownButtonFormField<String>(
+                                      value: selectedFoodPref,
+                                      isExpanded: true,
+                                      decoration: const InputDecoration(
+                                        prefixIcon: Icon(Icons.restaurant, color: LunaraTheme.electricViolet, size: 14),
+                                        prefixIconConstraints: BoxConstraints(minWidth: 22, minHeight: 14),
+                                        border: InputBorder.none,
+                                        contentPadding: EdgeInsets.symmetric(vertical: 8),
+                                      ),
+                                      items: const ['Veg', 'Non-Veg', 'Both'].map((String val) {
+                                        return DropdownMenuItem<String>(
+                                          value: val,
+                                          child: Text(val, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+                                        );
+                                      }).toList(),
+                                      onChanged: (val) {
+                                        if (val != null) {
+                                          setSheetState(() {
+                                            selectedFoodPref = val;
+                                          });
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Drink Preference',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black54,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[50],
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.grey[200]!),
+                                  ),
+                                  child: DropdownButtonHideUnderline(
+                                    child: DropdownButtonFormField<String>(
+                                      value: selectedDrinkPref,
+                                      isExpanded: true,
+                                      decoration: const InputDecoration(
+                                        prefixIcon: Icon(Icons.local_bar, color: LunaraTheme.electricViolet, size: 14),
+                                        prefixIconConstraints: BoxConstraints(minWidth: 22, minHeight: 14),
+                                        border: InputBorder.none,
+                                        contentPadding: EdgeInsets.symmetric(vertical: 8),
+                                      ),
+                                      items: const ['Alcoholic', 'Non-Alcoholic', 'Both'].map((String val) {
+                                        return DropdownMenuItem<String>(
+                                          value: val,
+                                          child: Text(val, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+                                        );
+                                      }).toList(),
+                                      onChanged: (val) {
+                                        if (val != null) {
+                                          setSheetState(() {
+                                            selectedDrinkPref = val;
+                                          });
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      if (selectedPrivacy == 'Private' || selectedPrivacy == 'Both') ...[
                         const SizedBox(height: 10),
                         _sheetField(
                           hint: 'Search profiles to invite...',
@@ -2126,7 +2257,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     return;
                                   }
 
-                                  if (selectedPrivacy == 'Private' &&
+                                  if ((selectedPrivacy == 'Private' ||
+                                          selectedPrivacy == 'Both') &&
                                       selectedUserIds.isEmpty) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
@@ -2196,6 +2328,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                             chargesPerHead: 0.0,
                                             mobileNumber: mobileCtrl.text.trim(),
                                             alternateMobileNumber: altMobileCtrl.text.trim(),
+                                            foodPreference: selectedFoodPref,
+                                            drinkPreference: selectedDrinkPref,
                                           );
 
                                       if (success) {
@@ -2310,6 +2444,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         'selectedUserIds': selectedUserIds,
                                         'mobileNumber': '',
                                         'optionalMobileNumber': '',
+                                        'foodPreference': selectedFoodPref,
+                                        'drinkPreference': selectedDrinkPref,
                                       },
                                     );
 
@@ -2387,6 +2523,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     TimeOfDay? selectedTime;
     int numberOfPersons = 21;
     bool useUPI = true; // Toggle between UPI and bank account
+    String foodPreference = 'Both';
+    String drinkPreference = 'Both';
 
     final subjectCtrl = TextEditingController();
     final taglineCtrl = TextEditingController();
@@ -2701,6 +2839,115 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                         hint: 'Alternate Mobile Number (Optional)',
                         icon: Icons.phone_rounded,
                         keyboardType: TextInputType.phone,
+                      ),
+                      const SizedBox(height: 20),
+
+                      const Text(
+                        'FOOD & DRINK PREFERENCE',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.5,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Food Preference',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black54,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[50],
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.grey[200]!),
+                                  ),
+                                  child: DropdownButtonHideUnderline(
+                                    child: DropdownButtonFormField<String>(
+                                      value: foodPreference,
+                                      decoration: const InputDecoration(
+                                        prefixIcon: Icon(Icons.restaurant, color: Color(0xFF7C3AED), size: 16),
+                                        prefixIconConstraints: BoxConstraints(minWidth: 24, minHeight: 16),
+                                        border: InputBorder.none,
+                                        contentPadding: EdgeInsets.symmetric(vertical: 8),
+                                      ),
+                                      items: const ['Veg', 'Non-Veg', 'Both'].map((String val) {
+                                        return DropdownMenuItem<String>(
+                                          value: val,
+                                          child: Text(val, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+                                        );
+                                      }).toList(),
+                                      onChanged: (val) {
+                                        if (val != null) {
+                                          setSheetState(() => foodPreference = val);
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Drink Preference',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black54,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[50],
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.grey[200]!),
+                                  ),
+                                  child: DropdownButtonHideUnderline(
+                                    child: DropdownButtonFormField<String>(
+                                      value: drinkPreference,
+                                      decoration: const InputDecoration(
+                                        prefixIcon: Icon(Icons.local_bar, color: Color(0xFF7C3AED), size: 16),
+                                        prefixIconConstraints: BoxConstraints(minWidth: 24, minHeight: 16),
+                                        border: InputBorder.none,
+                                        contentPadding: EdgeInsets.symmetric(vertical: 8),
+                                      ),
+                                      items: const ['Alcoholic', 'Non-Alcoholic', 'Both'].map((String val) {
+                                        return DropdownMenuItem<String>(
+                                          value: val,
+                                          child: Text(val, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+                                        );
+                                      }).toList(),
+                                      onChanged: (val) {
+                                        if (val != null) {
+                                          setSheetState(() => drinkPreference = val);
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 20),
 
@@ -3022,22 +3269,24 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             );
 
                             final success =
-                                await ApiService.submitStrangersMeetRequest(
-                                  venueId: selectedVenue!.id,
-                                  subject: subjectCtrl.text.trim(),
-                                  tagline: taglineCtrl.text.trim(),
-                                  eventDateTime: dt.toUtc().toIso8601String(),
-                                  numberOfPersons: numberOfPersons,
-                                  chargesPerHead: 0.0,
-                                  mobileNumber: mobileCtrl.text.trim(),
-                                  alternateMobileNumber: altMobileCtrl.text.trim(),
-                                  // Bank/UPI details
-                                  upiId: useUPI ? upiCtrl.text.trim() : null,
-                                  bankName: !useUPI ? bankNameCtrl.text.trim() : null,
-                                  accountNumber: !useUPI ? accountNumberCtrl.text.trim() : null,
-                                  accountHolderName: !useUPI ? accountHolderCtrl.text.trim() : null,
-                                  ifscCode: !useUPI ? ifscCtrl.text.trim() : null,
-                                );
+                                 await ApiService.submitStrangersMeetRequest(
+                                   venueId: selectedVenue!.id,
+                                   subject: subjectCtrl.text.trim(),
+                                   tagline: taglineCtrl.text.trim(),
+                                   eventDateTime: dt.toUtc().toIso8601String(),
+                                   numberOfPersons: numberOfPersons,
+                                   chargesPerHead: 0.0,
+                                   mobileNumber: mobileCtrl.text.trim(),
+                                   alternateMobileNumber: altMobileCtrl.text.trim(),
+                                   // Bank/UPI details
+                                   upiId: useUPI ? upiCtrl.text.trim() : null,
+                                   bankName: !useUPI ? bankNameCtrl.text.trim() : null,
+                                   accountNumber: !useUPI ? accountNumberCtrl.text.trim() : null,
+                                   accountHolderName: !useUPI ? accountHolderCtrl.text.trim() : null,
+                                   ifscCode: !useUPI ? ifscCtrl.text.trim() : null,
+                                   foodPreference: foodPreference,
+                                   drinkPreference: drinkPreference,
+                                 );
 
                             if (context.mounted) {
                               Navigator.pop(context); // Close loading dialog

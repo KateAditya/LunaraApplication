@@ -28,6 +28,8 @@ interface GroupParty {
     name: string;
     city: string;
   } | null;
+  foodPreference?: string;
+  drinkPreference?: string;
 }
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -162,6 +164,8 @@ export const GroupParties: React.FC = () => {
                     {party.optionalMobileNumber && <span>📞 {party.optionalMobileNumber} (Alt)</span>}
                     {party.creator && <span>👤 {party.creator.firstName} {party.creator.lastName}</span>}
                     <span>💰 ₹{Number(party.totalAmount).toFixed(0)}</span>
+                    {party.foodPreference && <span>🥗 {party.foodPreference}</span>}
+                    {party.drinkPreference && <span>🍹 {party.drinkPreference}</span>}
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flexShrink: 0 }}>
@@ -194,6 +198,8 @@ export const GroupParties: React.FC = () => {
                 <span>📧 {selected.creator?.email}</span>
                 <span>💳 Payment: {selected.paymentStatus.toUpperCase()}</span>
                 {selected.paymentId && <span>🧾 ID: {selected.paymentId}</span>}
+                {selected.foodPreference && <span>🥗 Food Pref: {selected.foodPreference}</span>}
+                {selected.drinkPreference && <span>🍹 Drink Pref: {selected.drinkPreference}</span>}
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>

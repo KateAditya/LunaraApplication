@@ -7,9 +7,11 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'api_service.dart';
 import 'notification_navigator.dart';
+import '../core/theme.dart';
 import '../screens/social/chat_screen.dart';
 import '../screens/discovery/venue_detail_screen.dart';
 import '../screens/social/live_feed_screen.dart';
+import '../screens/profile/lunara_wallet_screen.dart';
 
 /// Top-level background message handler.
 /// Must be a top-level function (not a class method) for Firebase.
@@ -261,9 +263,95 @@ class PushNotificationService {
           ),
         );
         break;
+      case 'subscription_expired':
+        _showSubscriptionDialog(
+          navigator,
+          title: 'VIP Subscription Expired',
+          message: 'Your VIP subscription has expired or has been terminated. Tap below to view your wallet and options.',
+          buttonText: 'View Wallet',
+        );
+        break;
+      case 'subscription_extended':
+        _showSubscriptionDialog(
+          navigator,
+          title: 'VIP Subscription Extended!',
+          message: 'Excellent news! Your VIP subscription has been extended by the administration. Tap below to check your updated status.',
+          buttonText: 'Check Wallet',
+        );
+        break;
       default:
         debugPrint('🔔 Unknown notification type: $type');
     }
+  }
+
+  static void _showSubscriptionDialog(
+    NavigatorState navigator, {
+    required String title,
+    required String message,
+    required String buttonText,
+  }) {
+    showDialog(
+      context: navigator.context,
+      barrierDismissible: true,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          backgroundColor: Colors.white,
+          title: Text(
+            title.toUpperCase(),
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.5,
+              color: Colors.black,
+            ),
+          ),
+          content: Text(
+            message,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Colors.black87,
+              height: 1.4,
+            ),
+          ),
+          actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text(
+                'CLOSE',
+                style: TextStyle(
+                  color: Colors.grey,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 11,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: LunaraTheme.electricViolet,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              ),
+              onPressed: () {
+                Navigator.pop(context);
+                navigator.push(
+                  MaterialPageRoute(builder: (_) => const LunaraWalletScreen()),
+                );
+              },
+              child: Text(
+                buttonText.toUpperCase(),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 11,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   static void _navigateToVenueDetail(
@@ -319,7 +407,7 @@ class PushNotificationService {
           ? senderName.split(' ').sublist(1).join(' ')
           : '',
       'image': senderImage ?? '',
-      'conversationId': ?conversationId,
+      'conversationId': conversationId,
     };
 
     navigator.push(

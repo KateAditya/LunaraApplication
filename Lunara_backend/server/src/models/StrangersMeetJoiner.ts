@@ -23,6 +23,8 @@ export interface StrangersMeetJoinerAttributes {
     razorpayOrderId?: string;
     razorpayPaymentId?: string;
     razorpaySignature?: string;
+    foodPreference?: string;
+    drinkPreference?: string;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -34,6 +36,8 @@ export interface StrangersMeetJoinerCreationAttributes
         | 'status'
         | 'paymentStatus'
         | 'paymentAmount'
+        | 'foodPreference'
+        | 'drinkPreference'
         | 'createdAt'
         | 'updatedAt'
     > { }
@@ -50,6 +54,8 @@ class StrangersMeetJoiner
     public razorpayOrderId?: string;
     public razorpayPaymentId?: string;
     public razorpaySignature?: string;
+    public foodPreference?: string;
+    public drinkPreference?: string;
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 }
@@ -106,6 +112,16 @@ StrangersMeetJoiner.init(
             type: DataTypes.STRING(200),
             allowNull: true,
             field: 'razorpay_signature',
+        },
+        foodPreference: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'food_preference',
+        },
+        drinkPreference: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'drink_preference',
         },
     },
     {

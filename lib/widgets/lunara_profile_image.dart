@@ -12,6 +12,10 @@ class LunaraProfileImage extends StatelessWidget {
   final bool isInteractive;
   final double borderWidth;
 
+  /// Override tier for callers that pass `userData` (Map-based) without a full User object.
+  /// Set to 'PRO' or 'ELITE' to show the golden ring even from raw map data.
+  final String? overrideTier;
+
   const LunaraProfileImage({
     super.key,
     this.user,
@@ -20,13 +24,13 @@ class LunaraProfileImage extends StatelessWidget {
     this.showGradientBorder = true,
     this.isInteractive = true,
     this.borderWidth = 2,
+    this.overrideTier,
   });
 
   User? get _resolvedUser {
     if (user != null) return user;
     if (userData != null) {
       try {
-        // Create a temporary User object to leverage its robust path processing
         return User.fromJson(userData!);
       } catch (e) {
         debugPrint('Error resolving user in LunaraProfileImage: $e');
@@ -40,7 +44,6 @@ class LunaraProfileImage extends StatelessWidget {
     final resolved = _resolvedUser;
     if (resolved != null) return resolved.profilePhoto;
 
-    // Fallback logic if resolution fails
     if (userData != null) {
       String? photo =
           (userData!['profilePhotoUrl'] ??
@@ -55,7 +58,6 @@ class LunaraProfileImage extends StatelessWidget {
           photo.isNotEmpty &&
           !photo.startsWith('http') &&
           !photo.startsWith('assets')) {
-        // Assuming relative path from API
         return '${ApiService.baseUrl}${photo.startsWith('/') ? '' : '/'}$photo';
       }
       return photo;
@@ -63,11 +65,60 @@ class LunaraProfileImage extends StatelessWidget {
     return null;
   }
 
+  /// Determine the effective subscription tier for border styling.
+  String get _effectiveTier {
+    if (overrideTier != null) return overrideTier!.toUpperCase();
+    final resolved = _resolvedUser;
+    if (resolved != null) return resolved.subscriptionTier.toUpperCase();
+    // Try to parse from raw userData map
+    if (userData != null) {
+      final t = userData!['subscriptionTier']?.toString().toUpperCase();
+      if (t != null && t.isNotEmpty) return t;
+    }
+    return 'FREE';
+  }
+
+  /// Returns the ring gradient for the given subscription tier.
+  /// - Elite: animated golden gradient
+  /// - Pro: purple-pink gradient
+  /// - Plus: purple gradient
+  /// - Core: cyan gradient
+  /// - Free: default Lunara gradient
+  Gradient _tierGradient(String tier) {
+    switch (tier) {
+      case 'ELITE':
+        return const LinearGradient(
+          colors: [Color(0xFFFFD700), Color(0xFFFFB703), Color(0xFFFFD700), Color(0xFFFFC107)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        );
+      case 'PRO':
+        return const LinearGradient(
+          colors: [Color(0xFFE100FF), Color(0xFF7F00FF), Color(0xFFE100FF)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        );
+      case 'PLUS':
+        return const LinearGradient(
+          colors: [Color(0xFF7F00FF), Color(0xFFAA44FF)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        );
+      case 'CORE':
+        return const LinearGradient(
+          colors: [Color(0xFF00A9FF), Color(0xFF0066FF)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        );
+      default:
+        return LunaraTheme.primaryGradient;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     String? photo = _profilePhoto;
 
-    // Check if it's a relative path that should have been a network image
     if (photo != null &&
         photo.isNotEmpty &&
         photo.startsWith('/') &&
@@ -91,20 +142,60 @@ class LunaraProfileImage extends StatelessWidget {
     );
 
     if (showGradientBorder) {
-      avatar = Container(
-        padding: EdgeInsets.all(borderWidth),
-        decoration: const BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: LunaraTheme.primaryGradient,
-        ),
-        child: Container(
-          padding: const EdgeInsets.all(2),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
+      final String tier = _effectiveTier;
+      final Gradient gradient = _tierGradient(tier);
+
+      // Double-width ring for PRO and ELITE tiers for extra prominence
+      final double ringWidth = (tier == 'PRO' || tier == 'ELITE') ? (borderWidth + 1.0) : borderWidth;
+
+      avatar = Stack(
+        children: [
+          Container(
+            padding: EdgeInsets.all(ringWidth),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: gradient,
+            ),
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+              ),
+              child: avatar,
+            ),
           ),
-          child: avatar,
-        ),
+          // Tier badge for PRO and ELITE
+          if (tier == 'ELITE' || tier == 'PRO')
+            Positioned(
+              bottom: 0,
+              right: 0,
+              child: Container(
+                width: (radius * 0.6).clamp(12.0, 20.0),
+                height: (radius * 0.6).clamp(12.0, 20.0),
+                decoration: BoxDecoration(
+                  gradient: gradient,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: tier == 'ELITE'
+                          ? const Color(0xFFFFD700).withValues(alpha: 0.4)
+                          : const Color(0xFFE100FF).withValues(alpha: 0.4),
+                      blurRadius: 4,
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Icon(
+                    tier == 'ELITE' ? Icons.star_rounded : Icons.verified_rounded,
+                    color: Colors.white,
+                    size: (radius * 0.35).clamp(8.0, 14.0),
+                  ),
+                ),
+              ),
+            ),
+        ],
       );
     }
 

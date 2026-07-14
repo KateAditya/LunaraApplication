@@ -49,6 +49,8 @@ interface SMRequest {
   joinedCount: number;
   paymentCount: number;
   remainingCount: number;
+  foodPreference?: string;
+  drinkPreference?: string;
 }
 
 interface Counts { pending: number; approved: number; rejected: number; }
@@ -474,6 +476,8 @@ export const StrangersMeet: React.FC = () => {
                     {req.alternateMobileNumber && <span>📞 {req.alternateMobileNumber} (Alt)</span>}
                     {req.user && <span>👤 {req.user.firstName} {req.user.lastName}</span>}
                     {req.paymentAmount && <span>💰 ₹{Number(req.paymentAmount).toFixed(0)}</span>}
+                    {req.foodPreference && <span>🥗 Food Pref: {req.foodPreference}</span>}
+                    {req.drinkPreference && <span>🍹 Drink Pref: {req.drinkPreference}</span>}
                   </div>
                   <div style={{ display: 'flex', gap: '1.2rem', flexWrap: 'wrap', fontSize: '0.8rem', color: 'var(--vz-text-muted)', marginTop: '0.4rem' }}>
                     <span style={{ color: '#7c3aed', fontWeight: 600 }}>👥 Joined: {req.joinedCount || 0} / {req.numberOfPersons} ({req.paymentCount || 0} Paid)</span>
@@ -555,6 +559,8 @@ export const StrangersMeet: React.FC = () => {
                     {selected.alternateMobileNumber && <span>📞 {selected.alternateMobileNumber} (Alt)</span>}
                     <span>👤 {selected.user?.firstName} {selected.user?.lastName}</span>
                     <span>📧 {selected.user?.email}</span>
+                    {selected.foodPreference && <span>🥗 Food Pref: {selected.foodPreference}</span>}
+                    {selected.drinkPreference && <span>🍹 Drink Pref: {selected.drinkPreference}</span>}
                   </div>
                 </div>
 

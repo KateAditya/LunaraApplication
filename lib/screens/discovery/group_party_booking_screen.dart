@@ -460,6 +460,59 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
   final TextEditingController _partyRequirementController = TextEditingController();
   final TextEditingController _partyDescriptionController = TextEditingController();
 
+  String _foodPreference = 'Both';
+  String _drinkPreference = 'Both';
+
+  Widget _buildDropdownPreference({
+    required String label,
+    required String value,
+    required List<String> items,
+    required ValueChanged<String?> onChanged,
+    required IconData icon,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1.2,
+            color: Colors.black54,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey[200]!),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButtonFormField<String>(
+              value: value,
+              decoration: InputDecoration(
+                prefixIcon: Icon(icon, color: LunaraTheme.electricViolet, size: 18),
+                prefixIconConstraints: const BoxConstraints(minWidth: 28, minHeight: 18),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+              items: items.map((String val) {
+                return DropdownMenuItem<String>(
+                  value: val,
+                  child: Text(val, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                );
+              }).toList(),
+              onChanged: onChanged,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   InputDecoration _inputDecoration(String hint) {
     return InputDecoration(
       hintText: hint,
@@ -1260,6 +1313,53 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                     ),
                     const SizedBox(height: 24),
                   ],
+                  // Food & Drink Preference Section
+                  const Text(
+                    'FOOD & DRINK PREFERENCE',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.5,
+                      color: Colors.black54,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildDropdownPreference(
+                          label: 'Food Preference',
+                          value: _foodPreference,
+                          items: const ['Veg', 'Non-Veg', 'Both'],
+                          icon: Icons.restaurant,
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() {
+                                _foodPreference = val;
+                              });
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: _buildDropdownPreference(
+                          label: 'Drink Preference',
+                          value: _drinkPreference,
+                          items: const ['Alcoholic', 'Non-Alcoholic', 'Both'],
+                          icon: Icons.local_bar,
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() {
+                                _drinkPreference = val;
+                              });
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
                   const Text(
                     'CONTACT DETAILS',
                     style: TextStyle(
@@ -1568,6 +1668,8 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                           optionalMobileNumber: _optMobileController.text.trim().isEmpty
                               ? null
                               : _optMobileController.text.trim(),
+                          foodPreference: _foodPreference,
+                          drinkPreference: _drinkPreference,
                         );
 
                         if (!parentContext.mounted) return;

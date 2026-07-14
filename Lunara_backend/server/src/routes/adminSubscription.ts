@@ -24,6 +24,10 @@ router.get('/transactions', ctrl.getAllTransactions);
 // ── Subscribed Users ───────────────────────────────────────────────────────────
 router.get('/users', ctrl.getSubscribedUsers);
 
+// ── User Subscription Management (Admin Actions) ──────────────────────────────
+router.patch('/users/:userId/force-expire', ctrl.forceExpireUserSubscription);
+router.patch('/users/:userId/extend', ctrl.extendUserSubscription);
+
 // ── Plans CRUD ─────────────────────────────────────────────────────────────────
 router.get('/', ctrl.getAllPackages);
 router.post('/', ctrl.createPackage);
