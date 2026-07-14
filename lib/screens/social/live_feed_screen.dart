@@ -12,6 +12,8 @@ import '../../models/user.dart';
 import '../profile/profile_screen.dart';
 import '../../models/strangers_meet_request.dart';
 import 'strangers_meet_payment_screen.dart';
+import 'strangers_meet_ticket_screen.dart';
+import 'chat_screen.dart';
 
 class LiveFeedScreen extends StatefulWidget {
   final bool isTab;
@@ -36,6 +38,16 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
 
   // Track optimistic state changes for buttons
   final Map<String, String> _optimisticStates = {};
+  final Set<String> _clearedFeedItemIds = {};
+
+  List<Map<String, dynamic>> _getJoinRequestsForMeet(String meetId) {
+    return _feedItems.where((i) =>
+      i['type'] == 'incoming_request' &&
+      i['requestType'] == 'stranger_meet' &&
+      i['planId']?.toString() == meetId
+    ).toList();
+  }
+
   Set<String> get _readRequestIds => ApiService.localReadRequestIds;
   Set<String> get _localReadNotificationIds => ApiService.localReadNotificationIds;
 
@@ -610,6 +622,8 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     final strangerItems = _feedItems.where((item) {
       final type = item['type'];
       final reqType = item['requestType'];
+      final id = item['id']?.toString() ?? '';
+      if (_clearedFeedItemIds.contains(id)) return false;
       return type == 'table_plan' ||
           ((type == 'incoming_request' || type == 'my_request') &&
               (reqType == 'table_plan' || reqType == 'stranger_meet'));
@@ -619,19 +633,69 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
       onRefresh: () => _loadFeed(showLoader: false),
       child: strangerItems.isEmpty
           ? _buildEmptyState('No Stranger Meets active right now.')
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: strangerItems.length,
-              itemBuilder: (context, index) {
-                final item = strangerItems[index];
-                if (item['type'] == 'incoming_request') {
-                  return _buildIncomingRequestCard(item);
-                }
-                if (item['type'] == 'my_request') {
-                  return _buildMyRequestCard(item);
-                }
-                return _buildPlanCard(item); // default fallback
-              },
+          : Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 16.0, bottom: 8.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Stranger Meets',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.onSurface,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            for (var item in strangerItems) {
+                              final id = item['id']?.toString() ?? '';
+                              if (id.isNotEmpty) _clearedFeedItemIds.add(id);
+                            }
+                          });
+                        },
+                        icon: const Icon(Icons.clear_all_rounded, color: LunaraTheme.electricViolet, size: 18),
+                        label: const Text(
+                          'CLEAR ALL',
+                          style: TextStyle(
+                            color: LunaraTheme.electricViolet,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 11,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          backgroundColor: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    itemCount: strangerItems.length,
+                    itemBuilder: (context, index) {
+                      final item = strangerItems[index];
+                      if (item['type'] == 'incoming_request') {
+                        return _buildIncomingRequestCard(item);
+                      }
+                      if (item['type'] == 'my_request') {
+                        return _buildMyRequestCard(item);
+                      }
+                      return _buildPlanCard(item); // default fallback
+                    },
+                  ),
+                ),
+              ],
             ),
     );
   }
@@ -654,6 +718,8 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     final partyItems = _feedItems.where((item) {
       final type = item['type'];
       final reqType = item['requestType'];
+      final id = item['id']?.toString() ?? '';
+      if (_clearedFeedItemIds.contains(id)) return false;
       // Suppress the public plan card when it is already confirmed
       if (type == 'party_plan') {
         final planId = (item['planId'] ?? item['id'] ?? '').toString();
@@ -668,22 +734,72 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
       onRefresh: () => _loadFeed(showLoader: false),
       child: partyItems.isEmpty
           ? _buildEmptyState('No Party Plans active right now.')
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: partyItems.length,
-              itemBuilder: (context, index) {
-                final item = partyItems[index];
-                if (item['type'] == 'party_plan') {
-                  return _buildPartyPlanCard(item);
-                }
-                if (item['type'] == 'incoming_request') {
-                  return _buildIncomingRequestCard(item);
-                }
-                if (item['type'] == 'my_request') {
-                  return _buildMyRequestCard(item);
-                }
-                return const SizedBox.shrink();
-              },
+          : Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 16.0, bottom: 8.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Party Plans',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.onSurface,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            for (var item in partyItems) {
+                              final id = item['id']?.toString() ?? '';
+                              if (id.isNotEmpty) _clearedFeedItemIds.add(id);
+                            }
+                          });
+                        },
+                        icon: const Icon(Icons.clear_all_rounded, color: LunaraTheme.electricViolet, size: 18),
+                        label: const Text(
+                          'CLEAR ALL',
+                          style: TextStyle(
+                            color: LunaraTheme.electricViolet,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 11,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          backgroundColor: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    itemCount: partyItems.length,
+                    itemBuilder: (context, index) {
+                      final item = partyItems[index];
+                      if (item['type'] == 'party_plan') {
+                        return _buildPartyPlanCard(item);
+                      }
+                      if (item['type'] == 'incoming_request') {
+                        return _buildIncomingRequestCard(item);
+                      }
+                      if (item['type'] == 'my_request') {
+                        return _buildMyRequestCard(item);
+                      }
+                      return const SizedBox.shrink();
+                    },
+                  ),
+                ),
+              ],
             ),
     );
   }
@@ -1646,7 +1762,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Your ${req['requestType'] == 'table_plan' ? 'Table Plan' : 'Party Plan'}',
+                        'Your ${req['requestType'] == 'table_plan' ? 'Table Plan' : (req['requestType'] == 'stranger_meet' ? 'Stranger Meet' : 'Party Plan')}',
                         style: TextStyle(
                           color: isDark ? Colors.white70 : Colors.black87,
                           fontSize: 12,
@@ -1676,17 +1792,30 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                       outline: false,
                       onTap: () async {
                         setState(() => _optimisticStates[reqId] = 'accepted');
-                        final result = await ApiService.acceptPartyPlanRequest(reqId);
-                        if (result != null) {
-                          final hostOrderId = result['hostRazorpayOrderId']?.toString();
-                          if (hostOrderId != null) {
-                            final plan = req['plan'] ?? {};
-                            _onHostPayDeposit(plan, hostOrderId);
+                        if (req['requestType'] == 'stranger_meet') {
+                          final planId = req['planId']?.toString() ?? '';
+                          final success = await ApiService.handleStrangersMeetJoinRequest(planId, reqId, 'accept');
+                          if (success) {
+                            _loadFeed(showLoader: false);
+                          } else {
+                            setState(() => _optimisticStates.remove(reqId));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Failed to accept request')),
+                            );
+                          }
+                        } else {
+                          final result = await ApiService.acceptPartyPlanRequest(reqId);
+                          if (result != null) {
+                            final hostOrderId = result['hostRazorpayOrderId']?.toString();
+                            if (hostOrderId != null) {
+                              final plan = req['plan'] ?? {};
+                              _onHostPayDeposit(plan, hostOrderId);
+                            } else {
+                              _loadFeed(showLoader: false);
+                            }
                           } else {
                             _loadFeed(showLoader: false);
                           }
-                        } else {
-                          _loadFeed(showLoader: false);
                         }
                       },
                     ),
@@ -1700,8 +1829,21 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                       outline: true,
                       onTap: () async {
                         setState(() => _optimisticStates[reqId] = 'rejected');
-                        await ApiService.rejectPartyPlanRequest(reqId);
-                        _loadFeed(showLoader: false);
+                        if (req['requestType'] == 'stranger_meet') {
+                          final planId = req['planId']?.toString() ?? '';
+                          final success = await ApiService.handleStrangersMeetJoinRequest(planId, reqId, 'reject');
+                          if (success) {
+                            _loadFeed(showLoader: false);
+                          } else {
+                            setState(() => _optimisticStates.remove(reqId));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Failed to reject request')),
+                            );
+                          }
+                        } else {
+                          await ApiService.rejectPartyPlanRequest(reqId);
+                          _loadFeed(showLoader: false);
+                        }
                       },
                     ),
                   ),
@@ -1733,33 +1875,61 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                         ],
                       ),
                       const SizedBox(height: 10),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 40,
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            final plan = req['plan'] ?? {};
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => PartyPlanTicketScreen(
-                                  request: req,
-                                  plan: plan,
-                                  isHost: true,
-                                ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                final plan = req['plan'] ?? {};
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => PartyPlanTicketScreen(
+                                      request: req,
+                                      plan: plan,
+                                      isHost: true,
+                                    ),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.qr_code_rounded, size: 16, color: Colors.white),
+                              label: const Text(
+                                'VIEW TICKET',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
                               ),
-                            );
-                          },
-                          icon: const Icon(Icons.qr_code_rounded, size: 16, color: Colors.white),
-                          label: const Text(
-                            'VIEW TICKET',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: LunaraTheme.electricViolet,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                            ),
                           ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: LunaraTheme.electricViolet,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => ChatScreen(user: {
+                                      ...requester,
+                                      'contextType': 'party_plan',
+                                      'planId': req['plan']?['id']?.toString(),
+                                    }),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16, color: Colors.white),
+                              label: const Text(
+                                'CHAT',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: LunaraTheme.hotPink,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ],
                   ),
@@ -1860,12 +2030,15 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     final requestType = req['requestType']?.toString() ?? 'table_plan';
     final isLargeParty = requestType == 'large_party_request';
     final isStrangerMeet = requestType == 'stranger_meet';
+    final isStrangerMeetJoin = requestType == 'stranger_meet_join';
 
     final booking = isLargeParty ? (req['booking'] ?? {}) : {};
     final plan = (isLargeParty || isStrangerMeet) ? {} : (req['plan'] ?? {});
     final venue = isLargeParty
         ? (booking['venue'] ?? {})
-        : (isStrangerMeet ? (req['venue'] ?? {}) : (plan['venue'] ?? {}));
+        : (isStrangerMeet
+            ? (req['venue'] ?? {})
+            : (isStrangerMeetJoin ? (req['plan']?['venue'] ?? {}) : (plan['venue'] ?? {})));
 
     final timeAgo = _formatTimeAgo(req['createdAt']);
     final reqId = req['id']?.toString() ?? '';
@@ -1932,7 +2105,9 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                             ? 'Group Booking at ${venue['name'] ?? 'Venue'}'
                             : isStrangerMeet
                                 ? 'Stranger Meet: "${req['subject'] ?? 'Subject'}" at ${venue['name'] ?? 'Venue'}'
-                                : '${plan['type'] == 'table_plan' ? 'Table Plan' : 'Party Plan'} at ${venue['name'] ?? 'Venue'}',
+                                : isStrangerMeetJoin
+                                    ? 'Stranger Meet: "${req['plan']?['subject'] ?? 'Subject'}" at ${venue['name'] ?? 'Venue'}'
+                                    : '${plan['type'] == 'table_plan' ? 'Table Plan' : 'Party Plan'} at ${venue['name'] ?? 'Venue'}',
                         style: TextStyle(
                           color: isDark ? Colors.white70 : Colors.black87,
                           fontSize: 12,
@@ -2284,8 +2459,321 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                   ),
                 ),
               ],
+              if (currentStatus == 'approved' || currentStatus == 'paid' || currentStatus == 'completed') ...[
+                Builder(
+                  builder: (context) {
+                    final meetRequests = _getJoinRequestsForMeet(reqId);
+                    if (meetRequests.isEmpty) return const SizedBox.shrink();
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 12),
+                        const Divider(color: Colors.white10),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'JOIN REQUESTS',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.0,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        ...meetRequests.map((joinReq) {
+                          final joinReqId = joinReq['id']?.toString() ?? '';
+                          final joiner = joinReq['requester'] ?? {};
+                          final joinerStatus = _optimisticStates[joinReqId] ?? joinReq['status']?.toString().toLowerCase() ?? 'pending';
+                          final joinerPayment = joinReq['joinerPaymentStatus']?.toString().toLowerCase() ?? 'pending';
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.03),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                            ),
+                            child: Row(
+                              children: [
+                                LunaraProfileImage(
+                                  userData: joiner,
+                                  radius: 16,
+                                  isInteractive: false,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        joiner['firstName'] ?? 'User',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        joinerStatus == 'paid' || joinerPayment == 'paid'
+                                            ? 'PAID & JOINED'
+                                            : joinerStatus.toUpperCase(),
+                                        style: TextStyle(
+                                          color: joinerStatus == 'paid' || joinerPayment == 'paid'
+                                              ? Colors.green
+                                              : (joinerStatus == 'accepted' ? Colors.orange : Colors.grey),
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (joinerStatus == 'pending') ...[
+                                  IconButton(
+                                    icon: const Icon(Icons.check_circle_outline, color: Colors.green, size: 22),
+                                    onPressed: () async {
+                                      setState(() => _optimisticStates[joinReqId] = 'accepted');
+                                      final success = await ApiService.handleStrangersMeetJoinRequest(reqId, joinReqId, 'accept');
+                                      if (success) {
+                                        _loadFeed(showLoader: false);
+                                      } else {
+                                        setState(() => _optimisticStates.remove(joinReqId));
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('Failed to accept request')),
+                                        );
+                                      }
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.cancel_outlined, color: Colors.red, size: 22),
+                                    onPressed: () async {
+                                      setState(() => _optimisticStates[joinReqId] = 'rejected');
+                                      final success = await ApiService.handleStrangersMeetJoinRequest(reqId, joinReqId, 'reject');
+                                      if (success) {
+                                        _loadFeed(showLoader: false);
+                                      } else {
+                                        setState(() => _optimisticStates.remove(joinReqId));
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('Failed to reject request')),
+                                        );
+                                      }
+                                    },
+                                  ),
+                                ],
+                                if (joinerStatus == 'paid' || joinerPayment == 'paid') ...[
+                                  IconButton(
+                                    icon: const Icon(Icons.chat_bubble_outline_rounded, color: LunaraTheme.hotPink, size: 22),
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => ChatScreen(user: {
+                                            ...joiner,
+                                            'contextType': 'stranger_meet',
+                                            'planId': reqId,
+                                          }),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ],
+                    );
+                  }
+                ),
+              ],
+            ] else if (isStrangerMeetJoin) ...[
+              if (currentStatus == 'pending') ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.yellow.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.yellow.withValues(alpha: 0.3)),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'PENDING HOST APPROVAL',
+                      style: TextStyle(
+                        color: Colors.yellow,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ),
+              ] else if (currentStatus == 'rejected') ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'REJECTED BY HOST',
+                      style: TextStyle(
+                        color: Colors.red,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ),
+              ] else if ((currentStatus == 'accepted' || currentStatus == 'payment_pending') && req['joinerPaymentStatus'] != 'paid') ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        'ACCEPTED! CHARGES PER HEAD: ₹${req['chargesPerHead'] ?? '0'}',
+                        style: const TextStyle(
+                          color: Colors.blue,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _actionButton(
+                              icon: Icons.payment,
+                              label: 'PAY NOW',
+                              color: Colors.blue,
+                              outline: false,
+                              onTap: () {
+                                final meetPlan = StrangersMeetRequest.fromJson(req['plan'] ?? {});
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => StrangersMeetPaymentScreen(
+                                      request: meetPlan,
+                                      isJoinPayment: true,
+                                      onPaymentSuccess: () {
+                                        setState(() {
+                                          _optimisticStates[reqId] = 'paid';
+                                        });
+                                        _loadFeed(showLoader: false);
+                                      },
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ] else ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                  ),
+                  child: Column(
+                    children: [
+                      const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.check_circle, color: Colors.green, size: 16),
+                          SizedBox(width: 6),
+                          Text(
+                            'BOOKING CONFIRMED 🎉',
+                            style: TextStyle(
+                              color: Colors.green,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (req['plan']?['ticketId'] != null) ...[
+                        const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          if (req['plan']?['ticketId'] != null) ...[
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  final meetPlan = StrangersMeetRequest.fromJson(req['plan']);
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => StrangersMeetTicketScreen(
+                                        request: meetPlan,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.qr_code_rounded, size: 16, color: Colors.white),
+                                label: const Text(
+                                  'VIEW TICKET',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: LunaraTheme.electricViolet,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
+                              ),
+                            ),
+                          ],
+                          if (req['plan']?['user'] != null) ...[
+                            if (req['plan']?['ticketId'] != null) const SizedBox(width: 8),
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => ChatScreen(user: {
+                                        ...req['plan']?['user'],
+                                        'contextType': 'stranger_meet',
+                                        'planId': req['plan']?['id']?.toString(),
+                                      }),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16, color: Colors.white),
+                                label: const Text(
+                                  'CHAT',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: LunaraTheme.hotPink,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
             ] else ...[
-              if (currentStatus == 'accepted' || currentStatus == 'payment_pending') ...[
+              if ((currentStatus == 'accepted' || currentStatus == 'payment_pending') && req['joinerPaymentStatus'] != 'paid') ...[
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -2367,11 +2855,11 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                     ],
                   ),
                 ),
-              ] else if (currentStatus == 'paid' || currentStatus == 'accepted') ...[
+              ] else if (currentStatus == 'paid' || req['joinerPaymentStatus'] == 'paid') ...[
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.blue.withValues(alpha: 0.1),
+                    color: Colors.green.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Column(
@@ -2379,12 +2867,12 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                       const Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.check_circle, color: Colors.blue, size: 16),
+                          Icon(Icons.check_circle, color: Colors.green, size: 16),
                           SizedBox(width: 6),
                           Text(
-                            'PAYMENT CONFIRMED',
+                            'PARTY PLAN CONFIRMED 🎉',
                             style: TextStyle(
-                              color: Colors.blue,
+                              color: Colors.green,
                               fontWeight: FontWeight.bold,
                               fontSize: 12,
                             ),
@@ -2392,32 +2880,62 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                         ],
                       ),
                       const SizedBox(height: 10),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 44,
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => PartyPlanTicketScreen(
-                                  request: req,
-                                  plan: req['plan'] ?? plan,
-                                  isHost: false,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => PartyPlanTicketScreen(
+                                      request: req,
+                                      plan: req['plan'] ?? plan,
+                                      isHost: false,
+                                    ),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.qr_code_rounded, size: 16, color: Colors.white),
+                              label: const Text(
+                                'VIEW TICKET',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: LunaraTheme.electricViolet,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                            ),
+                          ),
+                          if (req['plan']?['creator'] != null) ...[
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => ChatScreen(user: {
+                                        ...req['plan']?['creator'],
+                                        'contextType': 'party_plan',
+                                        'planId': req['plan']?['id']?.toString(),
+                                      }),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16, color: Colors.white),
+                                label: const Text(
+                                  'CHAT',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: LunaraTheme.hotPink,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 ),
                               ),
-                            );
-                          },
-                          icon: const Icon(Icons.qr_code_rounded, size: 16, color: Colors.white),
-                          label: const Text(
-                            'VIEW TICKET',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: LunaraTheme.electricViolet,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                        ),
+                            ),
+                          ],
+                        ],
                       ),
                     ],
                   ),

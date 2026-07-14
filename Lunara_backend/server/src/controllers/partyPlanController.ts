@@ -459,7 +459,9 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
             const activeRequests = await PartyPlanRequest.findAll({
                 where: {
                     planId: id,
-                    status: PartyPlanRequestStatus.PAYMENT_PENDING
+                    status: {
+                        [Op.in]: [PartyPlanRequestStatus.PAYMENT_PENDING, PartyPlanRequestStatus.ACCEPTED]
+                    }
                 }
             });
 

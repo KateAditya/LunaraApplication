@@ -13,6 +13,7 @@ import PartyPlan, { PartyPlanStatus, PartyPlanVisibility } from '../models/Party
 import PartyPlanRequest, { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
 import UserPhoto from '../models/UserPhoto';
 import StrangersMeetRequest from '../models/StrangersMeetRequest';
+import StrangersMeetJoiner from '../models/StrangersMeetJoiner';
 import { logger } from '../config/logger';
 import Conversation from '../models/Conversation';
 import ChatSubscription, { ChatSubscriptionStatus, ChatSubscriptionType } from '../models/ChatSubscription';
@@ -356,7 +357,10 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                     {
                         model: PartyPlan, as: 'plan',
                         attributes: ['id', 'userId', 'message', 'planDateTime', 'hostPaymentStatus', 'hostRazorpayOrderId', 'depositAmount', 'status', 'isLive', 'paymentStatus'],
-                        include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }]
+                        include: [
+                            { model: User, as: 'creator', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] },
+                            { model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }
+                        ]
                     }
                 ]
             });
@@ -377,6 +381,21 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 where: { userId: viewerId as string },
                 include: [
                     { model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }
+                ]
+            });
+
+            // Fetch my requests to join other Strangers Meets
+            const myJoinMeets = await StrangersMeetJoiner.findAll({
+                where: { userId: viewerId as string },
+                include: [
+                    {
+                        model: StrangersMeetRequest,
+                        as: 'strangersMeetRequest',
+                        include: [
+                            { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] },
+                            { model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }
+                        ]
+                    }
                 ]
             });
 
@@ -410,6 +429,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                         isLive: r.plan.isLive,
                         paymentStatus: r.plan.paymentStatus,
                         venue: (r.plan as any).venue,
+                        creator: (r.plan as any).creator,
                     } : null,
                 })),
                 ...myLargePartyBookings.map((b: any) => ({
@@ -434,7 +454,34 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                     eventDateTime: r.eventDateTime,
                     createdAt: r.createdAt,
                     venue: r.venue,
-                }))
+                })),
+                ...myJoinMeets.map((j: any) => {
+                    const req = j.strangersMeetRequest;
+                    return {
+                        id: j.id,
+                        type: 'my_request',
+                        requestType: 'stranger_meet_join',
+                        status: j.status,
+                        createdAt: j.createdAt,
+                        joinerPaymentStatus: j.paymentStatus,
+                        joinerRazorpayOrderId: j.razorpayOrderId,
+                        chargesPerHead: req ? Number(req.chargesPerHead) : 0,
+                        plan: req ? {
+                            id: req.id,
+                            subject: req.subject,
+                            tagline: req.tagline,
+                            eventDateTime: req.eventDateTime,
+                            numberOfPersons: req.numberOfPersons,
+                            chargesPerHead: Number(req.chargesPerHead),
+                            paymentAmount: req.paymentAmount,
+                            paymentStatus: req.paymentStatus,
+                            status: req.status,
+                            user: (req as any).user,
+                            venue: (req as any).venue,
+                            ticketId: j.paymentStatus === 'paid' ? req.ticketId : null,
+                        } : null,
+                    };
+                })
             ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
             // Fetch incoming requests for my Table Plans
@@ -524,6 +571,78 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                     };
                 }));
 
+            }
+
+            // Fetch incoming requests for my Strangers Meets
+            const myStrangersMeets = await StrangersMeetRequest.findAll({
+                where: { userId: viewerId as string },
+                include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }]
+            });
+            if (myStrangersMeets.length > 0) {
+                const incomingStrangerReqs = await StrangersMeetJoiner.findAll({
+                    where: {
+                        strangersMeetRequestId: { [Op.in]: myStrangersMeets.map(sm => sm.id) },
+                    },
+                    include: [{
+                        model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'],
+                        include: [{ model: UserPhoto, as: 'photos', where: { isPrimary: true }, required: false, attributes: ['filePath'] }]
+                    }]
+                });
+                incomingRequests.push(...incomingStrangerReqs.map((r: any) => {
+                    const meet = myStrangersMeets.find(sm => sm.id === r.strangersMeetRequestId);
+                    const reqUser = r.user;
+                    const profileImageUrl = reqUser?.profileImageUrl ?? (reqUser?.photos?.[0]?.filePath ? '/' + reqUser.photos[0].filePath.replace(/\\/g, '/') : null);
+                    const meetVenue = meet ? (meet as any).venue : null;
+                    return {
+                        id: r.id,
+                        type: 'incoming_request',
+                        requestType: 'stranger_meet',
+                        planId: r.strangersMeetRequestId,
+                        status: r.status,
+                        createdAt: r.createdAt,
+                        joinerPaymentStatus: r.paymentStatus,
+                        requester: {
+                            id: reqUser?.id,
+                            firstName: reqUser?.firstName,
+                            lastName: reqUser?.lastName,
+                            profileImageUrl,
+                        },
+                        planDetails: meet ? {
+                            id: meet.id,
+                            subject: meet.subject,
+                            tagline: meet.tagline,
+                            eventDateTime: meet.eventDateTime,
+                            numberOfPersons: meet.numberOfPersons,
+                            chargesPerHead: meet.chargesPerHead,
+                            paymentAmount: meet.paymentAmount,
+                            paymentStatus: meet.paymentStatus,
+                            venue: meetVenue ? {
+                                id: meetVenue.id,
+                                name: meetVenue.name,
+                                addressLine1: meetVenue.addressLine1,
+                                area: meetVenue.area,
+                                city: meetVenue.city,
+                            } : null,
+                        } : null,
+                        plan: meet ? {
+                            id: meet.id,
+                            planId: meet.id,
+                            planDateTime: meet.eventDateTime,
+                            message: meet.subject,
+                            hostPaymentStatus: meet.paymentStatus,
+                            depositAmount: meet.paymentAmount,
+                            status: meet.status,
+                            userId: meet.userId,
+                            venue: meetVenue ? {
+                                id: meetVenue.id,
+                                name: meetVenue.name,
+                                addressLine1: meetVenue.addressLine1,
+                                area: meetVenue.area,
+                                city: meetVenue.city,
+                            } : null,
+                        } : null
+                    };
+                }));
             }
 
             incomingRequests.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());

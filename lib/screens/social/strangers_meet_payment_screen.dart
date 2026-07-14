@@ -9,11 +9,13 @@ import 'strangers_meet_ticket_screen.dart';
 class StrangersMeetPaymentScreen extends StatefulWidget {
   final StrangersMeetRequest request;
   final VoidCallback onPaymentSuccess;
+  final bool isJoinPayment;
 
   const StrangersMeetPaymentScreen({
     super.key,
     required this.request,
     required this.onPaymentSuccess,
+    this.isJoinPayment = false,
   });
 
   @override
@@ -69,7 +71,9 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
     setState(() => _isProcessing = true);
 
     // Call checkout / initiate endpoint on backend
-    final checkoutData = await ApiService.initiateStrangersMeetPayment(widget.request.id);
+    final checkoutData = widget.isJoinPayment
+        ? await ApiService.initiateStrangersMeetJoinPayment(widget.request.id)
+        : await ApiService.initiateStrangersMeetPayment(widget.request.id);
 
     if (checkoutData == null) {
       if (!mounted) return;
@@ -120,12 +124,19 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
     if (!mounted) return;
     setState(() => _isProcessing = true);
 
-    final result = await ApiService.payStrangersMeetRequest(
-      widget.request.id,
-      orderId,
-      paymentId,
-      signature,
-    );
+    final result = widget.isJoinPayment
+        ? await ApiService.payStrangersMeetJoin(
+            widget.request.id,
+            orderId,
+            paymentId,
+            signature,
+          )
+        : await ApiService.payStrangersMeetRequest(
+            widget.request.id,
+            orderId,
+            paymentId,
+            signature,
+          );
     
     if (!mounted) return;
     
@@ -133,7 +144,19 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
 
     if (result != null) {
       widget.onPaymentSuccess();
-      _promptChargesPerHead(result);
+      if (widget.isJoinPayment) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Payment confirmed! You have successfully joined the meet. 🎉'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.pop(context);
+        }
+      } else {
+        _promptChargesPerHead(result);
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

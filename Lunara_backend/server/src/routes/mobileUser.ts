@@ -188,6 +188,31 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
         limit: 20
     });
 
+    // Fetch PartyPlanRequests where current user is host
+    const myHostedPlans = await PartyPlan.findAll({
+        where: { userId: uId },
+        attributes: ['id', 'venueId', 'visibility'],
+        include: [{ model: Venue, as: 'venue', attributes: ['name'] }]
+    });
+
+    const hostPartyRequests = myHostedPlans.length > 0
+        ? await PartyPlanRequest.findAll({
+            where: {
+                planId: { [Op.in]: myHostedPlans.map(p => p.id) },
+                status: { [Op.in]: ['accepted', 'paid'] }
+            },
+            include: [
+                {
+                    model: User,
+                    as: 'requester',
+                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl']
+                }
+            ],
+            order: [['createdAt', 'DESC']],
+            limit: 20
+        })
+        : [];
+
     // 4. Fetch PlanJoinRequests
     const planJoinRequests = await PlanJoinRequest.findAll({
         where: { requesterId: uId },
@@ -262,12 +287,14 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
         const notificationId = `ppr_${pr.id}`;
         let isRead = false;
 
-        if (pr.status === 'accepted') {
-            title = 'Plan Request Accepted';
-            body = `Your request to join Party Plan at ${venueName} was accepted. Pay to confirm.`;
-        } else if (pr.status === 'payment_pending') {
-            title = 'Plan Request Accepted';
-            body = `Your request to join Party Plan at ${venueName} was accepted. Pay to confirm.`;
+        if (pr.status === 'accepted' || pr.status === 'payment_pending') {
+            if (plan && (plan.visibility === 'private' || plan.visibility === 'both')) {
+                title = 'Private Party Plan Invite';
+                body = `You have been privately invited to a Party Plan at ${venueName}. Pay to confirm.`;
+            } else {
+                title = 'Plan Request Accepted';
+                body = `Your request to join Party Plan at ${venueName} was accepted. Pay to confirm.`;
+            }
         } else if (pr.status === 'rejected') {
             body = `Your request to join Party Plan at ${venueName} was declined.`;
             isRead = true;
@@ -281,6 +308,38 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
             body,
             createdAt: pr.updatedAt ? pr.updatedAt.toISOString() : (pr.createdAt ? pr.createdAt.toISOString() : new Date().toISOString()),
             read: isRead || activeReadNotificationIds.has(notificationId),
+        });
+    }
+
+    // Add Host PartyPlanRequests (Incoming accepted / paid)
+    for (const pr of hostPartyRequests) {
+        const plan = myHostedPlans.find(p => p.id === pr.planId);
+        const venueName = (plan as any)?.venue?.name || 'Club';
+        const joiner = (pr as any).requester;
+        if (!joiner) continue;
+        const joinerName = `${joiner.firstName} ${joiner.lastName}`;
+        const notificationId = `ppr_host_${pr.id}`;
+        
+        let title = 'Plan Invite Accepted';
+        let body = '';
+        if (plan?.visibility === 'private' || plan?.visibility === 'both') {
+            body = `${joinerName} accepted your private invite to the Party Plan at ${venueName}.`;
+        } else {
+            body = `${joinerName} accepted your request to join the Party Plan at ${venueName}.`;
+        }
+
+        notifications.push({
+            id: notificationId,
+            title,
+            body,
+            createdAt: pr.updatedAt ? pr.updatedAt.toISOString() : (pr.createdAt ? pr.createdAt.toISOString() : new Date().toISOString()),
+            read: activeReadNotificationIds.has(notificationId),
+            sender: {
+                id: joiner.id,
+                firstName: joiner.firstName,
+                lastName: joiner.lastName,
+                profileImageUrl: joiner.profileImageUrl,
+            }
         });
     }
 
