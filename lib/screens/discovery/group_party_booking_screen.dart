@@ -90,7 +90,7 @@ class _GroupPartyBookingScreenState extends State<GroupPartyBookingScreen> {
                         ),
                       ),
                       SizedBox(
-                        height: 340,
+                        height: 360,
                         child: ListView.builder(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
                           scrollDirection: Axis.horizontal,
@@ -369,23 +369,29 @@ class _GroupPartyBookingScreenState extends State<GroupPartyBookingScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.location_on_rounded,
-                            color: Colors.grey,
-                            size: 14,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            venue.city,
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
+                      Expanded(
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.location_on_rounded,
+                              color: Colors.grey,
+                              size: 14,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                venue.city,
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -462,6 +468,41 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
 
   String _foodPreference = 'Both';
   String _drinkPreference = 'Both';
+
+  void _showValidationError(String message) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Colors.redAccent),
+            const SizedBox(width: 8),
+            const Text(
+              'Validation Error',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          ],
+        ),
+        content: Text(
+          message,
+          style: const TextStyle(fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text(
+              'OK',
+              style: TextStyle(
+                color: LunaraTheme.electricViolet,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildDropdownPreference({
     required String label,
@@ -1507,32 +1548,16 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                       onPressed: () async {
                         final parsed = int.tryParse(_friendsController.text);
                         if (parsed == null || parsed < 1) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Please enter a valid number of friends.',
-                              ),
-                            ),
-                          );
+                          _showValidationError('Please enter a valid number of friends.');
                           return;
                         }
                         final int maxGuests = widget.venue.capacity ?? 500;
                         if (parsed > maxGuests) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Maximum $maxGuests friends allowed.',
-                              ),
-                            ),
-                          );
+                          _showValidationError('Maximum $maxGuests friends allowed.');
                           return;
                         }
                         if (_selectedDate == null || _selectedTime == null) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Please select Date and Time.'),
-                            ),
-                          );
+                          _showValidationError('Please select Date and Time.');
                           return;
                         }
 
@@ -1544,82 +1569,51 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                           _selectedTime!.minute,
                         );
                         if (selectedDateTime.isBefore(DateTime.now())) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Selected date and time cannot be in the past.'),
-                              backgroundColor: Colors.redAccent,
-                            ),
-                          );
+                          _showValidationError('Selected date and time cannot be in the past.');
                           return;
                         }
 
                         final invalidReason = widget.venue.getInvalidReason(_selectedDate!, _selectedTime!);
                         if (invalidReason != null) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(invalidReason),
-                              backgroundColor: Colors.redAccent,
-                            ),
-                          );
+                          _showValidationError(invalidReason);
                           return;
                         }
 
                         final mobileNum = _mobileController.text.trim();
-                        final phoneRegex = RegExp(r'^[6-9]\d{9}$');
+                        final phoneRegex = RegExp(r'^\d{10}$');
                         if (mobileNum.isEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Mobile number is required.'),
-                              backgroundColor: Colors.redAccent,
-                            ),
-                          );
+                          _showValidationError('Mobile number is required.');
                           return;
                         }
                         if (!phoneRegex.hasMatch(mobileNum)) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Please enter a valid 10-digit mobile number.'),
-                              backgroundColor: Colors.redAccent,
-                            ),
-                          );
+                          _showValidationError('Please enter a valid 10-digit mobile number.');
                           return;
                         }
 
                         final optMobileNum = _optMobileController.text.trim();
                         if (optMobileNum.isNotEmpty && !phoneRegex.hasMatch(optMobileNum)) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Please enter a valid 10-digit alternate mobile number.'),
-                              backgroundColor: Colors.redAccent,
-                            ),
-                          );
+                          _showValidationError('Please enter a valid 10-digit alternate mobile number.');
                           return;
                         }
 
                         if (_noOfFriends > 20) {
                           if (_partySubjectController.text.trim().isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Party Subject is required.'),
-                                backgroundColor: Colors.redAccent,
-                              ),
-                            );
+                            _showValidationError('Party Subject is required.');
                             return;
                           }
                           if (_partyRequirementController.text.trim().isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Party Requirement is required.'),
-                                backgroundColor: Colors.redAccent,
-                              ),
-                            );
+                            _showValidationError('Party Requirement is required.');
                             return;
                           }
 
-                          // Show loading snackbar
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Submitting request...'),
+                          // Show loading dialog/indicator instead of snackbar (which gets hidden)
+                          showDialog(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (ctx) => const Center(
+                              child: CircularProgressIndicator(
+                                color: LunaraTheme.electricViolet,
+                              ),
                             ),
                           );
 
@@ -1639,17 +1633,14 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                                 : _optMobileController.text.trim(),
                           );
 
+                          if (!context.mounted) return;
+                          Navigator.pop(context); // Close loading dialog
+
                           if (!success) {
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Failed to submit request. Please try again later.'),
-                              ),
-                            );
+                            _showValidationError('Failed to submit request. Please try again later.');
                             return;
                           }
 
-                          if (!context.mounted) return;
                           Navigator.pop(context); // close bottom sheet
 
                           showDialog(
@@ -1712,12 +1703,8 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                         Navigator.pop(parentContext); // Close loading dialog
 
                         if (result == null || result['success'] != true) {
-                          ScaffoldMessenger.of(parentContext).showSnackBar(
-                            const SnackBar(
-                              content: Text('Failed to initiate booking. Please try again.'),
-                              backgroundColor: Colors.redAccent,
-                            ),
-                          );
+                          final String errorMsg = result?['message'] ?? 'Failed to initiate booking. Please try again.';
+                          _showValidationError(errorMsg);
                           return;
                         }
 
@@ -1861,26 +1848,32 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Row(
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: isTotal ? 16 : 14,
-                fontWeight: isTotal ? FontWeight.bold : FontWeight.w600,
-                color: isTotal ? Colors.black : Colors.black87,
+        Expanded(
+          child: Row(
+            children: [
+              Flexible(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: isTotal ? 16 : 14,
+                    fontWeight: isTotal ? FontWeight.bold : FontWeight.w600,
+                    color: isTotal ? Colors.black : Colors.black87,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-            ),
-            if (icon != null) ...[
-              const SizedBox(width: 4),
-              Icon(
-                icon,
-                size: 14,
-                color: isTotal ? LunaraTheme.electricViolet : Colors.black54,
-              ),
+              if (icon != null) ...[
+                const SizedBox(width: 4),
+                Icon(
+                  icon,
+                  size: 14,
+                  color: isTotal ? LunaraTheme.electricViolet : Colors.black54,
+                ),
+              ],
             ],
-          ],
+          ),
         ),
+        const SizedBox(width: 8),
         Text(
           '${amount < 0 ? "-" : ""}₹ ${amount.abs().toStringAsFixed(0)}',
           style: TextStyle(

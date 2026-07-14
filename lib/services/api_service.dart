@@ -2307,10 +2307,12 @@ class ApiService {
             'drinkPreference': drinkPreference.trim(),
         },
       );
-      if (response.statusCode == 201 || response.statusCode == 200) {
+      try {
         final data = jsonDecode(response.body);
-        if (data['success'] == true) return data;
-      }
+        if (data is Map<String, dynamic>) {
+          return data;
+        }
+      } catch (_) {}
     } catch (e) {
       debugPrint('createGroupParty error: $e');
     }
