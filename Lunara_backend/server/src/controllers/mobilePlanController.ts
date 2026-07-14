@@ -12,6 +12,7 @@ import UserProfile from '../models/UserProfile';
 import PartyPlan, { PartyPlanStatus, PartyPlanVisibility } from '../models/PartyPlan';
 import PartyPlanRequest, { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
 import UserPhoto from '../models/UserPhoto';
+import StrangersMeetRequest from '../models/StrangersMeetRequest';
 import { logger } from '../config/logger';
 import Conversation from '../models/Conversation';
 import ChatSubscription, { ChatSubscriptionStatus, ChatSubscriptionType } from '../models/ChatSubscription';
@@ -371,6 +372,14 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 ]
             });
 
+            // Fetch my Strangers Meet Requests
+            const myStrangersMeetReqs = await StrangersMeetRequest.findAll({
+                where: { userId: viewerId as string },
+                include: [
+                    { model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }
+                ]
+            });
+
             myRequests = [
                 ...myTableReqs.map((r: any) => ({
                     id: r.id,
@@ -410,6 +419,21 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                     status: b.adminApprovalStatus || 'pending',
                     createdAt: b.createdAt,
                     booking: b
+                })),
+                ...myStrangersMeetReqs.map((r: any) => ({
+                    id: r.id,
+                    type: 'my_request',
+                    requestType: 'stranger_meet',
+                    status: r.status,
+                    paymentStatus: r.paymentStatus,
+                    paymentAmount: r.paymentAmount,
+                    chargesPerHead: r.chargesPerHead,
+                    numberOfPersons: r.numberOfPersons,
+                    subject: r.subject,
+                    tagline: r.tagline,
+                    eventDateTime: r.eventDateTime,
+                    createdAt: r.createdAt,
+                    venue: r.venue,
                 }))
             ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 

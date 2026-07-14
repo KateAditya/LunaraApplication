@@ -18,8 +18,10 @@ import 'all_users_screen.dart';
 import '../social/post_detail_screen.dart';
 import '../social/chat_screen.dart';
 import '../profile/profile_screen.dart';
+import '../profile/lunara_wallet_screen.dart';
 import '../../services/app_tour_service.dart';
 import '../../widgets/vip_upgrade_button.dart';
+import '../../main.dart';
 
 class DiscoveryScreen extends StatefulWidget {
   final int? initialFilterIndex;
@@ -90,6 +92,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       if (requestIfNeeded) {
+        AppLockWrapper.ignoreNextPause = true;
         await Geolocator.openLocationSettings();
       }
       if (showLoader && mounted) Navigator.pop(context);
@@ -99,6 +102,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       if (requestIfNeeded) {
+        AppLockWrapper.ignoreNextPause = true;
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
           if (showLoader && mounted) Navigator.pop(context);
@@ -112,6 +116,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
     if (permission == LocationPermission.deniedForever) {
       if (requestIfNeeded) {
+        AppLockWrapper.ignoreNextPause = true;
         await Geolocator.openAppSettings();
       }
       if (showLoader && mounted) Navigator.pop(context);
@@ -759,6 +764,27 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                           child: VIPUpgradeButton(
                             key: AppTourService.vipUpgradeKey,
                             size: 36,
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const LunaraWalletScreen(),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            margin: const EdgeInsets.only(right: 12),
+                            height: 36,
+                            width: 36,
+                            alignment: Alignment.center,
+                            child: const Icon(
+                              Icons.account_balance_wallet_rounded,
+                              color: LunaraTheme.electricViolet,
+                              size: 22,
+                            ),
                           ),
                         ),
                         LunaraProfileImage(

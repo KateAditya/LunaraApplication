@@ -52,6 +52,8 @@ class AppLockWrapper extends StatefulWidget {
   final Widget child;
   const AppLockWrapper({super.key, required this.child});
 
+  static bool ignoreNextPause = false;
+
   @override
   State<AppLockWrapper> createState() => _AppLockWrapperState();
 }
@@ -76,6 +78,10 @@ class _AppLockWrapperState extends State<AppLockWrapper> with WidgetsBindingObse
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
+      if (AppLockWrapper.ignoreNextPause) {
+        AppLockWrapper.ignoreNextPause = false;
+        return;
+      }
       _lockApp();
     } else if (state == AppLifecycleState.resumed) {
       _promptAuthentication();
@@ -284,9 +290,14 @@ class _AppLockWrapperState extends State<AppLockWrapper> with WidgetsBindingObse
 
   @override
   Widget build(BuildContext context) {
-    if (_isLocked) {
-      return _buildLockScreen();
-    }
-    return widget.child;
+    return Stack(
+      children: [
+        IgnorePointer(
+          ignoring: _isLocked,
+          child: widget.child,
+        ),
+        if (_isLocked) _buildLockScreen(),
+      ],
+    );
   }
 }

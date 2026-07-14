@@ -13,6 +13,7 @@ import '../../services/app_tour_service.dart';
 import '../../services/api_service.dart';
 import 'package:intl/intl.dart';
 import 'upcoming_party_screen.dart';
+import '../../main.dart';
 
 
 
@@ -86,6 +87,7 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         if (requestIfNeeded) {
+          AppLockWrapper.ignoreNextPause = true;
           await Geolocator.openLocationSettings();
         }
         if (showLoader && mounted) {
@@ -98,6 +100,7 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
       try {
         permission = await Geolocator.checkPermission();
         if (permission == LocationPermission.denied && requestIfNeeded) {
+          AppLockWrapper.ignoreNextPause = true;
           permission = await Geolocator.requestPermission();
         }
       } catch (e) {
@@ -226,12 +229,14 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Please enable location services to get directions.')),
         );
+        AppLockWrapper.ignoreNextPause = true;
         await Geolocator.openLocationSettings();
         return;
       }
 
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
+        AppLockWrapper.ignoreNextPause = true;
         permission = await Geolocator.requestPermission();
       }
       if (!mounted) return;
@@ -241,6 +246,7 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
           const SnackBar(content: Text('Location permission is required for directions.')),
         );
         if (permission == LocationPermission.deniedForever) {
+          AppLockWrapper.ignoreNextPause = true;
           await Geolocator.openAppSettings();
         }
         return;

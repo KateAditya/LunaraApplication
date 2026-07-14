@@ -645,6 +645,7 @@ export const approveRequest = async (req: Request, res: Response): Promise<void>
             status: StrangersMeetStatus.APPROVED,
             paymentAmount: hostDepositAmount,
             platformChargePerSeat,
+            chargesPerHead: chargesPerHead !== undefined && chargesPerHead !== null ? Number(chargesPerHead) : request.chargesPerHead,
             adminNotes: adminNotes?.trim() || null,
         });
 

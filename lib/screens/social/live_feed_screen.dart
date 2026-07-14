@@ -10,6 +10,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'party_plan_ticket_screen.dart';
 import '../../models/user.dart';
 import '../profile/profile_screen.dart';
+import '../../models/strangers_meet_request.dart';
+import 'strangers_meet_payment_screen.dart';
 
 class LiveFeedScreen extends StatefulWidget {
   final bool isTab;
@@ -1853,10 +1855,13 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
   Widget _buildMyRequestCard(Map<String, dynamic> req) {
     final requestType = req['requestType']?.toString() ?? 'table_plan';
     final isLargeParty = requestType == 'large_party_request';
+    final isStrangerMeet = requestType == 'stranger_meet';
 
     final booking = isLargeParty ? (req['booking'] ?? {}) : {};
-    final plan = isLargeParty ? {} : (req['plan'] ?? {});
-    final venue = isLargeParty ? (booking['venue'] ?? {}) : (plan['venue'] ?? {});
+    final plan = (isLargeParty || isStrangerMeet) ? {} : (req['plan'] ?? {});
+    final venue = isLargeParty
+        ? (booking['venue'] ?? {})
+        : (isStrangerMeet ? (req['venue'] ?? {}) : (plan['venue'] ?? {}));
 
     final timeAgo = _formatTimeAgo(req['createdAt']);
     final reqId = req['id']?.toString() ?? '';
@@ -1909,7 +1914,9 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'You requested to join',
+                        isStrangerMeet
+                            ? 'You created a Stranger Meet'
+                            : 'You requested to join',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
@@ -1919,7 +1926,9 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                       Text(
                         isLargeParty
                             ? 'Group Booking at ${venue['name'] ?? 'Venue'}'
-                            : '${plan['type'] == 'table_plan' ? 'Table Plan' : 'Party Plan'} at ${venue['name'] ?? 'Venue'}',
+                            : isStrangerMeet
+                                ? 'Stranger Meet: "${req['subject'] ?? 'Subject'}" at ${venue['name'] ?? 'Venue'}'
+                                : '${plan['type'] == 'table_plan' ? 'Table Plan' : 'Party Plan'} at ${venue['name'] ?? 'Venue'}',
                         style: TextStyle(
                           color: isDark ? Colors.white70 : Colors.black87,
                           fontSize: 12,
@@ -2150,6 +2159,124 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                         fontSize: 12,
                       ),
                     ),
+                  ),
+                ),
+              ],
+            ] else if (isStrangerMeet) ...[
+              if (currentStatus == 'pending') ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.yellow.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.yellow.withValues(alpha: 0.3)),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'PENDING ADMIN APPROVAL',
+                      style: TextStyle(
+                        color: Colors.yellow,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ),
+              ] else if (currentStatus == 'rejected') ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                  ),
+                  child: Center(
+                    child: Text(
+                      'REJECTED: ${req['adminNotes'] ?? 'No notes provided'}',
+                      style: const TextStyle(
+                        color: Colors.red,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ),
+              ] else if (currentStatus == 'approved' && req['paymentStatus'] != 'paid') ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        'APPROVED! PLATFORM DEPOSIT REQUIRED: ₹${req['paymentAmount'] ?? '0'}',
+                        style: const TextStyle(
+                          color: Colors.blue,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _actionButton(
+                              icon: Icons.payment,
+                              label: 'PAY NOW',
+                              color: Colors.blue,
+                              outline: false,
+                              onTap: () {
+                                final meetReq = StrangersMeetRequest.fromJson(req);
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => StrangersMeetPaymentScreen(
+                                      request: meetReq,
+                                      onPaymentSuccess: () {
+                                        setState(() {
+                                          _optimisticStates[reqId] = 'paid';
+                                        });
+                                        _loadFeed(showLoader: false);
+                                      },
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ] else ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.check_circle, color: Colors.blue, size: 16),
+                      const SizedBox(width: 6),
+                      Text(
+                        currentStatus == 'completed' ? 'COMPLETED' : 'PAYMENT CONFIRMED & PUBLISHED',
+                        style: const TextStyle(
+                          color: Colors.blue,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],

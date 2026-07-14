@@ -40,6 +40,15 @@ interface SMRequest {
     category: string;
     imageUrl: string | null;
   } | null;
+  bankName: string | null;
+  accountNumber: string | null;
+  accountHolderName: string | null;
+  ifscCode: string | null;
+  upiId: string | null;
+  platformChargePerSeat: number | null;
+  joinedCount: number;
+  paymentCount: number;
+  remainingCount: number;
 }
 
 interface Counts { pending: number; approved: number; rejected: number; }
@@ -75,6 +84,146 @@ export const StrangersMeet: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+  const handleCopy = (text: string, fieldName: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(fieldName);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  const renderCalculations = (req: SMRequest) => {
+    const totalSeats = req.numberOfPersons;
+    const paidSlots = req.paymentCount || 0;
+    const joinedSlots = req.joinedCount || 0;
+    const unfilledSeats = Math.max(0, totalSeats - paidSlots);
+    const platformDepositTotal = Number(req.paymentAmount || 0);
+    const platformChargePerSeat = req.platformChargePerSeat ? Number(req.platformChargePerSeat) : 
+      (platformDepositTotal > 0 && totalSeats > 0 ? platformDepositTotal / totalSeats : 0);
+    const hostChargePerHead = Number(req.chargesPerHead || 0);
+    const hostRevenueFromParticipants = paidSlots * hostChargePerHead;
+    const platformSettlementToHost = (unfilledSeats * platformChargePerSeat) + hostRevenueFromParticipants;
+    const netHostProfit = platformSettlementToHost - platformDepositTotal;
+
+    return (
+      <div style={{ marginTop: '1.25rem' }}>
+        <h4 style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', fontWeight: 700, borderBottom: '1px solid var(--vz-border-color)', paddingBottom: '0.4rem', color: '#7c3aed' }}>
+          📊 Meetup Analytics & Financials
+        </h4>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.82rem', color: 'var(--vz-text-primary)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--vz-border-color)', paddingBottom: '0.2rem' }}>
+            <span>Total Seats:</span>
+            <span style={{ fontWeight: 600 }}>{totalSeats} seats</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--vz-border-color)', paddingBottom: '0.2rem' }}>
+            <span>Joined / Paid:</span>
+            <span style={{ fontWeight: 600, color: '#7c3aed' }}>{joinedSlots} joined ({paidSlots} paid)</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--vz-border-color)', paddingBottom: '0.2rem' }}>
+            <span>Unfilled Slots:</span>
+            <span style={{ fontWeight: 600 }}>{unfilledSeats} unfilled</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--vz-border-color)', paddingBottom: '0.2rem' }}>
+            <span>Host Pre-Paid Deposit:</span>
+            <span style={{ fontWeight: 600 }}>₹{platformDepositTotal.toFixed(0)}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--vz-border-color)', paddingBottom: '0.2rem' }}>
+            <span>Platform Fee Per Seat:</span>
+            <span style={{ fontWeight: 600 }}>₹{platformChargePerSeat.toFixed(2)}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--vz-border-color)', paddingBottom: '0.2rem' }}>
+            <span>Charges Per Head (for participants):</span>
+            <span style={{ fontWeight: 600 }}>₹{hostChargePerHead.toFixed(0)}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--vz-border-color)', paddingBottom: '0.2rem' }}>
+            <span>Total Participant Revenue:</span>
+            <span style={{ fontWeight: 600, color: '#059669' }}>₹{hostRevenueFromParticipants.toFixed(0)}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(5, 150, 105, 0.08)', padding: '0.5rem', borderRadius: 6, fontWeight: 700, marginTop: '0.25rem' }}>
+            <span style={{ color: '#059669' }}>Host Settlement Amount:</span>
+            <span style={{ color: '#059669' }}>₹{platformSettlementToHost.toFixed(0)}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', background: netHostProfit >= 0 ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)', padding: '0.5rem', borderRadius: 6, fontWeight: 700 }}>
+            <span>Host Net Profit:</span>
+            <span style={{ color: netHostProfit >= 0 ? '#059669' : '#dc2626' }}>
+              {netHostProfit >= 0 ? '+' : ''}₹{netHostProfit.toFixed(0)}
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderBankDetails = (req: SMRequest) => {
+    const hasStructured = req.upiId || req.accountNumber;
+    if (!hasStructured && !req.bankDetails) {
+      return (
+        <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'var(--vz-light)', borderRadius: 8, fontSize: '0.82rem', color: 'var(--vz-text-muted)', textAlign: 'center' }}>
+          No settlement payment details provided yet by the host.
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ marginTop: '1.25rem' }}>
+        <h4 style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', fontWeight: 700, borderBottom: '1px solid var(--vz-border-color)', paddingBottom: '0.4rem', color: '#f59e0b' }}>
+          🏦 Host Settlement Payment Details
+        </h4>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', background: 'rgba(245, 158, 11, 0.05)', border: '1.5px dashed rgba(245, 158, 11, 0.25)', borderRadius: 10, padding: '1rem', fontSize: '0.85rem' }}>
+          {req.upiId && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span><b>UPI ID:</b> {req.upiId}</span>
+              <button 
+                onClick={() => handleCopy(req.upiId!, 'upi')}
+                style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', display: 'flex', gap: '0.25rem', alignItems: 'center' }}
+              >
+                {copiedField === 'upi' ? '✓ Copied' : '📋 Copy'}
+              </button>
+            </div>
+          )}
+          {req.accountNumber && (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(245,158,11,0.1)', paddingBottom: '0.25rem' }}>
+                <span><b>Account Holder:</b> {req.accountHolderName || '—'}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(245,158,11,0.1)', paddingBottom: '0.25rem' }}>
+                <span><b>Bank Name:</b> {req.bankName || '—'}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(245,158,11,0.1)', paddingBottom: '0.25rem' }}>
+                <span><b>Account No:</b> {req.accountNumber}</span>
+                <button 
+                  onClick={() => handleCopy(req.accountNumber!, 'acct')}
+                  style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+                >
+                  {copiedField === 'acct' ? '✓ Copied' : '📋 Copy'}
+                </button>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '0.25rem' }}>
+                <span><b>IFSC Code:</b> {req.ifscCode}</span>
+                <button 
+                  onClick={() => handleCopy(req.ifscCode!, 'ifsc')}
+                  style={{ padding: '0.2rem 0.6rem', fontSize: '0.75rem', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+                >
+                  {copiedField === 'ifsc' ? '✓ Copied' : '📋 Copy'}
+                </button>
+              </div>
+            </>
+          )}
+          {req.bankDetails && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: req.upiId || req.accountNumber ? '0.5rem' : '0' }}>
+              <span style={{ whiteSpace: 'pre-wrap' }}><b>Details summary:</b><br/>{req.bankDetails}</span>
+              <button 
+                onClick={() => handleCopy(req.bankDetails!, 'legacy')}
+                style={{ padding: '0.2rem 0.6rem', fontSize: '0.75rem', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', flexShrink: 0 }}
+              >
+                {copiedField === 'legacy' ? '✓ Copied' : '📋 Copy'}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` };
 
   const fetchRequests = useCallback(async () => {
@@ -108,12 +257,24 @@ export const StrangersMeet: React.FC = () => {
   const openModal = (req: SMRequest, action: 'approve' | 'reject' | 'view' | 'settlement') => {
     setSelected(req);
     setModalAction(action);
-    setPayAmount('');
-    setChargesPerHead('');
-    setAdminNote('');
-    setSettlementTxnId('');
-    setSettlementAmt('');
-    setSettlementMethod('Bank Transfer');
+    setPayAmount(req.paymentAmount ? req.paymentAmount.toString() : '');
+    setChargesPerHead(req.chargesPerHead ? req.chargesPerHead.toString() : '');
+    setAdminNote(req.adminNotes || '');
+    setSettlementTxnId(req.settlementTransactionId || '');
+    
+    // Auto-calculate suggested settlement amount to pre-fill
+    const totalSeats = req.numberOfPersons;
+    const paidSlots = req.paymentCount || 0;
+    const unfilledSeats = Math.max(0, totalSeats - paidSlots);
+    const platformDepositTotal = Number(req.paymentAmount || 0);
+    const platformChargePerSeat = req.platformChargePerSeat ? Number(req.platformChargePerSeat) : 
+      (platformDepositTotal > 0 && totalSeats > 0 ? platformDepositTotal / totalSeats : 0);
+    const hostChargePerHead = Number(req.chargesPerHead || 0);
+    const hostRevenueFromParticipants = paidSlots * hostChargePerHead;
+    const platformSettlementToHost = (unfilledSeats * platformChargePerSeat) + hostRevenueFromParticipants;
+
+    setSettlementAmt(req.settlementAmount ? req.settlementAmount.toString() : (platformSettlementToHost > 0 ? platformSettlementToHost.toFixed(0) : ''));
+    setSettlementMethod(req.settlementMethod || 'Bank Transfer');
     setSuccessMsg(null);
   };
 
@@ -314,6 +475,14 @@ export const StrangersMeet: React.FC = () => {
                     {req.user && <span>👤 {req.user.firstName} {req.user.lastName}</span>}
                     {req.paymentAmount && <span>💰 ₹{Number(req.paymentAmount).toFixed(0)}</span>}
                   </div>
+                  <div style={{ display: 'flex', gap: '1.2rem', flexWrap: 'wrap', fontSize: '0.8rem', color: 'var(--vz-text-muted)', marginTop: '0.4rem' }}>
+                    <span style={{ color: '#7c3aed', fontWeight: 600 }}>👥 Joined: {req.joinedCount || 0} / {req.numberOfPersons} ({req.paymentCount || 0} Paid)</span>
+                    {req.status === 'approved' && (
+                      <span style={{ color: '#059669', fontWeight: 600 }}>
+                        💰 Est. Settlement: ₹{(((req.numberOfPersons - (req.paymentCount || 0)) * (req.platformChargePerSeat || 0)) + ((req.paymentCount || 0) * (req.chargesPerHead || 0))).toFixed(0)}
+                      </span>
+                    )}
+                  </div>
                   {req.adminNotes && (
                     <div style={{ marginTop: '0.5rem', padding: '0.4rem 0.75rem', background: 'var(--vz-light)', borderRadius: 6, fontSize: '0.78rem', color: 'var(--vz-text-muted)' }}>
                       📝 {req.adminNotes}
@@ -389,6 +558,12 @@ export const StrangersMeet: React.FC = () => {
                   </div>
                 </div>
 
+                {modalAction === 'view' && selected && (
+                  <>
+                    {renderCalculations(selected)}
+                    {renderBankDetails(selected)}
+                  </>
+                )}
                 {modalAction === 'approve' && (
                   <>
                     <div style={{ marginBottom: '0.85rem' }}>
@@ -405,8 +580,13 @@ export const StrangersMeet: React.FC = () => {
                 )}
                 {modalAction === 'settlement' && selected && (
                   <>
-                    <div style={{ marginBottom: '0.85rem', padding: '0.75rem', background: 'rgba(245,158,11,0.1)', borderRadius: 8, fontSize: '0.82rem' }}>
-                      <b>Bank Details from Host:</b><br/>{selected.bankDetails || '—'}
+                    {renderBankDetails(selected)}
+                    <div style={{ height: '1.25rem' }}></div>
+                    <div style={{ marginBottom: '0.85rem', background: 'rgba(124,58,237,0.05)', borderRadius: 8, padding: '0.75rem', fontSize: '0.8rem' }}>
+                      <b>Suggested Settlement:</b> ₹{settlementAmt} <br/>
+                      <span style={{ color: 'var(--vz-text-muted)' }}>
+                        Calculated as: ({selected.numberOfPersons - (selected.paymentCount || 0)} unfilled seats × platform fee per seat) + ({(selected.paymentCount || 0)} paid seats × host head charges)
+                      </span>
                     </div>
                     <div style={{ marginBottom: '0.85rem' }}>
                       <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.875rem' }}>Transaction ID *</label>
