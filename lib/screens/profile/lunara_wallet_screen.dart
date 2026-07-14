@@ -517,6 +517,57 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
   Widget _buildIncompletePartyDetail(Map<String, dynamic> event) {
     final String role = (event['role'] ?? 'host').toString().toLowerCase();
     final isHost = role == 'host';
+    final type = event['type'] ?? 'party_plan';
+
+    if (type == 'strangers_meet') {
+      if (isHost) {
+        return Row(
+          children: [
+            const Icon(Icons.people_outline_rounded, size: 14, color: Colors.grey),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'Strangers Meet Host. Waiting for participants to join and pay.',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black54,
+                ),
+              ),
+            ),
+          ],
+        );
+      } else {
+        final host = event['host'];
+        final String hostName = host != null ? (host['name'] ?? 'Host') : 'Host';
+        final String? avatar = host?['profileImageUrl'];
+        return Row(
+          children: [
+            CircleAvatar(
+              radius: 12,
+              backgroundColor: Colors.grey[200],
+              backgroundImage: avatar != null && avatar.isNotEmpty
+                  ? (avatar.startsWith('http') ? NetworkImage(avatar) : NetworkImage('${ApiService.baseUrl}$avatar'))
+                  : null,
+              child: avatar == null || avatar.isEmpty
+                  ? const Icon(Icons.person, size: 12, color: Colors.grey)
+                  : null,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Joined Strangers Meet. Awaiting host $hostName to complete/settle the event.',
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black54,
+                ),
+              ),
+            ),
+          ],
+        );
+      }
+    }
 
     if (isHost) {
       final joiner = event['joiner'];
@@ -642,6 +693,16 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
       iconBg = Colors.amber.withOpacity(0.1);
       iconColor = Colors.amber[800]!;
       displayTitle = contextData['label'] ?? 'Safety Deposit';
+    } else if (type == 'strangers_meet_deposit') {
+      icon = Icons.security_rounded;
+      iconBg = Colors.purple.withOpacity(0.1);
+      iconColor = Colors.purple[800]!;
+      displayTitle = contextData['label'] ?? 'Host Safety Deposit';
+    } else if (type == 'strangers_meet_join') {
+      icon = Icons.group_add_rounded;
+      iconBg = Colors.teal.withOpacity(0.1);
+      iconColor = Colors.teal[800]!;
+      displayTitle = contextData['label'] ?? 'Joiner Fee';
     } else {
       icon = Icons.local_activity_rounded;
       iconBg = LunaraTheme.electricViolet.withOpacity(0.1);
@@ -835,7 +896,7 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
               _detailRow('TRANSACTION ID', txnId),
               _detailRow('DATE & TIME', dateStr),
               _detailRow('PAYMENT METHOD', method),
-              _detailRow('TYPE', type == 'party_plan_deposit' ? 'Safety Deposit' : 'Booking Payment'),
+              _detailRow('TYPE', type == 'party_plan_deposit' || type == 'strangers_meet_deposit' ? 'Safety Deposit' : type == 'strangers_meet_join' ? 'Joiner Payment' : 'Booking Payment'),
               if (refundAmount > 0)
                 _detailRow('REFUND AMOUNT', '₹${refundAmount.toStringAsFixed(2)}'),
               const SizedBox(height: 20),

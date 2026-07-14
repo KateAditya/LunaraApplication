@@ -12,6 +12,8 @@ import UserPhoto from '../models/UserPhoto';
 import UserProfile from '../models/UserProfile';
 import { PartyPlanPaymentStatus } from '../models/PartyPlan';
 import { PartyPlanRequestStatus, PartyPlanJoinerPaymentStatus } from '../models/PartyPlanRequest';
+import StrangersMeetRequest, { StrangersMeetStatus, StrangersMeetPaymentStatus } from '../models/StrangersMeetRequest';
+import StrangersMeetJoiner, { StrangersMeetJoinerPaymentStatus } from '../models/StrangersMeetJoiner';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/mobile/wallet?userId=<uuid>
@@ -148,6 +150,100 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
             ],
         });
 
+        // Case C – User is Strangers Meet Host, safety deposit PAID, but meet is not completed
+        const hostStrangersMeets = await StrangersMeetRequest.findAll({
+            where: {
+                userId,
+                paymentStatus: StrangersMeetPaymentStatus.PAID,
+                status: { [Op.in]: [StrangersMeetStatus.PENDING, StrangersMeetStatus.APPROVED] },
+            },
+            include: [
+                {
+                    model: Venue,
+                    as: 'venue',
+                    attributes: ['id', 'name', 'addressLine1', 'area', 'city'],
+                    include: [
+                        {
+                            model: VenueImage,
+                            as: 'images',
+                            attributes: ['filePath', 'imageType', 'isPrimary'],
+                            where: { imageType: 'cover', isPrimary: true },
+                            required: false,
+                        },
+                    ],
+                },
+                {
+                    model: StrangersMeetJoiner,
+                    as: 'joiners',
+                    required: false,
+                    include: [
+                        {
+                            model: User,
+                            as: 'user',
+                            attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'],
+                            include: [
+                                {
+                                    model: UserPhoto,
+                                    as: 'photos',
+                                    where: { isPrimary: true },
+                                    required: false,
+                                    attributes: ['filePath'],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        });
+
+        // Case D – User is Strangers Meet Joiner, join fee PAID, but meet is not completed
+        const joinerStrangersMeets = await StrangersMeetJoiner.findAll({
+            where: {
+                userId,
+                paymentStatus: StrangersMeetJoinerPaymentStatus.PAID,
+            },
+            include: [
+                {
+                    model: StrangersMeetRequest,
+                    as: 'strangersMeetRequest',
+                    where: {
+                        status: { [Op.in]: [StrangersMeetStatus.PENDING, StrangersMeetStatus.APPROVED] }
+                    },
+                    required: true,
+                    include: [
+                        {
+                            model: Venue,
+                            as: 'venue',
+                            attributes: ['id', 'name', 'addressLine1', 'area', 'city'],
+                            include: [
+                                {
+                                    model: VenueImage,
+                                    as: 'images',
+                                    attributes: ['filePath', 'imageType', 'isPrimary'],
+                                    where: { imageType: 'cover', isPrimary: true },
+                                    required: false,
+                                },
+                            ],
+                        },
+                        {
+                            model: User,
+                            as: 'user',
+                            attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'],
+                            include: [
+                                {
+                                    model: UserPhoto,
+                                    as: 'photos',
+                                    where: { isPrimary: true },
+                                    required: false,
+                                    attributes: ['filePath'],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        });
+
         // Build a unified incomplete-events list
         const buildVenueCover = (venue: any): string | null => {
             const img = venue?.images?.[0];
@@ -258,6 +354,81 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
             });
         }
 
+        // Host Strangers Meet plans
+        for (const meet of hostStrangersMeets) {
+            const venue = (meet as any).venue;
+            const joiners = (meet as any).joiners ?? [];
+            const paidJoiners = joiners.filter((j: any) => j.paymentStatus === StrangersMeetJoinerPaymentStatus.PAID);
+            
+            incompleteEvents.push({
+                eventId: meet.id,
+                role: 'host',
+                type: 'strangers_meet',
+                planDateTime: meet.eventDateTime,
+                depositAmount: Number(meet.paymentAmount || 0),
+                paymentStatus: meet.paymentStatus,
+                planStatus: meet.status,
+                hostPaymentStatus: meet.paymentStatus,
+                waitingFor: paidJoiners.length >= meet.numberOfPersons
+                    ? 'Confirmation'
+                    : 'Participants to Join',
+                venue: venue
+                    ? {
+                          id: venue.id,
+                          name: venue.name,
+                          addressLine1: venue.addressLine1,
+                          area: venue.area,
+                          city: venue.city,
+                          coverImage: buildVenueCover(venue),
+                      }
+                    : null,
+                createdAt: meet.createdAt,
+            });
+        }
+
+        // Joiner Strangers Meet requests
+        for (const jm of joinerStrangersMeets) {
+            const meet = (jm as any).strangersMeetRequest;
+            if (!meet) continue;
+            const venue = (meet as any).venue;
+            const creator = (meet as any).user;
+            const creatorProfileUrl = creator?.profileImageUrl ??
+                (creator?.photos?.[0]?.filePath
+                    ? `/${creator.photos[0].filePath.replace(/\\/g, '/')}`
+                    : null);
+
+            incompleteEvents.push({
+                eventId: meet.id,
+                requestId: jm.id,
+                role: 'joiner',
+                type: 'strangers_meet',
+                planDateTime: meet.eventDateTime,
+                depositAmount: Number(jm.paymentAmount || 0),
+                paymentStatus: jm.paymentStatus,
+                planStatus: meet.status,
+                joinerPaymentStatus: jm.paymentStatus,
+                waitingFor: 'Meet Completion',
+                venue: venue
+                    ? {
+                          id: venue.id,
+                          name: venue.name,
+                          addressLine1: venue.addressLine1,
+                          area: venue.area,
+                          city: venue.city,
+                          coverImage: buildVenueCover(venue),
+                      }
+                    : null,
+                host: creator
+                    ? {
+                          id: creator.id,
+                          name: `${creator.firstName} ${creator.lastName?.charAt(0) ?? ''}.`,
+                          profileImageUrl: creatorProfileUrl,
+                      }
+                    : null,
+                createdAt: jm.createdAt,
+            });
+        }
+
         // Sort incomplete events by planDateTime (ascending — soonest first)
         incompleteEvents.sort((a, b) => new Date(a.planDateTime).getTime() - new Date(b.planDateTime).getTime());
 
@@ -323,6 +494,53 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
                     model: PartyPlan,
                     as: 'plan',
                     attributes: ['id', 'planDateTime', 'depositAmount'],
+                    include: [
+                        {
+                            model: Venue,
+                            as: 'venue',
+                            attributes: ['id', 'name', 'city'],
+                        },
+                    ],
+                },
+            ],
+        });
+
+        // Pull Strangers Meet host payments
+        const hostStrangersMeetPayments = await StrangersMeetRequest.findAll({
+            where: {
+                userId,
+                paymentStatus: StrangersMeetPaymentStatus.PAID,
+                razorpayPaymentId: { [Op.ne]: null as any },
+            },
+            attributes: [
+                'id', 'eventDateTime', 'paymentAmount', 'razorpayOrderId',
+                'razorpayPaymentId', 'createdAt', 'subject',
+            ],
+            include: [
+                {
+                    model: Venue,
+                    as: 'venue',
+                    attributes: ['id', 'name', 'city'],
+                },
+            ],
+        });
+
+        // Pull Strangers Meet joiner payments
+        const joinerStrangersMeetPayments = await StrangersMeetJoiner.findAll({
+            where: {
+                userId,
+                paymentStatus: StrangersMeetJoinerPaymentStatus.PAID,
+                razorpayPaymentId: { [Op.ne]: null as any },
+            },
+            attributes: [
+                'id', 'strangersMeetRequestId', 'razorpayOrderId', 'razorpayPaymentId',
+                'paymentAmount', 'createdAt',
+            ],
+            include: [
+                {
+                    model: StrangersMeetRequest,
+                    as: 'strangersMeetRequest',
+                    attributes: ['id', 'eventDateTime', 'subject'],
                     include: [
                         {
                             model: Venue,
@@ -430,6 +648,61 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
                     venueName: venue?.name ?? 'Party Venue',
                     venueCity: venue?.city ?? '',
                     label: 'Joiner Safety Deposit',
+                },
+            });
+        }
+
+        // Host Strangers Meet payments
+        for (const meet of hostStrangersMeetPayments) {
+            const venue = (meet as any).venue;
+            transactions.push({
+                txnId: meet.razorpayPaymentId,
+                paymentId: meet.id,
+                type: 'strangers_meet_deposit',
+                role: 'host',
+                amount: Number(meet.paymentAmount || 0),
+                currency: 'INR',
+                status: 'successful',
+                paymentMethod: 'razorpay',
+                paymentGateway: 'razorpay',
+                refundAmount: 0,
+                refundedAt: null,
+                createdAt: meet.createdAt,
+                context: {
+                    strangersMeetId: meet.id,
+                    planDateTime: meet.eventDateTime,
+                    venueName: venue?.name ?? 'Venue',
+                    venueCity: venue?.city ?? '',
+                    label: 'Host Platform Deposit',
+                    subject: meet.subject,
+                },
+            });
+        }
+
+        // Joiner Strangers Meet payments
+        for (const jm of joinerStrangersMeetPayments) {
+            const meet = (jm as any).strangersMeetRequest;
+            const venue = meet ? (meet as any).venue : null;
+            transactions.push({
+                txnId: jm.razorpayPaymentId,
+                paymentId: jm.id,
+                type: 'strangers_meet_join',
+                role: 'joiner',
+                amount: Number(jm.paymentAmount || 0),
+                currency: 'INR',
+                status: 'successful',
+                paymentMethod: 'razorpay',
+                paymentGateway: 'razorpay',
+                refundAmount: 0,
+                refundedAt: null,
+                createdAt: jm.createdAt,
+                context: {
+                    strangersMeetId: jm.strangersMeetRequestId,
+                    planDateTime: meet?.eventDateTime,
+                    venueName: venue?.name ?? 'Venue',
+                    venueCity: venue?.city ?? '',
+                    label: 'Joiner Fee',
+                    subject: meet?.subject ?? 'Strangers Meet',
                 },
             });
         }

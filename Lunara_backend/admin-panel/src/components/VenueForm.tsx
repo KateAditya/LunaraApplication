@@ -292,14 +292,6 @@ export const VenueForm: React.FC<VenueFormProps> = ({ venue, onClose, onSave }) 
         );
     };
 
-    const handleBackdropClick = () => {
-        if (isFormDirty()) {
-            setShowCloseConfirm(true);
-        } else {
-            onClose();
-        }
-    };
-
     const set = (key: string, val: any) => setForm(prev => ({ ...prev, [key]: val }));
     const setAmenity = (key: keyof VenueAmenities, val: boolean) =>
         setForm(prev => ({ ...prev, amenities: { ...prev.amenities, [key]: val } }));
@@ -1533,7 +1525,7 @@ export const VenueForm: React.FC<VenueFormProps> = ({ venue, onClose, onSave }) 
     const tabRenderers = [renderBasicInfo, renderLocation, renderContact, renderOperations, renderBusiness, renderAmenities, renderMedia];
 
     return (
-        <div style={overlay} onClick={handleBackdropClick}>
+        <div style={overlay}>
             <div className="vz-card" style={panel} onClick={e => e.stopPropagation()}>
                 {/* Header */}
                 <div className="vz-card-header" style={{ padding: '0.875rem 1.25rem' }}>

@@ -530,7 +530,7 @@ export const StrangersMeet: React.FC = () => {
       {/* Modal */}
       {selected && modalAction && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }} onClick={closeModal}>
-          <div style={{ background: 'var(--vz-card-bg)', borderRadius: 16, padding: '2rem', width: '100%', maxWidth: 520, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: 'var(--vz-card-bg)', borderRadius: 16, padding: '2rem', width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }} onClick={e => e.stopPropagation()}>
             {successMsg ? (
               <div style={{ textAlign: 'center', padding: '2rem 0' }}>
                 <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>{modalAction === 'approve' ? '✅' : modalAction === 'settlement' ? '💸' : '❌'}</div>
@@ -546,7 +546,7 @@ export const StrangersMeet: React.FC = () => {
                 <div style={{ background: 'var(--vz-light)', borderRadius: 10, padding: '1rem', marginBottom: '1.25rem', fontSize: '0.85rem' }}>
                   <div style={{ fontWeight: 700, marginBottom: '0.5rem' }}>{selected.subject}</div>
                   <div style={{ color: 'var(--vz-text-muted)', marginBottom: '0.5rem' }}>{selected.tagline}</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem', color: 'var(--vz-text-muted)' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.4rem', color: 'var(--vz-text-muted)' }}>
                     <span>🏛️ {selected.venue?.name}</span>
                     <span>🌆 {selected.venue?.city}</span>
                     <span>📅 {fmt(selected.eventDateTime)}</span>

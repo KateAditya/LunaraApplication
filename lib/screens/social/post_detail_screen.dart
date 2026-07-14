@@ -631,6 +631,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ),
                   ),
 
+                  // Pending Requests Section (only for Host)
+                  if (isMyPost) ...[
+                    _buildPendingRequestsSection(),
+                  ],
+
                   // Participants Section
                   _buildParticipantsSection(),
                   const SizedBox(height: 40),
@@ -738,6 +743,146 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
       ],
     );
+  }
+
+  Widget _buildPendingRequestsSection() {
+    final pendingJoiners = (_meetRequest?.joiners ?? []).where((j) {
+      if (j is Map) {
+        return j['status']?.toString() == 'pending';
+      }
+      return false;
+    }).toList();
+
+    if (pendingJoiners.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 32),
+        const Text(
+          'PENDING REQUESTS TO JOIN',
+          style: TextStyle(
+            color: Colors.black38,
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.5,
+          ),
+        ),
+        const SizedBox(height: 12),
+        ListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: pendingJoiners.length,
+          itemBuilder: (context, index) {
+            final joiner = pendingJoiners[index];
+            final ju = joiner['user'] as Map<String, dynamic>?;
+            if (ju == null) return const SizedBox.shrink();
+
+            final name = '${ju['firstName'] ?? ''} ${ju['lastName'] ?? ''}'.trim();
+            final photo = ju['photoUrl'];
+            String? finalPhoto = photo;
+            if (finalPhoto != null && finalPhoto.startsWith('/') && !finalPhoto.startsWith('assets')) {
+              finalPhoto = '${ApiService.baseUrl}$finalPhoto';
+            }
+
+            final joinerId = joiner['id'].toString();
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.grey[200]!),
+              ),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 22,
+                    backgroundColor: LunaraTheme.electricViolet.withOpacity(0.08),
+                    backgroundImage: finalPhoto != null && finalPhoto.isNotEmpty
+                        ? NetworkImage(finalPhoto)
+                        : null,
+                    child: finalPhoto == null || finalPhoto.isEmpty
+                        ? const Icon(Icons.person, color: LunaraTheme.electricViolet)
+                        : null,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name.isEmpty ? 'User' : name,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                        if (ju['phone'] != null && ju['phone'].toString().isNotEmpty)
+                          Text(
+                            ju['phone'].toString(),
+                            style: TextStyle(color: Colors.grey[600], fontSize: 11),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Reject button
+                  IconButton(
+                    onPressed: () => _handleRequest(joinerId, 'reject'),
+                    icon: const Icon(Icons.close_rounded, color: Colors.red),
+                    tooltip: 'Reject',
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.red.withOpacity(0.1),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Accept button
+                  IconButton(
+                    onPressed: () => _handleRequest(joinerId, 'accept'),
+                    icon: const Icon(Icons.check_rounded, color: Colors.green),
+                    tooltip: 'Accept',
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.green.withOpacity(0.1),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Future<void> _handleRequest(String joinerId, String action) async {
+    if (_meetRequest == null) return;
+    setState(() => _isProcessing = true);
+    final success = await ApiService.handleStrangersMeetJoinRequest(
+      _meetRequest!.id,
+      joinerId,
+      action,
+    );
+    if (!mounted) return;
+    setState(() => _isProcessing = false);
+    if (success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(action == 'accept' ? 'Join request accepted!' : 'Join request rejected.'),
+          backgroundColor: action == 'accept' ? Colors.green : Colors.grey[800],
+        ),
+      );
+      _loadStrangersMeetDetails(showFullScreenLoader: false);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to handle join request. Please try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Widget _buildStrangersMeetActionButton(

@@ -380,7 +380,7 @@ export const VenueDetails: React.FC<VenueDetailsProps> = ({ venue, onClose }) =>
     const tabRenderers = [renderOverview, renderLocationContact, renderOperations, renderBusiness, renderAmenities];
 
     return (
-        <div style={overlay} onClick={onClose}>
+        <div style={overlay}>
             <div className="vz-card" style={panel} onClick={e => e.stopPropagation()}>
                 {/* Header */}
                 <div className="vz-card-header" style={{ padding: '0.875rem 1.25rem' }}>
