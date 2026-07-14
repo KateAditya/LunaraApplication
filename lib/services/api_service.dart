@@ -656,6 +656,23 @@ class ApiService {
     return null;
   }
 
+  static Future<bool> confirmSelfPaidJoin(String reqId) async {
+    final userId = currentUserId;
+    if (userId == null) return false;
+    try {
+      final response = await post(
+        '/api/mobile/party-plans/requests/$reqId/confirm-self-paid',
+        body: {'userId': userId},
+      );
+      if (response.statusCode == 200) {
+        return true;
+      }
+    } catch (e) {
+      debugPrint('confirmSelfPaidJoin error: $e');
+    }
+    return false;
+  }
+
   static Future<bool> verifyJoinerPayment(
     String reqId,
     String orderId,

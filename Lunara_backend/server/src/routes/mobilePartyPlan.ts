@@ -17,6 +17,7 @@ import {
     getJoinerRequests,
     initiateHostPayment,
     initiateJoinerPayment,
+    confirmSelfPaidJoin,
 } from '../controllers/partyPlanController';
 
 const router = Router();
@@ -212,6 +213,20 @@ router.post(
         validate,
     ],
     acceptPartyPlanRequest
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/party-plans/requests/:reqId/confirm-self-paid
+// Confirm self-paid request/invite
+// ─────────────────────────────────────────────────────────────────────────────
+router.post(
+    '/requests/:reqId/confirm-self-paid',
+    [
+        param('reqId').isUUID().withMessage('reqId must be a valid UUID'),
+        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
+        validate,
+    ],
+    confirmSelfPaidJoin
 );
 
 // ─────────────────────────────────────────────────────────────────────────────

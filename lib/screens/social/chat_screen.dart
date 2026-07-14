@@ -1098,7 +1098,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   /// Builds a CircleAvatar that gracefully falls back to a gradient + initial
   /// when the network image is missing or returns a 4xx/5xx error.
   Widget _buildAvatarWithFallback({double radius = 20}) {
-    String? imageUrl = widget.user['image'] as String?;
+    String? imageUrl = (widget.user['image'] ?? widget.user['profileImage'] ?? widget.user['profilePicture']) as String?;
     final isAsset = widget.user['isAsset'] == true;
 
     Widget fallback = Container(
@@ -1655,7 +1655,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            widget.user['name'] as String,
+            widget.user['name']?.toString() ??
+             (widget.user['firstName'] != null
+                 ? '${widget.user['firstName']} ${widget.user['lastName'] ?? ''}'.trim()
+                 : 'User'),
             style: const TextStyle(
               color: Colors.white,
               fontSize: 16,
@@ -2652,29 +2655,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       },
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(
-                      Icons.attach_file_rounded,
-                      color: Color(0xFF800080),
-                      size: 22,
-                    ),
-                    onPressed: () async {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const VenueInvitePickerScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  IconButton(
-                    icon: const Icon(
-                      Icons.camera_alt_rounded,
-                      color: Color(0xFF800080),
-                      size: 22,
-                    ),
-                    onPressed: _showCameraOptions,
-                  ),
+
                 ],
               ),
             ),

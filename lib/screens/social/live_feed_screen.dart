@@ -1208,23 +1208,49 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: LunaraTheme.primaryDeep,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Text(
-                    'PARTY PLAN',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 9,
-                      fontWeight: FontWeight.bold,
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: LunaraTheme.primaryDeep,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Text(
+                        'PARTY PLAN',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
-                  ),
+                    if (plan['paymentType'] == 'self_pay') ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withValues(alpha: 0.25),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.green.withValues(alpha: 0.5)),
+                        ),
+                        child: const Text(
+                          'PAID BY HOST',
+                          style: TextStyle(
+                            color: Colors.greenAccent,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 Text(
                   timeAgo,
@@ -1366,6 +1392,8 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                         final reqStatus = _optimisticStates[reqId] ??
                             myReq['status']?.toString().toLowerCase() ??
                             'pending';
+                        final joinerPaid = myReq['joinerPaymentStatus']?.toString().toLowerCase() == 'paid' ||
+                                           myReq['joinerPaymentStatus']?.toString().toLowerCase() == 'confirmed';
 
                         if (reqStatus == 'pending') {
                           return Expanded(
@@ -1399,10 +1427,9 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                               ),
                             ),
                           );
-                        } else if (reqStatus == 'accepted' ||
-                            reqStatus == 'payment_pending') {
-                          final hostPaid = myReq['plan']?['hostPaymentStatus'] == 'paid' ||
-                              myReq['plan']?['hostPaymentStatus'] == 'refunded';
+                        } else if ((reqStatus == 'accepted' || reqStatus == 'payment_pending') && !joinerPaid) {
+                          final hostPaid = myReq['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'paid' ||
+                              myReq['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'refunded';
                           if (!hostPaid) {
                             return Expanded(
                               child: Container(
@@ -1439,29 +1466,62 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                                   _loadFeed(showLoader: false),
                             ),
                           );
-                        } else if (reqStatus == 'paid' || reqStatus == 'accepted') {
+                        } else if (reqStatus == 'paid' || reqStatus == 'accepted' || joinerPaid) {
                           return Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => PartyPlanTicketScreen(
-                                      request: myReq,
-                                      plan: myReq['plan'] ?? plan,
-                                      isHost: false,
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => PartyPlanTicketScreen(
+                                            request: myReq,
+                                            plan: myReq['plan'] ?? plan,
+                                            isHost: false,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.qr_code_rounded, size: 14, color: Colors.white),
+                                    label: const Text('VIEW TICKET', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: LunaraTheme.electricViolet,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(vertical: 11),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                     ),
                                   ),
-                                );
-                              },
-                              icon: const Icon(Icons.qr_code_rounded, size: 14, color: Colors.white),
-                              label: const Text('VIEW TICKET', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: LunaraTheme.electricViolet,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 11),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
+                                ),
+                                if (myReq['plan']?['creator'] != null || plan['host'] != null) ...[
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      onPressed: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => ChatScreen(user: {
+                                              ...(myReq['plan']?['creator'] ?? plan['host'] ?? {}),
+                                              'contextType': 'party_plan',
+                                              'planId': myReq['plan']?['id']?.toString() ?? plan['id']?.toString(),
+                                            }),
+                                          ),
+                                        );
+                                      },
+                                      icon: const Icon(Icons.chat_bubble_outline_rounded, size: 14, color: Colors.white),
+                                      label: const Text('CHAT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: LunaraTheme.hotPink,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(vertical: 11),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
                           );
                         } else if (reqStatus == 'rejected') {
@@ -1699,8 +1759,12 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
         req['status']?.toString().toLowerCase() ??
         'pending';
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final hostPaid = req['plan']?['hostPaymentStatus'] == 'paid' || req['planDetails']?['hostPaymentStatus'] == 'paid';
-    final joinerPaid = req['joinerPaymentStatus'] == 'paid';
+    final hostPaid = req['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'paid' ||
+                     req['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'refunded' ||
+                     req['planDetails']?['hostPaymentStatus']?.toString().toLowerCase() == 'paid' ||
+                     req['planDetails']?['hostPaymentStatus']?.toString().toLowerCase() == 'refunded';
+    final joinerPaid = req['joinerPaymentStatus']?.toString().toLowerCase() == 'paid' ||
+                       req['joinerPaymentStatus']?.toString().toLowerCase() == 'confirmed';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -2773,7 +2837,9 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                 ),
               ],
             ] else ...[
-              if ((currentStatus == 'accepted' || currentStatus == 'payment_pending') && req['joinerPaymentStatus'] != 'paid') ...[
+              if ((currentStatus == 'accepted' || currentStatus == 'payment_pending') && 
+                  req['joinerPaymentStatus']?.toString().toLowerCase() != 'paid' &&
+                  req['joinerPaymentStatus']?.toString().toLowerCase() != 'confirmed') ...[
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -2793,8 +2859,8 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                       const SizedBox(height: 10),
                       Builder(
                         builder: (context) {
-                          final hostPaid = req['plan']?['hostPaymentStatus'] == 'paid' ||
-                              req['plan']?['hostPaymentStatus'] == 'refunded';
+                          final hostPaid = req['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'paid' ||
+                              req['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'refunded';
                           if (!hostPaid) {
                             return Container(
                               width: double.infinity,
@@ -2855,7 +2921,9 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                     ],
                   ),
                 ),
-              ] else if (currentStatus == 'paid' || req['joinerPaymentStatus'] == 'paid') ...[
+              ] else if (currentStatus == 'paid' || 
+                         req['joinerPaymentStatus']?.toString().toLowerCase() == 'paid' ||
+                         req['joinerPaymentStatus']?.toString().toLowerCase() == 'confirmed') ...[
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -3340,9 +3408,13 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
         ? DateFormat('hh:mm a').format(DateTime.parse(widget.plan['planDateTime'].toString()).toLocal())
         : '21:00';
     final reqId = widget.myReq['id']?.toString() ?? '';
-    final label = _secondsLeft > 0
-        ? 'PAY NOW (${_formatDuration(_secondsLeft)})'
-        : 'PAY NOW';
+    final isSelfPay = widget.plan['paymentType'] == 'self_pay' || 
+                      widget.myReq['plan']?['paymentType'] == 'self_pay';
+    final label = isSelfPay
+        ? 'CONFIRM JOIN 🎉'
+        : (_secondsLeft > 0
+            ? 'PAY NOW (${_formatDuration(_secondsLeft)})'
+            : 'PAY NOW');
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -3351,6 +3423,43 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Invalid request ID.'), backgroundColor: Colors.red),
           );
+          return;
+        }
+
+        if (isSelfPay) {
+          // Confirm self paid join directly
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => const Center(
+              child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+            ),
+          );
+          try {
+            final success = await ApiService.confirmSelfPaidJoin(reqId);
+            if (!mounted) return;
+            Navigator.pop(context); // Close spinner
+            if (success) {
+              widget.onPaymentSuccess();
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PartyPlanTicketScreen(
+                    request: widget.myReq,
+                    plan: widget.plan.isNotEmpty ? widget.plan : (widget.myReq['plan'] ?? {}),
+                    isHost: false,
+                  ),
+                ),
+              );
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Failed to confirm join.'), backgroundColor: Colors.red),
+              );
+            }
+          } catch (e) {
+            if (mounted) Navigator.pop(context);
+            debugPrint('Error confirming self paid join: $e');
+          }
           return;
         }
 

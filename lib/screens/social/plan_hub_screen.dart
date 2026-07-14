@@ -1041,6 +1041,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     final List<String> selectedUserIds = [];
     String selectedFoodPref = 'Both';
     String selectedDrinkPref = 'Both';
+    String selectedPaymentType = 'split';
 
     showModalBottomSheet(
       context: context,
@@ -1853,6 +1854,58 @@ class _PlanHubScreenState extends State<PlanHubScreen>
 
                       const SizedBox(height: 14),
                       const Text(
+                        'PAYMENT MODEL',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.5,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: ['Split', 'Self Pay'].map((mode) {
+                          final isSelected = (mode == 'Split' && selectedPaymentType == 'split') ||
+                                             (mode == 'Self Pay' && selectedPaymentType == 'self_pay');
+                          return Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                              child: GestureDetector(
+                                onTap: () {
+                                  setSheetState(() {
+                                    selectedPaymentType = mode == 'Split' ? 'split' : 'self_pay';
+                                  });
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  decoration: BoxDecoration(
+                                    gradient: isSelected ? LunaraTheme.purpleGradient : null,
+                                    color: isSelected ? null : Colors.grey[50],
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: isSelected ? Colors.transparent : Colors.grey[200]!,
+                                    ),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      mode.toUpperCase(),
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: isSelected ? Colors.white : Colors.black54,
+                                        letterSpacing: 1,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+
+                      const SizedBox(height: 14),
+                      const Text(
                         'FOOD & DRINK PREFERENCES',
                         style: TextStyle(
                           fontSize: 11,
@@ -2441,6 +2494,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         'privacyType': selectedPrivacy
                                             .toLowerCase(),
                                         'paymentStatus': 'pending',
+                                        'paymentType': selectedPaymentType,
                                         'selectedUserIds': selectedUserIds,
                                         'mobileNumber': '',
                                         'optionalMobileNumber': '',

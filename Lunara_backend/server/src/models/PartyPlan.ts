@@ -19,6 +19,11 @@ export enum PartyPlanPaymentStatus {
     REFUNDED = 'refunded',
 }
 
+export enum PartyPlanPaymentType {
+    SPLIT = 'split',
+    SELF_PAY = 'self_pay',
+}
+
 export interface PartyPlanAttributes {
     id: string;
     userId: string;           // Who created the plan
@@ -40,6 +45,7 @@ export interface PartyPlanAttributes {
     optionalMobileNumber?: string;
     foodPreference?: string;
     drinkPreference?: string;
+    paymentType?: PartyPlanPaymentType;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -47,7 +53,7 @@ export interface PartyPlanAttributes {
 export interface PartyPlanCreationAttributes
     extends Optional<
         PartyPlanAttributes,
-        'id' | 'status' | 'visibility' | 'createdAt' | 'updatedAt' | 'selectedUsers' | 'depositAmount' | 'hostPaymentStatus' | 'isLive' | 'expiresAt' | 'hostLatLangCheckIn' | 'paymentStatus' | 'optionalMobileNumber' | 'foodPreference' | 'drinkPreference'
+        'id' | 'status' | 'visibility' | 'createdAt' | 'updatedAt' | 'selectedUsers' | 'depositAmount' | 'hostPaymentStatus' | 'isLive' | 'expiresAt' | 'hostLatLangCheckIn' | 'paymentStatus' | 'optionalMobileNumber' | 'foodPreference' | 'drinkPreference' | 'paymentType'
     > { }
 
 class PartyPlan
@@ -73,6 +79,7 @@ class PartyPlan
     public optionalMobileNumber?: string;
     public foodPreference?: string;
     public drinkPreference?: string;
+    public paymentType!: PartyPlanPaymentType;
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 }
@@ -123,6 +130,12 @@ PartyPlan.init(
             type: DataTypes.ENUM(...Object.values(PartyPlanVisibility)),
             allowNull: false,
             defaultValue: PartyPlanVisibility.PUBLIC,
+        },
+        paymentType: {
+            type: DataTypes.ENUM(...Object.values(PartyPlanPaymentType)),
+            allowNull: false,
+            defaultValue: PartyPlanPaymentType.SPLIT,
+            field: 'payment_type',
         },
         selectedUsers: {
             type: DataTypes.ARRAY(DataTypes.UUID),

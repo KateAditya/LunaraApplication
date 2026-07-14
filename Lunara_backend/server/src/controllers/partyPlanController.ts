@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import PartyPlan, { PartyPlanStatus, PartyPlanVisibility } from '../models/PartyPlan';
+import PartyPlan, { PartyPlanStatus, PartyPlanVisibility, PartyPlanPaymentType } from '../models/PartyPlan';
 import { Op } from 'sequelize';
 import User from '../models/User';
 import Venue from '../models/Venue';
@@ -184,6 +184,12 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             parsedVisibility = PartyPlanVisibility.BOTH;
         }
 
+        const rawPaymentType = String(req.body.paymentType || 'split').toLowerCase();
+        let parsedPaymentType = PartyPlanPaymentType.SPLIT;
+        if (rawPaymentType === 'self_pay') {
+            parsedPaymentType = PartyPlanPaymentType.SELF_PAY;
+        }
+
         const { userId, venueId, message, planDateTime, mobileNumber, optionalMobileNumber, foodPreference, drinkPreference } = req.body;
         const selectedUsers = req.body.selectedUsers || req.body.selectedUserIds;
 
@@ -307,6 +313,7 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             paymentStatus: 'pending',
             foodPreference: foodPreference || 'Both',
             drinkPreference: drinkPreference || 'Both',
+            paymentType: parsedPaymentType,
         });
 
         // Auto-generate accepted requests for invited users of private or both plan
@@ -502,16 +509,18 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
                         paymentTimeoutAt: timeout,
                     });
 
-                    // Notify participant/joiner that they can now pay
+                    // Notify participant/joiner that they can now pay or join
                     setImmediate(async () => {
                         try {
                             const joiner = await User.findByPk(activeReq.requesterId);
                             if (joiner && joiner.fcmToken) {
                                 await sendMulticastPushNotification([joiner.fcmToken], {
-                                    title: '⚡ Action Required: Pay Deposit',
-                                    body: 'The host has paid. Please pay your ₹99 deposit to confirm the booking!',
+                                    title: plan.paymentType === 'self_pay' ? '🎉 Private Party Plan Invite' : '⚡ Action Required: Pay Deposit',
+                                    body: plan.paymentType === 'self_pay'
+                                        ? 'The host has paid. Please confirm your invite to join the party!'
+                                        : 'The host has paid. Please pay your ₹99 deposit to confirm the booking!',
                                     data: {
-                                        type: 'participant_payment_required',
+                                        type: plan.paymentType === 'self_pay' ? 'participant_payment_required' : 'participant_payment_required',
                                         partyPlanId: plan.id,
                                         requestId: activeReq.id,
                                     },
@@ -1183,6 +1192,96 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
 
         const hostAlreadyPaid = plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID;
 
+        if (plan.paymentType === 'self_pay') {
+            if (hostAlreadyPaid) {
+                await request.update({
+                    status: PartyPlanRequestStatus.ACCEPTED,
+                    joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
+                });
+
+                await plan.update({
+                    status: PartyPlanStatus.INACTIVE,
+                    isLive: false,
+                    paymentStatus: 'Confirmed',
+                });
+
+                await createBookingAndPayments(plan, request);
+
+                await PartyPlanRequest.update(
+                    { status: PartyPlanRequestStatus.REJECTED },
+                    {
+                        where: {
+                            planId: plan.id,
+                            id: { [Op.ne]: request.id },
+                            status: { [Op.in]: [PartyPlanRequestStatus.PENDING, PartyPlanRequestStatus.PAYMENT_PENDING] }
+                        }
+                    }
+                );
+
+                setImmediate(async () => {
+                    try {
+                        const joiner = await User.findByPk(request.requesterId);
+                        const host = await User.findByPk(plan.userId);
+                        const tokens = [host?.fcmToken, joiner?.fcmToken].filter(t => t && t.trim() !== '') as string[];
+                        if (tokens.length > 0) {
+                            await sendMulticastPushNotification(tokens, {
+                                title: '🎉 Booking Confirmed!',
+                                body: 'Your booking has been confirmed! (Paid by the Host)',
+                                data: {
+                                    type: 'booking_confirmed',
+                                    partyPlanId: plan.id,
+                                },
+                            });
+                        }
+                    } catch (pushErr: any) {
+                        logger.warn('Failed to send booking confirmed push notifications:', pushErr.message);
+                    }
+                });
+
+                try {
+                    const { io } = require('../server');
+                    io.to(`user_${plan.userId}`).emit('party_plan_match_success', { planId: plan.id, requestId: request.id });
+                    io.to(`user_${request.requesterId}`).emit('party_plan_match_success', { planId: plan.id, requestId: request.id });
+                    io.emit('party_plan_deleted', { planId: plan.id });
+                } catch (socketErr) {
+                    logger.warn('Socket emission failed for party_plan_match_success:', socketErr);
+                }
+
+                res.json({ success: true, message: 'Request accepted & booking confirmed immediately (Self-Paid) 🎉', data: request });
+                return;
+            } else {
+                await request.update({
+                    status: PartyPlanRequestStatus.ACCEPTED,
+                    joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
+                });
+
+                await plan.update({
+                    isLive: false,
+                    paymentStatus: 'Awaiting Host Payment',
+                });
+
+                try {
+                    const { io } = require('../server');
+                    io.to(`user_${request.requesterId}`).emit('party_plan_request_accepted', {
+                        requestId: request.id,
+                        planId: plan.id,
+                        hostAlreadyPaid: false,
+                        hostRazorpayOrderId: plan.hostRazorpayOrderId,
+                        hostAmount: Math.round(plan.depositAmount * 100),
+                        hostCurrency: 'INR',
+                        joinerRazorpayOrderId: null,
+                        joinerAmount: 0,
+                        joinerCurrency: 'INR',
+                    });
+                } catch (socketErr) {
+                    logger.warn('Socket emission failed for acceptPartyPlanRequest:', socketErr);
+                }
+
+                res.json({ success: true, message: 'Request accepted. Waiting for Host to pay deposit.', data: request });
+                return;
+            }
+        }
+
         // Generate Razorpay Order for the Joiner
         const joinerOptions = {
             amount: Math.round(plan.depositAmount * 100),
@@ -1468,6 +1567,115 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
     } catch (err: any) {
         logger.error('verifyJoinerPayment error:', err);
         res.status(500).json({ success: false, message: 'Failed to verify payment', error: err.message });
+    }
+};
+
+export const confirmSelfPaidJoin = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { reqId } = req.params;
+        const { userId } = req.body;
+
+        const request = await PartyPlanRequest.findByPk(reqId, { include: [{ model: PartyPlan, as: 'plan' }] });
+        if (!request) {
+            res.status(404).json({ success: false, message: 'Request not found' });
+            return;
+        }
+
+        if (request.requesterId !== userId) {
+            res.status(403).json({ success: false, message: 'Only the requesting/invited user can confirm this request' });
+            return;
+        }
+
+        const plan = (request as any).plan as PartyPlan;
+        if (!plan) {
+            res.status(404).json({ success: false, message: 'Party plan not found' });
+            return;
+        }
+
+        if (plan.paymentType !== 'self_pay') {
+            res.status(400).json({ success: false, message: 'This plan is not self-paid. Payment is required.' });
+            return;
+        }
+
+        const hostPaid = plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID;
+
+        if (hostPaid) {
+            await request.update({
+                status: PartyPlanRequestStatus.ACCEPTED,
+                joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
+            });
+
+            await plan.update({
+                status: PartyPlanStatus.INACTIVE,
+                isLive: false,
+                paymentStatus: 'Confirmed',
+            });
+
+            await createBookingAndPayments(plan, request);
+
+            await PartyPlanRequest.update(
+                { status: PartyPlanRequestStatus.REJECTED },
+                {
+                    where: {
+                        planId: plan.id,
+                        id: { [Op.ne]: request.id },
+                        status: { [Op.in]: [PartyPlanRequestStatus.PENDING, PartyPlanRequestStatus.PAYMENT_PENDING] }
+                    }
+                }
+            );
+
+            setImmediate(async () => {
+                try {
+                    const joiner = await User.findByPk(request.requesterId);
+                    const host = await User.findByPk(plan.userId);
+                    const tokens = [host?.fcmToken, joiner?.fcmToken].filter(t => t && t.trim() !== '') as string[];
+                    if (tokens.length > 0) {
+                        await sendMulticastPushNotification(tokens, {
+                            title: '🎉 Booking Confirmed!',
+                            body: 'Your booking has been confirmed! (Paid by the Host)',
+                            data: {
+                                type: 'booking_confirmed',
+                                partyPlanId: plan.id,
+                            },
+                        });
+                    }
+                } catch (pushErr: any) {
+                    logger.warn('Failed to send booking confirmed push notifications:', pushErr.message);
+                }
+            });
+
+            try {
+                const { io } = require('../server');
+                io.to(`user_${plan.userId}`).emit('party_plan_match_success', { planId: plan.id, requestId: request.id });
+                io.to(`user_${request.requesterId}`).emit('party_plan_match_success', { planId: plan.id, requestId: request.id });
+                io.emit('party_plan_deleted', { planId: plan.id });
+            } catch (socketErr) {
+                logger.warn('Socket emission failed for party_plan_match_success:', socketErr);
+            }
+
+            res.json({ success: true, message: 'Joined party plan successfully! (Paid by Host) 🎉', data: request });
+        } else {
+            await request.update({
+                status: PartyPlanRequestStatus.ACCEPTED,
+                joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
+            });
+
+            await plan.update({
+                paymentStatus: 'Awaiting Host Payment',
+            });
+
+            try {
+                const { io } = require('../server');
+                io.to(`user_${plan.userId}`).emit('party_plan_joiner_paid', { planId: plan.id, requestId: request.id });
+            } catch (socketErr) {
+                logger.warn('Socket emission failed for party_plan_joiner_paid:', socketErr);
+            }
+
+            res.json({ success: true, message: 'Join confirmed. Waiting for host to complete their payment. ⏳', data: request });
+        }
+    } catch (err: any) {
+        logger.error('confirmSelfPaidJoin error:', err);
+        res.status(500).json({ success: false, message: 'Failed to confirm join', error: err.message });
     }
 };
 
