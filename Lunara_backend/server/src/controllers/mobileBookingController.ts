@@ -6,6 +6,7 @@ import BookingMember, { MemberPaymentStatus } from '../models/BookingMember';
 import GroupBooking from '../models/GroupBooking';
 import Payment, { PaymentMethod, PaymentStatus as TxnStatus } from '../models/Payment';
 import Venue from '../models/Venue';
+import VenueImage from '../models/VenueImage';
 import { logger } from '../config/logger';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
@@ -497,8 +498,21 @@ export const listMyBookings = async (req: Request, res: Response) => {
 
         const bookings = await Booking.findAll({
             where: { userId },
-            include: [{ model: Venue, as: 'venue', attributes: ['id', 'name'] }],
-            order: [['createdAt', 'DESC']],
+            include: [
+                {
+                    model: Venue,
+                    as: 'venue',
+                    attributes: ['id', 'name', 'addressLine1', 'area', 'city'],
+                    include: [
+                        {
+                            model: VenueImage,
+                            as: 'images',
+                            attributes: ['id', 'filePath', 'imageType', 'isPrimary'],
+                        }
+                    ]
+                }
+            ],
+            order: [['bookingDate', 'DESC'], ['startTime', 'DESC']],
         });
 
         return res.json({ success: true, data: bookings });

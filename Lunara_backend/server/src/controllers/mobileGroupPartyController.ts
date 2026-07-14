@@ -116,6 +116,7 @@ export const createGroupParty = async (req: Request, res: Response): Promise<voi
             success: true,
             data: groupParty,
             razorpayOrderId: order ? order.id : '',
+            razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
             amount: order ? order.amount : 0,
             currency: order ? order.currency : 'INR'
         });

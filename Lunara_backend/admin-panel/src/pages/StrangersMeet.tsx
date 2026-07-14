@@ -282,6 +282,30 @@ export const StrangersMeet: React.FC = () => {
 
   const closeModal = () => { setSelected(null); setModalAction(null); };
 
+  const handlePayAmountChange = (value: string) => {
+    setPayAmount(value);
+    if (selected && selected.numberOfPersons > 0) {
+      const amt = parseFloat(value);
+      if (!isNaN(amt)) {
+        setChargesPerHead(Math.round(amt / selected.numberOfPersons).toString());
+      } else {
+        setChargesPerHead('');
+      }
+    }
+  };
+
+  const handleChargesPerHeadChange = (value: string) => {
+    setChargesPerHead(value);
+    if (selected && selected.numberOfPersons > 0) {
+      const cpHead = parseFloat(value);
+      if (!isNaN(cpHead)) {
+        setPayAmount(Math.round(cpHead * selected.numberOfPersons).toString());
+      } else {
+        setPayAmount('');
+      }
+    }
+  };
+
   const handleApprove = async () => {
     if (!selected) return;
     const amount = parseFloat(payAmount);
@@ -574,12 +598,12 @@ export const StrangersMeet: React.FC = () => {
                   <>
                     <div style={{ marginBottom: '0.85rem' }}>
                       <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.875rem' }}>Deposit Amount (₹) *</label>
-                      <input type="number" min="1" placeholder="e.g. 2500" value={payAmount} onChange={e => setPayAmount(e.target.value)}
+                      <input type="number" min="1" placeholder="e.g. 2500" value={payAmount} onChange={e => handlePayAmountChange(e.target.value)}
                         style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: 8, border: '1.5px solid var(--vz-border-color)', background: 'var(--vz-card-bg)', color: 'var(--vz-text-primary)', fontSize: '1rem', boxSizing: 'border-box' }} autoFocus />
                     </div>
                     <div style={{ marginBottom: '1rem' }}>
                       <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.875rem' }}>Charges Per Head (₹) *</label>
-                      <input type="number" min="0" placeholder="e.g. 350" value={chargesPerHead} onChange={e => setChargesPerHead(e.target.value)}
+                      <input type="number" min="0" placeholder="e.g. 350" value={chargesPerHead} onChange={e => handleChargesPerHeadChange(e.target.value)}
                         style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: 8, border: '1.5px solid var(--vz-border-color)', background: 'var(--vz-card-bg)', color: 'var(--vz-text-primary)', fontSize: '1rem', boxSizing: 'border-box' }} />
                     </div>
                   </>

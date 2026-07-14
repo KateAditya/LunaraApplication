@@ -12,6 +12,7 @@ import '../screens/social/chat_screen.dart';
 import '../screens/discovery/venue_detail_screen.dart';
 import '../screens/social/live_feed_screen.dart';
 import '../screens/profile/lunara_wallet_screen.dart';
+import '../screens/social/post_detail_screen.dart';
 
 /// Top-level background message handler.
 /// Must be a top-level function (not a class method) for Firebase.
@@ -243,6 +244,24 @@ class PushNotificationService {
     final type = data['type']?.toString() ?? '';
 
     switch (type) {
+      case 'strangers_meet_join_request':
+      case 'strangers_meet_request_accepted':
+      case 'strangers_meet_payment_success':
+      case 'strangers_meet_participant_joined':
+      case 'strangers_meet_approved':
+      case 'strangers_meet_request_submitted':
+      case 'strangers_meet_settlement_paid':
+        final requestId = data['requestId']?.toString();
+        if (requestId != null && requestId.isNotEmpty) {
+          _navigateToStrangersMeet(navigator, requestId);
+        } else {
+          navigator.push(
+            MaterialPageRoute(
+              builder: (_) => const LiveFeedScreen(initialTabIndex: 1),
+            ),
+          );
+        }
+        break;
       case 'offer':
       case 'club_pub_offer':
         _navigateToVenueDetail(navigator, data);
@@ -412,6 +431,19 @@ class PushNotificationService {
 
     navigator.push(
       MaterialPageRoute(builder: (_) => ChatScreen(user: userMap)),
+    );
+  }
+
+  static void _navigateToStrangersMeet(NavigatorState navigator, String requestId) {
+    navigator.push(
+      MaterialPageRoute(
+        builder: (_) => PostDetailScreen(
+          post: {
+            'type': 'strangers_meet',
+            'id': requestId,
+          },
+        ),
+      ),
     );
   }
 }

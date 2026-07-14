@@ -287,6 +287,20 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
   }
 
   Widget _buildStatsRow() {
+    final bookings = _currentUser?.bookingsCount ?? 0;
+    final matches = _currentUser?.matchesCount ?? 0;
+    final points = _currentUser?.pointsCount ?? 0;
+
+    String pointsStr;
+    if (points >= 1000) {
+      pointsStr = '${(points / 1000).toStringAsFixed(1)}k';
+      if (pointsStr.endsWith('.0k')) {
+        pointsStr = pointsStr.replaceAll('.0k', 'k');
+      }
+    } else {
+      pointsStr = points.toString();
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 24),
       decoration: BoxDecoration(
@@ -297,11 +311,11 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
       ),
       child: Row(
         children: [
-          _statItem('24', 'BOOKINGS'),
+          _statItem(bookings.toString(), 'BOOKINGS'),
           _buildVerticalDivider(),
-          _statItem('120', 'MATCHES'),
+          _statItem(matches.toString(), 'MATCHES'),
           _buildVerticalDivider(),
-          _statItem('4.8k', 'POINTS'),
+          _statItem(pointsStr, 'POINTS'),
         ],
       ),
     );

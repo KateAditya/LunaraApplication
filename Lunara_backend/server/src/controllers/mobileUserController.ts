@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import sharp from 'sharp';
-import { UserProfile, UserPreference, UserPhoto, UserMatch, PartyPlan } from '../models';
+import { UserProfile, UserPreference, UserPhoto, UserMatch, PartyPlan, Booking } from '../models';
 import User, { UserRole } from '../models/User';
 import sequelize from '../config/database';
 
@@ -313,6 +313,21 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
             }
         });
 
+        const bookingsCount = await Booking.count({
+            where: { userId }
+        });
+
+        const matchesCount = await UserMatch.count({
+            where: {
+                [Op.or]: [
+                    { user1Id: userId, status: 'connected' },
+                    { user2Id: userId, status: 'connected' }
+                ]
+            }
+        });
+
+        const pointsCount = 1000 + (bookingsCount * 250) + (matchesCount * 50);
+
         // Fetch active subscription tier for golden ring / badge rendering
         const activeSub = await UserSubscription.findOne({
             where: {
@@ -333,6 +348,9 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
                 superLikesCount,
                 plansCount,
                 subscriptionTier,
+                bookingsCount,
+                matchesCount,
+                pointsCount,
                 firstName: user.firstName,
                 lastName: user.lastName,
                 fullName: `${user.firstName} ${user.lastName}`,

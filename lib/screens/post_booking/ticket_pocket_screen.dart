@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../core/theme.dart';
+import '../../services/api_service.dart';
 import '../discovery/digital_ticket_screen.dart';
 import 'checkin_assist_screen.dart';
 
@@ -13,17 +15,103 @@ class TicketPocketScreen extends StatefulWidget {
 class _TicketPocketScreenState extends State<TicketPocketScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  List<dynamic> _allBookings = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _loadBookings();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadBookings() async {
+    setState(() {
+      _isLoading = true;
+    });
+    final bookings = await ApiService.fetchBookings();
+    if (mounted) {
+      setState(() {
+        _allBookings = bookings ?? [];
+        _isLoading = false;
+      });
+    }
+  }
+
+  bool _isActiveBooking(Map<String, dynamic> booking) {
+    try {
+      final dateStr = booking['bookingDate']?.toString();
+      if (dateStr == null) return false;
+
+      final bookingDate = DateTime.parse(dateStr);
+      final today = DateTime.now();
+      final todayStart = DateTime(today.year, today.month, today.day);
+      final bookingDateStart = DateTime(bookingDate.year, bookingDate.month, bookingDate.day);
+
+      final status = booking['status']?.toString().toLowerCase();
+      if (status == 'cancelled' || status == 'completed' || status == 'no_show') {
+        return false;
+      }
+
+      return bookingDateStart.isAtSameMomentAs(todayStart) || bookingDateStart.isAfter(todayStart);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  String _getVenueImageUrl(Map<String, dynamic>? venue) {
+    if (venue != null && venue['images'] != null && (venue['images'] as List).isNotEmpty) {
+      final img = venue['images'][0];
+      if (img is Map && img['filePath'] != null) {
+        final path = img['filePath'].toString().replaceAll('\\', '/');
+        return path.startsWith('http') ? path : '${ApiService.baseUrl}/${path.startsWith('/') ? path.substring(1) : path}';
+      }
+    }
+    final idHash = (venue?['name']?.toString() ?? 'venue').hashCode.abs() % 20;
+    return 'https://picsum.photos/seed/$idHash/600/400';
+  }
+
+  String _formatBookingDateTime(String bookingDateStr, String startTimeStr) {
+    try {
+      final date = DateTime.parse(bookingDateStr);
+      final timeParts = startTimeStr.split(':');
+      final hour = int.parse(timeParts[0]);
+      final minute = int.parse(timeParts[1]);
+
+      final fullDateTime = DateTime(date.year, date.month, date.day, hour, minute);
+      final formattedDate = DateFormat('EEE, MMM d').format(fullDateTime).toUpperCase();
+      final formattedTime = DateFormat('h:mm a').format(fullDateTime);
+      return '$formattedDate • $formattedTime';
+    } catch (_) {
+      return '$bookingDateStr • $startTimeStr';
+    }
+  }
+
+  String _formatTablePackage(String? tablePackage) {
+    if (tablePackage == null || tablePackage.toLowerCase() == 'none') {
+      return 'GENERAL';
+    }
+    return tablePackage.toUpperCase();
+  }
+
+  String _getBookingStatus(Map<String, dynamic> booking, bool isActive) {
+    final status = booking['status']?.toString().toLowerCase();
+    if (status == 'cancelled') return 'CANCELLED';
+    if (status == 'no_show') return 'NO SHOW';
+
+    if (isActive) {
+      if (status == 'pending') return 'PENDING';
+      return 'CONFIRMED';
+    } else {
+      if (status == 'completed') return 'USED';
+      return 'EXPIRED';
+    }
   }
 
   @override
@@ -36,10 +124,19 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
             _buildHeader(context),
             _buildTabBar(),
             Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [_buildActiveTickets(), _buildPastTickets()],
-              ),
+              child: _isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: LunaraTheme.electricViolet,
+                      ),
+                    )
+                  : TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildActiveTickets(),
+                        _buildPastTickets(),
+                      ],
+                    ),
             ),
           ],
         ),
@@ -66,7 +163,10 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
               color: Colors.black,
             ),
           ),
-          const SizedBox(width: 48),
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.black),
+            onPressed: _loadBookings,
+          ),
         ],
       ),
     );
@@ -111,69 +211,92 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
   }
 
   Widget _buildActiveTickets() {
-    final tickets = [
-      _TicketData(
-        venue: 'ELARA VELVET',
-        date: 'SAT, FEB 22 • 10:30 PM',
-        table: 'VIP V1',
-        guests: 6,
-        status: 'CONFIRMED',
-        imageUrl: 'https://picsum.photos/seed/11/600/400',
-      ),
-      _TicketData(
-        venue: 'NEON PARADISE',
-        date: 'FRI, FEB 28 • 11:00 PM',
-        table: 'BOOTH B3',
-        guests: 4,
-        status: 'PENDING',
-        imageUrl: 'https://picsum.photos/seed/12/600/400',
-      ),
-    ];
+    final activeBookings = _allBookings.where((b) {
+      if (b is Map<String, dynamic>) {
+        return _isActiveBooking(b);
+      }
+      return false;
+    }).toList();
+
+    if (activeBookings.isEmpty) {
+      return _buildEmptyState('NO ACTIVE TICKETS FOUND');
+    }
 
     return ListView.builder(
       padding: const EdgeInsets.all(24),
-      itemCount: tickets.length,
-      itemBuilder: (context, index) =>
-          _buildTicketCard(tickets[index], isActive: true),
+      itemCount: activeBookings.length,
+      itemBuilder: (context, index) {
+        final booking = activeBookings[index] as Map<String, dynamic>;
+        return _buildTicketCard(booking, isActive: true);
+      },
     );
   }
 
   Widget _buildPastTickets() {
-    final tickets = [
-      _TicketData(
-        venue: 'ULTRA CLUB',
-        date: 'SAT, FEB 8 • 10:00 PM',
-        table: 'TABLE T4',
-        guests: 5,
-        status: 'USED',
-        imageUrl: 'https://picsum.photos/seed/13/600/400',
-      ),
-      _TicketData(
-        venue: 'SKYLINE TERRACE',
-        date: 'FRI, JAN 31 • 9:30 PM',
-        table: 'VIP V3',
-        guests: 8,
-        status: 'EXPIRED',
-        imageUrl: 'https://picsum.photos/seed/14/600/400',
-      ),
-    ];
+    final pastBookings = _allBookings.where((b) {
+      if (b is Map<String, dynamic>) {
+        return !_isActiveBooking(b);
+      }
+      return false;
+    }).toList();
+
+    if (pastBookings.isEmpty) {
+      return _buildEmptyState('NO PAST TICKETS FOUND');
+    }
 
     return ListView.builder(
       padding: const EdgeInsets.all(24),
-      itemCount: tickets.length,
-      itemBuilder: (context, index) =>
-          _buildTicketCard(tickets[index], isActive: false),
+      itemCount: pastBookings.length,
+      itemBuilder: (context, index) {
+        final booking = pastBookings[index] as Map<String, dynamic>;
+        return _buildTicketCard(booking, isActive: false);
+      },
     );
   }
 
-  Widget _buildTicketCard(_TicketData ticket, {required bool isActive}) {
-    final statusColor = switch (ticket.status) {
+  Widget _buildEmptyState(String message) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.confirmation_number_outlined,
+            size: 64,
+            color: Colors.grey[300],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            message,
+            style: TextStyle(
+              color: Colors.grey[400],
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTicketCard(Map<String, dynamic> booking, {required bool isActive}) {
+    final status = _getBookingStatus(booking, isActive);
+    final statusColor = switch (status) {
       'CONFIRMED' => LunaraTheme.electricViolet,
       'PENDING' => Colors.amber,
       'USED' => Colors.black,
       'EXPIRED' => Colors.red.shade400,
       _ => Colors.black,
     };
+
+    final venue = booking['venue'] as Map<String, dynamic>?;
+    final venueName = venue?['name']?.toString() ?? 'GENERAL VENUE';
+    final imageUrl = _getVenueImageUrl(venue);
+    final bookingDate = booking['bookingDate']?.toString() ?? '';
+    final startTime = booking['startTime']?.toString() ?? '';
+    final dateStr = _formatBookingDateTime(bookingDate, startTime);
+    final table = _formatTablePackage(booking['tablePackage']?.toString());
+    final guests = booking['numberOfGuests'] ?? 1;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 20),
@@ -184,12 +307,12 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
               context,
               MaterialPageRoute(
                 builder: (_) => CheckInAssistScreen(
-                  venueName: ticket.venue,
-                  date: ticket.date,
-                  table: ticket.table,
-                  guests: ticket.guests.toString(),
-                  imageUrl: ticket.imageUrl,
-                  status: ticket.status,
+                  venueName: venueName,
+                  date: dateStr,
+                  table: table,
+                  guests: guests.toString(),
+                  imageUrl: imageUrl,
+                  status: status,
                 ),
               ),
             );
@@ -198,11 +321,12 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
               context,
               MaterialPageRoute(
                 builder: (_) => DigitalTicketScreen(
-                  venue: {'name': ticket.venue, 'imageUrl': ticket.imageUrl},
-                  date: ticket.date,
-                  table: ticket.table,
-                  guests: ticket.guests.toString(),
-                  package: 'Table Booking',
+                  venue: venue ?? {'name': venueName, 'imageUrl': imageUrl},
+                  date: dateStr,
+                  table: table,
+                  guests: guests.toString(),
+                  package: table,
+                  ticketId: booking['ticketCode'] ?? booking['id']?.toString().substring(0, 8),
                 ),
               ),
             );
@@ -217,7 +341,6 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
           ),
           child: Column(
             children: [
-              // Venue image header
               Container(
                 height: 140,
                 decoration: BoxDecoration(
@@ -225,7 +348,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                     top: Radius.circular(24),
                   ),
                   image: DecorationImage(
-                    image: NetworkImage(ticket.imageUrl),
+                    image: NetworkImage(imageUrl),
                     fit: BoxFit.cover,
                   ),
                 ),
@@ -253,7 +376,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            ticket.venue,
+                            venueName,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 20,
@@ -263,7 +386,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            ticket.date,
+                            dateStr,
                             style: const TextStyle(
                               color: LunaraTheme.electricViolet,
                               fontSize: 12,
@@ -288,7 +411,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                           ],
                         ),
                         child: Text(
-                          ticket.status,
+                          status,
                           style: TextStyle(
                             color: statusColor,
                             fontSize: 10,
@@ -301,14 +424,13 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                   ),
                 ),
               ),
-              // Info row
               Padding(
                 padding: const EdgeInsets.all(20),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    _infoChip(Icons.table_bar_outlined, ticket.table),
-                    _infoChip(Icons.group_outlined, '${ticket.guests} GUESTS'),
+                    _infoChip(Icons.table_bar_outlined, table),
+                    _infoChip(Icons.group_outlined, '$guests GUESTS'),
                     if (isActive)
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -356,7 +478,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         const SizedBox(width: 8),
         Text(
           label,
-          style: TextStyle(
+          style: const TextStyle(
             color: Colors.black,
             fontSize: 12,
             fontWeight: FontWeight.w900,
@@ -365,17 +487,4 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
       ],
     );
   }
-}
-
-class _TicketData {
-  final String venue, date, table, status, imageUrl;
-  final int guests;
-  const _TicketData({
-    required this.venue,
-    required this.date,
-    required this.table,
-    required this.guests,
-    required this.status,
-    required this.imageUrl,
-  });
 }

@@ -40,6 +40,9 @@ class User {
   final int superLikesCount;
   final int plansCount;
   final String subscriptionTier; // FREE, CORE, PLUS, PRO, ELITE
+  final int bookingsCount;
+  final int matchesCount;
+  final int pointsCount;
 
   User({
     required this.id,
@@ -79,6 +82,9 @@ class User {
     this.superLikesCount = 0,
     this.plansCount = 0,
     this.subscriptionTier = 'FREE',
+    this.bookingsCount = 0,
+    this.matchesCount = 0,
+    this.pointsCount = 0,
   });
 
   String get fullName => '$firstName $lastName';
@@ -250,6 +256,21 @@ class User {
               ? int.tryParse(data['plansCount'].toString()) ?? 0
               : 0),
       subscriptionTier: (data['subscriptionTier'] ?? json['subscriptionTier'] ?? 'FREE').toString(),
+      bookingsCount: json['bookingsCount'] != null
+          ? int.tryParse(json['bookingsCount'].toString()) ?? 0
+          : (data['bookingsCount'] != null
+              ? int.tryParse(data['bookingsCount'].toString()) ?? 0
+              : 0),
+      matchesCount: json['matchesCount'] != null
+          ? int.tryParse(json['matchesCount'].toString()) ?? 0
+          : (data['matchesCount'] != null
+              ? int.tryParse(data['matchesCount'].toString()) ?? 0
+              : 0),
+      pointsCount: json['pointsCount'] != null
+          ? int.tryParse(json['pointsCount'].toString()) ?? 0
+          : (data['pointsCount'] != null
+              ? int.tryParse(data['pointsCount'].toString()) ?? 0
+              : 0),
     );
   }
 

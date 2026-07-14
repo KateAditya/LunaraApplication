@@ -3,7 +3,7 @@ import { body, param } from 'express-validator';
 import { validate } from '../middleware/validate';
 import { uploadTempPhotos } from '../middleware/upload';
 import mobileUserController from '../controllers/mobileUserController';
-import { User, UserMatch, Payment, PartyPlanRequest, PlanJoinRequest, Conversation, Message, Plan, PartyPlan, Venue } from '../models';
+import { User, UserMatch, Payment, PartyPlanRequest, PlanJoinRequest, Conversation, Message, Plan, PartyPlan, Venue, StrangersMeetRequest, StrangersMeetJoiner } from '../models';
 import { Op } from 'sequelize';
 import { optionalAuth } from '../middleware/auth';
 
@@ -233,6 +233,51 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
         limit: 20
     });
 
+    // 5. Fetch StrangersMeetRequests created by uId (Host)
+    const hostMeets = await StrangersMeetRequest.findAll({
+        where: { userId: uId },
+        include: [{ model: Venue, as: 'venue', attributes: ['name'] }],
+        order: [['createdAt', 'DESC']],
+        limit: 20
+    });
+
+    // 6. Fetch StrangersMeetJoiners where user is participant
+    const myJoinRequests = await StrangersMeetJoiner.findAll({
+        where: { userId: uId },
+        include: [
+            {
+                model: StrangersMeetRequest,
+                as: 'strangersMeetRequest',
+                include: [{ model: Venue, as: 'venue', attributes: ['name'] }]
+            }
+        ],
+        order: [['createdAt', 'DESC']],
+        limit: 20
+    });
+
+    // 7. Fetch StrangersMeetJoiners for host's meets
+    const hostMeetIds = hostMeets.map(m => m.id);
+    const incomingJoinRequests = hostMeetIds.length > 0
+        ? await StrangersMeetJoiner.findAll({
+            where: {
+                strangersMeetRequestId: { [Op.in]: hostMeetIds }
+            },
+            include: [
+                {
+                    model: User,
+                    as: 'user',
+                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl']
+                },
+                {
+                    model: StrangersMeetRequest,
+                    as: 'strangersMeetRequest'
+                }
+            ],
+            order: [['createdAt', 'DESC']],
+            limit: 20
+        })
+        : [];
+
     // Compile notifications list
     const notifications: any[] = [];
 
@@ -369,6 +414,145 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
             createdAt: pjr.updatedAt ? pjr.updatedAt.toISOString() : (pjr.createdAt ? pjr.createdAt.toISOString() : new Date().toISOString()),
             read: isRead || activeReadNotificationIds.has(notificationId),
         });
+    }
+
+    // Add Strangers Meet Host Requests Status Update Notifications
+    for (const meet of hostMeets) {
+        const m = meet as any;
+        const venueName = m.venue?.name || 'Venue';
+        if (m.status === 'approved') {
+            const notificationId = `sm_host_approved_${m.id}`;
+            const isPaid = m.paymentStatus === 'paid';
+            notifications.push({
+                id: notificationId,
+                title: 'Stranger Meet Approved',
+                body: `Your meet request "${m.subject}" at ${venueName} has been approved. ${isPaid ? 'Deposit paid.' : 'Please pay the deposit to make it live.'}`,
+                createdAt: m.updatedAt ? m.updatedAt.toISOString() : (m.createdAt ? m.createdAt.toISOString() : new Date().toISOString()),
+                read: activeReadNotificationIds.has(notificationId),
+                data: {
+                    type: 'strangers_meet_approved',
+                    requestId: m.id,
+                }
+            });
+        } else if (m.status === 'rejected') {
+            const notificationId = `sm_host_rejected_${m.id}`;
+            notifications.push({
+                id: notificationId,
+                title: 'Stranger Meet Rejected',
+                body: `Your meet request "${m.subject}" at ${venueName} was rejected by admin. Reason: ${m.adminNotes || 'N/A'}`,
+                createdAt: m.updatedAt ? m.updatedAt.toISOString() : (m.createdAt ? m.createdAt.toISOString() : new Date().toISOString()),
+                read: activeReadNotificationIds.has(notificationId),
+                data: {
+                    type: 'strangers_meet_rejected',
+                    requestId: m.id,
+                }
+            });
+        } else if (m.status === 'pending') {
+            const notificationId = `sm_host_pending_${m.id}`;
+            notifications.push({
+                id: notificationId,
+                title: 'Request Submitted',
+                body: `Your Stranger Meet request "${m.subject}" has been submitted for admin approval.`,
+                createdAt: m.createdAt ? m.createdAt.toISOString() : new Date().toISOString(),
+                read: activeReadNotificationIds.has(notificationId),
+                data: {
+                    type: 'strangers_meet_request_submitted',
+                    requestId: m.id,
+                }
+            });
+        }
+    }
+
+    // Add Strangers Meet Participant Join Request Notifications
+    for (const jr of myJoinRequests) {
+        const j = jr as any;
+        const meet = j.strangersMeetRequest;
+        if (!meet) continue;
+        const venueName = meet.venue?.name || 'Venue';
+        const notificationId = `sm_join_${j.id}`;
+        
+        let title = '';
+        let body = '';
+        let showNotification = false;
+        let type = '';
+
+        if (j.status === 'accepted') {
+            title = 'Request Accepted';
+            body = `Your request to join "${meet.subject}" at ${venueName} was accepted! Please complete the payment to secure your spot.`;
+            showNotification = true;
+            type = 'strangers_meet_request_accepted';
+        } else if (j.status === 'rejected') {
+            title = 'Request Declined';
+            body = `Your request to join "${meet.subject}" at ${venueName} was declined by the host.`;
+            showNotification = true;
+            type = 'strangers_meet_request_rejected';
+        } else if (j.status === 'paid' || j.paymentStatus === 'paid') {
+            title = 'Booking Confirmed';
+            body = `Your payment for "${meet.subject}" at ${venueName} was successful. Spot confirmed!`;
+            showNotification = true;
+            type = 'strangers_meet_payment_success';
+        }
+
+        if (showNotification) {
+            notifications.push({
+                id: notificationId,
+                title,
+                body,
+                createdAt: j.updatedAt ? j.updatedAt.toISOString() : (j.createdAt ? j.createdAt.toISOString() : new Date().toISOString()),
+                read: activeReadNotificationIds.has(notificationId),
+                data: {
+                    type,
+                    requestId: meet.id,
+                }
+            });
+        }
+    }
+
+    // Add Strangers Meet Host Incoming Join Request Notifications
+    for (const ijr of incomingJoinRequests) {
+        const ij = ijr as any;
+        const joinerUser = ij.user;
+        const meet = ij.strangersMeetRequest;
+        if (!joinerUser || !meet) continue;
+        const joinerName = `${joinerUser.firstName} ${joinerUser.lastName}`;
+        const notificationId = `sm_incoming_${ij.id}`;
+
+        let title = '';
+        let body = '';
+        let showNotification = false;
+        let type = '';
+
+        if (ij.status === 'pending') {
+            title = 'New Join Request';
+            body = `${joinerName} requested to join your "${meet.subject}" meet.`;
+            showNotification = true;
+            type = 'strangers_meet_join_request';
+        } else if (ij.status === 'paid' || ij.paymentStatus === 'paid') {
+            title = 'Participant Joined';
+            body = `${joinerName} paid and joined your "${meet.subject}" meet.`;
+            showNotification = true;
+            type = 'strangers_meet_participant_joined';
+        }
+
+        if (showNotification) {
+            notifications.push({
+                id: notificationId,
+                title,
+                body,
+                createdAt: ij.updatedAt ? ij.updatedAt.toISOString() : (ij.createdAt ? ij.createdAt.toISOString() : new Date().toISOString()),
+                read: activeReadNotificationIds.has(notificationId),
+                sender: {
+                    id: joinerUser.id,
+                    firstName: joinerUser.firstName,
+                    lastName: joinerUser.lastName,
+                    profileImageUrl: joinerUser.profileImageUrl,
+                },
+                data: {
+                    type,
+                    requestId: meet.id,
+                }
+            });
+        }
     }
 
     // Simulated profile visits using other real users

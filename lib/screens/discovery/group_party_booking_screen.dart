@@ -484,7 +484,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
         ),
         const SizedBox(height: 8),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          padding: const EdgeInsets.only(left: 6, right: 4),
           decoration: BoxDecoration(
             color: Colors.grey[50],
             borderRadius: BorderRadius.circular(16),
@@ -493,16 +493,21 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
           child: DropdownButtonHideUnderline(
             child: DropdownButtonFormField<String>(
               value: value,
+              isExpanded: true,
               decoration: InputDecoration(
-                prefixIcon: Icon(icon, color: LunaraTheme.electricViolet, size: 18),
-                prefixIconConstraints: const BoxConstraints(minWidth: 28, minHeight: 18),
+                prefixIcon: Icon(icon, color: LunaraTheme.electricViolet, size: 16),
+                prefixIconConstraints: const BoxConstraints(minWidth: 24, minHeight: 18),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(vertical: 10),
               ),
               items: items.map((String val) {
                 return DropdownMenuItem<String>(
                   value: val,
-                  child: Text(val, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                  child: Text(
+                    val,
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 );
               }).toList(),
               onChanged: onChanged,
@@ -1718,6 +1723,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
 
                         final String orderId = result['razorpayOrderId'] ?? '';
                         final int amount = result['amount'] ?? (totalPrice * 100).round();
+                        final String? keyId = result['razorpayKeyId']?.toString();
 
                         Navigator.pop(parentContext); // Close booking bottom sheet
                         Navigator.push(
@@ -1738,6 +1744,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                                   .trim(),
                               razorpayOrderId: orderId,
                               razorpayAmount: amount,
+                              razorpayKeyId: keyId,
                               onRazorpayPaymentSuccess: (paymentId, signature) async {
                                 try {
                                   final success = await ApiService.verifyGroupPartyPayment(

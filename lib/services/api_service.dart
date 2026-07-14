@@ -413,6 +413,28 @@ class ApiService {
     return false;
   }
 
+  static Future<List<dynamic>?> fetchBookings() async {
+    final userId = currentUserId;
+    if (userId == null) return null;
+
+    try {
+      final response = await get(
+        '/api/mobile/bookings',
+        queryParameters: {'userId': userId},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return data['data'] as List<dynamic>;
+        }
+      }
+    } catch (e) {
+      debugPrint('fetchBookings error: $e');
+    }
+    return null;
+  }
+
   static Future<Map<String, dynamic>?> swipeUser({
     required String targetUserId,
     required String action,
