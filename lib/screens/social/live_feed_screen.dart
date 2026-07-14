@@ -1018,25 +1018,25 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                             child: Container(
                               padding: const EdgeInsets.symmetric(vertical: 11),
                               decoration: BoxDecoration(
-                                color: Colors.grey.withValues(alpha: 0.1),
+                                color: Colors.green.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
-                                  color: Colors.grey.withValues(alpha: 0.5),
+                                  color: Colors.green.withValues(alpha: 0.5),
                                 ),
                               ),
                               child: const Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   Icon(
-                                    Icons.hourglass_empty_rounded,
-                                    color: Colors.grey,
+                                    Icons.check_circle_outline_rounded,
+                                    color: Colors.green,
                                     size: 15,
                                   ),
                                   SizedBox(width: 6),
                                   Text(
-                                    'PENDING',
+                                    'REQUEST SENT',
                                     style: TextStyle(
-                                      color: Colors.grey,
+                                      color: Colors.green,
                                       fontSize: 11,
                                       fontWeight: FontWeight.bold,
                                     ),
@@ -1306,11 +1306,14 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
               style: const TextStyle(color: Colors.white70, fontSize: 12),
             ),
             const SizedBox(height: 14),
-            // Host PAY NOW button — visible only to the plan's own host when unpaid
             if (isMyPost && plan['hostPaymentStatus']?.toString().toLowerCase() != 'paid') ...([
               Builder(
                 builder: (context) {
                   final planId = plan['id']?.toString() ?? '';
+                  final isSelfPay = plan['paymentType'] == 'self_pay';
+                  final depositAmount = plan['depositAmount'] != null 
+                      ? double.tryParse(plan['depositAmount'].toString())?.toInt() ?? (isSelfPay ? 198 : 99)
+                      : (isSelfPay ? 198 : 99);
                   // Only show Pay Now if the host hasn't paid yet
                   return SizedBox(
                     width: double.infinity,
@@ -1331,14 +1334,14 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                             )
                           ],
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.payment_rounded, color: Colors.white, size: 15),
-                            SizedBox(width: 8),
+                            const Icon(Icons.payment_rounded, color: Colors.white, size: 15),
+                            const SizedBox(width: 8),
                             Text(
-                              'PAY HOST DEPOSIT (₹99)',
-                              style: TextStyle(
+                              'PAY HOST DEPOSIT (₹$depositAmount)',
+                              style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
@@ -1400,25 +1403,25 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                             child: Container(
                               padding: const EdgeInsets.symmetric(vertical: 11),
                               decoration: BoxDecoration(
-                                color: Colors.grey.withValues(alpha: 0.1),
+                                color: Colors.green.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
-                                  color: Colors.grey.withValues(alpha: 0.5),
+                                  color: Colors.green.withValues(alpha: 0.5),
                                 ),
                               ),
                               child: const Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   Icon(
-                                    Icons.hourglass_empty_rounded,
-                                    color: Colors.grey,
+                                    Icons.check_circle_outline_rounded,
+                                    color: Colors.green,
                                     size: 15,
                                   ),
                                   SizedBox(width: 6),
                                   Text(
-                                    'PENDING',
+                                    'REQUEST SENT',
                                     style: TextStyle(
-                                      color: Colors.grey,
+                                      color: Colors.green,
                                       fontSize: 11,
                                       fontWeight: FontWeight.bold,
                                     ),
@@ -1613,7 +1616,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     Map<String, dynamic> plan,
     String? hostRazorpayOrderId, {
     String? razorpayKeyId,
-    int amount = 99,
+    int? amount,
   }) {
     final venue = plan['venue'] ?? {};
     // Resolve planId from plan object
@@ -1629,6 +1632,11 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
       }
     } catch (_) {}
 
+    final isSelfPay = plan['paymentType'] == 'self_pay';
+    final resolvedAmount = amount ?? (plan['depositAmount'] != null 
+        ? double.tryParse(plan['depositAmount'].toString())?.toInt() ?? (isSelfPay ? 198 : 99)
+        : (isSelfPay ? 198 : 99));
+
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -1638,12 +1646,12 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
           package: 'Party Plan Safety Deposit',
           time: timeStr,
           table: 'Host Table',
-          guests: '1 Head',
-          totalPrice: '₹99',
+          guests: isSelfPay ? 'Host + Guest (Self-Pay)' : '1 Head',
+          totalPrice: '₹$resolvedAmount',
           showSplitBill: false,
           razorpayOrderId: hostRazorpayOrderId ?? plan['hostRazorpayOrderId']?.toString(),
           razorpayKeyId: razorpayKeyId,
-          razorpayAmount: amount * 100,
+          razorpayAmount: resolvedAmount * 100,
           onRazorpayPaymentSuccess: (paymentId, signature) async {
             try {
               final orderId = hostRazorpayOrderId ?? plan['hostRazorpayOrderId']?.toString() ?? 'mock_order';

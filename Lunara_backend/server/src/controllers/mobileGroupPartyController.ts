@@ -26,8 +26,8 @@ export const calculatePricing = async (req: Request, res: Response): Promise<voi
             return;
         }
 
-        const chargePerPerson = venue.groupPartyChargePerPerson || 0;
-        const discountPct = venue.groupPartyDiscountPercentage || 0;
+        const chargePerPerson = venue.groupPartyChargePerPerson || venue.tableBookingCharges || 0;
+        const discountPct = venue.groupPartyDiscountPercentage || venue.discountPercentage || 0;
 
         const tableBookingCharge = chargePerPerson * numberOfFriends;
         const discountAmount = (tableBookingCharge * discountPct) / 100;
@@ -77,21 +77,23 @@ export const createGroupParty = async (req: Request, res: Response): Promise<voi
             return;
         }
 
-        const chargePerPerson = venue.groupPartyChargePerPerson || 0;
-        const discountPct = venue.groupPartyDiscountPercentage || 0;
+        const chargePerPerson = venue.groupPartyChargePerPerson || venue.tableBookingCharges || 0;
+        const discountPct = venue.groupPartyDiscountPercentage || venue.discountPercentage || 0;
 
         const tableBookingCharge = chargePerPerson * numberOfFriends;
         const discountAmount = (tableBookingCharge * discountPct) / 100;
         const totalAmount = tableBookingCharge - discountAmount;
 
-        // Create razorpay order
-        const options = {
-            amount: Math.round(totalAmount * 100), // in paise
-            currency: 'INR',
-            receipt: `gp_${Date.now()}`
-        };
-
-        const order = await razorpay.orders.create(options);
+        let order: any = null;
+        if (totalAmount > 0) {
+            // Create razorpay order
+            const options = {
+                amount: Math.round(totalAmount * 100), // in paise
+                currency: 'INR',
+                receipt: `gp_${Date.now()}`
+            };
+            order = await razorpay.orders.create(options);
+        }
 
         const groupParty = await GroupParty.create({
             userId,
@@ -105,17 +107,17 @@ export const createGroupParty = async (req: Request, res: Response): Promise<voi
             optionalMobileNumber: optionalMobileNumber?.trim(),
             foodPreference: foodPreference?.trim(),
             drinkPreference: drinkPreference?.trim(),
-            status: GroupPartyStatus.PENDING,
-            paymentStatus: GroupPartyPaymentStatus.PENDING,
-            paymentId: order.id
+            status: totalAmount > 0 ? GroupPartyStatus.PENDING : GroupPartyStatus.CONFIRMED,
+            paymentStatus: totalAmount > 0 ? GroupPartyPaymentStatus.PENDING : GroupPartyPaymentStatus.PAID,
+            paymentId: order ? order.id : `free_${Date.now()}`
         });
 
         res.status(201).json({
             success: true,
             data: groupParty,
-            razorpayOrderId: order.id,
-            amount: order.amount,
-            currency: order.currency
+            razorpayOrderId: order ? order.id : '',
+            amount: order ? order.amount : 0,
+            currency: order ? order.currency : 'INR'
         });
 
     } catch (err: any) {

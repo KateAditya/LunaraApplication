@@ -130,7 +130,7 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
             transactionId: plan.hostRazorpayPaymentId || `TXN_HOST_${plan.id}`,
             bookingId: booking.id,
             userId: plan.userId,
-            amount: 99.00,
+            amount: plan.depositAmount ? Number(plan.depositAmount) : 99.00,
             currency: 'INR',
             paymentMethod: PaymentMethod.RAZORPAY,
             paymentGateway: 'razorpay',
@@ -143,7 +143,7 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
             transactionId: request.joinerRazorpayPaymentId || `TXN_JOINER_${request.id}`,
             bookingId: booking.id,
             userId: request.requesterId,
-            amount: 99.00,
+            amount: plan.paymentType === 'self_pay' ? 0.00 : 99.00,
             currency: 'INR',
             paymentMethod: PaymentMethod.RAZORPAY,
             paymentGateway: 'razorpay',
@@ -279,7 +279,7 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
         }
 
         // ── Generate Razorpay Order ───────────────────────────────────────────
-        const depositAmount = 99.00;
+        const depositAmount = parsedPaymentType === PartyPlanPaymentType.SELF_PAY ? 198.00 : 99.00;
         const options = {
             amount: Math.round(depositAmount * 100), // in paise
             currency: 'INR',
@@ -486,7 +486,7 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
                     if (host && host.fcmToken) {
                         await sendMulticastPushNotification([host.fcmToken], {
                             title: '💳 Host Payment Successful',
-                            body: 'Your ₹99 deposit payment was successfully verified.',
+                            body: `Your ₹${plan.depositAmount || 99} deposit payment was successfully verified.`,
                             data: {
                                 type: 'host_payment_successful',
                                 partyPlanId: plan.id,
@@ -1855,7 +1855,7 @@ export const initiateHostPayment = async (req: Request, res: Response): Promise<
             return;
         }
 
-        const amount = 99; // deposit amount
+        const amount = plan.paymentType === 'self_pay' ? 198 : 99; // deposit amount
         const options = {
             amount: amount * 100, // in paise
             currency: 'INR',

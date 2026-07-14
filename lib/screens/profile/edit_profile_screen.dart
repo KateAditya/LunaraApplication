@@ -112,7 +112,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       
 
 
-      final success = await ApiService.uploadProfilePhotos(bytesList, namesList);
+      final success = await ApiService.uploadProfilePhotos(
+        bytesList,
+        namesList,
+        isPrimary: isMainProfilePhoto,
+      );
       
       if (!mounted) return;
       setState(() {

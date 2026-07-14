@@ -1231,11 +1231,12 @@ class ApiService {
 
   static Future<bool> uploadProfilePhotos(
     List<Uint8List> fileBytes,
-    List<String> fileNames,
-  ) async {
+    List<String> fileNames, {
+    bool isPrimary = false,
+  }) async {
     try {
       debugPrint(
-        'uploadProfilePhotos: preparing to send ${fileBytes.length} files',
+        'uploadProfilePhotos: preparing to send ${fileBytes.length} files, isPrimary: $isPrimary',
       );
       final files = <http.MultipartFile>[];
       for (int i = 0; i < fileBytes.length; i++) {
@@ -1254,7 +1255,10 @@ class ApiService {
           ),
         );
       }
-      final response = await postMultipart('/api/profile/photos', files: files);
+      final fields = <String, String>{
+        'isPrimary': isPrimary.toString(),
+      };
+      final response = await postMultipart('/api/profile/photos', files: files, fields: fields);
       debugPrint('uploadProfilePhotos status: ${response.statusCode}');
       debugPrint('uploadProfilePhotos body: ${response.body}');
       if (response.statusCode == 200 || response.statusCode == 201) {

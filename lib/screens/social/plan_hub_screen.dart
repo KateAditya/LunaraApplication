@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../core/theme.dart';
 import '../discovery/group_party_booking_screen.dart';
 import '../discovery/all_users_screen.dart';
@@ -1853,14 +1854,31 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       ),
 
                       const SizedBox(height: 14),
-                      const Text(
-                        'PAYMENT MODEL',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.5,
-                          color: Colors.black87,
-                        ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'PAYMENT MODEL',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.5,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          Text(
+                            selectedPaymentType == 'self_pay'
+                                ? 'Host pays 2x Deposit: ₹198 (Refundable)'
+                                : 'Split Deposit: ₹99 per head (Refundable)',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: selectedPaymentType == 'self_pay'
+                                  ? Colors.green[700]
+                                  : Colors.grey[600],
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 8),
                       Row(
@@ -2226,6 +2244,10 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                           hint: 'Mobile Number *',
                           icon: Icons.phone_android_rounded,
                           keyboardType: TextInputType.phone,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(10),
+                          ],
                         ),
                         const SizedBox(height: 14),
                         // Alternate Mobile Number
@@ -2234,6 +2256,10 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                           hint: 'Alternate Mobile Number (Optional)',
                           icon: Icons.phone_rounded,
                           keyboardType: TextInputType.phone,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(10),
+                          ],
                         ),
                       ],
 
@@ -2246,7 +2272,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               ? 'PROCEEDING...'
                               : (selectedUserIds.length > 20
                                     ? 'SUBMIT STRANGERS MEET'
-                                    : 'POST PARTY PLAN'),
+                                    : (selectedPaymentType == 'self_pay'
+                                        ? 'POST PARTY PLAN (PAY ₹198)'
+                                        : 'POST PARTY PLAN (PAY ₹99)')),
                           onTap: isPosting
                               ? () {}
                               : () async {
@@ -2355,14 +2383,35 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     }
                                   }
 
-                                  if (isStrangersMeet && mobileCtrl.text.trim().isEmpty) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Mobile number is required for Strangers Meet.'),
-                                        backgroundColor: Colors.redAccent,
-                                      ),
-                                    );
-                                    return;
+                                  final mobileRegExp = RegExp(r'^[6-9]\d{9}$');
+                                  if (isStrangersMeet) {
+                                    if (mobileCtrl.text.trim().isEmpty) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Mobile number is required for Strangers Meet.'),
+                                          backgroundColor: Colors.redAccent,
+                                        ),
+                                      );
+                                      return;
+                                    }
+                                    if (!mobileRegExp.hasMatch(mobileCtrl.text.trim())) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Please enter a valid 10-digit mobile number.'),
+                                          backgroundColor: Colors.redAccent,
+                                        ),
+                                      );
+                                      return;
+                                    }
+                                    if (altMobileCtrl.text.trim().isNotEmpty && !mobileRegExp.hasMatch(altMobileCtrl.text.trim())) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Please enter a valid 10-digit alternate mobile number.'),
+                                          backgroundColor: Colors.redAccent,
+                                        ),
+                                      );
+                                      return;
+                                    }
                                   }
                                   setSheetState(() => isPosting = true);
 
@@ -2884,6 +2933,10 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                         hint: 'Enter Mobile Number',
                         icon: Icons.phone_android_rounded,
                         keyboardType: TextInputType.phone,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(10),
+                        ],
                       ),
                       const SizedBox(height: 14),
 
@@ -2893,6 +2946,10 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                         hint: 'Alternate Mobile Number (Optional)',
                         icon: Icons.phone_rounded,
                         keyboardType: TextInputType.phone,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(10),
+                        ],
                       ),
                       const SizedBox(height: 20),
 
@@ -3277,10 +3334,29 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               );
                               return;
                             }
+                            final mobileRegExp = RegExp(r'^[6-9]\d{9}$');
                             if (mobileCtrl.text.trim().isEmpty) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                   content: Text('Please enter mobile number'),
+                                ),
+                              );
+                              return;
+                            }
+                            if (!mobileRegExp.hasMatch(mobileCtrl.text.trim())) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Please enter a valid 10-digit mobile number.'),
+                                  backgroundColor: Colors.redAccent,
+                                ),
+                              );
+                              return;
+                            }
+                            if (altMobileCtrl.text.trim().isNotEmpty && !mobileRegExp.hasMatch(altMobileCtrl.text.trim())) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Please enter a valid 10-digit alternate mobile number.'),
+                                  backgroundColor: Colors.redAccent,
                                 ),
                               );
                               return;
@@ -3393,6 +3469,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     int? maxLines = 1,
     bool readOnly = false,
     VoidCallback? onTap,
+    List<TextInputFormatter>? inputFormatters,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -3407,6 +3484,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
         maxLines: maxLines,
         readOnly: readOnly,
         onTap: onTap,
+        inputFormatters: inputFormatters,
         style: const TextStyle(fontSize: 14),
         decoration: InputDecoration(
           hintText: hint,

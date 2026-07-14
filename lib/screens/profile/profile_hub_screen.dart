@@ -103,7 +103,7 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const ProfileScreen()),
-      ),
+      ).then((_) => _loadProfile()),
       child: Padding(
         padding: const EdgeInsets.only(bottom: 24),
         child: Row(

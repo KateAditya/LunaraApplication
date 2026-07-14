@@ -39,6 +39,23 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
         const galleryDir = getUserGalleryDir(userId);
         const createdPhotos = [];
 
+        // Check if user already has a primary photo
+        const hasPrimary = await UserPhoto.findOne({ where: { userId, isPrimary: true } });
+        
+        // Decide if the first uploaded file in this request should be primary
+        // It should be primary if:
+        // 1. the client explicitly requested isPrimary (req.body.isPrimary === 'true')
+        // 2. OR the user does not have any primary photo yet
+        const makePrimary = (req.body.isPrimary === 'true') || !hasPrimary;
+
+        if (makePrimary) {
+            // Remove primary flag from all existing user photos
+            await UserPhoto.update(
+                { isPrimary: false },
+                { where: { userId } }
+            );
+        }
+
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
 
@@ -70,16 +87,18 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
                 .join(uploadsBase, 'users', userId, 'gallery', filename)
                 .replace(/\\/g, '/');
 
+            const photoIsPrimary = makePrimary && (i === 0);
+
             const photo = await UserPhoto.create({
                 userId,
                 filePath: relativePath,
                 fileSize: compressedBuffer.length,   // compressed size, not original
                 mimeType: 'image/jpeg',
-                isPrimary: i === 0,
+                isPrimary: photoIsPrimary,
                 displayOrder: i,
             });
 
-            if (i === 0) {
+            if (photoIsPrimary) {
                 await User.update(
                     { profileImageUrl: '/' + relativePath.replace(/\\/g, '/') },
                     { where: { id: userId } }

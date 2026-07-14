@@ -47,17 +47,36 @@ class ProfileDetailView extends StatefulWidget {
 class _ProfileDetailViewState extends State<ProfileDetailView> {
   int _currentPhotoIndex = 0;
   bool _isBlocked = false;
+  late User _currentUser;
 
   @override
   void initState() {
     super.initState();
+    _currentUser = widget.user;
     if (!widget.isMe) {
       _checkBlockStatus();
     }
   }
 
+  @override
+  void didUpdateWidget(ProfileDetailView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.user != oldWidget.user) {
+      _currentUser = widget.user;
+    }
+  }
+
+  Future<void> _refreshProfile() async {
+    final updatedUser = await ApiService.fetchProfile(userId: _currentUser.id);
+    if (updatedUser != null && mounted) {
+      setState(() {
+        _currentUser = updatedUser;
+      });
+    }
+  }
+
   Future<void> _checkBlockStatus() async {
-    final isBlocked = await BlockService.isUserBlocked(widget.user.id);
+    final isBlocked = await BlockService.isUserBlocked(_currentUser.id);
     if (mounted) {
       setState(() {
         _isBlocked = isBlocked;
@@ -67,9 +86,9 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
 
   Future<void> _toggleBlock() async {
     if (_isBlocked) {
-      await BlockService.unblockUser(widget.user.id);
+      await BlockService.unblockUser(_currentUser.id);
     } else {
-      await BlockService.blockUser(widget.user.id);
+      await BlockService.blockUser(_currentUser.id);
     }
     _checkBlockStatus();
   }
@@ -91,7 +110,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
             onPressed: () async {
               Navigator.pop(ctx);
               await BlockService.reportUser(
-                widget.user.id,
+                _currentUser.id,
                 'Inappropriate profile content',
               );
               _checkBlockStatus();
@@ -109,12 +128,12 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
   }
 
   List<String> get _userPhotos {
-    if (widget.user.photos.isNotEmpty) {
-      return widget.user.photos;
+    if (_currentUser.photos.isNotEmpty) {
+      return _currentUser.photos;
     }
-    if (widget.user.profilePhoto != null &&
-        widget.user.profilePhoto!.isNotEmpty) {
-      return [widget.user.profilePhoto!];
+    if (_currentUser.profilePhoto != null &&
+        _currentUser.profilePhoto!.isNotEmpty) {
+      return [_currentUser.profilePhoto!];
     }
     return [];
   }
@@ -140,12 +159,12 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
     final List<Widget> sections = [];
 
     // Section 1: Bio
-    if (widget.user.bio != null && widget.user.bio!.isNotEmpty) {
+    if (_currentUser.bio != null && _currentUser.bio!.isNotEmpty) {
       sections.add(
         Padding(
           padding: const EdgeInsets.only(top: 12),
           child: Text(
-            widget.user.bio!,
+            _currentUser.bio!,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.95),
               fontSize: 13,
@@ -161,20 +180,20 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
 
     // Section 2: Work & Education
     final List<Widget> workEduRows = [];
-    if (widget.user.occupation != null && widget.user.occupation!.isNotEmpty) {
-      String occ = widget.user.occupation!;
-      if (widget.user.company != null && widget.user.company!.isNotEmpty) {
-        occ += ' at ${widget.user.company}';
+    if (_currentUser.occupation != null && _currentUser.occupation!.isNotEmpty) {
+      String occ = _currentUser.occupation!;
+      if (_currentUser.company != null && _currentUser.company!.isNotEmpty) {
+        occ += ' at ${_currentUser.company}';
       }
       workEduRows.add(_buildInfoRow(Icons.work_outline_rounded, occ));
-    } else if (widget.user.company != null && widget.user.company!.isNotEmpty) {
+    } else if (_currentUser.company != null && _currentUser.company!.isNotEmpty) {
       workEduRows.add(
-        _buildInfoRow(Icons.business_outlined, widget.user.company!),
+        _buildInfoRow(Icons.business_outlined, _currentUser.company!),
       );
     }
-    if (widget.user.education != null && widget.user.education!.isNotEmpty) {
+    if (_currentUser.education != null && _currentUser.education!.isNotEmpty) {
       workEduRows.add(
-        _buildInfoRow(Icons.school_outlined, widget.user.education!),
+        _buildInfoRow(Icons.school_outlined, _currentUser.education!),
       );
     }
 
@@ -191,7 +210,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
     }
 
     // Section 3: Music Preferences
-    if (widget.user.musicPreference.isNotEmpty) {
+    if (_currentUser.musicPreference.isNotEmpty) {
       sections.add(
         Padding(
           padding: const EdgeInsets.only(top: 12),
@@ -221,7 +240,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
-                children: widget.user.musicPreference.take(3).map((genre) {
+                children: _currentUser.musicPreference.take(3).map((genre) {
                   return Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
@@ -254,26 +273,26 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
 
     // Section 4: Preferences (Looking For, Smoking, Budget)
     final List<Widget> prefRows = [];
-    if (widget.user.lookingFor.isNotEmpty) {
+    if (_currentUser.lookingFor.isNotEmpty) {
       prefRows.add(
         _buildInfoRow(
           Icons.search_rounded,
-          'Looking for: ${widget.user.lookingFor.join(", ")}',
+          'Looking for: ${_currentUser.lookingFor.join(", ")}',
         ),
       );
     }
-    if (widget.user.smokingPreference != null &&
-        widget.user.smokingPreference!.isNotEmpty) {
+    if (_currentUser.smokingPreference != null &&
+        _currentUser.smokingPreference!.isNotEmpty) {
       prefRows.add(
-        _buildInfoRow(Icons.smoke_free_rounded, widget.user.smokingPreference!),
+        _buildInfoRow(Icons.smoke_free_rounded, _currentUser.smokingPreference!),
       );
     }
-    if (widget.user.budgetRange != null &&
-        widget.user.budgetRange!.isNotEmpty) {
+    if (_currentUser.budgetRange != null &&
+        _currentUser.budgetRange!.isNotEmpty) {
       prefRows.add(
         _buildInfoRow(
           Icons.currency_rupee_rounded,
-          'Budget: ${widget.user.budgetRange}',
+          'Budget: ${_currentUser.budgetRange}',
         ),
       );
     }
@@ -420,7 +439,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
     final photos = _userPhotos;
     final photo = photos.isNotEmpty && _currentPhotoIndex < photos.length
         ? photos[_currentPhotoIndex]
-        : widget.user.profilePhoto;
+        : _currentUser.profilePhoto;
 
     final infoSections = _buildDynamicInfoSections();
     final int sectionIndex = infoSections.isNotEmpty
@@ -672,7 +691,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                         children: [
                           Flexible(
                             child: Text(
-                              widget.user.fullName.toUpperCase(),
+                              _currentUser.fullName.toUpperCase(),
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 28,
@@ -691,10 +710,10 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          if (widget.user.age != null) ...[
+                          if (_currentUser.age != null) ...[
                             const SizedBox(width: 8),
                             Text(
-                              ', ${widget.user.age}',
+                              ', ${_currentUser.age}',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 24,
@@ -709,7 +728,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                               ),
                             ),
                           ],
-                          if (widget.user.isVerified) ...[
+                          if (_currentUser.isVerified) ...[
                             const SizedBox(width: 8),
                             const Icon(
                               Icons.verified_rounded,
@@ -739,7 +758,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                                   ),
                                 ),
                                 child: Text(
-                                  (widget.user.city ?? 'UNKNOWN CITY')
+                                  (_currentUser.city ?? 'UNKNOWN CITY')
                                       .toUpperCase(),
                                   style: const TextStyle(
                                     color: Colors.white,
@@ -752,7 +771,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          if (widget.user.gender != null)
+                          if (_currentUser.gender != null)
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 10,
@@ -770,7 +789,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                                 ),
                               ),
                               child: Text(
-                                widget.user.gender!.toUpperCase(),
+                                _currentUser.gender!.toUpperCase(),
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 9,
@@ -836,9 +855,11 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => EditProfileScreen(user: widget.user),
+                      builder: (_) => EditProfileScreen(user: _currentUser),
                     ),
-                  );
+                  ).then((_) {
+                    _refreshProfile();
+                  });
                 },
                 isOutlined: true,
               ),
@@ -1153,7 +1174,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
   }
 
   Widget _buildDetailsSection() {
-    final user = widget.user;
+    final user = _currentUser;
     final List<Map<String, dynamic>> details = [];
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -1407,7 +1428,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
   }
 
   Widget _buildPhotoGrid() {
-    final photos = widget.user.photos;
+    final photos = _currentUser.photos;
     final int count = photos.isEmpty ? 0 : photos.length;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -1551,8 +1572,8 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
       backgroundColor: Colors.transparent,
       builder: (BuildContext context) {
         return _ActivePlansBottomSheet(
-          targetUserId: widget.user.id,
-          targetUserName: widget.user.fullName,
+          targetUserId: _currentUser.id,
+          targetUserName: _currentUser.fullName,
         );
       },
     );

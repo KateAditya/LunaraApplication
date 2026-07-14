@@ -984,7 +984,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                                   if (value.isNotEmpty) {
                                     int parsed = int.tryParse(value) ?? 1;
                                     final int maxGuests =
-                                        widget.venue.capacity ?? 20;
+                                        widget.venue.capacity ?? 500;
                                     if (parsed > maxGuests) {
                                       parsed = maxGuests;
                                       _friendsController.text = maxGuests
@@ -1015,7 +1015,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                               ),
                             ),
                             _buildCounterButton(Icons.add, () {
-                              final int maxGuests = widget.venue.capacity ?? 20;
+                              final int maxGuests = widget.venue.capacity ?? 500;
                               if (_noOfFriends < maxGuests) {
                                 setState(() {
                                   _noOfFriends++;
@@ -1379,6 +1379,10 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                     child: TextField(
                       controller: _mobileController,
                       keyboardType: TextInputType.phone,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(10),
+                      ],
                       decoration: InputDecoration(
                         hintText: 'Mobile Number *',
                         hintStyle: TextStyle(
@@ -1408,6 +1412,10 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                     child: TextField(
                       controller: _optMobileController,
                       keyboardType: TextInputType.phone,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(10),
+                      ],
                       decoration: InputDecoration(
                         hintText: 'Optional Mobile Number',
                         hintStyle: TextStyle(
@@ -1503,7 +1511,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                           );
                           return;
                         }
-                        final int maxGuests = widget.venue.capacity ?? 20;
+                        final int maxGuests = widget.venue.capacity ?? 500;
                         if (parsed > maxGuests) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
@@ -1551,10 +1559,33 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                           return;
                         }
 
-                        if (_mobileController.text.trim().isEmpty) {
+                        final mobileNum = _mobileController.text.trim();
+                        final phoneRegex = RegExp(r'^[6-9]\d{9}$');
+                        if (mobileNum.isEmpty) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text('Mobile number is required.'),
+                              backgroundColor: Colors.redAccent,
+                            ),
+                          );
+                          return;
+                        }
+                        if (!phoneRegex.hasMatch(mobileNum)) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Please enter a valid 10-digit mobile number.'),
+                              backgroundColor: Colors.redAccent,
+                            ),
+                          );
+                          return;
+                        }
+
+                        final optMobileNum = _optMobileController.text.trim();
+                        if (optMobileNum.isNotEmpty && !phoneRegex.hasMatch(optMobileNum)) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Please enter a valid 10-digit alternate mobile number.'),
+                              backgroundColor: Colors.redAccent,
                             ),
                           );
                           return;
