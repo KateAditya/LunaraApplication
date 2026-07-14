@@ -36,11 +36,8 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
 
   // Track optimistic state changes for buttons
   final Map<String, String> _optimisticStates = {};
-  final Set<String> _readRequestIds = {};
-
-  // Locally-read notification IDs — persist across polls so server stale data
-  // doesn't re-show the badge after the user has already dismissed it.
-  final Set<String> _localReadNotificationIds = {};
+  Set<String> get _readRequestIds => ApiService.localReadRequestIds;
+  Set<String> get _localReadNotificationIds => ApiService.localReadNotificationIds;
 
   @override
   void initState() {
@@ -232,6 +229,9 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
       for (final rId in toMark) {
         ApiService.markRequestRead(rId);
       }
+      if (toMark.isNotEmpty) {
+        widget.onCountChanged?.call();
+      }
     } else if (index == 1) {
       // Mark all Party Plan incoming requests as read
       final List<String> toMark = [];
@@ -249,6 +249,9 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
       });
       for (final rId in toMark) {
         ApiService.markRequestRead(rId);
+      }
+      if (toMark.isNotEmpty) {
+        widget.onCountChanged?.call();
       }
     } else if (index == 2) {
       // Mark all other notifications as read
@@ -367,6 +370,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
   Future<void> _loadFeed({bool showLoader = true}) async {
     if (showLoader) setState(() => _isLoading = true);
     try {
+      await ApiService.loadLocalReadIds();
       final data = await ApiService.fetchLiveFeedData();
       final notifs = await ApiService.fetchNotifications();
 

@@ -1752,16 +1752,58 @@ class ApiService {
     }
   }
 
-  // ─── Notifications ──────────────────────────────────────────────────────────
+  // ─── Notifications & Local Persistent Read State ────────────────────────────
+
+  static final Set<String> localReadRequestIds = {};
+  static final Set<String> localReadNotificationIds = {};
+  static bool _readIdsLoaded = false;
+
+  static Future<void> loadLocalReadIds() async {
+    if (_readIdsLoaded) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final reqs = prefs.getStringList('localReadRequestIds') ?? [];
+      final notifs = prefs.getStringList('localReadNotificationIds') ?? [];
+      localReadRequestIds.clear();
+      localReadRequestIds.addAll(reqs);
+      localReadNotificationIds.clear();
+      localReadNotificationIds.addAll(notifs);
+      _readIdsLoaded = true;
+    } catch (e) {
+      debugPrint('Error loading local read IDs: $e');
+    }
+  }
+
+  static Future<void> saveLocalReadRequestIds() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList('localReadRequestIds', localReadRequestIds.toList());
+    } catch (e) {
+      debugPrint('Error saving local read request IDs: $e');
+    }
+  }
+
+  static Future<void> saveLocalReadNotificationIds() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList('localReadNotificationIds', localReadNotificationIds.toList());
+    } catch (e) {
+      debugPrint('Error saving local read notification IDs: $e');
+    }
+  }
 
   /// Fetch in-app notifications for current user
   static Future<List<Map<String, dynamic>>> fetchNotifications() async {
     final userId = currentUserId;
     if (userId == null) return [];
+    await loadLocalReadIds();
     try {
       final response = await get(
         '/api/mobile/user/notifications',
-        queryParameters: {'userId': userId},
+        queryParameters: {
+          'userId': userId,
+          'readNotificationIds': localReadNotificationIds.join(','),
+        },
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -1779,10 +1821,15 @@ class ApiService {
     if (userId == null) {
       return {'liveFeedCount': 0, 'chatCount': 0, 'totalCount': 0};
     }
+    await loadLocalReadIds();
     try {
       final response = await get(
         '/api/mobile/user/badge-counts',
-        queryParameters: {'userId': userId},
+        queryParameters: {
+          'userId': userId,
+          'readRequestIds': localReadRequestIds.join(','),
+          'readNotificationIds': localReadNotificationIds.join(','),
+        },
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -1802,6 +1849,9 @@ class ApiService {
 
   /// Mark a notification as read
   static Future<void> markNotificationRead(String notificationId) async {
+    await loadLocalReadIds();
+    localReadNotificationIds.add(notificationId);
+    await saveLocalReadNotificationIds();
     try {
       await patch('/api/mobile/user/notifications/$notificationId/read');
     } catch (e) {
@@ -1813,6 +1863,9 @@ class ApiService {
   static Future<bool> clearAllNotifications() async {
     final userId = currentUserId;
     if (userId == null) return false;
+    await loadLocalReadIds();
+    localReadNotificationIds.clear();
+    await saveLocalReadNotificationIds();
     try {
       final response = await post(
         '/api/mobile/user/notifications/clear-all',
@@ -1830,6 +1883,9 @@ class ApiService {
 
   /// Mark an incoming join request as read
   static Future<void> markRequestRead(String reqId) async {
+    await loadLocalReadIds();
+    localReadRequestIds.add(reqId);
+    await saveLocalReadRequestIds();
     try {
       await patch('/api/mobile/user/requests/$reqId/read');
     } catch (e) {

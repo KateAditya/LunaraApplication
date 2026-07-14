@@ -142,9 +142,10 @@ router.get('/blocks/details', optionalAuth, mobileUserController.getBlockedUsers
 const readNotificationIds = new Set<string>();
 const readRequestIds = new Set<string>();
 
-async function getUserNotifications(uId: string): Promise<any[]> {
+async function getUserNotifications(uId: string, clientReadNotificationIds?: Set<string>): Promise<any[]> {
     const user = await User.findByPk(uId, { attributes: ['clearedNotificationsAt'] });
     const clearedAt = user?.clearedNotificationsAt ? new Date(user.clearedNotificationsAt).getTime() : 0;
+    const activeReadNotificationIds = clientReadNotificationIds || readNotificationIds;
 
     // 1. Fetch Likes & Super Likes
     const matches = await UserMatch.findAll({
@@ -222,7 +223,7 @@ async function getUserNotifications(uId: string): Promise<any[]> {
             : `${senderName} liked your profile ❤️`;
         
         const notificationId = `match_${match.id}`;
-        const isRead = match.status === 'connected' || match.status === 'declined' || readNotificationIds.has(notificationId);
+        const isRead = match.status === 'connected' || match.status === 'declined' || activeReadNotificationIds.has(notificationId);
 
         notifications.push({
             id: notificationId,
@@ -248,7 +249,7 @@ async function getUserNotifications(uId: string): Promise<any[]> {
             title: isSuccess ? 'Payment Successful' : 'Payment Update',
             body: `Payment of ₹${p.amount} ${isSuccess ? 'confirmed' : p.status}.`,
             createdAt: p.createdAt ? p.createdAt.toISOString() : new Date().toISOString(),
-            read: readNotificationIds.has(notificationId),
+            read: activeReadNotificationIds.has(notificationId),
         });
     }
 
@@ -279,7 +280,7 @@ async function getUserNotifications(uId: string): Promise<any[]> {
             title,
             body,
             createdAt: pr.updatedAt ? pr.updatedAt.toISOString() : (pr.createdAt ? pr.createdAt.toISOString() : new Date().toISOString()),
-            read: isRead || readNotificationIds.has(notificationId),
+            read: isRead || activeReadNotificationIds.has(notificationId),
         });
     }
 
@@ -307,7 +308,7 @@ async function getUserNotifications(uId: string): Promise<any[]> {
             title,
             body,
             createdAt: pjr.updatedAt ? pjr.updatedAt.toISOString() : (pjr.createdAt ? pjr.createdAt.toISOString() : new Date().toISOString()),
-            read: isRead || readNotificationIds.has(notificationId),
+            read: isRead || activeReadNotificationIds.has(notificationId),
         });
     }
 
@@ -329,7 +330,7 @@ async function getUserNotifications(uId: string): Promise<any[]> {
             title: 'Profile Visit',
             body: `${name} viewed your profile`,
             createdAt: new Date(Date.now() - timeDiff).toISOString(),
-            read: readNotificationIds.has(notificationId),
+            read: activeReadNotificationIds.has(notificationId),
             sender: {
                 id: user.id,
                 firstName: user.firstName,
@@ -349,11 +350,16 @@ async function getUserNotifications(uId: string): Promise<any[]> {
  */
 router.get('/notifications', async (req, res) => {
     try {
-        const { userId } = req.query;
+        const { userId, readNotificationIds } = req.query;
         if (!userId) return res.status(400).json({ success: false, message: 'userId required' });
 
         const uId = userId as string;
-        const notifications = await getUserNotifications(uId);
+        const clientReadNotificationIds = new Set<string>(
+            typeof readNotificationIds === 'string'
+                ? readNotificationIds.split(',').filter(Boolean)
+                : []
+        );
+        const notifications = await getUserNotifications(uId, clientReadNotificationIds);
 
         return res.json({ success: true, data: notifications });
     } catch (error: any) {
@@ -406,13 +412,24 @@ router.patch('/requests/:id/read', async (req, res) => {
  */
 router.get('/badge-counts', async (req, res) => {
     try {
-        const { userId } = req.query;
+        const { userId, readRequestIds: clientReadReqIds, readNotificationIds: clientReadNotifIds } = req.query;
         if (!userId) return res.status(400).json({ success: false, message: 'userId required' });
 
         const uId = userId as string;
 
+        const activeReadRequestIds = new Set<string>(
+            typeof clientReadReqIds === 'string'
+                ? clientReadReqIds.split(',').filter(Boolean)
+                : []
+        );
+        const activeReadNotificationIds = new Set<string>(
+            typeof clientReadNotifIds === 'string'
+                ? clientReadNotifIds.split(',').filter(Boolean)
+                : []
+        );
+
         // 1. General notifications count
-        const notifications = await getUserNotifications(uId);
+        const notifications = await getUserNotifications(uId, activeReadNotificationIds);
         const unreadNotificationsCount = notifications.filter(n => n.read !== true).length;
 
         // 2. Incoming Stranger Meet requests
@@ -420,7 +437,7 @@ router.get('/badge-counts', async (req, res) => {
         const myTablePlanIds = myTablePlans.map(p => p.id);
         const unreadIncomingTableRequestsCount = myTablePlanIds.length > 0
             ? (await PlanJoinRequest.findAll({ where: { planId: { [Op.in]: myTablePlanIds }, status: 'pending' } }))
-                .filter(r => !readRequestIds.has(r.id)).length
+                .filter(r => !activeReadRequestIds.has(r.id)).length
             : 0;
 
         // 3. Incoming Party Plan requests
@@ -428,7 +445,7 @@ router.get('/badge-counts', async (req, res) => {
         const myPartyPlanIds = myPartyPlans.map(p => p.id);
         const unreadIncomingPartyRequestsCount = myPartyPlanIds.length > 0
             ? (await PartyPlanRequest.findAll({ where: { planId: { [Op.in]: myPartyPlanIds }, status: 'pending' } }))
-                .filter(r => !readRequestIds.has(r.id)).length
+                .filter(r => !activeReadRequestIds.has(r.id)).length
             : 0;
 
         // 4. Outgoing accepted requests (waiting for user payment)
