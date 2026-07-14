@@ -659,7 +659,7 @@ export const approveRequest = async (req: Request, res: Response): Promise<void>
                     data: {
                         type: 'strangers_meet_approved',
                         requestId: request.id,
-                        chargesPerHead: perHeadCharges.toString(),
+                        chargesPerHead: (chargesPerHead || request.chargesPerHead || 0).toString(),
                         numberOfPersons: request.numberOfPersons.toString(),
                         eventDate: request.eventDateTime.toISOString(),
                         status: 'Payment Pending',

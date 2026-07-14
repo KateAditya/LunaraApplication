@@ -2120,6 +2120,32 @@ class ApiService {
     return {};
   }
 
+  static Future<Map<String, dynamic>?> backtrackSwipe(String targetUserId) async {
+    final userId = currentUserId;
+    if (userId == null) return null;
+    try {
+      final response = await post(
+        '/api/mobile/user/backtrack',
+        body: {
+          'userId': userId,
+          'targetUserId': targetUserId,
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return Map<String, dynamic>.from(data['data'] ?? data);
+        }
+      } else if (response.statusCode == 403) {
+        final data = jsonDecode(response.body);
+        return {'limitReached': true, 'message': data['message']};
+      }
+    } catch (e) {
+      debugPrint('backtrackSwipe error: $e');
+    }
+    return null;
+  }
+
   /// Returns the current user's subscription summary:
   /// dailyLikesLimit, dailyLikesUsed, superlikesRemaining, superlikesPerCycle
   static Future<Map<String, dynamic>> fetchUserSubscription() async {

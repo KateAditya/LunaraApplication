@@ -141,7 +141,8 @@ export const connectDatabase = async (): Promise<void> => {
                 'icon VARCHAR(100)',
                 "visibility VARCHAR(20) DEFAULT 'public'",
                 'created_by UUID',
-                'updated_by UUID'
+                'updated_by UUID',
+                'backtrack_limit INTEGER DEFAULT 3'
             ];
 
             for (const colDef of addCols) {
@@ -164,7 +165,7 @@ export const connectDatabase = async (): Promise<void> => {
                     ('hide_profile', 'Hide Profile', 'Ability to hide your profile from others', 'privacy', 'boolean', 6, 'eye-off'),
                     ('priority_visibility', 'Priority Visibility', 'Appear at the top of discovery feeds', 'visibility', 'boolean', 7, 'trending-up'),
                     ('trust_badge', 'Trust Badge', 'Display a verified trust badge on your profile', 'badge', 'boolean', 8, 'shield'),
-                    ('elite_badge', 'Elite Badge', 'Exclusive elite member badge', 'badge', 'boolean', 9, 'crown'),
+                    ('elite_badge', 'Elite Badge', 'Exclusive elite member badge', 'badge', 'crown', 9, 'crown'),
                     ('who_liked_me', 'See Who Liked Me', 'View profiles of people who liked you', 'insights', 'boolean', 10, 'eye'),
                     ('who_viewed_me', 'See Who Viewed Me', 'View profiles of people who visited your profile', 'insights', 'boolean', 11, 'binoculars'),
                     ('ai_features', 'AI-Powered Features', 'Access to AI-driven matching and suggestions', 'ai', 'boolean', 12, 'brain'),
@@ -175,7 +176,8 @@ export const connectDatabase = async (): Promise<void> => {
                     ('advanced_search', 'Advanced Search', 'Use advanced filters to find specific profiles', 'discovery', 'boolean', 17, 'search'),
                     ('premium_filters', 'Premium Filters', 'Access premium discovery filters', 'discovery', 'boolean', 18, 'filter'),
                     ('profile_boost', 'Profile Boost Purchase', 'Ability to purchase additional profile boosts', 'visibility', 'boolean', 19, 'zap'),
-                    ('storage', 'Photo Storage (GB)', 'Amount of storage for photos and media', 'storage', 'decimal', 20, 'database')
+                    ('storage', 'Photo Storage (GB)', 'Amount of storage for photos and media', 'storage', 'decimal', 20, 'database'),
+                    ('daily_backtracks', 'Daily Backtracks', 'Number of times you can backtrack per day', 'matching', 'integer', 21, 'rotate-left')
                 ON CONFLICT (key) DO NOTHING;
             `);
         } catch (alterError: any) {

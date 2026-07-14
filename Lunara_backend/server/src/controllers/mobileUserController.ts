@@ -1162,7 +1162,7 @@ export const getSwipeStatus = async (req: Request, res: Response): Promise<Respo
             return res.status(400).json({ success: false, message: 'userId and targetUserId are required' });
         }
 
-        // Check today's swipe on this specific target (per-day, per-profile limit)
+        // Check today's swipe on this specific target
         const todayStart = new Date();
         todayStart.setHours(0, 0, 0, 0);
 
@@ -1188,7 +1188,7 @@ export const getSwipeStatus = async (req: Request, res: Response): Promise<Respo
         });
 
         // Get subscription limits
-        let dailyLikesLimit = 7; // Default free tier
+        let dailyLikesLimit = 7;
         let superlikesRemaining = 0;
         let superlikesPerCycle = 0;
 
@@ -1218,6 +1218,19 @@ export const getSwipeStatus = async (req: Request, res: Response): Promise<Respo
             logger.warn('[swipeStatus] Could not fetch subscription limits:', subErr);
         }
 
+        // Get backtrack usage and limits
+        let dailyBacktracksLimit = 3;
+        let dailyBacktracksRemaining = 3;
+        try {
+            const SubscriptionService = require('../services/subscriptionService').default || require('../services/subscriptionService').SubscriptionService;
+            const limit = await SubscriptionService.getLimit(userId, 'daily_backtracks');
+            const remaining = await SubscriptionService.getRemainingUsage(userId, 'daily_backtracks');
+            dailyBacktracksLimit = limit === 'unlimited' ? 999999 : limit;
+            dailyBacktracksRemaining = remaining === 'unlimited' ? 999999 : remaining;
+        } catch (backtrackErr) {
+            logger.warn('[swipeStatus] Could not fetch backtrack limits:', backtrackErr);
+        }
+
         return res.status(200).json({
             success: true,
             data: {
@@ -1231,11 +1244,80 @@ export const getSwipeStatus = async (req: Request, res: Response): Promise<Respo
                 superlikesPerCycle,
                 limitReached: todayLikeCount >= dailyLikesLimit,
                 superLimitReached: superlikesRemaining <= 0 && superlikesPerCycle > 0,
+                dailyBacktracksLimit,
+                dailyBacktracksRemaining,
+                dailyBacktracksUsed: Math.max(0, dailyBacktracksLimit - dailyBacktracksRemaining)
             },
         });
     } catch (error: any) {
         logger.error('[MobileUser] getSwipeStatus error:', error);
         return res.status(500).json({ success: false, message: 'Failed to get swipe status' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/user/backtrack
+// Processes a backtrack/undo swipe
+// ─────────────────────────────────────────────────────────────────────────────
+export const backtrackSwipe = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const userId = req.body.userId || req.user?.id;
+        const { targetUserId } = req.body;
+
+        if (!userId || !targetUserId) {
+            return res.status(400).json({ success: false, message: 'userId and targetUserId are required' });
+        }
+
+        const SubscriptionService = require('../services/subscriptionService').default || require('../services/subscriptionService').SubscriptionService;
+        const remaining = await SubscriptionService.getRemainingUsage(userId, 'daily_backtracks');
+
+        if (remaining !== 'unlimited' && remaining <= 0) {
+            return res.status(403).json({
+                success: false,
+                code: 'LIMIT_REACHED',
+                message: 'You have reached your daily backtrack limit. Upgrade your plan to get more backtracks!'
+            });
+        }
+
+        // Consume 1 backtrack usage
+        const consume = await SubscriptionService.consumeUsage(userId, 'daily_backtracks');
+
+        // Find the swipe record and destroy it
+        const mySwipe = await UserMatch.findOne({
+            where: {
+                user1Id: userId,
+                user2Id: targetUserId
+            }
+        });
+
+        if (mySwipe) {
+            if (mySwipe.status === 'connected') {
+                const oppositeSwipe = await UserMatch.findOne({
+                    where: {
+                        user1Id: targetUserId,
+                        user2Id: userId
+                    }
+                });
+                if (oppositeSwipe) {
+                    oppositeSwipe.status = 'pending' as any;
+                    await oppositeSwipe.save();
+                }
+            }
+            await mySwipe.destroy();
+        }
+
+        return res.status(200).json({
+            success: true,
+            data: {
+                remaining: consume.remaining,
+                limit: consume.limit,
+                used: consume.used
+            },
+            message: 'Swipe backtracked successfully'
+        });
+    } catch (error: any) {
+        logger.error('[MobileUser] backtrackSwipe error:', error);
+        return res.status(500).json({ success: false, message: 'Failed to backtrack swipe' });
     }
 };
 
@@ -1246,7 +1328,6 @@ export default {
     getAllCustomers,
     getUserStatus,
     registerFcmToken,
-
     blockUser,
     unblockUser,
     reportUser,
@@ -1255,4 +1336,5 @@ export default {
     swipeUser,
     getMyLikesAndMatches,
     getSwipeStatus,
+    backtrackSwipe,
 };

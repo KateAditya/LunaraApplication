@@ -52,6 +52,7 @@ const LEGACY_COLUMN_MAP: Record<string, { column: string; isBoolean?: boolean }>
     daily_posts: { column: 'dailyPosts' },
     super_likes: { column: 'superlikesPerCycle' },
     boosts: { column: 'boostsPerCycle' },
+    daily_backtracks: { column: 'backtrackLimit' },
     hide_profile: { column: 'hasHideProfile', isBoolean: true },
     priority_visibility: { column: 'hasPriorityVisibility', isBoolean: true },
     trust_badge: { column: 'hasTrustBadge', isBoolean: true },
@@ -127,6 +128,14 @@ export class SubscriptionService {
                     }
                 }
             }
+        } else {
+            // Seed programmatical defaults for free/unsubscribed users
+            features.set('daily_likes', { enabled: true, value: 7 });
+            features.set('daily_match_requests', { enabled: true, value: 3 });
+            features.set('daily_posts', { enabled: true, value: 5 });
+            features.set('daily_backtracks', { enabled: true, value: 3 });
+            features.set('super_likes', { enabled: false, value: 0 });
+            features.set('boosts', { enabled: false, value: 0 });
         }
 
         const entry: CacheEntry = {

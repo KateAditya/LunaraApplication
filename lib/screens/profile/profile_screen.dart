@@ -4,6 +4,7 @@ import '../../models/user.dart';
 import '../../services/api_service.dart';
 import '../../widgets/bumble_swipe_widget.dart';
 import 'profile_detail_view.dart';
+import 'vip_membership_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final User? user;
@@ -41,6 +42,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int _dailyLikesUsed = 0;
   int _superlikesRemaining = 999999;
   int _superlikesPerCycle = 0;
+  int _dailyBacktracksLimit = 3;
+  int _dailyBacktracksRemaining = 3;
+  int _dailyBacktracksUsed = 0;
   bool _limitsLoaded = false;
 
   @override
@@ -58,8 +62,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // Parse dailyLikes from the nested features map
       final features = sub['features'];
       final dailyLikes = features?['daily_likes']?['limit'] ?? 7;
+      final dailyBacktracks = features?['daily_backtracks']?['limit'] ?? 3;
       final usageMap = sub['usage'] as Map? ?? {};
       final dailyLikesUsed = usageMap['daily_likes'] as int? ?? 0;
+      final dailyBacktracksUsed = usageMap['daily_backtracks'] as int? ?? 0;
 
       // superlikesRemaining comes from the subscription object itself
       final subscriptionData = sub['subscription'];
@@ -76,6 +82,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _dailyLikesUsed = dailyLikesUsed;
         _superlikesRemaining = superlikesPerCycle == 0 ? 999999 : superlikesRemaining;
         _superlikesPerCycle = superlikesPerCycle;
+        _dailyBacktracksLimit = dailyBacktracks == -1 ? 999999 : (dailyBacktracks as int? ?? 3);
+        _dailyBacktracksUsed = dailyBacktracksUsed;
+        _dailyBacktracksRemaining = _dailyBacktracksLimit == 999999 ? 999999 : (_dailyBacktracksLimit - _dailyBacktracksUsed);
         _limitsLoaded = true;
       });
     } catch (e) {
@@ -175,6 +184,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _dailyLikesUsed = status['dailyLikesUsed'] ?? _dailyLikesUsed;
           _superlikesRemaining = status['superlikesRemaining'] ?? _superlikesRemaining;
           _superlikesPerCycle = status['superlikesPerCycle'] ?? _superlikesPerCycle;
+          _dailyBacktracksLimit = status['dailyBacktracksLimit'] ?? _dailyBacktracksLimit;
+          _dailyBacktracksRemaining = status['dailyBacktracksRemaining'] ?? _dailyBacktracksRemaining;
+          _dailyBacktracksUsed = status['dailyBacktracksUsed'] ?? _dailyBacktracksUsed;
           _limitsLoaded = true;
         });
       }
@@ -567,29 +579,157 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  void _showBacktrackUpgradePrompt() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF140C26),
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(30),
+            topRight: Radius.circular(30),
+          ),
+          border: Border(
+            top: BorderSide(color: Color(0xFF7F00FF), width: 1.5),
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 50,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Icon(
+              Icons.history,
+              size: 70,
+              color: Color(0xFF7F00FF),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              "Out of Backtracks! ⚡",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              "You've reached your daily backtrack limit of 3. Upgrade your subscription to VIP to get unlimited backtracks and see previous profiles!",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 14,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 32),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF7F00FF),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  elevation: 8,
+                ),
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const VIPMembershipScreen(),
+                    ),
+                  ).then((_) {
+                    _loadPlanLimits();
+                  });
+                },
+                child: const Text(
+                  "GET VIP MEMBERSHIP",
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text(
+                "Maybe Later",
+                style: TextStyle(
+                  color: Colors.white38,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _undoLastSwipe() {
     if (_swipeHistory.isEmpty) return;
-    final prevUser = _swipeHistory.removeLast();
-    _swipeDirections.removeLast();
-    _backtrackedUser = prevUser;
-    // Remove noped state for this user so they can be noped again
-    _swipedActions.remove(prevUser.id);
 
-    final backtrackWidget = ProfileDetailView(
-      key: ValueKey(prevUser.id),
-      user: prevUser,
-      isMe: prevUser.id == ApiService.currentUserId,
-      swipedAction: _swipedActions[prevUser.id],
-      isLikeDisabled: _dailyLikesUsed >= _dailyLikesLimit,
-      isSuperLikeDisabled: _superlikesPerCycle > 0 && _superlikesRemaining <= 0,
-      onNope: () => _handleNope(),
-      onLike: () => _handleLike(),
-      onSuper: () => _handleSuperLike(),
-      onBacktrack: _undoLastSwipe,
-      canBacktrack: _swipeHistory.isNotEmpty,
-    );
+    if (_dailyBacktracksRemaining <= 0 && _dailyBacktracksLimit != 999999) {
+      _showBacktrackUpgradePrompt();
+      return;
+    }
 
-    _swipeController.backtrack(false, backtrackWidget);
+    final prevUser = _swipeHistory.last;
+
+    ApiService.backtrackSwipe(prevUser.id).then((res) {
+      if (res != null && res['limitReached'] == true) {
+        _showBacktrackUpgradePrompt();
+        return;
+      }
+
+      if (mounted) {
+        setState(() {
+          if (_dailyBacktracksLimit != 999999) {
+            _dailyBacktracksRemaining = res?['remaining'] ?? (_dailyBacktracksRemaining - 1);
+            _dailyBacktracksUsed = res?['used'] ?? (_dailyBacktracksUsed + 1);
+          }
+
+          _swipeHistory.removeLast();
+          _swipeDirections.removeLast();
+          _backtrackedUser = prevUser;
+          _swipedActions.remove(prevUser.id);
+        });
+
+        final backtrackWidget = ProfileDetailView(
+          key: ValueKey(prevUser.id),
+          user: prevUser,
+          isMe: prevUser.id == ApiService.currentUserId,
+          swipedAction: _swipedActions[prevUser.id],
+          isLikeDisabled: _dailyLikesUsed >= _dailyLikesLimit,
+          isSuperLikeDisabled: _superlikesPerCycle > 0 && _superlikesRemaining <= 0,
+          onNope: () => _handleNope(),
+          onLike: () => _handleLike(),
+          onSuper: () => _handleSuperLike(),
+          onBacktrack: _undoLastSwipe,
+          canBacktrack: _swipeHistory.isNotEmpty,
+        );
+
+        _swipeController.backtrack(false, backtrackWidget);
+      }
+    });
   }
 
   void _handleBacktrackComplete() {

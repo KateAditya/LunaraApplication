@@ -22,6 +22,7 @@ class SubscriptionPackage extends Model {
     public dailyPosts!: number;
     public superlikesPerCycle!: number;
     public boostsPerCycle!: number;
+    public backtrackLimit!: number;
 
     // Boolean features
     public hasHideProfile!: boolean;
@@ -86,6 +87,11 @@ SubscriptionPackage.init(
             type: DataTypes.INTEGER,
             allowNull: false,
             defaultValue: 0,
+        },
+        backtrackLimit: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            defaultValue: 3,
         },
         hasHideProfile: {
             type: DataTypes.BOOLEAN,

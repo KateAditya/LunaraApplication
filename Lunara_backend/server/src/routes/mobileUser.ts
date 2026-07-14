@@ -509,6 +509,12 @@ router.get('/likes-matches', mobileUserController.getMyLikesAndMatches);
  */
 router.get('/swipe-status', mobileUserController.getSwipeStatus);
 
+/**
+ * POST /api/mobile/user/backtrack
+ * Backtrack the last swipe action on a target user, subject to subscription limit.
+ */
+router.post('/backtrack', mobileUserController.backtrackSwipe);
+
 // ── Chat Subscription Routes ──────────────────────────────────────────────────
 import * as chatSubCtrl from '../controllers/chatSubscriptionController';
 

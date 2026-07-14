@@ -72,12 +72,17 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   /// Called by the LiveFeedScreen whenever the user views/marks notifications.
   /// Immediately zeroes the live-feed badge (local-first) so the red dot
   /// disappears without waiting for a server round-trip.
-  void _onLiveFeedRead() {
+  void _onLiveFeedRead() async {
     if (!mounted) return;
     setState(() {
       _liveFeedCount = 0;
     });
     _updateAppBadge(0 + _chatCount);
+    try {
+      await ApiService.clearAllNotifications();
+    } catch (e) {
+      debugPrint('Error auto-clearing live feed notifications: $e');
+    }
     // Background sync to reconcile chat count from server
     _fetchBadges();
   }
@@ -233,6 +238,9 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
             );
           } else {
             setState(() => _currentIndex = index);
+            if (index == 1) {
+              _onLiveFeedRead();
+            }
           }
         },
         type: BottomNavigationBarType.fixed,

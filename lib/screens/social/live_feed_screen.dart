@@ -326,7 +326,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('CLEAR', style: TextStyle(color: LunaraTheme.accentVivid, fontWeight: FontWeight.bold)),
+            child: const Text('CLEAR', style: TextStyle(color: LunaraTheme.electricViolet, fontWeight: FontWeight.bold)),
           ),
         ],
         shape: RoundedRectangleBorder(
@@ -475,9 +475,9 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
             _buildHeader(context),
             TabBar(
               controller: _tabController,
-              labelColor: LunaraTheme.accentVivid,
+              labelColor: LunaraTheme.electricViolet,
               unselectedLabelColor: Colors.grey,
-              indicatorColor: LunaraTheme.accentVivid,
+              indicatorColor: LunaraTheme.electricViolet,
               labelStyle: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
@@ -490,7 +490,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                       style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                     ),
                     isLabelVisible: strangerMeetUnreadCount > 0,
-                    backgroundColor: LunaraTheme.accentVivid,
+                    backgroundColor: LunaraTheme.electricViolet,
                     child: const Text('Stranger Meet'),
                   ),
                 ),
@@ -501,7 +501,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                       style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                     ),
                     isLabelVisible: partyPlanUnreadCount > 0,
-                    backgroundColor: LunaraTheme.accentVivid,
+                    backgroundColor: LunaraTheme.electricViolet,
                     child: const Text('Party Plan'),
                   ),
                 ),
@@ -512,7 +512,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                       style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                     ),
                     isLabelVisible: otherUnreadCount > 0,
-                    backgroundColor: LunaraTheme.accentVivid,
+                    backgroundColor: LunaraTheme.electricViolet,
                     child: const Text('Other'),
                   ),
                 ),
@@ -591,7 +591,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
             ],
           ),
           IconButton(
-            icon: const Icon(Icons.refresh, color: LunaraTheme.accentVivid),
+            icon: const Icon(Icons.refresh, color: LunaraTheme.electricViolet),
             onPressed: () => _loadFeed(showLoader: true),
             tooltip: 'Refresh Feed',
           ),
@@ -857,7 +857,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                   child: _actionButton(
                     icon: Icons.info_outline,
                     label: 'DETAILS',
-                    color: LunaraTheme.accentVivid,
+                    color: LunaraTheme.electricViolet,
                     outline: true,
                     onTap: () {
                       Navigator.push(
@@ -1172,12 +1172,12 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
-                            colors: [LunaraTheme.accentVivid, LunaraTheme.electricViolet],
+                            colors: [LunaraTheme.electricViolet, LunaraTheme.electricViolet],
                           ),
                           borderRadius: BorderRadius.circular(12),
                           boxShadow: [
                             BoxShadow(
-                              color: LunaraTheme.accentVivid.withValues(alpha: 0.35),
+                              color: LunaraTheme.electricViolet.withValues(alpha: 0.35),
                               blurRadius: 8,
                               offset: const Offset(0, 3),
                             )
@@ -1211,7 +1211,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                   child: _actionButton(
                     icon: Icons.info_outline,
                     label: 'DETAILS',
-                    color: LunaraTheme.cyberCyan,
+                    color: LunaraTheme.electricViolet,
                     outline: true,
                     onTap: () {
                       Navigator.push(
@@ -1733,7 +1733,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
                           ),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: LunaraTheme.accentVivid,
+                            backgroundColor: LunaraTheme.electricViolet,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           ),
                         ),
@@ -1807,13 +1807,13 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: isDark 
-                ? LunaraTheme.cyberCyan.withValues(alpha: 0.4) 
-                : LunaraTheme.cyberCyan.withValues(alpha: 0.3),
+                ? LunaraTheme.electricViolet.withValues(alpha: 0.4) 
+                : LunaraTheme.electricViolet.withValues(alpha: 0.3),
             width: 1.5,
           ),
           boxShadow: [
             BoxShadow(
-              color: LunaraTheme.cyberCyan.withValues(alpha: isDark ? 0.12 : 0.05),
+              color: LunaraTheme.electricViolet.withValues(alpha: isDark ? 0.12 : 0.05),
               blurRadius: 16,
               offset: const Offset(0, 8),
             ),
@@ -1826,12 +1826,12 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: LunaraTheme.accentVivid.withValues(alpha: 0.2),
+                    color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
                     Icons.send,
-                    color: LunaraTheme.accentVivid,
+                    color: LunaraTheme.electricViolet,
                     size: 20,
                   ),
                 ),
