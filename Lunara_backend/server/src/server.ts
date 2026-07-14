@@ -132,6 +132,7 @@ import mobileCityRoutes from './routes/mobileCity';
 import adminBookingsRoutes from './routes/adminBookings';
 import adminSubscriptionRoutes from './routes/adminSubscription';
 import mobileSubscriptionRoutes from './routes/mobileSubscription';
+import mobileWalletRoutes from './routes/mobileWallet';
 import { getAdminChatSettings, updateAdminChatSettings } from './controllers/chatSubscriptionController';
 import dbRestoreRoutes from './routes/dbRestore';
 
@@ -176,6 +177,7 @@ app.use('/api/admin/bookings', adminBookingsRoutes);   // Strangers Meet (Admin)
 app.use('/api/mobile/cities', mobileCityRoutes);                   // Cities (Mobile App)
 app.use('/api/admin/subscriptions', adminSubscriptionRoutes); // Subscriptions (Admin)
 app.use('/api/mobile/subscriptions', mobileSubscriptionRoutes); // Subscriptions (Mobile)
+app.use('/api/mobile/wallet', mobileWalletRoutes);             // Wallet (Mobile)
 
 // Admin — chat subscription settings
 app.get('/api/admin/settings/chat', getAdminChatSettings);

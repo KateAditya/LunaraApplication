@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import 'vip_membership_screen.dart';
 import 'points_rewards_screen.dart';
+import 'lunara_wallet_screen.dart';
 import 'settings_screen.dart';
 import 'profile_screen.dart';
 import 'safety_check_screen.dart';
@@ -377,7 +378,7 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
           () => Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => const PointsRewardsScreen(),
+              builder: (context) => const LunaraWalletScreen(),
             ),
           ),
         ),

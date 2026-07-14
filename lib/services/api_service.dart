@@ -721,6 +721,26 @@ class ApiService {
     return false;
   }
 
+  static Future<Map<String, dynamic>?> fetchWalletData() async {
+    final userId = currentUserId;
+    if (userId == null) return null;
+    try {
+      final response = await get(
+        '/api/mobile/wallet',
+        queryParameters: {'userId': userId},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return data['data'];
+        }
+      }
+    } catch (e) {
+      debugPrint('fetchWalletData error: $e');
+    }
+    return null;
+  }
+
   // ─── Strangers Meet APIs ───────────────────────────────────────────────────
 
   static Future<bool> submitStrangersMeetRequest({
