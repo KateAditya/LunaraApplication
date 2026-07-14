@@ -464,6 +464,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                     const plan = myPartyPlans.find(p => p.id === r.planId);
                     const reqUser = r.requester;
                     const profileImageUrl = reqUser?.profileImageUrl ?? (reqUser?.photos?.[0]?.filePath ? '/' + reqUser.photos[0].filePath.replace(/\\/g, '/') : null);
+                    const planVenue = plan ? (plan as any).venue : null;
                     return {
                         id: r.id,
                         type: 'incoming_request',
@@ -475,10 +476,30 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                         joinerPaymentStatus: r.joinerPaymentStatus,
                         joinerRazorpayOrderId: r.joinerRazorpayOrderId,
                         requester: { ...reqUser?.toJSON(), profileImageUrl },
-                        planDetails: plan,
-                        plan: plan
+                        planDetails: plan ? plan.toJSON() : null,
+                        plan: plan ? {
+                            id: plan.id,
+                            planId: plan.id,
+                            planDateTime: plan.planDateTime,
+                            message: plan.message,
+                            hostPaymentStatus: plan.hostPaymentStatus,
+                            hostRazorpayOrderId: plan.hostRazorpayOrderId,
+                            depositAmount: plan.depositAmount,
+                            status: plan.status,
+                            isLive: plan.isLive,
+                            paymentStatus: plan.paymentStatus,
+                            userId: plan.userId,
+                            venue: planVenue ? {
+                                id: planVenue.id,
+                                name: planVenue.name,
+                                addressLine1: planVenue.addressLine1,
+                                area: planVenue.area,
+                                city: planVenue.city,
+                            } : null,
+                        } : null
                     };
                 }));
+
             }
 
             incomingRequests.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());

@@ -1427,33 +1427,60 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     );
   }
 
-  void _onHostPayDeposit(Map<String, dynamic> plan, String? hostRazorpayOrderId) {
+  void _onHostPayDeposit(
+    Map<String, dynamic> plan,
+    String? hostRazorpayOrderId, {
+    String? razorpayKeyId,
+    int amount = 99,
+  }) {
     final venue = plan['venue'] ?? {};
-    final planId = plan['id']?.toString() ?? '';
+    // Resolve planId from plan object
+    final planId = plan['id']?.toString() ?? plan['planId']?.toString() ?? '';
+
+    String dateStr = 'Tonight';
+    String timeStr = '21:00';
+    try {
+      if (plan['planDateTime'] != null) {
+        final dt = DateTime.parse(plan['planDateTime'].toString()).toLocal();
+        dateStr = DateFormat('dd/MM/yyyy').format(dt);
+        timeStr = DateFormat('hh:mm a').format(dt);
+      }
+    } catch (_) {}
 
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => PaymentConfirmationScreen(
           venue: venue,
-          date: plan['planDateTime'] != null ? DateFormat('dd/MM/yyyy').format(DateTime.parse(plan['planDateTime']).toLocal()) : 'Tonight',
+          date: dateStr,
           package: 'Party Plan Safety Deposit',
-          time: plan['planDateTime'] != null ? DateFormat('hh:mm a').format(DateTime.parse(plan['planDateTime']).toLocal()) : '21:00',
+          time: timeStr,
           table: 'Host Table',
           guests: '1 Head',
           totalPrice: '₹99',
           showSplitBill: false,
-          razorpayOrderId: hostRazorpayOrderId ?? plan['hostRazorpayOrderId'],
+          razorpayOrderId: hostRazorpayOrderId ?? plan['hostRazorpayOrderId']?.toString(),
+          razorpayKeyId: razorpayKeyId,
+          razorpayAmount: amount * 100,
           onRazorpayPaymentSuccess: (paymentId, signature) async {
             try {
-              final orderId = hostRazorpayOrderId ?? plan['hostRazorpayOrderId'] ?? 'mock_order';
+              final orderId = hostRazorpayOrderId ?? plan['hostRazorpayOrderId']?.toString() ?? 'mock_order';
               final success = await ApiService.verifyHostPayment(planId, orderId, paymentId, signature);
               if (!mounted) return;
               if (success) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Host deposit paid successfully! ✅'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
                 _loadFeed(showLoader: false);
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Payment Verification Failed.'), backgroundColor: Colors.red),
+                  const SnackBar(
+                    content: Text('Payment verification failed. Please contact support.'),
+                    backgroundColor: Colors.red,
+                  ),
                 );
               }
             } catch (e) {
@@ -1462,14 +1489,23 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
           },
           onPaymentSuccess: () async {
             try {
-              final orderId = hostRazorpayOrderId ?? plan['hostRazorpayOrderId'] ?? 'mock_order';
+              final orderId = hostRazorpayOrderId ?? plan['hostRazorpayOrderId']?.toString() ?? 'mock_order';
               final success = await ApiService.verifyHostPayment(planId, orderId, 'mock_payment', 'mock_signature');
               if (!mounted) return;
               if (success) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Host deposit paid successfully! ✅'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
                 _loadFeed(showLoader: false);
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Payment Verification Failed.'), backgroundColor: Colors.red),
+                  const SnackBar(
+                    content: Text('Payment verification failed. Please contact support.'),
+                    backgroundColor: Colors.red,
+                  ),
                 );
               }
             } catch (e) {
@@ -1482,6 +1518,16 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   void _startHostPayment(String planId, Map<String, dynamic> plan) async {
+    if (planId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not identify plan. Please refresh and try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -1492,12 +1538,30 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     if (mounted) Navigator.pop(context);
 
     if (data != null && mounted) {
+      // Already paid case — no new orderId, just open confirmation with existing orderId
+      if (data['alreadyPaid'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Host deposit already paid!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _loadFeed(showLoader: false);
+        return;
+      }
       final orderId = data['razorpayOrderId']?.toString();
-      _onHostPayDeposit(plan, orderId);
+      final razorpayKeyId = data['razorpayKeyId']?.toString();
+      final amount = data['amount'] is int
+          ? data['amount'] as int
+          : (data['amount'] is double ? (data['amount'] as double).toInt() : 99);
+      _onHostPayDeposit(plan, orderId, razorpayKeyId: razorpayKeyId, amount: amount);
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to initiate payment. Please try again.'), backgroundColor: Colors.red),
+          const SnackBar(
+            content: Text('Failed to initiate payment. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -1725,7 +1789,11 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                         child: ElevatedButton.icon(
                           onPressed: () {
                             final plan = req['plan'] ?? {};
-                            _startHostPayment(req['planId']?.toString() ?? '', plan);
+                            // Resolve planId: top-level > nested plan.id
+                            final planId = (req['planId']?.toString()?.isNotEmpty == true
+                                ? req['planId'].toString()
+                                : plan['id']?.toString() ?? '');
+                            _startHostPayment(planId, plan);
                           },
                           icon: const Icon(Icons.payment, size: 16, color: Colors.white),
                           label: const Text(
