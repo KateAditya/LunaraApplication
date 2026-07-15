@@ -343,6 +343,10 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
         } else if (pr.status === 'rejected') {
             body = `Your request to join Party Plan at ${venueName} was declined.`;
             isRead = true;
+        } else if (pr.status === 'pending' && plan && (plan.visibility === 'private' || plan.visibility === 'both') && plan.selectedUsers?.includes(uId)) {
+            title = 'Private Party Plan Invite';
+            body = `You have been privately invited to a Party Plan at ${venueName}. Accept to join.`;
+            isRead = false;
         } else {
             continue;
         }

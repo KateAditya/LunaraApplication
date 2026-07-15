@@ -1964,6 +1964,25 @@ class ApiService {
     return false;
   }
 
+  /// Accept a party plan invite
+  static Future<Map<String, dynamic>?> acceptPartyPlanInvite(String reqId) async {
+    final userId = currentUserId;
+    if (userId == null) return null;
+    try {
+      final response = await post(
+        '/api/mobile/party-plans/requests/$reqId/accept-invite',
+        body: {'userId': userId},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) return data;
+      }
+    } catch (e) {
+      debugPrint('acceptPartyPlanInvite error: $e');
+    }
+    return null;
+  }
+
   /// Joiner proceeds to pay after host accepts
   static Future<Map<String, dynamic>?> initiateJoinerPayment(
     String reqId,

@@ -468,6 +468,18 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     }
   }
 
+  bool _isInvite(Map<String, dynamic> item) {
+    if (item['type'] != 'my_request') return false;
+    final plan = item['plan'] ?? {};
+    final isLargeParty = item['requestType'] == 'large_party_request';
+    final isStrangerMeet = item['requestType'] == 'stranger_meet';
+    final isStrangerMeetJoin = item['requestType'] == 'stranger_meet_join';
+    if (isLargeParty || isStrangerMeet || isStrangerMeetJoin) return false;
+
+    return (plan['visibility'] == 'private' || plan['visibility'] == 'both') &&
+        (plan['selectedUsers'] is List && (plan['selectedUsers'] as List).contains(ApiService.currentUserId));
+  }
+
   @override
   Widget build(BuildContext context) {
     final strangerMeetUnreadCount = _feedItems.where((i) =>
@@ -476,11 +488,11 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
         i['status'] == 'pending' &&
         !_readRequestIds.contains(i['id']?.toString() ?? '')).length;
 
-    final partyPlanUnreadCount = _feedItems.where((i) =>
-        i['type'] == 'incoming_request' &&
-        i['requestType'] == 'party_plan' &&
-        i['status'] == 'pending' &&
-        !_readRequestIds.contains(i['id']?.toString() ?? '')).length;
+    final partyPlanUnreadCount = _feedItems.where((i) {
+      if (i['requestType'] != 'party_plan' || i['status'] != 'pending') return false;
+      if (_readRequestIds.contains(i['id']?.toString() ?? '')) return false;
+      return i['type'] == 'incoming_request' || _isInvite(i);
+    }).length;
 
     final otherUnreadCount = _notifications.where((n) =>
         n['isRead'] != true && n['read'] != true).length;
@@ -2007,55 +2019,62 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                   ),
                 ),
               ] else if (!hostPaid) ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: LunaraTheme.accentVivid.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    children: [
-                      const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                Builder(
+                  builder: (context) {
+                    final plan = req['plan'] ?? {};
+                    final isSelfPay = plan['paymentType'] == 'self_pay';
+                    final depositAmount = plan['depositAmount'] != null 
+                        ? double.tryParse(plan['depositAmount'].toString())?.toInt() ?? (isSelfPay ? 198 : 99)
+                        : (isSelfPay ? 198 : 99);
+                    return Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: LunaraTheme.accentVivid.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
                         children: [
-                          Icon(Icons.warning_amber_rounded, color: LunaraTheme.accentVivid, size: 16),
-                          SizedBox(width: 6),
-                          Text(
-                            'HOST DEPOSIT UNPAID',
-                            style: TextStyle(
-                              color: LunaraTheme.accentVivid,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
+                          const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.warning_amber_rounded, color: LunaraTheme.accentVivid, size: 16),
+                              SizedBox(width: 6),
+                              Text(
+                                'HOST DEPOSIT UNPAID',
+                                style: TextStyle(
+                                  color: LunaraTheme.accentVivid,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 40,
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                final planId = (req['planId']?.toString()?.isNotEmpty == true
+                                    ? req['planId'].toString()
+                                    : plan['id']?.toString() ?? '');
+                                _startHostPayment(planId, plan);
+                              },
+                              icon: const Icon(Icons.payment, size: 16, color: Colors.white),
+                              label: Text(
+                                'PAY NOW (₹$depositAmount)',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: LunaraTheme.electricViolet,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 40,
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            final plan = req['plan'] ?? {};
-                            // Resolve planId: top-level > nested plan.id
-                            final planId = (req['planId']?.toString()?.isNotEmpty == true
-                                ? req['planId'].toString()
-                                : plan['id']?.toString() ?? '');
-                            _startHostPayment(planId, plan);
-                          },
-                          icon: const Icon(Icons.payment, size: 16, color: Colors.white),
-                          label: const Text(
-                            'PAY NOW (₹99)',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: LunaraTheme.electricViolet,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
               ] else ...[
                 Container(
@@ -2111,6 +2130,8 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
         : (isStrangerMeet
             ? (req['venue'] ?? {})
             : (isStrangerMeetJoin ? (req['plan']?['venue'] ?? {}) : (plan['venue'] ?? {})));
+
+    final isInvite = _isInvite(req);
 
     final timeAgo = _formatTimeAgo(req['createdAt']);
     final reqId = req['id']?.toString() ?? '';
@@ -2845,8 +2866,91 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                 ),
               ],
             ] else ...[
-              if ((currentStatus == 'accepted' || currentStatus == 'payment_pending') && 
-                  req['joinerPaymentStatus']?.toString().toLowerCase() != 'paid' &&
+              if (currentStatus == 'pending') ...[
+                if (isInvite) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                    ),
+                    child: Column(
+                      children: [
+                        const Text(
+                          'YOU WERE INVITED!',
+                          style: TextStyle(
+                            color: Colors.blue,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _actionButton(
+                                icon: Icons.check_circle,
+                                label: 'ACCEPT',
+                                color: Colors.green,
+                                outline: false,
+                                onTap: () async {
+                                  setState(() => _optimisticStates[reqId] = 'accepted');
+                                  final res = await ApiService.acceptPartyPlanInvite(reqId);
+                                  if (res != null) {
+                                    _loadFeed(showLoader: false);
+                                  } else {
+                                    setState(() => _optimisticStates.remove(reqId));
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Failed to accept invite')),
+                                      );
+                                    }
+                                  }
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _actionButton(
+                                icon: Icons.cancel,
+                                label: 'DECLINE',
+                                color: Colors.red,
+                                outline: true,
+                                onTap: () async {
+                                  setState(() => _optimisticStates[reqId] = 'cancelled');
+                                  await ApiService.rejectPartyPlanRequest(reqId);
+                                  _loadFeed(showLoader: false);
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.yellow.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.yellow.withValues(alpha: 0.3)),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'PENDING HOST APPROVAL',
+                        style: TextStyle(
+                          color: Colors.yellow,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ] else if ((currentStatus == 'accepted' || currentStatus == 'payment_pending') &&
                   req['joinerPaymentStatus']?.toString().toLowerCase() != 'confirmed') ...[
                 Container(
                   padding: const EdgeInsets.all(12),

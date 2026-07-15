@@ -337,7 +337,7 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                 await PartyPlanRequest.create({
                     planId: partyPlan.id,
                     requesterId: invitedUserId,
-                    status: PartyPlanRequestStatus.ACCEPTED,
+                    status: PartyPlanRequestStatus.PENDING,
                     joinerPaymentStatus: PartyPlanJoinerPaymentStatus.UNPAID,
                     joinerRazorpayOrderId: joinerOrder.id,
                     latLangCheckIn: false,
@@ -1680,6 +1680,106 @@ export const confirmSelfPaidJoin = async (req: Request, res: Response): Promise<
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/party-plans/requests/:reqId/accept-invite
+// Accept an invite to a party plan
+// ─────────────────────────────────────────────────────────────────────────────
+export const acceptPartyPlanInvite = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { reqId } = req.params;
+        const { userId } = req.body;
+
+        const request = await PartyPlanRequest.findByPk(reqId, { include: [{ model: PartyPlan, as: 'plan' }] });
+        if (!request) {
+            res.status(404).json({ success: false, message: 'Request not found' });
+            return;
+        }
+
+        if (request.requesterId !== userId) {
+            res.status(403).json({ success: false, message: 'Only the invited user can accept this invite' });
+            return;
+        }
+
+        const plan = (request as any).plan as PartyPlan;
+        if (!plan) {
+            res.status(404).json({ success: false, message: 'Party plan not found' });
+            return;
+        }
+
+        // Check if there is already an active unpaid request on this plan (another user took it)
+        const activeReq = await PartyPlanRequest.findOne({
+            where: {
+                planId: plan.id,
+                id: { [Op.ne]: request.id },
+                status: PartyPlanRequestStatus.PAYMENT_PENDING,
+                paymentTimeoutAt: { [Op.gt]: new Date() }
+            }
+        });
+        if (activeReq) {
+            res.status(400).json({
+                success: false,
+                message: 'This plan is currently reserved by another user. Try again later.'
+            });
+            return;
+        }
+
+        const hostPaid = plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID;
+
+        if (plan.paymentType === 'self_pay') {
+            if (hostPaid) {
+                await request.update({
+                    status: PartyPlanRequestStatus.ACCEPTED,
+                    joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
+                });
+                await plan.update({
+                    status: PartyPlanStatus.INACTIVE,
+                    isLive: false,
+                    paymentStatus: 'Confirmed',
+                });
+                await createBookingAndPayments(plan, request);
+
+                await PartyPlanRequest.update(
+                    { status: PartyPlanRequestStatus.REJECTED },
+                    {
+                        where: {
+                            planId: plan.id,
+                            id: { [Op.ne]: request.id },
+                            status: { [Op.in]: [PartyPlanRequestStatus.PENDING, PartyPlanRequestStatus.PAYMENT_PENDING] }
+                        }
+                    }
+                );
+
+                res.json({ success: true, message: 'Joined party plan successfully! (Paid by Host) 🎉', data: request });
+            } else {
+                await request.update({
+                    status: PartyPlanRequestStatus.ACCEPTED,
+                    joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
+                });
+                await plan.update({ paymentStatus: 'Awaiting Host Payment' });
+                res.json({ success: true, message: 'Join confirmed. Waiting for host to complete their payment. ⏳', data: request });
+            }
+        } else {
+            // SPLIT PAY
+            const timeout = new Date();
+            timeout.setMinutes(timeout.getMinutes() + 30);
+
+            await request.update({
+                status: PartyPlanRequestStatus.PAYMENT_PENDING,
+                paymentTimeoutAt: timeout,
+            });
+
+            await plan.update({
+                isLive: false, // reserved
+            });
+
+            res.json({ success: true, message: 'Invite accepted! You have 30 minutes to pay the deposit.', data: request });
+        }
+    } catch (err: any) {
+        logger.error('acceptPartyPlanInvite error:', err);
+        res.status(500).json({ success: false, message: 'Failed to accept invite', error: err.message });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // POST /api/mobile/party-plans/:id/cancel
 // Cancel a party plan (by host)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1899,11 +1999,15 @@ export const initiateHostPayment = async (req: Request, res: Response): Promise<
 export const initiateJoinerPayment = async (req: Request, res: Response): Promise<void> => {
     try {
         const { reqId } = req.params;
-        const request = await PartyPlanRequest.findByPk(reqId);
+        const request = await PartyPlanRequest.findByPk(reqId, {
+            include: [{ model: PartyPlan, as: 'plan' }]
+        });
         if (!request) {
             res.status(404).json({ success: false, message: 'Request not found' });
             return;
         }
+        
+        const plan = (request as any).plan;
 
         if (request.joinerPaymentStatus === PartyPlanJoinerPaymentStatus.PAID) {
             res.status(200).json({
@@ -1914,7 +2018,7 @@ export const initiateJoinerPayment = async (req: Request, res: Response): Promis
             return;
         }
 
-        const amount = 99; // deposit amount
+        const amount = plan?.depositAmount ? Number(plan.depositAmount) : 99; // dynamic joiner deposit amount
         const options = {
             amount: amount * 100, // in paise
             currency: 'INR',

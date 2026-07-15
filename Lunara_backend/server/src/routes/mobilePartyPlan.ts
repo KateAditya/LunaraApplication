@@ -18,6 +18,7 @@ import {
     initiateHostPayment,
     initiateJoinerPayment,
     confirmSelfPaidJoin,
+    acceptPartyPlanInvite,
 } from '../controllers/partyPlanController';
 
 const router = Router();
@@ -213,6 +214,20 @@ router.post(
         validate,
     ],
     acceptPartyPlanRequest
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/party-plans/requests/:reqId/accept-invite
+// Accept an invite from the host
+// ─────────────────────────────────────────────────────────────────────────────
+router.post(
+    '/requests/:reqId/accept-invite',
+    [
+        param('reqId').isUUID().withMessage('reqId must be a valid UUID'),
+        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
+        validate,
+    ],
+    acceptPartyPlanInvite
 );
 
 // ─────────────────────────────────────────────────────────────────────────────

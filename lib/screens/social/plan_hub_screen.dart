@@ -15,6 +15,7 @@ import '../../services/app_tour_service.dart';
 import 'package:lunara_app/screens/social/live_feed_screen.dart';
 import 'swipe_intro_screen.dart';
 import '../../widgets/venue_timing_error_dialog.dart';
+import '../discovery/upcoming_party_screen.dart';
 
 
 class PlanHubScreen extends StatefulWidget {
@@ -42,6 +43,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
 
   List<Map<String, dynamic>> _customerList = [];
   List<Map<String, dynamic>> _partyPlans = [];
+  List<Map<String, dynamic>> _upcomingNights = [];
   bool _isLoadingCustomers = true;
 
   @override
@@ -151,13 +153,50 @@ class _PlanHubScreenState extends State<PlanHubScreen>
       final results = await Future.wait([
         ApiService.fetchCustomers(),
         ApiService.fetchPartyPlans(),
+        ApiService.fetchActiveAds(city: ApiService.selectedCity, type: 'Party'),
       ]);
-      final customers = results[0];
-      final plans = results[1];
+      final customers = results[0] as List<Map<String, dynamic>>;
+      final plans = results[1] as List<Map<String, dynamic>>;
+      final dynamicPartyAds = results[2] as List<Map<String, dynamic>>;
+
+      List<Map<String, dynamic>> upcoming = [];
+      if (dynamicPartyAds.isNotEmpty) {
+        upcoming = dynamicPartyAds.map((ad) {
+          final venue = ad['venue'] as Map<String, dynamic>? ?? {};
+          final imageUrl = ad['imagePath'] != null
+              ? (ad['imagePath'].toString().startsWith('http')
+                    ? ad['imagePath'].toString()
+                    : '${ApiService.baseUrl}${ad['imagePath']}')
+              : '';
+
+          String dateStr = ad['toDate'] ?? ad['fromDate'] ?? '';
+          if (dateStr.isNotEmpty) {
+            try {
+              final dt = DateTime.parse(dateStr);
+              dateStr = DateFormat('EEEE, MMM dd').format(dt);
+            } catch (_) {}
+          } else {
+            dateStr = 'Upcoming';
+          }
+
+          return {
+            'title': ad['title'] ?? ad['description'] ?? 'Special Event',
+            'date': dateStr,
+            'venue': venue['name'] ?? 'Unknown Venue',
+            'image': imageUrl,
+            'isAsset': false,
+            'venueId': ad['venueId'],
+            'venueMap': venue,
+            'aboutEvent': ad['aboutEvent'],
+          };
+        }).toList();
+      }
+
       if (mounted) {
         setState(() {
           _customerList = customers;
           _partyPlans = plans;
+          _upcomingNights = upcoming;
           _isLoadingCustomers = false;
         });
       }
@@ -508,82 +547,300 @@ class _PlanHubScreenState extends State<PlanHubScreen>
             ],
           ),
           const SizedBox(height: 16),
-          GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const SwipeIntroScreen(),
+          _buildUpcomingNightsSection(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUpcomingNightsSection() {
+    if (_upcomingNights.isEmpty) {
+      return GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const LiveFeedScreen(),
+            ),
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: const LinearGradient(
+              colors: [Color(0xFF3E0F6B), Color(0xFF5E17A2)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: LunaraTheme.electricViolet.withValues(alpha: 0.15),
+                blurRadius: 12,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.celebration_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'SUITABLE PLANS',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Explore active party plans and join the fun around you!',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.8),
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.arrow_forward_ios,
+                color: Colors.white70,
+                size: 14,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'UPCOMING NIGHTS',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1,
+            color: Colors.black,
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 180,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: _upcomingNights.length,
+            itemBuilder: (context, index) {
+              final night = _upcomingNights[index];
+              return Container(
+                width: 280,
+                margin: const EdgeInsets.only(right: 12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
+                      blurRadius: 12,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: night['isAsset'] == true
+                            ? Image.asset(night['image']!, fit: BoxFit.cover)
+                            : Image.network(
+                                night['image']!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) =>
+                                    Container(
+                                      color: Colors.grey[900],
+                                      child: const Center(
+                                        child: Icon(
+                                          Icons.broken_image_outlined,
+                                          color: Colors.white54,
+                                          size: 40,
+                                        ),
+                                      ),
+                                    ),
+                                loadingBuilder:
+                                    (context, child, loadingProgress) {
+                                      if (loadingProgress == null) return child;
+                                      return Container(
+                                        color: Colors.grey[900],
+                                        child: const Center(
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                                  Colors.white,
+                                                ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                              ),
+                      ),
+                      Positioned.fill(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.black.withValues(alpha: 0.1),
+                                Colors.black.withValues(alpha: 0.3),
+                                Colors.black.withValues(alpha: 0.8),
+                              ],
+                              stops: const [0.2, 0.5, 1.0],
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        top: 12,
+                        right: 12,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFE100FF), Color(0xFF7F00FF)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            night['date']!.toUpperCase(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 12,
+                        left: 12,
+                        right: 12,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              night['title']!.toUpperCase(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1.0,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.location_on_rounded,
+                                  color: LunaraTheme.cyberCyan,
+                                  size: 12,
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    night['venue']!.toUpperCase(),
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 0.5,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      Positioned.fill(
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () {
+                              final venueId = night['venueId'];
+                              final venueMap = night['venueMap'];
+
+                              Venue? matchingVenue;
+                              if (venueId != null) {
+                                try {
+                                  matchingVenue = _allVenues.firstWhere(
+                                    (v) => v.id == venueId,
+                                  );
+                                } catch (_) {}
+                              }
+
+                              Map<String, dynamic>? passVenueMap;
+                              if (matchingVenue != null) {
+                                passVenueMap = matchingVenue.toMap();
+                              } else if (venueMap is Map && venueMap.isNotEmpty) {
+                                passVenueMap = Map<String, dynamic>.from(
+                                  venueMap,
+                                );
+                              }
+
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => UpcomingPartyScreen(
+                                    party: night,
+                                    venueMap: passVenueMap,
+                                  ),
+                                ),
+                              );
+                            },
+                            splashColor: Colors.white.withValues(alpha: 0.1),
+                            highlightColor: Colors.white.withValues(alpha: 0.05),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               );
             },
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF3E0F6B), Color(0xFF5E17A2)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: LunaraTheme.electricViolet.withValues(alpha: 0.15),
-                    blurRadius: 12,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.15),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.local_fire_department,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'NIGHT MATCH (LIVE)',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1.5,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Swipe left to skip, right to vibe. Find your next party match!',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.8),
-                            fontSize: 10,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(
-                    Icons.arrow_forward_ios,
-                    color: Colors.white70,
-                    size: 14,
-                  ),
-                ],
-              ),
-            ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
