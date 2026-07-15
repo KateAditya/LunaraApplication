@@ -531,7 +531,16 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                         include: [{ model: UserPhoto, as: 'photos', where: { isPrimary: true }, required: false, attributes: ['filePath'] }]
                     }]
                 });
-                incomingRequests.push(...incomingPartyReqs.map((r: any) => {
+                const filteredPartyReqs = incomingPartyReqs.filter((r: any) => {
+                    const plan = myPartyPlans.find(p => p.id === r.planId);
+                    if (!plan) return false;
+                    const isInvited = plan.selectedUsers && plan.selectedUsers.includes(r.requesterId);
+                    if (isInvited && r.status === PartyPlanRequestStatus.PENDING) {
+                        return false;
+                    }
+                    return true;
+                });
+                incomingRequests.push(...filteredPartyReqs.map((r: any) => {
                     const plan = myPartyPlans.find(p => p.id === r.planId);
                     const reqUser = r.requester;
                     const profileImageUrl = reqUser?.profileImageUrl ?? (reqUser?.photos?.[0]?.filePath ? '/' + reqUser.photos[0].filePath.replace(/\\/g, '/') : null);

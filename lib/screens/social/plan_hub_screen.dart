@@ -1294,6 +1294,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     DateTime? selectedDate;
     TimeOfDay? selectedTime;
     bool isPosting = false;
+    String? sheetErrorMsg;
     String selectedPrivacy = 'Public';
     String userSearchQuery = '';
     final List<String> selectedUserIds = [];
@@ -2522,6 +2523,34 @@ class _PlanHubScreenState extends State<PlanHubScreen>
 
                       const SizedBox(height: 16),
 
+                      if (sheetErrorMsg != null) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.redAccent.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.error_outline, color: Colors.redAccent, size: 20),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  sheetErrorMsg!,
+                                  style: const TextStyle(
+                                    color: Colors.redAccent,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+
                       Container(
                         key: AppTourService.createPlanPostButtonKey,
                         child: _sheetButton(
@@ -2535,22 +2564,15 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                           onTap: isPosting
                               ? () {}
                               : () async {
+                                   setSheetState(() {
+                                     sheetErrorMsg = null;
+                                   });
                                    if (selectedVenue == null) {
-                                     ScaffoldMessenger.of(context).showSnackBar(
-                                       const SnackBar(
-                                         content: Text('Please select a venue'),
-                                         backgroundColor: Colors.orangeAccent,
-                                       ),
-                                     );
+                                     setSheetState(() => sheetErrorMsg = 'Please select a venue');
                                      return;
                                    }
                                    if (selectedDate == null || selectedTime == null) {
-                                     ScaffoldMessenger.of(context).showSnackBar(
-                                       const SnackBar(
-                                         content: Text('Please select date and time'),
-                                         backgroundColor: Colors.orangeAccent,
-                                       ),
-                                     );
+                                     setSheetState(() => sheetErrorMsg = 'Please select date and time');
                                      return;
                                    }
 
@@ -2563,48 +2585,26 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                    );
 
                                    if (dt.isBefore(DateTime.now())) {
-                                     ScaffoldMessenger.of(context).showSnackBar(
-                                       const SnackBar(
-                                         content: Text('Selected date and time cannot be in the past.'),
-                                         backgroundColor: Colors.redAccent,
-                                       ),
-                                     );
+                                     setSheetState(() => sheetErrorMsg = 'Selected date and time cannot be in the past.');
                                      return;
                                    }
 
                                    final invalidReason = selectedVenue!.getInvalidReason(selectedDate!, selectedTime!);
                                    if (invalidReason != null) {
-                                     ScaffoldMessenger.of(context).showSnackBar(
-                                       SnackBar(
-                                         content: Text(invalidReason),
-                                         backgroundColor: Colors.redAccent,
-                                       ),
-                                     );
+                                     setSheetState(() => sheetErrorMsg = invalidReason);
                                      return;
                                    }
 
                                   final userId = ApiService.currentUserId;
                                   if (userId == null) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Please login to post a plan',
-                                        ),
-                                      ),
-                                    );
+                                    setSheetState(() => sheetErrorMsg = 'Please login to post a plan');
                                     return;
                                   }
 
                                   if ((selectedPrivacy == 'Private' ||
                                           selectedPrivacy == 'Both') &&
                                       selectedUserIds.isEmpty) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Please select at least one profile to invite',
-                                        ),
-                                      ),
-                                    );
+                                    setSheetState(() => sheetErrorMsg = 'Please select at least one profile to invite');
                                     return;
                                   }
 
@@ -2613,29 +2613,11 @@ class _PlanHubScreenState extends State<PlanHubScreen>
 
                                   if (isStrangersMeet) {
                                     if (subjectCtrl.text.trim().isEmpty) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                            'Please enter an event subject',
-                                          ),
-                                          backgroundColor: Colors.redAccent,
-                                        ),
-                                      );
+                                      setSheetState(() => sheetErrorMsg = 'Please enter an event subject');
                                       return;
                                     }
                                     if (taglineCtrl.text.trim().isEmpty) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                            'Please enter requirement details',
-                                          ),
-                                          backgroundColor: Colors.redAccent,
-                                        ),
-                                      );
+                                      setSheetState(() => sheetErrorMsg = 'Please enter requirement details');
                                       return;
                                     }
                                   }
@@ -2643,32 +2625,17 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                   final mobileRegExp = RegExp(r'^[6-9]\d{9}$');
                                   if (isStrangersMeet) {
                                     if (mobileCtrl.text.trim().isEmpty) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Mobile number is required for Strangers Meet.'),
-                                          backgroundColor: Colors.redAccent,
-                                        ),
-                                      );
-                                      return;
-                                    }
-                                    if (!mobileRegExp.hasMatch(mobileCtrl.text.trim())) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Please enter a valid 10-digit mobile number.'),
-                                          backgroundColor: Colors.redAccent,
-                                        ),
-                                      );
-                                      return;
-                                    }
-                                    if (altMobileCtrl.text.trim().isNotEmpty && !mobileRegExp.hasMatch(altMobileCtrl.text.trim())) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Please enter a valid 10-digit alternate mobile number.'),
-                                          backgroundColor: Colors.redAccent,
-                                        ),
-                                      );
-                                      return;
-                                    }
+                                       setSheetState(() => sheetErrorMsg = 'Mobile number is required for Strangers Meet.');
+                                       return;
+                                     }
+                                     if (!mobileRegExp.hasMatch(mobileCtrl.text.trim())) {
+                                       setSheetState(() => sheetErrorMsg = 'Please enter a valid 10-digit mobile number.');
+                                       return;
+                                     }
+                                     if (altMobileCtrl.text.trim().isNotEmpty && !mobileRegExp.hasMatch(altMobileCtrl.text.trim())) {
+                                       setSheetState(() => sheetErrorMsg = 'Please enter a valid 10-digit alternate mobile number.');
+                                       return;
+                                     }
                                   }
                                   setSheetState(() => isPosting = true);
 
@@ -2708,31 +2675,19 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                           ),
                                         );
                                       } else {
-                                        if (!mounted) return;
-                                        setSheetState(() => isPosting = false);
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              'Failed to submit Strangers Meet request.',
-                                            ),
-                                            backgroundColor: Colors.redAccent,
-                                          ),
-                                        );
-                                      }
+                                         if (!mounted) return;
+                                         setSheetState(() {
+                                           isPosting = false;
+                                           sheetErrorMsg = 'Failed to submit Strangers Meet request.';
+                                         });
+                                       }
                                     } catch (e) {
-                                      if (!mounted) return;
-                                      setSheetState(() => isPosting = false);
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text('Error: $e'),
-                                          backgroundColor: Colors.redAccent,
-                                        ),
-                                      );
-                                    }
+                                       if (!mounted) return;
+                                       setSheetState(() {
+                                         isPosting = false;
+                                         sheetErrorMsg = 'Error: ' + e.toString();
+                                       });
+                                     }
                                     return;
                                   }
 
@@ -2767,20 +2722,13 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     });
 
                                     if (alreadyHasPlan) {
-                                      if (!mounted) return;
-                                      setSheetState(() => isPosting = false);
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: const Text(
-                                            'You already have a party plan scheduled for this day. limit: 1 plan per day.',
-                                          ),
-                                          backgroundColor: Colors.red[800],
-                                        ),
-                                      );
-                                      return;
-                                    }
+                                       if (!mounted) return;
+                                       setSheetState(() {
+                                         isPosting = false;
+                                         sheetErrorMsg = 'You already have a party plan scheduled for this day. limit: 1 plan per day.';
+                                       });
+                                       return;
+                                     }
                                   } catch (e) {
                                     debugPrint(
                                       'Error validating unique plan: $e',
@@ -2838,30 +2786,24 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         ),
                                       );
                                     } else {
-                                      if (!mounted) return;
-                                      setSheetState(() => isPosting = false);
-                                      String errorMsg =
-                                          'Failed to save plan data.';
-                                      try {
-                                        final data = jsonDecode(response.body);
-                                        errorMsg =
-                                            data['message'] ??
-                                            data['error'] ??
-                                            errorMsg;
-                                      } catch (_) {}
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(content: Text(errorMsg)),
-                                      );
-                                    }
+                                       if (!mounted) return;
+                                       String errorMsg = 'Failed to save plan data.';
+                                       try {
+                                         final data = jsonDecode(response.body);
+                                         errorMsg = data['message'] ?? data['error'] ?? errorMsg;
+                                       } catch (_) {}
+                                       setSheetState(() {
+                                         isPosting = false;
+                                         sheetErrorMsg = errorMsg;
+                                       });
+                                     }
                                   } catch (e) {
-                                    if (!mounted) return;
-                                    setSheetState(() => isPosting = false);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Error: $e')),
-                                    );
-                                  }
+                                     if (!mounted) return;
+                                     setSheetState(() {
+                                       isPosting = false;
+                                       sheetErrorMsg = 'Error: ' + e.toString();
+                                     });
+                                   }
                                 },
                         ),
                       ),
