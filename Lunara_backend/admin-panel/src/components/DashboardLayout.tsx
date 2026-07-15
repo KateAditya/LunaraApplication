@@ -57,6 +57,7 @@ const navGroups: NavGroup[] = [
             { text: 'Party Requests', icon: <BiGroup />, path: '/party-requests' },
             { text: 'Group Parties', icon: <BiGroup />, path: '/group-parties' },
             { text: 'Strangers Meet', icon: <BiUserPin />, path: '/strangers-meet' },
+            { text: 'Safety Checks', icon: <BiShieldQuarter />, path: '/safety-checks' },
             { text: 'Chat Settings', icon: <BiChat />, path: '/chat-settings' },
             { text: 'Subscription Manage', icon: <BiCrown />, path: '/subscriptions' },
         ],

@@ -34,6 +34,7 @@ import City from './City';
 import ChatSubscription from './ChatSubscription';
 import SubscriptionPackage from './SubscriptionPackage';
 import UserSubscription from './UserSubscription';
+import SafetyCheck from './SafetyCheck';
 
 // ============================================================================
 // User Associations
@@ -109,6 +110,26 @@ User.hasMany(UserSubscription, {
 UserSubscription.belongsTo(User, {
     foreignKey: 'userId',
     as: 'user',
+});
+
+// User -> SafetyCheck (submitted)
+User.hasMany(SafetyCheck, {
+    foreignKey: 'userId',
+    as: 'submittedSafetyChecks',
+});
+SafetyCheck.belongsTo(User, {
+    foreignKey: 'userId',
+    as: 'user',
+});
+
+// User -> SafetyCheck (about partner)
+User.hasMany(SafetyCheck, {
+    foreignKey: 'partnerId',
+    as: 'receivedSafetyChecks',
+});
+SafetyCheck.belongsTo(User, {
+    foreignKey: 'partnerId',
+    as: 'partner',
 });
 
 SubscriptionPackage.hasMany(UserSubscription, {
@@ -466,6 +487,7 @@ export {
     ChatSubscription,
     SubscriptionPackage,
     UserSubscription,
+    SafetyCheck,
 };
 
 // Export sync function
@@ -508,6 +530,7 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
         await ChatSubscription.sync(options);
         await SubscriptionPackage.sync(options);
         await UserSubscription.sync(options);
+        await SafetyCheck.sync(options);
 
         console.log('✅ All models synchronized successfully');
     } catch (error) {
@@ -553,5 +576,6 @@ export default {
     ChatSubscription,
     SubscriptionPackage,
     UserSubscription,
+    SafetyCheck,
     syncModels,
 };

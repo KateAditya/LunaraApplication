@@ -518,6 +518,19 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
             ];
         }
 
+        // Exclude hidden profiles, but allow those without preference records or with true
+        const prefConditions = {
+            [Op.or]: [
+                { '$preferences.showMeInMatching$': { [Op.ne]: false } },
+                { '$preferences.id$': null }
+            ]
+        };
+        if (userWhere[Op.and]) {
+            userWhere[Op.and].push(prefConditions);
+        } else {
+            userWhere[Op.and] = [prefConditions];
+        }
+
         // Build Profile-level where clause (for city filter)
         const profileWhere: any = {};
         if (city) profileWhere.city = { [Op.iLike]: `%${city}%` };
@@ -552,7 +565,6 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                         'showMeInMatching', 'matchDistanceKm', 'bookingAlertsEnabled',
                     ],
                     required: false,
-                    where: { showMeInMatching: { [Op.ne]: false } }, // Exclude hidden profiles, but allow those without preference records or with true
                 },
                 {
                     model: UserPhoto,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../models/user.dart';
 import '../../widgets/lunara_profile_image.dart';
+import '../../services/api_service.dart';
 
 class SafetyCheckScreen extends StatefulWidget {
   final User? user;
@@ -13,6 +14,237 @@ class SafetyCheckScreen extends StatefulWidget {
 
 class _SafetyCheckScreenState extends State<SafetyCheckScreen> {
   bool? _feltSafe;
+
+  void _showFeedbackDialog(bool feltSafe) {
+    final List<String> prebuiltOptions = feltSafe
+        ? [
+            'Polite & Friendly',
+            'Respectful & Safe',
+            'Great communication',
+            'Felt very comfortable',
+            'Arrived on time',
+          ]
+        : [
+            'Rude or aggressive',
+            'Made me feel uncomfortable',
+            'Did not match profile',
+            'Inappropriate behavior',
+            'Left early without reason',
+          ];
+
+    final selectedOptions = <String>{};
+    final commentController = TextEditingController();
+    bool isSubmitting = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(28),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            feltSafe ? Icons.sentiment_very_satisfied_rounded : Icons.warning_amber_rounded,
+                            color: feltSafe ? Colors.green : Colors.red,
+                            size: 28,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              feltSafe ? 'Share details' : 'Report Concern',
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w900,
+                                fontFamily: 'AllroundGothic',
+                                color: Colors.black,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.black54),
+                            onPressed: isSubmitting ? null : () => Navigator.pop(context),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        feltSafe
+                            ? 'What went well? Select one or more prebuilt reasons or enter your opinion:'
+                            : 'What went wrong? Select one or more reasons or describe below (confidential):',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.black87,
+                          fontWeight: FontWeight.w500,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      // Prebuilt choices wrap
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: prebuiltOptions.map((option) {
+                          final isSelected = selectedOptions.contains(option);
+                          return ChoiceChip(
+                            label: Text(
+                              option,
+                              style: TextStyle(
+                                color: isSelected ? Colors.white : Colors.black87,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12,
+                              ),
+                            ),
+                            selected: isSelected,
+                            selectedColor: LunaraTheme.electricViolet,
+                            backgroundColor: Colors.grey[100],
+                            checkmarkColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                              side: BorderSide(
+                                color: isSelected ? LunaraTheme.electricViolet : Colors.grey[200]!,
+                              ),
+                            ),
+                            onSelected: isSubmitting
+                                ? null
+                                : (selected) {
+                                    setDialogState(() {
+                                      if (selected) {
+                                        selectedOptions.add(option);
+                                      } else {
+                                        selectedOptions.remove(option);
+                                      }
+                                    });
+                                  },
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 24),
+                      const Text(
+                        'Your Custom Feedback (Optional)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.black54,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: commentController,
+                        enabled: !isSubmitting,
+                        maxLines: 3,
+                        style: const TextStyle(fontSize: 14, color: Colors.black87),
+                        decoration: InputDecoration(
+                          hintText: 'Describe your experience...',
+                          hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          filled: true,
+                          fillColor: Colors.grey[50],
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide(color: Colors.grey[200]!),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide(color: Colors.grey[200]!),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: const BorderSide(color: LunaraTheme.electricViolet, width: 1.5),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 28),
+                      // Action button
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: LunaraTheme.electricViolet,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          elevation: 0,
+                        ),
+                        onPressed: isSubmitting
+                            ? null
+                            : () async {
+                                setDialogState(() {
+                                  isSubmitting = true;
+                                });
+
+                                final success = await ApiService.submitSafetyCheck(
+                                  partnerId: widget.user?.id ?? '',
+                                  feltSafe: feltSafe,
+                                  prebuiltAnswers: selectedOptions.toList(),
+                                  opinion: commentController.text.trim(),
+                                );
+
+                                if (success) {
+                                  if (context.mounted) {
+                                    Navigator.pop(context); // Close dialog
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Thank you! Your feedback has been safely submitted.'),
+                                        backgroundColor: LunaraTheme.electricViolet,
+                                      ),
+                                    );
+                                    Navigator.pop(context); // Go back to settings/profile
+                                  }
+                                } else {
+                                  setDialogState(() {
+                                    isSubmitting = false;
+                                  });
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Failed to submit feedback. Please try again.'),
+                                        backgroundColor: Colors.redAccent,
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
+                        child: isSubmitting
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text(
+                                'SUBMIT FEEDBACK',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 1.5,
+                                ),
+                              ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -160,7 +392,10 @@ class _SafetyCheckScreenState extends State<SafetyCheckScreen> {
                     'YES',
                     Icons.check_circle_outline_rounded,
                     _feltSafe == true,
-                    () => setState(() => _feltSafe = true),
+                    () {
+                      setState(() => _feltSafe = true);
+                      _showFeedbackDialog(true);
+                    },
                   ),
                 ),
                 const SizedBox(width: 16),
@@ -169,7 +404,10 @@ class _SafetyCheckScreenState extends State<SafetyCheckScreen> {
                     'NO',
                     Icons.warning_amber_rounded,
                     _feltSafe == false,
-                    () => setState(() => _feltSafe = false),
+                    () {
+                      setState(() => _feltSafe = false);
+                      _showFeedbackDialog(false);
+                    },
                   ),
                 ),
               ],

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../widgets/glass_card.dart';
 import 'chat_screen.dart';
+import '../../widgets/profile_share_sheet.dart';
 
 /// Screen showing matched or liked profiles. Accessible by tapping match/like count.
 class MatchedProfilesScreen extends StatelessWidget {
@@ -479,7 +480,17 @@ class _MatchedProfileDetailScreen extends StatelessWidget {
                         icon: Icons.share,
                         label: 'SHARE',
                         color: LunaraTheme.primaryDeep,
-                        onTap: () {},
+                        onTap: () {
+                          ProfileShareSheet.show(
+                            context,
+                            profileId: profile['id']?.toString() ?? '',
+                            name: profile['name'] ?? 'User',
+                            age: profile['age']?.toString(),
+                            city: profile['city'] ?? profile['distance'],
+                            profilePhotoUrl: profile['image'],
+                            isAsset: profile['isAsset'] == true,
+                          );
+                        },
                       ),
                     ],
                   ),

@@ -2450,6 +2450,36 @@ class ApiService {
     return [];
   }
 
+  static Future<bool> submitSafetyCheck({
+    required String partnerId,
+    required bool feltSafe,
+    List<String>? prebuiltAnswers,
+    String? opinion,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) return false;
+
+    try {
+      final response = await post(
+        '/api/mobile/user/safety-check',
+        body: {
+          'userId': userId,
+          'partnerId': partnerId,
+          'feltSafe': feltSafe,
+          'prebuiltAnswers': prebuiltAnswers ?? [],
+          'opinion': opinion ?? '',
+        },
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      debugPrint('submitSafetyCheck error: $e');
+    }
+    return false;
+  }
+
   // ── Admin helpers ─────────────────────────────────────────────────────────────
 
   /// Admin: Force-expire a user's active subscription immediately

@@ -8,6 +8,8 @@ import '../../models/community_guideline.dart';
 import '../../models/legal_document.dart';
 import '../../services/biometric_service.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'edit_profile_screen.dart';
+import '../../models/user.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -21,6 +23,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isLoading = true;
   bool _pushNotifications = true;
   bool _biometricAuth = false;
+  User? _currentUser;
 
   @override
   void initState() {
@@ -34,6 +37,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     
     if (mounted) {
       setState(() {
+        _currentUser = user;
         _biometricAuth = prefs.getBool('biometric_enabled') ?? false;
         
         if (user != null) {
@@ -60,9 +64,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _buildSectionHeader('ACCOUNT & SECURITY'),
                   const SizedBox(height: 16),
                   _buildSettingsTile(
-                    'Personal Information',
+                    'Edit Profile',
                     Icons.person_outline,
-                    () => _showPersonalInfoSheet(),
+                    () async {
+                      if (_currentUser == null) {
+                        setState(() => _isLoading = true);
+                        _currentUser = await ApiService.fetchProfile();
+                        setState(() => _isLoading = false);
+                      }
+                      if (_currentUser != null && mounted) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => EditProfileScreen(
+                              user: _currentUser!,
+                            ),
+                          ),
+                        ).then((_) => _loadSettings());
+                      }
+                    },
                   ),
                   _buildSettingsTile(
                     'Change Password',
@@ -379,115 +399,333 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // --- Bottom sheets and dialogs ---
 
-  void _showPersonalInfoSheet() {
-    final nameController = TextEditingController(text: 'Julian V.');
-    final emailController = TextEditingController(text: 'julian@lunara.app');
-    final phoneController = TextEditingController(text: '+91 98765 43210');
 
-    _showFormSheet(
-      title: 'PERSONAL INFORMATION',
-      children: [
-        _formField('Full Name', nameController, Icons.person_outline),
-        const SizedBox(height: 16),
-        _formField('Email', emailController, Icons.email_outlined),
-        const SizedBox(height: 16),
-        _formField('Phone', phoneController, Icons.phone_outlined),
-        const SizedBox(height: 32),
-        _saveButton('SAVE CHANGES'),
-      ],
-    );
-  }
 
   void _showChangePasswordSheet() {
     final oldController = TextEditingController();
     final newController = TextEditingController();
     final confirmController = TextEditingController();
 
-    bool isUpdating = false;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+      ),
+      isScrollControlled: true,
+      builder: (ctx) {
+        bool obscureOld = true;
+        bool obscureNew = true;
+        bool obscureConfirm = true;
 
-    _showFormSheet(
-      title: 'CHANGE PASSWORD',
-      children: [
-        _formField(
-          'Current Password',
-          oldController,
-          Icons.lock_outline,
-          obscure: true,
-        ),
-        const SizedBox(height: 16),
-        _formField(
-          'New Password',
-          newController,
-          Icons.lock_outline,
-          obscure: true,
-        ),
-        const SizedBox(height: 16),
-        _formField(
-          'Confirm Password',
-          confirmController,
-          Icons.lock_reset,
-          obscure: true,
-        ),
-        const SizedBox(height: 32),
-        StatefulBuilder(
-          builder: (context, setState) {
-            return _saveButton(
-              'UPDATE PASSWORD',
-              isLoading: isUpdating,
-              onPressed: () async {
-                if (newController.text.isEmpty || oldController.text.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Please fill all fields'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                  return;
-                }
-                if (newController.text != confirmController.text) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('New passwords do not match'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                  return;
-                }
+        String? oldError;
+        String? newError;
+        String? confirmError;
 
-                setState(() => isUpdating = true);
+        bool isUpdating = false;
 
-                final success = await ApiService.changePassword(
-                  oldController.text,
-                  newController.text,
-                  confirmController.text,
-                );
-
-                if (!mounted) return;
-                setState(() => isUpdating = false);
-
-                if (success) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Password updated successfully!'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            void validateOld(String val) {
+              setModalState(() {
+                if (val.isEmpty) {
+                  oldError = 'Current password is required';
                 } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Failed to update password. Check your current password.',
-                      ),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
+                  oldError = null;
                 }
-              },
+              });
+            }
+
+            void validateNew(String val) {
+              setModalState(() {
+                if (val.isEmpty) {
+                  newError = 'New password is required';
+                } else if (val.length < 6) {
+                  newError = 'Password must be at least 6 characters';
+                } else {
+                  newError = null;
+                }
+              });
+            }
+
+            void validateConfirm(String val) {
+              setModalState(() {
+                if (val.isEmpty) {
+                  confirmError = 'Please confirm your new password';
+                } else if (val != newController.text) {
+                  confirmError = 'Passwords do not match';
+                } else {
+                  confirmError = null;
+                }
+              });
+            }
+
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                24,
+                24,
+                24,
+                MediaQuery.of(context).viewInsets.bottom + 40,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[200],
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  const Text(
+                    'CHANGE PASSWORD',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 2,
+                      color: Colors.black,
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+
+                  // Current Password Field
+                  TextField(
+                    controller: oldController,
+                    obscureText: obscureOld,
+                    onChanged: validateOld,
+                    style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+                    decoration: InputDecoration(
+                      labelText: 'Current Password',
+                      labelStyle: const TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.w900,
+                      ),
+                      errorText: oldError,
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(color: Colors.grey[100]!),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(color: LunaraTheme.electricViolet),
+                      ),
+                      errorBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(color: Colors.redAccent),
+                      ),
+                      focusedErrorBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(color: Colors.redAccent, width: 2),
+                      ),
+                      prefixIcon: Icon(Icons.lock_outline, color: Colors.grey[400]),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          obscureOld ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                          color: Colors.grey[400],
+                        ),
+                        onPressed: () {
+                          setModalState(() {
+                            obscureOld = !obscureOld;
+                          });
+                        },
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // New Password Field
+                  TextField(
+                    controller: newController,
+                    obscureText: obscureNew,
+                    onChanged: (val) {
+                      validateNew(val);
+                      if (confirmController.text.isNotEmpty) {
+                        validateConfirm(confirmController.text);
+                      }
+                    },
+                    style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+                    decoration: InputDecoration(
+                      labelText: 'New Password',
+                      labelStyle: const TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.w900,
+                      ),
+                      errorText: newError,
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(color: Colors.grey[100]!),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(color: LunaraTheme.electricViolet),
+                      ),
+                      errorBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(color: Colors.redAccent),
+                      ),
+                      focusedErrorBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(color: Colors.redAccent, width: 2),
+                      ),
+                      prefixIcon: Icon(Icons.lock_outline, color: Colors.grey[400]),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          obscureNew ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                          color: Colors.grey[400],
+                        ),
+                        onPressed: () {
+                          setModalState(() {
+                            obscureNew = !obscureNew;
+                          });
+                        },
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Confirm Password Field
+                  TextField(
+                    controller: confirmController,
+                    obscureText: obscureConfirm,
+                    onChanged: validateConfirm,
+                    style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+                    decoration: InputDecoration(
+                      labelText: 'Confirm Password',
+                      labelStyle: const TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.w900,
+                      ),
+                      errorText: confirmError,
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(color: Colors.grey[100]!),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(color: LunaraTheme.electricViolet),
+                      ),
+                      errorBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(color: Colors.redAccent),
+                      ),
+                      focusedErrorBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(color: Colors.redAccent, width: 2),
+                      ),
+                      prefixIcon: Icon(Icons.lock_reset, color: Colors.grey[400]),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          obscureConfirm ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                          color: Colors.grey[400],
+                        ),
+                        onPressed: () {
+                          setModalState(() {
+                            obscureConfirm = !obscureConfirm;
+                          });
+                        },
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+
+                  // Submit Button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: LunaraTheme.electricViolet,
+                        padding: const EdgeInsets.symmetric(vertical: 20),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                      onPressed: isUpdating
+                          ? null
+                          : () async {
+                              validateOld(oldController.text);
+                              validateNew(newController.text);
+                              validateConfirm(confirmController.text);
+
+                              if (oldError != null || newError != null || confirmError != null) {
+                                return;
+                              }
+
+                              if (oldController.text.isEmpty ||
+                                  newController.text.isEmpty ||
+                                  confirmController.text.isEmpty) {
+                                return;
+                              }
+
+                              setModalState(() => isUpdating = true);
+
+                              final success = await ApiService.changePassword(
+                                oldController.text,
+                                newController.text,
+                                confirmController.text,
+                              );
+
+                              if (!mounted) return;
+                              setModalState(() => isUpdating = false);
+
+                              if (success) {
+                                Navigator.pop(ctx);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Password updated successfully!'),
+                                    backgroundColor: Colors.green,
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              } else {
+                                setModalState(() {
+                                  oldError = 'Incorrect current password';
+                                });
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Failed to update password.'),
+                                    backgroundColor: Colors.red,
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              }
+                            },
+                      child: isUpdating
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Text(
+                              'UPDATE PASSWORD',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 2,
+                              ),
+                            ),
+                    ),
+                  ),
+                ],
+              ),
             );
           },
-        ),
-      ],
+        );
+      },
     );
   }
 
@@ -914,136 +1152,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // --- Helper widgets ---
 
-  void _showFormSheet({required String title, required List<Widget> children}) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-      ),
-      isScrollControlled: true,
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.fromLTRB(
-            24,
-            24,
-            24,
-            MediaQuery.of(ctx).viewInsets.bottom + 40,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[200],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 32),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 2,
-                  color: Colors.black,
-                ),
-              ),
-              const SizedBox(height: 32),
-              ...children,
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _formField(
-    String label,
-    TextEditingController controller,
-    IconData icon, {
-    bool obscure = false,
-  }) {
-    return TextField(
-      controller: controller,
-      obscureText: obscure,
-      style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: const TextStyle(
-          color: Colors.black,
-          fontWeight: FontWeight.w900,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: Colors.grey[100]!),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: LunaraTheme.electricViolet),
-        ),
-        prefixIcon: Icon(icon, color: Colors.grey[400]),
-        filled: true,
-        fillColor: Colors.grey[50],
-      ),
-    );
-  }
-
-  Widget _saveButton(
-    String label, {
-    VoidCallback? onPressed,
-    bool isLoading = false,
-  }) {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: LunaraTheme.electricViolet,
-          padding: const EdgeInsets.symmetric(vertical: 20),
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-        ),
-        onPressed: isLoading
-            ? null
-            : (onPressed ??
-                  () {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Changes saved successfully!'),
-                        backgroundColor: LunaraTheme.electricViolet,
-                      ),
-                    );
-                  }),
-        child: isLoading
-            ? const SizedBox(
-                height: 20,
-                width: 20,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2,
-                ),
-              )
-            : Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 2,
-                ),
-              ),
-      ),
-    );
-  }
 }
 
 
