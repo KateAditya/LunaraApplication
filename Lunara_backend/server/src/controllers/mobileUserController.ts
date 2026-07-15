@@ -36,6 +36,22 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
             return res.status(400).json({ success: false, message: 'Please upload at least 1 photo' });
         }
 
+        // Validate that each uploaded file is not more than 500KB
+        for (const file of files) {
+            if (file.size > 500 * 1024) {
+                // Clean up all temp files created by multer for this request
+                for (const f of files) {
+                    if (f.path && fs.existsSync(f.path)) {
+                        try { fs.unlinkSync(f.path); } catch {}
+                    }
+                }
+                return res.status(400).json({
+                    success: false,
+                    message: `Profile picture "${file.originalname}" size should not be more than 500KB.`
+                });
+            }
+        }
+
         const galleryDir = getUserGalleryDir(userId);
         const createdPhotos = [];
 
@@ -61,8 +77,6 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
 
             const fileBuffer = file.buffer || fs.readFileSync(file.path);
 
-
-
             // ── Compress with sharp ──────────────────────────────────────────
             const randomHex = crypto.randomBytes(8).toString('hex');
             const filename = `${Date.now()}_${randomHex}.jpg`;
@@ -86,6 +100,28 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
             const relativePath = path
                 .join(uploadsBase, 'users', userId, 'gallery', filename)
                 .replace(/\\/g, '/');
+
+            // Upload compressed image to Azure Blob Storage if configured
+            if (process.env.AZURE_STORAGE_CONNECTION_STRING) {
+                try {
+                    const { BlobServiceClient } = require('@azure/storage-blob');
+                    const blobServiceClient = BlobServiceClient.fromConnectionString(process.env.AZURE_STORAGE_CONNECTION_STRING);
+                    const containerName = process.env.AZURE_STORAGE_CONTAINER_NAME || 'uploads';
+                    const containerClient = blobServiceClient.getContainerClient(containerName);
+                    
+                    const blobName = relativePath.startsWith('uploads/') 
+                        ? relativePath.substring(8) 
+                        : relativePath;
+
+                    const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+                    await blockBlobClient.upload(compressedBuffer, compressedBuffer.length, {
+                        blobHTTPHeaders: { blobContentType: 'image/jpeg' }
+                    });
+                    logger.info(`[Azure Blob] Successfully uploaded user photo ${blobName} to container ${containerName}`);
+                } catch (azureErr) {
+                    logger.error('[Azure Blob] Error uploading user photo to Azure:', azureErr);
+                }
+            }
 
             const photoIsPrimary = makePrimary && (i === 0);
 

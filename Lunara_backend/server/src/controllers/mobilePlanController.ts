@@ -320,6 +320,8 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 startTime: planTimeStr,
                 description: p.message,
                 visibility: p.visibility,
+                paymentType: p.paymentType,
+                selectedUsers: p.selectedUsers,
                 status: p.status,
                 paymentStatus: p.paymentStatus,
                 hostPaymentStatus: p.hostPaymentStatus,
@@ -356,7 +358,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 include: [
                     {
                         model: PartyPlan, as: 'plan',
-                        attributes: ['id', 'userId', 'message', 'planDateTime', 'hostPaymentStatus', 'hostRazorpayOrderId', 'depositAmount', 'status', 'isLive', 'paymentStatus'],
+                        attributes: ['id', 'userId', 'message', 'planDateTime', 'hostPaymentStatus', 'hostRazorpayOrderId', 'depositAmount', 'status', 'isLive', 'paymentStatus', 'visibility', 'selectedUsers', 'paymentType'],
                         include: [
                             { model: User, as: 'creator', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] },
                             { model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }
@@ -428,6 +430,9 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                         status: r.plan.status,
                         isLive: r.plan.isLive,
                         paymentStatus: r.plan.paymentStatus,
+                        visibility: r.plan.visibility,
+                        selectedUsers: r.plan.selectedUsers,
+                        paymentType: r.plan.paymentType,
                         venue: (r.plan as any).venue,
                         creator: (r.plan as any).creator,
                     } : null,
@@ -569,6 +574,9 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                             isLive: plan.isLive,
                             paymentStatus: plan.paymentStatus,
                             userId: plan.userId,
+                            visibility: plan.visibility,
+                            selectedUsers: plan.selectedUsers,
+                            paymentType: plan.paymentType,
                             venue: planVenue ? {
                                 id: planVenue.id,
                                 name: planVenue.name,

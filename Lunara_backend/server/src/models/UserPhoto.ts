@@ -43,7 +43,29 @@ class UserPhoto extends Model<UserPhotoAttributes, UserPhotoCreationAttributes> 
     public async deleteFile(): Promise<void> {
         const fullPath = this.getFullPath();
         if (fs.existsSync(fullPath)) {
-            fs.unlinkSync(fullPath);
+            try {
+                fs.unlinkSync(fullPath);
+            } catch (err) {
+                console.error(`[UserPhoto] Error unlinking local file ${fullPath}:`, err);
+            }
+        }
+        if (process.env.AZURE_STORAGE_CONNECTION_STRING) {
+            try {
+                const { BlobServiceClient } = require('@azure/storage-blob');
+                const blobServiceClient = BlobServiceClient.fromConnectionString(process.env.AZURE_STORAGE_CONNECTION_STRING);
+                const containerName = process.env.AZURE_STORAGE_CONTAINER_NAME || 'uploads';
+                const containerClient = blobServiceClient.getContainerClient(containerName);
+                
+                const blobName = this.filePath.startsWith('uploads/') 
+                    ? this.filePath.substring(8) 
+                    : this.filePath;
+                
+                const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+                await blockBlobClient.deleteIfExists();
+                console.log(`[Azure Blob] Deleted ${blobName} from container ${containerName}`);
+            } catch (azureErr) {
+                console.error('[Azure Blob] Error deleting user photo from Azure:', azureErr);
+            }
         }
     }
 

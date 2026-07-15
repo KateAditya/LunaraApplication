@@ -439,8 +439,12 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                               children: [
                                 Text(name.isNotEmpty ? name : 'Lunara User', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                                 const SizedBox(height: 4),
-                                if (status.toString().toLowerCase() == 'pending')
-                                  const Text('Wants to join', style: TextStyle(color: Colors.orange, fontSize: 12, fontWeight: FontWeight.w600))
+                                if (status.toString().toLowerCase() == 'pending') ...[
+                                   if (req['isInvite'] == true)
+                                     const Text('Invited (Awaiting User Acceptance)', style: TextStyle(color: Colors.blue, fontSize: 12, fontWeight: FontWeight.w600))
+                                   else
+                                     const Text('Wants to join', style: TextStyle(color: Colors.orange, fontSize: 12, fontWeight: FontWeight.w600))
+                                 ]
                                 else if (status.toString().toLowerCase() == 'payment_pending' || status.toString().toLowerCase() == 'accepted') ...[
                                   if (!hostPaid)
                                     const Text('Please pay your ₹99 deposit to lock match.', style: TextStyle(color: Colors.red, fontSize: 11, fontWeight: FontWeight.bold))
@@ -480,7 +484,7 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                               ],
                             ),
                           ),
-                          if (status.toString().toLowerCase() == 'pending')
+                          if (status.toString().toLowerCase() == 'pending' && req['isInvite'] != true)
                             ElevatedButton(
                               onPressed: () => _onAcceptRequest(req['id'], plan),
                               style: ElevatedButton.styleFrom(

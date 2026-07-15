@@ -395,10 +395,15 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
         // (Public plans are discoverable via feed; no mass-blast needed.)
         setImmediate(async () => {
             try {
+                const isPrivate = parsedVisibility === PartyPlanVisibility.PRIVATE || parsedVisibility === PartyPlanVisibility.BOTH;
                 const hostName = `${user.firstName} ${user.lastName}`.trim();
                 const venueName = venue.name;
-                const notifTitle = `🎉 New Party Plan at ${venueName}`;
-                const notifBody = `${hostName} has created a party plan. Tap to view!`;
+                const notifTitle = isPrivate 
+                    ? `🎉 Private Invitation!`
+                    : `🎉 New Party Plan at ${venueName}`;
+                const notifBody = isPrivate
+                    ? `${hostName} has invited you privately for "${partyPlan.message}".`
+                    : `${hostName} has created a party plan. Tap to view!`;
                 const notifData = {
                     type: 'new_party_plan',
                     partyPlanId: partyPlan.id,
@@ -406,7 +411,7 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                     hostId: userId,
                 };
 
-                if (parsedVisibility === PartyPlanVisibility.PRIVATE && Array.isArray(selectedUsers) && selectedUsers.length > 0) {
+                if (isPrivate && Array.isArray(selectedUsers) && selectedUsers.length > 0) {
                     // Fetch FCM tokens for invited users
                     const invitedUsers = await User.findAll({
                         where: { id: { [Op.in]: selectedUsers } },
@@ -1113,6 +1118,7 @@ export const getPartyPlanRequests = async (req: Request, res: Response): Promise
 
         const data = requests.map(r => {
             const reqData = r.toJSON() as any;
+            reqData.isInvite = !!(plan.selectedUsers && plan.selectedUsers.includes(r.requesterId));
             if (reqData.requester) {
                 let photoUrl = reqData.requester.profileImageUrl ?? null;
                 if (reqData.requester.photos && reqData.requester.photos.length > 0) {

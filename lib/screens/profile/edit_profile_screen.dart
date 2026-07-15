@@ -120,7 +120,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       final List<Uint8List> bytesList = [];
       final List<String> namesList = [];
       for (var image in images) {
-        bytesList.add(await image.readAsBytes());
+        final bytes = await image.readAsBytes();
+        if (bytes.length > 500 * 1024) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Image "${image.name}" exceeds the 500KB limit (actual size: ${(bytes.length / 1024).toStringAsFixed(1)}KB).'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+        bytesList.add(bytes);
         namesList.add(image.name);
       }
       
