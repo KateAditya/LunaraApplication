@@ -715,7 +715,7 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
         // ── 2b. Subscription Transactions ──────────────────────────────────────
         const subTransactions = await SubscriptionTransaction.findAll({
             where: { userId },
-            include: [{ model: SubscriptionPackage, as: 'package', attributes: ['id', 'name', 'tier', 'themeColor'] }],
+            include: [{ model: SubscriptionPackage, as: 'package', attributes: ['id', 'name', 'tier'] }],
             order: [['created_at', 'DESC']],
         });
 
