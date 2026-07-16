@@ -35,6 +35,47 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
 
       setState(() => _isProcessing = true);
 
+      final sizeInBytes = await image.length();
+      if (sizeInBytes > 500 * 1024) {
+        setState(() => _isProcessing = false);
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              backgroundColor: Theme.of(context).cardColor,
+              title: const Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
+                  SizedBox(width: 10),
+                  Text(
+                    'File Too Large',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              content: Text(
+                'The selected photo is ${(sizeInBytes / 1024).toStringAsFixed(1)} KB. Please choose an image smaller than 500 KB.',
+                style: const TextStyle(fontSize: 14),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text(
+                    'OK',
+                    style: TextStyle(
+                      color: LunaraTheme.accentVivid,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+        return;
+      }
+
       setState(() {
         _isProcessing = false;
         _photos[index] = image.path;
@@ -219,7 +260,35 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
                     fontSize: 13,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: LunaraTheme.accentVivid.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: LunaraTheme.accentVivid.withValues(alpha: 0.2)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        size: 16,
+                        color: LunaraTheme.accentVivid,
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Note: Profile pictures and gallery photos must be less than 500 KB.',
+                          style: TextStyle(
+                            color: LunaraTheme.accentVivid,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 20),
                 Expanded(
                   child: Stack(

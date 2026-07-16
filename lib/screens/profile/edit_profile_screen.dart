@@ -481,9 +481,39 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 12),
+                Center(
+                  child: Text(
+                    'Profile picture must be less than 500 KB',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
                 
                 _buildSection('PHOTOS', [
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.info_outline, size: 14, color: LunaraTheme.electricViolet),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Each photo must be less than 500 KB.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   _buildOtherPhotosGrid(),
                 ], initiallyExpanded: true),
                 const SizedBox(height: 8),
