@@ -1011,9 +1011,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  // ── Icebreaker ───────────────────────────────────────────────────────────────
-
   Future<void> _openIcebreakers() async {
+    final bool chatExpired = _chatSessionLoaded && !_canChat;
+    if (chatExpired) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Chat session has expired. Please extend to send messages.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
     final selected = await IcebreakerModal.show(context);
     if (selected != null && selected.isNotEmpty) {
       await _sendMessage(type: 'icebreaker', content: selected);
@@ -1023,6 +1031,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // ── Invitation Response ──────────────────────────────────────────────────────
 
   Future<void> _respondInvitation(String messageId, String action) async {
+    final bool chatExpired = _chatSessionLoaded && !_canChat;
+    if (chatExpired) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Chat session has expired. Please extend to respond to invitation.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
     final convId = _conversationId;
     final userId = _currentUserId;
     if (convId == null || userId == null) return;

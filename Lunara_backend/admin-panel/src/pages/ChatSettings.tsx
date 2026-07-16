@@ -13,7 +13,7 @@ interface ChatSettingsData {
 }
 
 const defaultSettings: ChatSettingsData = {
-  freeDays: 5,
+  freeDays: 7,
   extensionDays: 7,
   extensionPrice: 100,
 };

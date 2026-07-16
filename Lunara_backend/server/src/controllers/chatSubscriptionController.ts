@@ -5,7 +5,7 @@ import ChatSubscription, { ChatSubscriptionStatus, ChatSubscriptionType } from '
 import { logger } from '../config/logger';
 
 // ── Admin-configurable settings (defaults, overridable via DB/env) ─────────────
-const DEFAULT_FREE_DAYS     = parseInt(process.env.CHAT_FREE_DAYS      || '5');
+const DEFAULT_FREE_DAYS     = parseInt(process.env.CHAT_FREE_DAYS      || '7');
 const DEFAULT_EXTENSION_DAYS  = parseInt(process.env.CHAT_EXTENSION_DAYS  || '7');
 const DEFAULT_EXTENSION_PRICE = parseFloat(process.env.CHAT_EXTENSION_PRICE || '100');
 
@@ -128,6 +128,14 @@ export const getSessionStatus = async (req: Request, res: Response): Promise<Res
         const userId = (req.user as any)?.id || req.query.userId as string;
         if (!conversationId) {
             return res.status(400).json({ success: false, message: 'conversationId is required' });
+        }
+
+        const conv = await Conversation.findByPk(conversationId);
+        if (!conv) {
+            return res.status(404).json({ success: false, message: 'Conversation not found' });
+        }
+        if (userId && conv.participantOne !== userId && conv.participantTwo !== userId) {
+            return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
         const status = await getChatSessionStatus(conversationId, userId);

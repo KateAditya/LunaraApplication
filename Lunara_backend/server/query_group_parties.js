@@ -20,7 +20,7 @@ async function run() {
     try {
         await sequelize.authenticate();
         console.log('Connected!');
-        const [results] = await sequelize.query("SELECT id, name, opening_time, closing_time, days_open, closed_dates FROM venues LIMIT 20;");
+        const [results] = await sequelize.query("SELECT * FROM group_parties ORDER BY created_at DESC LIMIT 5;");
         console.log(JSON.stringify(results, null, 2));
     } catch (err) {
         console.error(err);

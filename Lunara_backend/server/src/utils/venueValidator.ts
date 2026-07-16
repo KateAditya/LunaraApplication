@@ -20,71 +20,45 @@ export const validateVenueTimingAndHolidays = (
 
         if (typeof eventDateTime === 'string') {
             const trimmed = eventDateTime.trim();
-            // Check if there is a timezone offset (ends with Z, or contains +XX:XX or -XX:XX or +XX or -XX at the end)
-            const hasTimezone = /Z$/i.test(trimmed) || /[+-]\d{2}:?\d{2}$/.test(trimmed) || /[+-]\d{2}$/.test(trimmed);
-            if (!hasTimezone) {
-                // Try parsing YYYY-MM-DD[T or space]HH:mm:ss
-                const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
-                if (match) {
-                    year = parseInt(match[1], 10);
-                    month = parseInt(match[2], 10) - 1; // 0-indexed
-                    day = parseInt(match[3], 10);
-                    hour = parseInt(match[4], 10);
-                    minute = parseInt(match[5], 10);
-                } else {
-                    const matchDateOnly = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-                    if (matchDateOnly) {
-                        year = parseInt(matchDateOnly[1], 10);
-                        month = parseInt(matchDateOnly[2], 10) - 1;
-                        day = parseInt(matchDateOnly[3], 10);
-                        hour = 12; // Noon to avoid boundary shifts
-                        minute = 0;
-                    } else {
-                        // Fallback to Date object parsing
-                        const date = new Date(eventDateTime);
-                        if (isNaN(date.getTime())) {
-                            return { isValid: false, reason: 'Invalid date format' };
-                        }
-                        const formatter = new Intl.DateTimeFormat('en-US', {
-                            timeZone: 'Asia/Kolkata',
-                            year: 'numeric',
-                            month: '2-digit',
-                            day: '2-digit',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            hour12: false
-                        });
-                        const parts = formatter.formatToParts(date);
-                        const getPart = (type: string) => parts.find(p => p.type === type)?.value || '';
-                        year = parseInt(getPart('year'), 10);
-                        month = parseInt(getPart('month'), 10) - 1;
-                        day = parseInt(getPart('day'), 10);
-                        hour = parseInt(getPart('hour'), 10);
-                        minute = parseInt(getPart('minute'), 10);
-                    }
-                }
+            // Try parsing YYYY-MM-DD[T or space]HH:mm:ss literally first (ignoring any timezone offset)
+            const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+            if (match) {
+                year = parseInt(match[1], 10);
+                month = parseInt(match[2], 10) - 1; // 0-indexed
+                day = parseInt(match[3], 10);
+                hour = parseInt(match[4], 10);
+                minute = parseInt(match[5], 10);
             } else {
-                // Fallback to Date object parsing
-                const date = new Date(eventDateTime);
-                if (isNaN(date.getTime())) {
-                    return { isValid: false, reason: 'Invalid date format' };
+                const matchDateOnly = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                if (matchDateOnly) {
+                    year = parseInt(matchDateOnly[1], 10);
+                    month = parseInt(matchDateOnly[2], 10) - 1;
+                    day = parseInt(matchDateOnly[3], 10);
+                    hour = 12; // Noon to avoid boundary shifts
+                    minute = 0;
+                } else {
+                    // Fallback to Date object parsing
+                    const date = new Date(eventDateTime);
+                    if (isNaN(date.getTime())) {
+                        return { isValid: false, reason: 'Invalid date format' };
+                    }
+                    const formatter = new Intl.DateTimeFormat('en-US', {
+                        timeZone: 'Asia/Kolkata',
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: false
+                    });
+                    const parts = formatter.formatToParts(date);
+                    const getPart = (type: string) => parts.find(p => p.type === type)?.value || '';
+                    year = parseInt(getPart('year'), 10);
+                    month = parseInt(getPart('month'), 10) - 1;
+                    day = parseInt(getPart('day'), 10);
+                    hour = parseInt(getPart('hour'), 10);
+                    minute = parseInt(getPart('minute'), 10);
                 }
-                const formatter = new Intl.DateTimeFormat('en-US', {
-                    timeZone: 'Asia/Kolkata',
-                    year: 'numeric',
-                    month: '2-digit',
-                    day: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    hour12: false
-                });
-                const parts = formatter.formatToParts(date);
-                const getPart = (type: string) => parts.find(p => p.type === type)?.value || '';
-                year = parseInt(getPart('year'), 10);
-                month = parseInt(getPart('month'), 10) - 1;
-                day = parseInt(getPart('day'), 10);
-                hour = parseInt(getPart('hour'), 10);
-                minute = parseInt(getPart('minute'), 10);
             }
         } else {
             // It is a Date object already. Since we don't have the original string, we format using Asia/Kolkata.

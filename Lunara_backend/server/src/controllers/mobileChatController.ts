@@ -399,6 +399,13 @@ export const respondToInvitation = async (req: Request, res: Response) => {
             return res.status(400).json({ success: false, message: `Invitation already ${message.invitationStatus}` });
         }
 
+        // Check if chat subscription is active
+        const { getChatSessionStatus } = require('./chatSubscriptionController');
+        const sessionStatus = await getChatSessionStatus(id, userId);
+        if (!sessionStatus.canChat) {
+            return res.status(403).json({ success: false, message: 'Chat session has expired or is locked' });
+        }
+
         const newStatus = action === 'accept' ? InvitationStatus.ACCEPTED : InvitationStatus.DECLINED;
         await (message as any).update({ invitationStatus: newStatus });
 

@@ -36,6 +36,19 @@ async function autoOpenChat(hostId: string, joinerId: string) {
             });
         }
 
+        // Prevent duplicate chat unlocking
+        const existingSub = await ChatSubscription.findOne({
+            where: {
+                conversationId: conv.id,
+                status: ChatSubscriptionStatus.ACTIVE,
+                validUntil: { [Op.gt]: new Date() }
+            }
+        });
+        if (existingSub) {
+            logger.info(`Active chat subscription already exists for conversation ${conv.id}, skipping creation.`);
+            return;
+        }
+
         const freeDays = getChatSettings().freeDays;
         const validUntil = new Date();
         validUntil.setDate(validUntil.getDate() + freeDays);
