@@ -79,59 +79,79 @@ class StrangersMeetRequest {
   });
 
   factory StrangersMeetRequest.fromJson(Map<String, dynamic> json) {
+    final eventDateRaw = json['eventDateTime'] ?? json['event_date_time'];
+    final numPersonsRaw = json['numberOfPersons'] ?? json['number_of_persons'];
+    final chargesPerHeadRaw =
+        json['chargesPerHead'] ?? json['charges_per_head'];
+    final slotsFilledRaw = json['slotsFilled'] ?? json['slots_filled'];
+    final paymentAmountRaw = json['paymentAmount'] ?? json['payment_amount'];
+    final paymentStatusRaw = json['paymentStatus'] ?? json['payment_status'];
+    final platformChargeRaw =
+        json['platformChargePerSeat'] ?? json['platform_charge_per_seat'];
+
     return StrangersMeetRequest(
       id: json['id'] ?? '',
       subject: json['subject'] ?? '',
       tagline: json['tagline'] ?? '',
       eventDateTime: DateTime.parse(
-        json['eventDateTime'] ?? DateTime.now().toIso8601String(),
+        eventDateRaw ?? DateTime.now().toIso8601String(),
       ),
-      numberOfPersons: json['numberOfPersons'] ?? 21,
-      chargesPerHead: json['chargesPerHead'] != null
-          ? (json['chargesPerHead'] is String
-              ? (double.tryParse(json['chargesPerHead']) ?? 0.0)
-              : (json['chargesPerHead'] as num).toDouble())
+      numberOfPersons: numPersonsRaw ?? 21,
+      chargesPerHead: chargesPerHeadRaw != null
+          ? (chargesPerHeadRaw is String
+                ? (double.tryParse(chargesPerHeadRaw) ?? 0.0)
+                : (chargesPerHeadRaw as num).toDouble())
           : 0.0,
-      slotsFilled: json['slotsFilled'] ?? 0,
+      slotsFilled: slotsFilledRaw ?? 0,
       status: json['status'] ?? 'pending',
-      paymentAmount: json['paymentAmount'] != null
-          ? (json['paymentAmount'] is String
-              ? double.tryParse(json['paymentAmount'])
-              : (json['paymentAmount'] as num).toDouble())
+      paymentAmount: paymentAmountRaw != null
+          ? (paymentAmountRaw is String
+                ? double.tryParse(paymentAmountRaw)
+                : (paymentAmountRaw as num).toDouble())
           : null,
-      paymentStatus: json['paymentStatus'] ?? 'unpaid',
-      adminNotes: json['adminNotes'],
-      ticketId: json['ticketId'],
-      createdAt: json['createdAt'] != null
-          ? DateTime.parse(json['createdAt'])
+      paymentStatus: paymentStatusRaw ?? 'unpaid',
+      adminNotes: json['adminNotes'] ?? json['admin_notes'],
+      ticketId: json['ticketId'] ?? json['ticket_id'],
+      createdAt: (json['createdAt'] ?? json['created_at']) != null
+          ? DateTime.parse(json['createdAt'] ?? json['created_at'])
           : null,
-      mobileNumber: json['mobileNumber'],
-      alternateMobileNumber: json['alternateMobileNumber'],
-      bankName: json['bankName'],
-      accountNumber: json['accountNumber'],
-      accountHolderName: json['accountHolderName'],
-      ifscCode: json['ifscCode'],
-      upiId: json['upiId'],
-      platformChargePerSeat: json['platformChargePerSeat'] != null
-          ? (json['platformChargePerSeat'] is String
-              ? double.tryParse(json['platformChargePerSeat'])
-              : (json['platformChargePerSeat'] as num).toDouble())
+      mobileNumber: json['mobileNumber'] ?? json['mobile_number'],
+      alternateMobileNumber:
+          json['alternateMobileNumber'] ?? json['alternate_mobile_number'],
+      bankName: json['bankName'] ?? json['bank_name'],
+      accountNumber: json['accountNumber'] ?? json['account_number'],
+      accountHolderName:
+          json['accountHolderName'] ?? json['account_holder_name'],
+      ifscCode: json['ifscCode'] ?? json['ifsc_code'],
+      upiId: json['upiId'] ?? json['upi_id'],
+      platformChargePerSeat: platformChargeRaw != null
+          ? (platformChargeRaw is String
+                ? double.tryParse(platformChargeRaw)
+                : (platformChargeRaw as num).toDouble())
           : null,
-      settlementStatus: json['settlementStatus'] ?? 'none',
-      bankDetails: json['bankDetails'],
-      settlementTransactionId: json['settlementTransactionId'],
-      settlementAmount: json['settlementAmount'] != null
-          ? (json['settlementAmount'] is String
-              ? double.tryParse(json['settlementAmount'])
-              : (json['settlementAmount'] as num).toDouble())
+      settlementStatus:
+          json['settlementStatus'] ?? json['settlement_status'] ?? 'none',
+      bankDetails: json['bankDetails'] ?? json['bank_details'],
+      settlementTransactionId:
+          json['settlementTransactionId'] ?? json['settlement_transaction_id'],
+      settlementAmount:
+          json['settlementAmount'] ?? json['settlement_amount'] != null
+          ? ((json['settlementAmount'] ?? json['settlement_amount']) is String
+                ? double.tryParse(
+                    json['settlementAmount'] ?? json['settlement_amount'],
+                  )
+                : ((json['settlementAmount'] ?? json['settlement_amount'])
+                          as num)
+                      .toDouble())
           : null,
-      settlementDate: json['settlementDate'] != null
-          ? DateTime.parse(json['settlementDate'])
+      settlementDate:
+          (json['settlementDate'] ?? json['settlement_date']) != null
+          ? DateTime.parse(json['settlementDate'] ?? json['settlement_date'])
           : null,
-      settlementMethod: json['settlementMethod'],
-      joinedCount: json['joinedCount'] ?? 0,
-      paymentCount: json['paymentCount'] ?? 0,
-      remainingCount: json['remainingCount'] ?? 0,
+      settlementMethod: json['settlementMethod'] ?? json['settlement_method'],
+      joinedCount: json['joinedCount'] ?? json['joined_count'] ?? 0,
+      paymentCount: json['paymentCount'] ?? json['payment_count'] ?? 0,
+      remainingCount: json['remainingCount'] ?? json['remaining_count'] ?? 0,
       user: json['user'],
       venue: json['venue'],
       joiners: json['joiners'],

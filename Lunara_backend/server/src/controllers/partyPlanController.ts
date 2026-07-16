@@ -405,10 +405,8 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
         setImmediate(async () => {
             try {
                 const isPrivate = parsedVisibility === PartyPlanVisibility.PRIVATE || parsedVisibility === PartyPlanVisibility.BOTH;
-                const isPublic = parsedVisibility === PartyPlanVisibility.PUBLIC || parsedVisibility === PartyPlanVisibility.BOTH;
                 const hostName = `${user.firstName} ${user.lastName}`.trim();
                 const venueName = venue.name;
-                const venueCity = venue.city;
                 const notifData = {
                     type: 'new_party_plan',
                     partyPlanId: partyPlan.id,
@@ -435,20 +433,13 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                     }
                 }
 
-                // 2. Notify other users in the same city for Public / Both
-                if (isPublic && venueCity) {
-                    const { getEligibleUsersForEventNotification } = require('../services/fcmService');
-                    // Exclude creator and invited users (who already received private notification)
-                    const excludedUserIds = isPrivate && Array.isArray(selectedUsers) ? selectedUsers : [];
-                    const publicTokens = await getEligibleUsersForEventNotification(userId, venueCity, excludedUserIds);
-
-                    if (publicTokens.length > 0) {
-                        await sendMulticastPushNotification(publicTokens, {
-                            title: `🎉 New Party Plan at ${venueName}`,
-                            body: `${hostName} has created a party plan. Tap to view!`,
-                            data: notifData,
-                        });
-                    }
+                // 2. Notify the creator (particular user) instead of all users in the city
+                if (user.fcmToken && user.fcmToken.trim() !== '') {
+                    await sendMulticastPushNotification([user.fcmToken], {
+                        title: '🎉 Party Plan Created',
+                        body: `Your party plan at ${venueName} is now live!`,
+                        data: notifData,
+                    });
                 }
             } catch (pushErr: any) {
                 logger.warn('Party plan push notification failed:', pushErr.message);

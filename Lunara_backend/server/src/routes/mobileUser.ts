@@ -140,13 +140,33 @@ router.get('/blocks', mobileUserController.getBlockedUsers);
  */
 router.get('/blocks/details', optionalAuth, mobileUserController.getBlockedUsersDetails);
 
-const readNotificationIds = new Set<string>();
-const readRequestIds = new Set<string>();
+// Per-user read notification tracking (keyed by userId to prevent cross-user leakage)
+const userReadNotificationIds = new Map<string, Set<string>>();
+const userReadRequestIds = new Map<string, Set<string>>();
 
-async function getUserNotifications(uId: string, clientReadNotificationIds?: Set<string>): Promise<any[]> {
+function getReadNotificationIds(userId: string): Set<string> {
+    if (!userReadNotificationIds.has(userId)) {
+        userReadNotificationIds.set(userId, new Set<string>());
+    }
+    return userReadNotificationIds.get(userId)!;
+}
+
+function getReadRequestIds(userId: string): Set<string> {
+    if (!userReadRequestIds.has(userId)) {
+        userReadRequestIds.set(userId, new Set<string>());
+    }
+    return userReadRequestIds.get(userId)!;
+}
+
+async function getUserNotifications(uId: string, clientReadNotificationIds?: Set<string>, serverReadNotificationIds?: Set<string>): Promise<any[]> {
     const user = await User.findByPk(uId, { attributes: ['clearedNotificationsAt'] });
     const clearedAt = user?.clearedNotificationsAt ? new Date(user.clearedNotificationsAt).getTime() : 0;
-    const activeReadNotificationIds = clientReadNotificationIds || readNotificationIds;
+    // Merge client-side read IDs with server-side per-user read IDs (never use the global set)
+    const perUserServerIds = serverReadNotificationIds || getReadNotificationIds(uId);
+    const activeReadNotificationIds = new Set<string>([
+        ...(clientReadNotificationIds || []),
+        ...perUserServerIds,
+    ]);
 
     // 1. Fetch Likes & Super Likes
     const matches = await UserMatch.findAll({
@@ -604,33 +624,8 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
         }
     }
 
-    // Simulated profile visits using other real users
-    const otherUsers = await User.findAll({
-        where: {
-            id: { [Op.ne]: uId },
-            role: 'customer'
-        },
-        limit: 3
-    });
-
-    otherUsers.forEach((user, index) => {
-        const name = `${user.firstName} ${user.lastName}`;
-        const timeDiff = (index + 1) * 2 * 3600000;
-        const notificationId = `visit_${user.id}_${index}`;
-        notifications.push({
-            id: notificationId,
-            title: 'Profile Visit',
-            body: `${name} viewed your profile`,
-            createdAt: new Date(Date.now() - timeDiff).toISOString(),
-            read: activeReadNotificationIds.has(notificationId),
-            sender: {
-                id: user.id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                profileImageUrl: user.profileImageUrl,
-            }
-        });
-    });
+    // NOTE: Profile visit notifications are sent via real-time socket events (notification_created)
+    // and stored per-user. Simulated visits have been removed to prevent cross-user notification leakage.
     // Fetch safety check feedbacks for the user
     try {
         const safetyFeedbacks = await SafetyCheck.findAll({
@@ -694,7 +689,8 @@ router.get('/notifications', async (req, res) => {
                 ? readNotificationIds.split(',').filter(Boolean)
                 : []
         );
-        const notifications = await getUserNotifications(uId, clientReadNotificationIds);
+        // Pass server-side per-user read IDs so they are merged correctly
+        const notifications = await getUserNotifications(uId, clientReadNotificationIds, getReadNotificationIds(uId));
 
         return res.json({ success: true, data: notifications });
     } catch (error: any) {
@@ -708,7 +704,11 @@ router.get('/notifications', async (req, res) => {
  */
 router.patch('/notifications/:id/read', async (req, res) => {
     const { id } = req.params;
-    readNotificationIds.add(id);
+    // userId is required to scope the read state to the correct user
+    const userId = (req.query.userId as string) || (req.body?.userId as string);
+    if (userId) {
+        getReadNotificationIds(userId).add(id);
+    }
     return res.json({ success: true, message: 'Notification marked as read' });
 });
 
@@ -738,7 +738,10 @@ router.post('/notifications/clear-all', async (req, res) => {
  */
 router.patch('/requests/:id/read', async (req, res) => {
     const { id } = req.params;
-    readRequestIds.add(id);
+    const userId = (req.query.userId as string) || (req.body?.userId as string);
+    if (userId) {
+        getReadRequestIds(userId).add(id);
+    }
     return res.json({ success: true, message: 'Request marked as read' });
 });
 
@@ -757,14 +760,19 @@ router.get('/badge-counts', async (req, res) => {
                 ? clientReadReqIds.split(',').filter(Boolean)
                 : []
         );
-        const activeReadNotificationIds = new Set<string>(
+        const clientParsedNotifIds = new Set<string>(
             typeof clientReadNotifIds === 'string'
                 ? clientReadNotifIds.split(',').filter(Boolean)
                 : []
         );
+        // Merge client and server-side per-user read IDs
+        const activeReadNotificationIds = new Set<string>([
+            ...clientParsedNotifIds,
+            ...getReadNotificationIds(uId),
+        ]);
 
         // 1. General notifications count
-        const notifications = await getUserNotifications(uId, activeReadNotificationIds);
+        const notifications = await getUserNotifications(uId, activeReadNotificationIds, getReadNotificationIds(uId));
         const unreadNotificationsCount = notifications.filter(n => n.read !== true).length;
 
         // 2. Incoming Stranger Meet requests

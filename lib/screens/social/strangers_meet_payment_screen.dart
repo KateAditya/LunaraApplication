@@ -19,10 +19,12 @@ class StrangersMeetPaymentScreen extends StatefulWidget {
   });
 
   @override
-  State<StrangersMeetPaymentScreen> createState() => _StrangersMeetPaymentScreenState();
+  State<StrangersMeetPaymentScreen> createState() =>
+      _StrangersMeetPaymentScreenState();
 }
 
-class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen> {
+class _StrangersMeetPaymentScreenState
+    extends State<StrangersMeetPaymentScreen> {
   bool _isProcessing = false;
   late Razorpay _razorpay;
   String? _lastOrderId;
@@ -89,7 +91,8 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
 
     final String orderId = checkoutData['razorpayOrderId'];
     _lastOrderId = orderId;
-    final String razorpayKeyId = checkoutData['razorpayKeyId'] ?? 'rzp_test_123';
+    final String razorpayKeyId =
+        checkoutData['razorpayKeyId'] ?? 'rzp_test_123';
     final int amount = checkoutData['amount'];
 
     var options = {
@@ -98,10 +101,7 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
       'name': 'Lunara',
       'description': 'Strangers Meet - ${widget.request.subject}',
       'order_id': orderId,
-      'prefill': {
-        'contact': '8888888888',
-        'email': 'test@razorpay.com'
-      }
+      'prefill': {'contact': '8888888888', 'email': 'test@razorpay.com'},
     };
 
     bool razorpayOpened = false;
@@ -109,7 +109,9 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
       _razorpay.open(options);
       razorpayOpened = true;
     } catch (e) {
-      debugPrint('Error opening Razorpay, falling back to simulated payment: $e');
+      debugPrint(
+        'Error opening Razorpay, falling back to simulated payment: $e',
+      );
     }
 
     if (!razorpayOpened) {
@@ -120,7 +122,11 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
     }
   }
 
-  Future<void> _confirmPayment(String orderId, String paymentId, String signature) async {
+  Future<void> _confirmPayment(
+    String orderId,
+    String paymentId,
+    String signature,
+  ) async {
     if (!mounted) return;
     setState(() => _isProcessing = true);
 
@@ -137,9 +143,9 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
             paymentId,
             signature,
           );
-    
+
     if (!mounted) return;
-    
+
     setState(() => _isProcessing = false);
 
     if (result != null) {
@@ -148,7 +154,9 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Payment confirmed! You have successfully joined the meet. 🎉'),
+              content: Text(
+                'Payment confirmed! You have successfully joined the meet. 🎉',
+              ),
               backgroundColor: Colors.green,
             ),
           );
@@ -168,7 +176,9 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
   }
 
   Future<void> _promptChargesPerHead(Map<String, dynamic> result) async {
-    final TextEditingController chargesController = TextEditingController(text: '199');
+    final TextEditingController chargesController = TextEditingController(
+      text: '199',
+    );
     double selectedCharges = 199.0;
     bool isSaving = false;
 
@@ -193,7 +203,10 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
                     topRight: Radius.circular(28),
                   ),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 28,
+                ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -212,68 +225,149 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
                     const SizedBox(height: 24),
                     const Text(
                       '💵 Decide Entry Price',
-                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: -0.5),
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.5,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       'Set your per-seat charge. Participants will pay this to join. Set ₹0 to make it free.',
-                      style: TextStyle(fontSize: 14, color: Colors.grey[600], height: 1.4),
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                        height: 1.4,
+                      ),
                     ),
                     const SizedBox(height: 20),
 
                     // Live Profit Preview
-                    Builder(builder: (ctx) {
-                      final totalSeats = widget.request.numberOfPersons;
-                      final platformTotal = widget.request.paymentAmount ?? 0;
-                      final platformPerSeat = widget.request.platformChargePerSeat ?? (platformTotal / totalSeats);
-                      // Estimated: assume half seats filled for preview
-                      final estimatedFilled = totalSeats;
-                      final hostRevenue = selectedCharges * estimatedFilled;
-                      final netProfit = hostRevenue - platformTotal;
-                      return Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: netProfit >= 0 ? Colors.green.withValues(alpha: 0.06) : Colors.orange.withValues(alpha: 0.06),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: netProfit >= 0 ? Colors.green.withValues(alpha: 0.3) : Colors.orange.withValues(alpha: 0.3)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('PROFIT ESTIMATE (if all $totalSeats seats filled)',
-                                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1)),
-                            const SizedBox(height: 10),
-                            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                              Text('Platform fee paid', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-                              Text('- ₹${platformTotal.toStringAsFixed(0)}', style: const TextStyle(fontSize: 12, color: Colors.red, fontWeight: FontWeight.w600)),
-                            ]),
-                            const SizedBox(height: 4),
-                            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                              Text('Your revenue ($totalSeats × ₹${selectedCharges.toStringAsFixed(0)})', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-                              Text('+ ₹${hostRevenue.toStringAsFixed(0)}', style: const TextStyle(fontSize: 12, color: Colors.green, fontWeight: FontWeight.w600)),
-                            ]),
-                            const Divider(height: 16),
-                            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                              const Text('Your net profit', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                              Text(
-                                '₹${netProfit.toStringAsFixed(0)}',
-                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: netProfit >= 0 ? Colors.green : Colors.orange),
-                              ),
-                            ]),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Platform charge/seat: ₹${platformPerSeat.toStringAsFixed(0)} · Unfilled seats refunded by platform',
-                              style: TextStyle(fontSize: 10, color: Colors.grey[500]),
+                    Builder(
+                      builder: (ctx) {
+                        final totalSeats = widget.request.numberOfPersons;
+                        final platformTotal = widget.request.paymentAmount ?? 0;
+                        final platformPerSeat =
+                            widget.request.platformChargePerSeat ??
+                            (platformTotal / totalSeats);
+                        // Estimated: assume half seats filled for preview
+                        final estimatedFilled = totalSeats;
+                        final hostRevenue = selectedCharges * estimatedFilled;
+                        final netProfit = hostRevenue - platformTotal;
+                        return Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: netProfit >= 0
+                                ? Colors.green.withValues(alpha: 0.06)
+                                : Colors.orange.withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: netProfit >= 0
+                                  ? Colors.green.withValues(alpha: 0.3)
+                                  : Colors.orange.withValues(alpha: 0.3),
                             ),
-                          ],
-                        ),
-                      );
-                    }),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'PROFIT ESTIMATE (if all $totalSeats seats filled)',
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey,
+                                  letterSpacing: 1,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Platform fee paid',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                  Text(
+                                    '- ₹${platformTotal.toStringAsFixed(0)}',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.red,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Your revenue ($totalSeats × ₹${selectedCharges.toStringAsFixed(0)})',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                  Text(
+                                    '+ ₹${hostRevenue.toStringAsFixed(0)}',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.green,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const Divider(height: 16),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    'Your net profit',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  Text(
+                                    '₹${netProfit.toStringAsFixed(0)}',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w900,
+                                      color: netProfit >= 0
+                                          ? Colors.green
+                                          : Colors.orange,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Platform charge/seat: ₹${platformPerSeat.toStringAsFixed(0)} · Unfilled seats refunded by platform',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey[500],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
                     const SizedBox(height: 20),
 
                     // Custom Input Field
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.grey[50],
                         borderRadius: BorderRadius.circular(16),
@@ -282,7 +376,10 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
                       child: TextField(
                         controller: chargesController,
                         keyboardType: TextInputType.number,
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
                         decoration: const InputDecoration(
                           hintText: 'Enter charges per head',
                           prefixText: '₹ ',
@@ -300,7 +397,12 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
                     // Quick Selection Chips
                     const Text(
                       'QUICK SELECTIONS',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey,
+                        letterSpacing: 1,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Row(
@@ -346,7 +448,11 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
                             : () async {
                                 if (selectedCharges < 0) {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Charges cannot be negative')),
+                                    const SnackBar(
+                                      content: Text(
+                                        'Charges cannot be negative',
+                                      ),
+                                    ),
                                   );
                                   return;
                                 }
@@ -354,21 +460,23 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
                                   isSaving = true;
                                 });
 
-                                final success = await ApiService.updateStrangersMeetCharges(
-                                  widget.request.id,
-                                  selectedCharges,
-                                );
+                                final success =
+                                    await ApiService.updateStrangersMeetCharges(
+                                      widget.request.id,
+                                      selectedCharges,
+                                    );
 
                                 if (success) {
                                   Navigator.pop(context); // Close bottom sheet
-                                  
+
                                   // Update the local request
                                   final updatedReq = StrangersMeetRequest(
                                     id: widget.request.id,
                                     subject: widget.request.subject,
                                     tagline: widget.request.tagline,
                                     eventDateTime: widget.request.eventDateTime,
-                                    numberOfPersons: widget.request.numberOfPersons,
+                                    numberOfPersons:
+                                        widget.request.numberOfPersons,
                                     chargesPerHead: selectedCharges,
                                     slotsFilled: widget.request.slotsFilled,
                                     status: widget.request.status,
@@ -378,19 +486,27 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
                                     ticketId: result['ticketId'],
                                     createdAt: widget.request.createdAt,
                                     mobileNumber: widget.request.mobileNumber,
-                                    alternateMobileNumber: widget.request.alternateMobileNumber,
+                                    alternateMobileNumber:
+                                        widget.request.alternateMobileNumber,
                                     bankName: widget.request.bankName,
                                     accountNumber: widget.request.accountNumber,
-                                    accountHolderName: widget.request.accountHolderName,
+                                    accountHolderName:
+                                        widget.request.accountHolderName,
                                     ifscCode: widget.request.ifscCode,
                                     upiId: widget.request.upiId,
-                                    platformChargePerSeat: widget.request.platformChargePerSeat,
-                                    settlementStatus: widget.request.settlementStatus,
+                                    platformChargePerSeat:
+                                        widget.request.platformChargePerSeat,
+                                    settlementStatus:
+                                        widget.request.settlementStatus,
                                     bankDetails: widget.request.bankDetails,
-                                    settlementTransactionId: widget.request.settlementTransactionId,
-                                    settlementAmount: widget.request.settlementAmount,
-                                    settlementDate: widget.request.settlementDate,
-                                    settlementMethod: widget.request.settlementMethod,
+                                    settlementTransactionId:
+                                        widget.request.settlementTransactionId,
+                                    settlementAmount:
+                                        widget.request.settlementAmount,
+                                    settlementDate:
+                                        widget.request.settlementDate,
+                                    settlementMethod:
+                                        widget.request.settlementMethod,
                                     user: widget.request.user,
                                     venue: widget.request.venue,
                                     joiners: widget.request.joiners,
@@ -401,7 +517,10 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
                                     Navigator.pushReplacement(
                                       context,
                                       MaterialPageRoute(
-                                        builder: (_) => StrangersMeetTicketScreen(request: updatedReq),
+                                        builder: (_) =>
+                                            StrangersMeetTicketScreen(
+                                              request: updatedReq,
+                                            ),
                                       ),
                                     );
                                   }
@@ -411,7 +530,9 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
                                   });
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
-                                      content: Text('Failed to update charges per head. Please try again.'),
+                                      content: Text(
+                                        'Failed to update charges per head. Please try again.',
+                                      ),
                                       backgroundColor: Colors.red,
                                     ),
                                   );
@@ -424,7 +545,9 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
                           ),
                         ),
                         child: isSaving
-                            ? const CircularProgressIndicator(color: Colors.white)
+                            ? const CircularProgressIndicator(
+                                color: Colors.white,
+                              )
                             : const Text(
                                 'PUBLISH MEETUP',
                                 style: TextStyle(
@@ -446,7 +569,12 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
     );
   }
 
-  Widget _buildQuickChip(String label, double value, double currentValue, ValueChanged<double> onTap) {
+  Widget _buildQuickChip(
+    String label,
+    double value,
+    double currentValue,
+    ValueChanged<double> onTap,
+  ) {
     final isSelected = value == currentValue;
     return GestureDetector(
       onTap: () => onTap(value),
@@ -471,16 +599,20 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
     );
   }
 
-
   @override
   Widget build(BuildContext context) {
     final req = widget.request;
-    final amount = req.paymentAmount ?? 0;
+    final amount = widget.isJoinPayment
+        ? req.chargesPerHead
+        : (req.paymentAmount ?? 0);
 
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Payment Confirmation', style: TextStyle(fontWeight: FontWeight.w900)),
+        title: const Text(
+          'Payment Confirmation',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
         backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
@@ -525,11 +657,24 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
                             ),
                           ),
                           const SizedBox(height: 24),
-                          _buildSummaryRow('Venue', req.venue?['name'] ?? 'Unknown'),
+                          _buildSummaryRow(
+                            'Venue',
+                            req.venue?['name'] ?? 'Unknown',
+                          ),
                           const SizedBox(height: 12),
-                          _buildSummaryRow('Date & Time', DateFormat('MMM dd, yyyy • hh:mm a').format(req.eventDateTime)),
+                          _buildSummaryRow(
+                            'Date & Time',
+                            DateFormat(
+                              'MMM dd, yyyy • hh:mm a',
+                            ).format(req.eventDateTime),
+                          ),
                           const SizedBox(height: 12),
-                          _buildSummaryRow('Persons', '${req.numberOfPersons} pax'),
+                          _buildSummaryRow(
+                            'Persons',
+                            widget.isJoinPayment
+                                ? '1 pax'
+                                : '${req.numberOfPersons} pax',
+                          ),
                         ],
                       ),
                     ),
@@ -541,31 +686,54 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
-                          colors: [LunaraTheme.electricViolet.withValues(alpha: 0.05), Colors.purple.withValues(alpha: 0.02)],
+                          colors: [
+                            LunaraTheme.electricViolet.withValues(alpha: 0.05),
+                            Colors.purple.withValues(alpha: 0.02),
+                          ],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.15)),
+                        border: Border.all(
+                          color: LunaraTheme.electricViolet.withValues(
+                            alpha: 0.15,
+                          ),
+                        ),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
                             'PAYMENT BREAKDOWN',
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1.5),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey,
+                              letterSpacing: 1.5,
+                            ),
                           ),
                           const SizedBox(height: 16),
-                          _buildPaymentRow('Total Seats Booked', '${req.numberOfPersons} seats'),
+                          _buildPaymentRow(
+                            'Total Seats Booked',
+                            widget.isJoinPayment
+                                ? '1 seat'
+                                : '${req.numberOfPersons} seats',
+                          ),
                           const SizedBox(height: 8),
-                          if (req.platformChargePerSeat != null) ...[
+                          if (!widget.isJoinPayment &&
+                              req.platformChargePerSeat != null) ...[
                             _buildPaymentRow(
                               'Platform Charge / Seat',
                               '₹${req.platformChargePerSeat!.toStringAsFixed(0)}',
                             ),
                             const SizedBox(height: 8),
                           ],
-                          _buildPaymentRow('Event Arrangement Fee', '₹${amount.toStringAsFixed(0)}'),
+                          _buildPaymentRow(
+                            widget.isJoinPayment
+                                ? 'Entry Ticket Fee'
+                                : 'Event Arrangement Fee',
+                            '₹${amount.toStringAsFixed(0)}',
+                          ),
                           const SizedBox(height: 8),
                           _buildPaymentRow('Taxes & Fees', 'Included'),
                           const Padding(
@@ -575,10 +743,20 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text('Total Amount to Pay', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                              const Text(
+                                'Total Amount to Pay',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                               Text(
                                 '₹${amount.toStringAsFixed(0)}',
-                                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: LunaraTheme.electricViolet),
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.w900,
+                                  color: LunaraTheme.electricViolet,
+                                ),
                               ),
                             ],
                           ),
@@ -588,37 +766,72 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
                     const SizedBox(height: 16),
 
                     // How earnings work
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.green.withValues(alpha: 0.05),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.green.withValues(alpha: 0.2)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Row(
-                            children: [
-                              Icon(Icons.info_outline_rounded, color: Colors.green, size: 18),
-                              SizedBox(width: 8),
-                              Text('How Your Earnings Work', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 14)),
-                            ],
+                    if (!widget.isJoinPayment)
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Colors.green.withValues(alpha: 0.2),
                           ),
-                          const SizedBox(height: 10),
-                          Text('1. You pay the arrangement fee of ₹${amount.toStringAsFixed(0)} to secure ${req.numberOfPersons} seats.', style: TextStyle(fontSize: 12, color: Colors.grey[700], height: 1.5)),
-                          const SizedBox(height: 6),
-                          Text('2. After payment, you decide your per-head charge for participants.', style: TextStyle(fontSize: 12, color: Colors.grey[700], height: 1.5)),
-                          const SizedBox(height: 6),
-                          Text('3. After the meet, admin will settle: your participant earnings + refund for unfilled seats.', style: TextStyle(fontSize: 12, color: Colors.grey[700], height: 1.5)),
-                        ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(
+                                  Icons.info_outline_rounded,
+                                  color: Colors.green,
+                                  size: 18,
+                                ),
+                                SizedBox(width: 8),
+                                Text(
+                                  'How Your Earnings Work',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              '1. You pay the arrangement fee of ₹${amount.toStringAsFixed(0)} to secure ${req.numberOfPersons} seats.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[700],
+                                height: 1.5,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              '2. After payment, you decide your per-head charge for participants.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[700],
+                                height: 1.5,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              '3. After the meet, admin will settle: your participant earnings + refund for unfilled seats.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[700],
+                                height: 1.5,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
             ),
-            
+
             // Pay Button
             Container(
               padding: const EdgeInsets.all(24),
@@ -696,19 +909,10 @@ class _StrangersMeetPaymentScreenState extends State<StrangersMeetPaymentScreen>
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 14,
-            color: Colors.grey[600],
-          ),
-        ),
+        Text(label, style: TextStyle(fontSize: 14, color: Colors.grey[600])),
         Text(
           value,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-          ),
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
         ),
       ],
     );

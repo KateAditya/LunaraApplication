@@ -1911,11 +1911,16 @@ class ApiService {
 
   /// Mark a notification as read
   static Future<void> markNotificationRead(String notificationId) async {
+    final userId = currentUserId;
     await loadLocalReadIds();
     localReadNotificationIds.add(notificationId);
     await saveLocalReadNotificationIds();
     try {
-      await patch('/api/mobile/user/notifications/$notificationId/read');
+      // Pass userId so the server can scope read state per user
+      await patch(
+        '/api/mobile/user/notifications/$notificationId/read',
+        body: userId != null ? {'userId': userId} : null,
+      );
     } catch (e) {
       debugPrint('markNotificationRead error: $e');
     }
@@ -1945,11 +1950,16 @@ class ApiService {
 
   /// Mark an incoming join request as read
   static Future<void> markRequestRead(String reqId) async {
+    final userId = currentUserId;
     await loadLocalReadIds();
     localReadRequestIds.add(reqId);
     await saveLocalReadRequestIds();
     try {
-      await patch('/api/mobile/user/requests/$reqId/read');
+      // Pass userId so the server can scope read state per user
+      await patch(
+        '/api/mobile/user/requests/$reqId/read',
+        body: userId != null ? {'userId': userId} : null,
+      );
     } catch (e) {
       debugPrint('markRequestRead error: $e');
     }

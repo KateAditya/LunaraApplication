@@ -218,21 +218,26 @@ export const getLiveFeed = async (req: Request, res: Response) => {
         // Query active Party Plans (public, plus user's own private plans)
         const partyPlansWhere: any = {
             status: PartyPlanStatus.ACTIVE,
-            isLive: true,
         };
         if (viewerId) {
             partyPlansWhere[Op.or] = [
-                { visibility: PartyPlanVisibility.PUBLIC },
-                { visibility: PartyPlanVisibility.BOTH },
-                { userId: viewerId as string },
                 {
-                    visibility: PartyPlanVisibility.PRIVATE,
-                    selectedUsers: {
-                        [Op.contains]: [viewerId as string]
-                    }
-                }
+                    isLive: true,
+                    [Op.or]: [
+                        { visibility: PartyPlanVisibility.PUBLIC },
+                        { visibility: PartyPlanVisibility.BOTH },
+                        {
+                            visibility: PartyPlanVisibility.PRIVATE,
+                            selectedUsers: {
+                                [Op.contains]: [viewerId as string]
+                            }
+                        }
+                    ]
+                },
+                { userId: viewerId as string }
             ];
         } else {
+            partyPlansWhere.isLive = true;
             partyPlansWhere.visibility = {
                 [Op.in]: [PartyPlanVisibility.PUBLIC, PartyPlanVisibility.BOTH]
             };
