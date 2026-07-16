@@ -68,7 +68,7 @@ export const azureStorageHelper = (folderPathFn: (req: any) => string) => {
         connectionString: process.env.AZURE_STORAGE_CONNECTION_STRING || '',
         accessKey: process.env.AZURE_STORAGE_ACCESS_KEY || '',
         accountName: process.env.AZURE_STORAGE_ACCOUNT_NAME || '',
-        containerName: process.env.AZURE_STORAGE_CONTAINER_NAME || 'lunara-uploads',
+        containerName: process.env.AZURE_STORAGE_CONTAINER_NAME || 'uploads',
         containerAccessLevel: 'blob',
         urlExpirationTime: -1, // No expiration, public blob
         blobName: (req: any, file: Express.Multer.File) => {

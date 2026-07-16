@@ -91,9 +91,16 @@ app.get('/health', (_req, res) => {
 });
 
 // Serve static files from uploads directory (or redirect to Azure Blob Storage)
-if (process.env.AZURE_STORAGE_ACCOUNT_NAME) {
-    const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
-    const containerName = process.env.AZURE_STORAGE_CONTAINER_NAME || 'lunara-uploads';
+let accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+if (!accountName && process.env.AZURE_STORAGE_CONNECTION_STRING) {
+    const match = process.env.AZURE_STORAGE_CONNECTION_STRING.match(/AccountName=([^;]+)/);
+    if (match) {
+        accountName = match[1];
+    }
+}
+
+if (accountName) {
+    const containerName = process.env.AZURE_STORAGE_CONTAINER_NAME || 'uploads';
     const blobBaseUrl = `https://${accountName}.blob.core.windows.net/${containerName}`;
     
     app.use('/uploads', (req, res) => {

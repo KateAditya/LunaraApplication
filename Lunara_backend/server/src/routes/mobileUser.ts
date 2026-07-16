@@ -199,7 +199,7 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
         ? await PartyPlanRequest.findAll({
             where: {
                 planId: { [Op.in]: myHostedPlans.map(p => p.id) },
-                status: { [Op.in]: ['accepted', 'paid'] }
+                status: { [Op.in]: ['accepted', 'payment_pending'] }
             },
             include: [
                 {
