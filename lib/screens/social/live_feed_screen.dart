@@ -390,7 +390,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
       List<Map<String, dynamic>> combined = [
         ...List<Map<String, dynamic>>.from(data['feed'] ?? []).where((item) {
           final hostId = (item['host']?['id'] ?? item['userId'] ?? '').toString();
-          return hostId == currentUserId;
+          return hostId != currentUserId;
         }),
         ...List<Map<String, dynamic>>.from(data['myRequests'] ?? []),
         ...List<Map<String, dynamic>>.from(data['incomingRequests'] ?? []),
@@ -720,7 +720,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
       if ((item['type'] == 'my_request' || item['type'] == 'incoming_request') &&
           item['requestType'] == 'party_plan') {
         final status = item['status']?.toString().toLowerCase() ?? '';
-        if (status == 'accepted' || status == 'paid') {
+        if (status != 'rejected' && status != 'cancelled') {
           final planId = (item['plan']?['id'] ?? item['plan']?['planId'] ?? '').toString();
           if (planId.isNotEmpty) confirmedPlanIds.add(planId);
         }

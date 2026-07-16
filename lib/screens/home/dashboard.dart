@@ -38,7 +38,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     super.initState();
     _screens = [
       const DiscoveryScreen(),
-      LiveFeedScreen(isTab: true, onCountChanged: _onLiveFeedRead),
+      LiveFeedScreen(isTab: true, onCountChanged: _onLiveFeedCountChanged),
       const SizedBox.shrink(), // Placeholder for center button
       const MessagesScreen(),
       const ProfileHubScreen(),
@@ -64,6 +64,13 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         });
       }
     }
+  }
+
+  /// Called by the LiveFeedScreen whenever the user views/marks notifications.
+  /// Immediately zeroes the live-feed badge (local-first) so the red dot
+  /// disappears without waiting for a server round-trip.
+  void _onLiveFeedCountChanged() {
+    _fetchBadges();
   }
 
   /// Called by the LiveFeedScreen whenever the user views/marks notifications.
