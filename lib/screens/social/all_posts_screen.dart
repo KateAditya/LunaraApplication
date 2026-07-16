@@ -153,7 +153,13 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
 
   Widget _buildPostCard(BuildContext context, Map<String, dynamic> post) {
     final String? profilePhoto =
-        (post['profilePhotoUrl'] ?? post['profilePhoto'] ?? post['image'])
+        (post['profilePhotoUrl'] ??
+                post['profileImageUrl'] ??
+                post['photoUrl'] ??
+                post['profilePhoto'] ??
+                (post['user'] is Map ? post['user']['photoUrl'] : null) ??
+                (post['user'] is Map ? post['user']['profilePhotoUrl'] : null) ??
+                post['image'])
             ?.toString();
     String? imageUrl = profilePhoto;
     if (imageUrl != null && imageUrl.startsWith('/')) {

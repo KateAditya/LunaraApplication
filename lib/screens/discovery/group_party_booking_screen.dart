@@ -451,7 +451,7 @@ class _BookingDetailsModal extends StatefulWidget {
 }
 
 class _BookingDetailsModalState extends State<_BookingDetailsModal> {
-  int _noOfFriends = 1;
+  int _noOfFriends = 2;
   late final TextEditingController _friendsController = TextEditingController(
     text: _noOfFriends.toString(),
   );
@@ -995,7 +995,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                         Row(
                           children: [
                             _buildCounterButton(Icons.remove, () {
-                              if (_noOfFriends > 1) {
+                              if (_noOfFriends > 2) {
                                 setState(() {
                                   _noOfFriends--;
                                   _friendsController.text = _noOfFriends
@@ -1547,8 +1547,8 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                     child: ElevatedButton(
                       onPressed: () async {
                         final parsed = int.tryParse(_friendsController.text);
-                        if (parsed == null || parsed < 1) {
-                          _showValidationError('Please enter a valid number of friends.');
+                        if (parsed == null || parsed < 2) {
+                          _showValidationError('Please enter a valid number of friends (minimum 2).');
                           return;
                         }
                         final int maxGuests = widget.venue.capacity ?? 500;

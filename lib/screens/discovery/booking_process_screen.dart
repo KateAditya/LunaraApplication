@@ -839,7 +839,7 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                     const Spacer(),
                                     GestureDetector(
                                       onTap: () {
-                                        if (guests > 1) {
+                                        if (guests > 2) {
                                           setModalState(() {
                                             _guestsController.text =
                                                 (guests - 1).toString();

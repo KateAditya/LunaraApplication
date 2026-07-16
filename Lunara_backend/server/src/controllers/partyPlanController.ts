@@ -375,7 +375,16 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
         // Emit socket event for real-time feed updates
         try {
             const { io } = require('../server');
-            io.emit('party_plan_created', responseData);
+            if (parsedVisibility === PartyPlanVisibility.PRIVATE) {
+                io.to(`user_${userId}`).emit('party_plan_created', responseData);
+                if (Array.isArray(selectedUsers)) {
+                    for (const invitedUserId of selectedUsers) {
+                        io.to(`user_${invitedUserId}`).emit('party_plan_created', responseData);
+                    }
+                }
+            } else {
+                io.emit('party_plan_created', responseData);
+            }
         } catch (socketErr) {
             logger.warn('Socket emission failed for party_plan_created:', socketErr);
         }
@@ -489,10 +498,13 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
                 }
             });
 
+            const hasActiveOrAcceptedRequest = activeRequests.length > 0;
+            const updatedIsLive = hasActiveOrAcceptedRequest ? false : (plan.visibility !== PartyPlanVisibility.PRIVATE);
+
             await (plan as any).update({
                 hostPaymentStatus: PartyPlanPaymentStatus.PAID,
                 hostRazorpayPaymentId: razorpay_payment_id,
-                isLive: false, // Once host pays, it is reserved/waiting for joiner
+                isLive: updatedIsLive,
                 paymentStatus: 'Awaiting Participant Payment',
             });
 
@@ -1085,6 +1097,46 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
             latLangCheckIn: false,
         });
 
+        // Notify host about the request
+        try {
+            const host = await User.findByPk(plan.userId);
+            const requester = await User.findByPk(userId);
+            if (host && requester) {
+                const { io } = require('../server');
+                const venueName = (plan as any)?.venue?.name || 'Club';
+                const requesterName = `${requester.firstName} ${requester.lastName}`;
+                
+                io.to(`user_${plan.userId}`).emit('notification_created', {
+                    id: `ppr_req_${newReq.id}`,
+                    title: 'Join Request',
+                    body: `${requesterName} requested to join your Party Plan at ${venueName}.`,
+                    createdAt: new Date().toISOString(),
+                    read: false,
+                    sender: {
+                        id: requester.id,
+                        firstName: requester.firstName,
+                        lastName: requester.lastName,
+                        profileImageUrl: requester.profileImageUrl,
+                    }
+                });
+
+                if (host.fcmToken) {
+                    const { sendPushNotification } = require('../services/fcmService');
+                    await sendPushNotification(host.fcmToken, {
+                        title: 'Join Request',
+                        body: `${requesterName} requested to join your Party Plan at ${venueName}.`,
+                        data: {
+                            type: 'join_request',
+                            partyPlanId: plan.id,
+                            requestId: newReq.id,
+                        }
+                    });
+                }
+            }
+        } catch (pushErr: any) {
+            logger.warn('Failed to notify host for new party plan request:', pushErr.message);
+        }
+
         res.status(201).json({ success: true, message: 'Request sent successfully!', data: newReq });
     } catch (err: any) {
         logger.error('createPartyPlanRequest error:', err);
@@ -1261,6 +1313,38 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
                     io.to(`user_${plan.userId}`).emit('party_plan_match_success', { planId: plan.id, requestId: request.id });
                     io.to(`user_${request.requesterId}`).emit('party_plan_match_success', { planId: plan.id, requestId: request.id });
                     io.emit('party_plan_deleted', { planId: plan.id });
+
+                    const host = await User.findByPk(plan.userId);
+                    const requester = await User.findByPk(request.requesterId);
+                    if (host && requester) {
+                        const venueName = (plan as any)?.venue?.name || 'Club';
+                        io.to(`user_${request.requesterId}`).emit('notification_created', {
+                            id: `ppr_${request.id}`,
+                            title: 'Plan Request Accepted',
+                            body: `Your request to join Party Plan at ${venueName} is confirmed! (Paid by host) 🎉`,
+                            createdAt: new Date().toISOString(),
+                            read: false,
+                            sender: {
+                                id: host.id,
+                                firstName: host.firstName,
+                                lastName: host.lastName,
+                                profileImageUrl: host.profileImageUrl,
+                            }
+                        });
+                        io.to(`user_${plan.userId}`).emit('notification_created', {
+                            id: `ppr_host_${request.id}`,
+                            title: 'Participant Joined',
+                            body: `${requester.firstName} ${requester.lastName} joined your Party Plan at ${venueName}.`,
+                            createdAt: new Date().toISOString(),
+                            read: false,
+                            sender: {
+                                id: requester.id,
+                                firstName: requester.firstName,
+                                lastName: requester.lastName,
+                                profileImageUrl: requester.profileImageUrl,
+                            }
+                        });
+                    }
                 } catch (socketErr) {
                     logger.warn('Socket emission failed for party_plan_match_success:', socketErr);
                 }
@@ -1291,6 +1375,38 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
                         joinerAmount: 0,
                         joinerCurrency: 'INR',
                     });
+
+                    const host = await User.findByPk(plan.userId);
+                    const requester = await User.findByPk(request.requesterId);
+                    if (host && requester) {
+                        const venueName = (plan as any)?.venue?.name || 'Club';
+                        io.to(`user_${request.requesterId}`).emit('notification_created', {
+                            id: `ppr_${request.id}`,
+                            title: 'Plan Request Accepted',
+                            body: `Your request to join Party Plan at ${venueName} was accepted. Waiting for host payment to confirm. ⏳`,
+                            createdAt: new Date().toISOString(),
+                            read: false,
+                            sender: {
+                                id: host.id,
+                                firstName: host.firstName,
+                                lastName: host.lastName,
+                                profileImageUrl: host.profileImageUrl,
+                            }
+                        });
+                        io.to(`user_${plan.userId}`).emit('notification_created', {
+                            id: `ppr_host_${request.id}`,
+                            title: 'Participant Joined',
+                            body: `${requester.firstName} ${requester.lastName} joined your Party Plan at ${venueName}.`,
+                            createdAt: new Date().toISOString(),
+                            read: false,
+                            sender: {
+                                id: requester.id,
+                                firstName: requester.firstName,
+                                lastName: requester.lastName,
+                                profileImageUrl: requester.profileImageUrl,
+                            }
+                        });
+                    }
                 } catch (socketErr) {
                     logger.warn('Socket emission failed for acceptPartyPlanRequest:', socketErr);
                 }
@@ -1371,6 +1487,25 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
 
             // Remove from global feeds (since it's reserved)
             io.emit('party_plan_deleted', { planId: plan.id });
+
+            const host = await User.findByPk(plan.userId);
+            const requester = await User.findByPk(request.requesterId);
+            if (host && requester) {
+                const venueName = (plan as any)?.venue?.name || 'Club';
+                io.to(`user_${request.requesterId}`).emit('notification_created', {
+                    id: `ppr_${request.id}`,
+                    title: 'Plan Request Accepted',
+                    body: `Your request to join Party Plan at ${venueName} was accepted. Pay to confirm.`,
+                    createdAt: new Date().toISOString(),
+                    read: false,
+                    sender: {
+                        id: host.id,
+                        firstName: host.firstName,
+                        lastName: host.lastName,
+                        profileImageUrl: host.profileImageUrl,
+                    }
+                });
+            }
         } catch (socketErr) {
             logger.warn('Socket emission failed for acceptPartyPlanRequest:', socketErr);
         }
@@ -1766,13 +1901,119 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
                     }
                 );
 
+                // Send push notification & socket events
+                setImmediate(async () => {
+                    try {
+                        const joiner = await User.findByPk(request.requesterId);
+                        const host = await User.findByPk(plan.userId);
+                        const tokens = [host?.fcmToken, joiner?.fcmToken].filter(t => t && t.trim() !== '') as string[];
+                        if (tokens.length > 0) {
+                            const { sendMulticastPushNotification } = require('../services/fcmService');
+                            await sendMulticastPushNotification(tokens, {
+                                title: '🎉 Booking Confirmed!',
+                                body: 'Your booking has been confirmed! (Paid by the Host)',
+                                data: {
+                                    type: 'booking_confirmed',
+                                    partyPlanId: plan.id,
+                                },
+                            });
+                        }
+                    } catch (pushErr: any) {
+                        logger.warn('Failed to send booking confirmed push notifications:', pushErr.message);
+                    }
+                });
+
+                try {
+                    const host = await User.findByPk(plan.userId);
+                    const joiner = await User.findByPk(request.requesterId);
+                    if (host && joiner) {
+                        const { io } = require('../server');
+                        const venueName = (plan as any)?.venue?.name || 'Club';
+                        const joinerName = `${joiner.firstName} ${joiner.lastName}`;
+                        
+                        io.to(`user_${plan.userId}`).emit('party_plan_match_success', { planId: plan.id, requestId: request.id });
+                        io.to(`user_${request.requesterId}`).emit('party_plan_match_success', { planId: plan.id, requestId: request.id });
+                        io.emit('party_plan_deleted', { planId: plan.id });
+
+                        io.to(`user_${plan.userId}`).emit('notification_created', {
+                            id: `ppr_host_${request.id}`,
+                            title: 'Invite Accepted',
+                            body: `${joinerName} accepted and confirmed your private invite to the Party Plan at ${venueName}.`,
+                            createdAt: new Date().toISOString(),
+                            read: false,
+                            sender: {
+                                id: joiner.id,
+                                firstName: joiner.firstName,
+                                lastName: joiner.lastName,
+                                profileImageUrl: joiner.profileImageUrl,
+                            }
+                        });
+                    }
+                } catch (socketErr) {
+                    logger.warn('Socket emission failed for acceptPartyPlanInvite:', socketErr);
+                }
+
                 res.json({ success: true, message: 'Joined party plan successfully! (Paid by Host) 🎉', data: request });
             } else {
                 await request.update({
                     status: PartyPlanRequestStatus.ACCEPTED,
                     joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
                 });
-                await plan.update({ paymentStatus: 'Awaiting Host Payment' });
+                await plan.update({
+                    paymentStatus: 'Awaiting Host Payment',
+                    isLive: false,
+                });
+
+                // Send push notification & socket events
+                setImmediate(async () => {
+                    try {
+                        const host = await User.findByPk(plan.userId);
+                        const joiner = await User.findByPk(request.requesterId);
+                        if (host && host.fcmToken && joiner) {
+                            const { sendPushNotification } = require('../services/fcmService');
+                            const joinerName = `${joiner.firstName} ${joiner.lastName}`;
+                            await sendPushNotification(host.fcmToken, {
+                                title: 'Invite Accepted ⏳',
+                                body: `${joinerName} accepted your invite. Please complete your deposit payment.`,
+                                data: {
+                                    type: 'invite_accepted_awaiting_host_payment',
+                                    partyPlanId: plan.id,
+                                }
+                            });
+                        }
+                    } catch (pushErr: any) {
+                        logger.warn('Failed to send invite accepted push:', pushErr.message);
+                    }
+                });
+
+                try {
+                    const host = await User.findByPk(plan.userId);
+                    const joiner = await User.findByPk(request.requesterId);
+                    if (host && joiner) {
+                        const { io } = require('../server');
+                        const venueName = (plan as any)?.venue?.name || 'Club';
+                        const joinerName = `${joiner.firstName} ${joiner.lastName}`;
+                        
+                        io.emit('party_plan_deleted', { planId: plan.id });
+
+                        io.to(`user_${plan.userId}`).emit('notification_created', {
+                            id: `ppr_host_${request.id}`,
+                            title: 'Invite Accepted',
+                            body: `${joinerName} accepted your private invite to the Party Plan at ${venueName}. Please complete your payment.`,
+                            createdAt: new Date().toISOString(),
+                            read: false,
+                            sender: {
+                                id: joiner.id,
+                                firstName: joiner.firstName,
+                                lastName: joiner.lastName,
+                                profileImageUrl: joiner.profileImageUrl,
+                            }
+                        });
+                    }
+                } catch (socketErr) {
+                    logger.warn('Socket emission failed for acceptPartyPlanInvite:', socketErr);
+                }
+
                 res.json({ success: true, message: 'Join confirmed. Waiting for host to complete their payment. ⏳', data: request });
             }
         } else {
@@ -1788,6 +2029,46 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
             await plan.update({
                 isLive: false, // reserved
             });
+
+            try {
+                const host = await User.findByPk(plan.userId);
+                const joiner = await User.findByPk(request.requesterId);
+                if (host && joiner) {
+                    const { io } = require('../server');
+                    const venueName = (plan as any)?.venue?.name || 'Club';
+                    const joinerName = `${joiner.firstName} ${joiner.lastName}`;
+                    
+                    io.to(`user_${request.requesterId}`).emit('party_plan_request_accepted', {
+                        requestId: request.id,
+                        planId: plan.id,
+                        hostAlreadyPaid: hostPaid,
+                        hostRazorpayOrderId: plan.hostRazorpayOrderId,
+                        hostAmount: Math.round(plan.depositAmount * 100),
+                        hostCurrency: 'INR',
+                        joinerRazorpayOrderId: request.joinerRazorpayOrderId,
+                        joinerAmount: Math.round(plan.depositAmount * 100),
+                        joinerCurrency: 'INR',
+                    });
+
+                    io.emit('party_plan_deleted', { planId: plan.id });
+
+                    io.to(`user_${plan.userId}`).emit('notification_created', {
+                        id: `ppr_host_${request.id}`,
+                        title: 'Invite Accepted',
+                        body: `${joinerName} accepted your private invite to the Party Plan at ${venueName}. Awaiting participant payment.`,
+                        createdAt: new Date().toISOString(),
+                        read: false,
+                        sender: {
+                            id: joiner.id,
+                            firstName: joiner.firstName,
+                            lastName: joiner.lastName,
+                            profileImageUrl: joiner.profileImageUrl,
+                        }
+                    });
+                }
+            } catch (socketErr) {
+                logger.warn('Socket emission failed for acceptPartyPlanInvite:', socketErr);
+            }
 
             res.json({ success: true, message: 'Invite accepted! You have 30 minutes to pay the deposit.', data: request });
         }

@@ -1405,7 +1405,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final String content = widget.post['content'] ?? '';
     final String time = widget.post['time'] ?? '';
 
-    final String? photo = widget.post['profilePhotoUrl'] ?? widget.post['profilePhoto'] ?? widget.post['image'];
+    final String? photo = widget.post['profilePhotoUrl'] ??
+        widget.post['profileImageUrl'] ??
+        widget.post['photoUrl'] ??
+        widget.post['profilePhoto'] ??
+        (widget.post['user'] is Map ? widget.post['user']['photoUrl'] : null) ??
+        (widget.post['user'] is Map ? widget.post['user']['profilePhotoUrl'] : null) ??
+        widget.post['image'];
     final bool isMyPost = widget.post['userId']?.toString() == ApiService.currentUserId ||
         (widget.post['user'] != null && widget.post['user']['id']?.toString() == ApiService.currentUserId);
 

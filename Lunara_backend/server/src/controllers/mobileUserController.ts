@@ -1137,6 +1137,21 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                             conversationId: conversation.id
                         });
 
+                        // Emit notification_created to the target user
+                        io.to(`user_${targetUserId}`).emit('notification_created', {
+                            id: `match_${mySwipe.id}`,
+                            title: 'New Match!',
+                            body: `You and ${currentUser.firstName} are a match! 🎉`,
+                            createdAt: new Date().toISOString(),
+                            read: false,
+                            sender: {
+                                id: currentUser.id,
+                                firstName: currentUser.firstName,
+                                lastName: currentUser.lastName,
+                                profileImageUrl: currentUser.profileImageUrl,
+                            }
+                        });
+
                         if (targetUser.fcmToken) {
                             const { sendPushNotification } = require('../services/fcmService');
                             await sendPushNotification(targetUser.fcmToken, {
@@ -1188,31 +1203,49 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
             });
         }
 
-        // Send push notification for Like or Super Like
+        // Send push notification & socket event for Like or Super Like
         try {
             const currentUser = await User.findByPk(userId);
             const targetUser = await User.findByPk(targetUserId);
-            if (currentUser && targetUser && targetUser.fcmToken) {
-                const { sendPushNotification } = require('../services/fcmService');
+            if (currentUser && targetUser) {
                 const senderName = `${currentUser.firstName} ${currentUser.lastName}`;
                 const isSuper = action === 'superlike';
                 const title = isSuper ? 'Super Like' : 'Like';
                 const body = isSuper 
                     ? `${senderName} super liked your profile 🌟`
                     : `${senderName} liked your profile ❤️`;
-                await sendPushNotification(targetUser.fcmToken, {
+
+                const { io } = require('../server');
+                io.to(`user_${targetUserId}`).emit('notification_created', {
+                    id: `match_${match.id}`,
                     title,
                     body,
-                    data: {
-                        type: isSuper ? 'superlike' : 'like',
-                        senderId: currentUser.id,
-                        senderName: senderName,
-                        senderImage: currentUser.profileImageUrl || '',
+                    createdAt: new Date().toISOString(),
+                    read: false,
+                    sender: {
+                        id: currentUser.id,
+                        firstName: currentUser.firstName,
+                        lastName: currentUser.lastName,
+                        profileImageUrl: currentUser.profileImageUrl,
                     }
                 });
+
+                if (targetUser.fcmToken) {
+                    const { sendPushNotification } = require('../services/fcmService');
+                    await sendPushNotification(targetUser.fcmToken, {
+                        title,
+                        body,
+                        data: {
+                            type: isSuper ? 'superlike' : 'like',
+                            senderId: currentUser.id,
+                            senderName: senderName,
+                            senderImage: currentUser.profileImageUrl || '',
+                        }
+                    });
+                }
             }
         } catch (fcmErr) {
-            logger.error('[swipeUser] Failed to send push notification:', fcmErr);
+            logger.error('[swipeUser] Failed to send push notification/socket:', fcmErr);
         }
 
         return res.status(200).json({ success: true, data: match, matched: false });

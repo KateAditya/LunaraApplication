@@ -210,10 +210,19 @@ export const getLiveFeed = async (req: Request, res: Response) => {
         if (viewerId) {
             partyPlansWhere[Op.or] = [
                 { visibility: PartyPlanVisibility.PUBLIC },
-                { userId: viewerId as string }
+                { visibility: PartyPlanVisibility.BOTH },
+                { userId: viewerId as string },
+                {
+                    visibility: PartyPlanVisibility.PRIVATE,
+                    selectedUsers: {
+                        [Op.contains]: [viewerId as string]
+                    }
+                }
             ];
         } else {
-            partyPlansWhere.visibility = PartyPlanVisibility.PUBLIC;
+            partyPlansWhere.visibility = {
+                [Op.in]: [PartyPlanVisibility.PUBLIC, PartyPlanVisibility.BOTH]
+            };
         }
         if (venueId) partyPlansWhere.venueId = venueId;
         if (date) {

@@ -334,19 +334,49 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
         let isRead = false;
 
         if (pr.status === 'accepted' || pr.status === 'payment_pending') {
-            if (plan && (plan.visibility === 'private' || plan.visibility === 'both')) {
+            const isInvite = plan && plan.selectedUsers && plan.selectedUsers.includes(uId);
+            const isSelfPay = plan && plan.paymentType === 'self_pay';
+            const hostPaid = plan && plan.hostPaymentStatus === 'paid';
+
+            if (isInvite) {
                 title = 'Private Party Plan Invite';
-                body = `You have been privately invited to a Party Plan at ${venueName}. Pay to confirm.`;
+                if (isSelfPay) {
+                    if (hostPaid) {
+                        body = `Your private invite to Party Plan at ${venueName} is confirmed! (Paid by host) 🎉`;
+                    } else {
+                        body = `You have been privately invited to a Party Plan at ${venueName}. Accept to join.`;
+                    }
+                } else {
+                    body = `You have been privately invited to a Party Plan at ${venueName}. Pay to confirm.`;
+                }
             } else {
                 title = 'Plan Request Accepted';
-                body = `Your request to join Party Plan at ${venueName} was accepted. Pay to confirm.`;
+                if (isSelfPay) {
+                    if (hostPaid) {
+                        body = `Your request to join Party Plan at ${venueName} is confirmed! (Paid by host) 🎉`;
+                    } else {
+                        body = `Your request to join Party Plan at ${venueName} was accepted. Waiting for host payment to confirm. ⏳`;
+                    }
+                } else {
+                    body = `Your request to join Party Plan at ${venueName} was accepted. Pay to confirm.`;
+                }
             }
         } else if (pr.status === 'rejected') {
-            body = `Your request to join Party Plan at ${venueName} was declined.`;
+            const isInvite = plan && plan.selectedUsers && plan.selectedUsers.includes(uId);
+            if (isInvite) {
+                body = `The Party Plan at ${venueName} is no longer available.`;
+            } else {
+                body = `Your request to join Party Plan at ${venueName} was declined.`;
+            }
             isRead = true;
         } else if (pr.status === 'pending' && plan && (plan.visibility === 'private' || plan.visibility === 'both') && plan.selectedUsers?.includes(uId)) {
             title = 'Private Party Plan Invite';
-            body = `You have been privately invited to a Party Plan at ${venueName}. Accept to join.`;
+            const isSelfPay = plan.paymentType === 'self_pay';
+            if (isSelfPay) {
+                body = `You have been privately invited to a Party Plan at ${venueName}. Accept to join.`;
+            } else {
+                body = `You have been privately invited to a Party Plan at ${venueName}. Accept and pay to join.`;
+            }
             isRead = false;
         } else {
             continue;
@@ -370,12 +400,26 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
         const joinerName = `${joiner.firstName} ${joiner.lastName}`;
         const notificationId = `ppr_host_${pr.id}`;
         
-        let title = 'Plan Invite Accepted';
+        let title = '';
         let body = '';
-        if (plan?.visibility === 'private' || plan?.visibility === 'both') {
-            body = `${joinerName} accepted your private invite to the Party Plan at ${venueName}.`;
+        const isInvite = plan && plan.selectedUsers && plan.selectedUsers.includes(joiner.id);
+
+        if (isInvite) {
+            title = 'Invite Accepted';
+            if (pr.joinerPaymentStatus === 'paid') {
+                body = `${joinerName} accepted and confirmed your private invite to the Party Plan at ${venueName}.`;
+            } else {
+                body = `${joinerName} accepted your private invite to the Party Plan at ${venueName}.`;
+            }
         } else {
-            body = `${joinerName} accepted your request to join the Party Plan at ${venueName}.`;
+            title = 'Participant Joined';
+            if (pr.joinerPaymentStatus === 'paid') {
+                body = `${joinerName} completed their payment and joined your Party Plan at ${venueName}.`;
+            } else if (pr.status === 'accepted') {
+                body = `${joinerName} joined your Party Plan at ${venueName}.`;
+            } else {
+                continue;
+            }
         }
 
         notifications.push({

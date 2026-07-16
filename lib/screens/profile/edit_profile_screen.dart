@@ -94,23 +94,100 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
+  Future<void> _showImageSourceBottomSheet({bool isMainProfilePhoto = true}) async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF161622) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white24 : Colors.black12,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Text(
+                  'Select Photo Source',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : Colors.black,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                ListTile(
+                  leading: const Icon(Icons.camera_alt, color: LunaraTheme.electricViolet),
+                  title: Text(
+                    'Take Photo',
+                    style: TextStyle(color: isDark ? Colors.white : Colors.black87),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _pickAndUploadPhotoFromSource(ImageSource.camera, isMainProfilePhoto: isMainProfilePhoto);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library, color: LunaraTheme.electricViolet),
+                  title: Text(
+                    isMainProfilePhoto ? 'Choose from Gallery' : 'Choose from Gallery (Multiple)',
+                    style: TextStyle(color: isDark ? Colors.white : Colors.black87),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _pickAndUploadPhotoFromSource(ImageSource.gallery, isMainProfilePhoto: isMainProfilePhoto);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _pickAndUploadPhoto({bool isMainProfilePhoto = true}) async {
+    await _showImageSourceBottomSheet(isMainProfilePhoto: isMainProfilePhoto);
+  }
+
+  Future<void> _pickAndUploadPhotoFromSource(ImageSource source, {required bool isMainProfilePhoto}) async {
     try {
       List<XFile> images = [];
       if (isMainProfilePhoto) {
         final XFile? image = await _picker.pickImage(
-          source: ImageSource.gallery,
+          source: source,
           maxWidth: 600,
           maxHeight: 600,
           imageQuality: 50,
         );
         if (image != null) images.add(image);
       } else {
-        images = await _picker.pickMultiImage(
-          maxWidth: 600,
-          maxHeight: 600,
-          imageQuality: 50,
-        );
+        if (source == ImageSource.camera) {
+          final XFile? image = await _picker.pickImage(
+            source: ImageSource.camera,
+            maxWidth: 600,
+            maxHeight: 600,
+            imageQuality: 50,
+          );
+          if (image != null) images.add(image);
+        } else {
+          images = await _picker.pickMultiImage(
+            maxWidth: 600,
+            maxHeight: 600,
+            imageQuality: 50,
+          );
+        }
       }
 
       if (images.isEmpty) return;
@@ -122,6 +199,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       for (var image in images) {
         final bytes = await image.readAsBytes();
         if (bytes.length > 500 * 1024) {
+          if (!mounted) return;
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -129,6 +207,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               backgroundColor: Colors.red,
             ),
           );
+          setState(() => _isLoading = false);
           return;
         }
         bytesList.add(bytes);
@@ -322,6 +401,45 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         ),
+      ),
+    );
+  }
+
+  Widget _buildGenderDropdown() {
+    final List<String> genders = ['Male', 'Female', 'Other'];
+    String currentText = _genderController.text.trim().toLowerCase();
+    String? selectedValue;
+    if (currentText.startsWith('m')) {
+      selectedValue = 'Male';
+    } else if (currentText.startsWith('f')) {
+      selectedValue = 'Female';
+    } else if (currentText.startsWith('o')) {
+      selectedValue = 'Other';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: DropdownButtonFormField<String>(
+        value: selectedValue,
+        decoration: InputDecoration(
+          labelText: 'Gender',
+          labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        ),
+        items: genders.map((String gender) {
+          return DropdownMenuItem<String>(
+            value: gender,
+            child: Text(gender),
+          );
+        }).toList(),
+        onChanged: (String? newValue) {
+          if (newValue != null) {
+            setState(() {
+              _genderController.text = newValue;
+            });
+          }
+        },
       ),
     );
   }
@@ -523,7 +641,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   _buildTextField('Last Name', _lastNameController),
                   _buildTextField('Phone', _phoneController),
                   _buildTextField('Date of Birth (YYYY-MM-DD)', _dobController),
-                  _buildTextField('Gender', _genderController),
+                  _buildGenderDropdown(),
                   _buildTextField('City', _cityController),
                   _buildTextField('Bio', _bioController, maxLines: 3),
                 ], initiallyExpanded: true),

@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
-import '../../widgets/action_button.dart';
 
 class VIPMembershipScreen extends StatefulWidget {
   const VIPMembershipScreen({super.key});
@@ -118,6 +116,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
           pkg['id'],
           response.orderId ?? 'order_mock_${DateTime.now().millisecondsSinceEpoch}',
           response.paymentId ?? 'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
+          response.signature ?? 'mock_signature',
         );
       }
     } else {
@@ -127,6 +126,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
         boost['count'],
         response.orderId ?? 'order_mock_${DateTime.now().millisecondsSinceEpoch}',
         response.paymentId ?? 'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
+        response.signature ?? 'mock_signature',
       );
     }
   }
@@ -151,19 +151,30 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
 
     setState(() => _isProcessing = true);
 
-    final double price = double.tryParse(pkg['price'].toString()) ?? 0.0;
-    final int amountInPaisa = (price * 100).toInt();
+    // Call the backend to create a real Razorpay Order!
+    final orderData = await ApiService.createSubscriptionOrder(pkg['id']);
+    if (orderData == null) {
+      setState(() => _isProcessing = false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to initiate subscription payment. Please try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
 
-    // Since we don't have a backend initiate payment order creator for subscriptions,
-    // we use a generated local mock order ID to support fallback & live payments.
-    final String generatedOrderId = 'order_sub_${DateTime.now().millisecondsSinceEpoch}';
+    final String orderId = orderData['razorpayOrderId'];
+    final int amount = orderData['amount'];
+    final String keyId = orderData['keyId'] ?? 'rzp_test_123';
 
     var options = {
-      'key': 'rzp_test_123',
-      'amount': amountInPaisa,
+      'key': keyId,
+      'amount': amount,
       'name': 'Lunara VIP',
       'description': 'Subscription - ${pkg['name']}',
-      'order_id': generatedOrderId,
+      'order_id': orderId,
       'prefill': {
         'contact': '8888888888',
         'email': 'vip@lunara.com'
@@ -179,9 +190,9 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
     }
 
     if (!razorpayOpened) {
-      // Simulate checkout callback in test environment
+      // Simulate checkout callback in test/simulated environment
       Future.delayed(const Duration(seconds: 2), () {
-        _confirmPackagePurchase(pkg['id'], generatedOrderId, 'pay_mock_${DateTime.now().millisecondsSinceEpoch}');
+        _confirmPackagePurchase(pkg['id'], orderId, 'pay_mock_${DateTime.now().millisecondsSinceEpoch}', 'mock_signature');
       });
     }
   }
@@ -190,16 +201,30 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
     final boost = _boostOptions[_selectedBoostOption];
     setState(() => _isProcessing = true);
 
-    final double price = double.tryParse(boost['price'].toString()) ?? 0.0;
-    final int amountInPaisa = (price * 100).toInt();
-    final String generatedOrderId = 'order_boost_${DateTime.now().millisecondsSinceEpoch}';
+    // Call the backend to create a real Razorpay Order!
+    final orderData = await ApiService.createBoostOrder(boost['count']);
+    if (orderData == null) {
+      setState(() => _isProcessing = false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to initiate boost payment. Please try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final String orderId = orderData['razorpayOrderId'];
+    final int amount = orderData['amount'];
+    final String keyId = orderData['keyId'] ?? 'rzp_test_123';
 
     var options = {
-      'key': 'rzp_test_123',
-      'amount': amountInPaisa,
+      'key': keyId,
+      'amount': amount,
       'name': 'Lunara Profile Boost',
       'description': 'Boost Pack - ${boost['label']}',
-      'order_id': generatedOrderId,
+      'order_id': orderId,
       'prefill': {
         'contact': '8888888888',
         'email': 'boost@lunara.com'
@@ -216,16 +241,17 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
 
     if (!razorpayOpened) {
       Future.delayed(const Duration(seconds: 2), () {
-        _confirmBoostPurchase(boost['count'], generatedOrderId, 'pay_mock_${DateTime.now().millisecondsSinceEpoch}');
+        _confirmBoostPurchase(boost['count'], orderId, 'pay_mock_${DateTime.now().millisecondsSinceEpoch}', 'mock_signature');
       });
     }
   }
 
-  Future<void> _confirmPackagePurchase(String packageId, String orderId, String paymentId) async {
+  Future<void> _confirmPackagePurchase(String packageId, String orderId, String paymentId, String signature) async {
     final data = await ApiService.purchaseSubscription(
       packageId: packageId,
       gatewayOrderId: orderId,
       gatewayPaymentId: paymentId,
+      razorpaySignature: signature,
     );
 
     setState(() => _isProcessing = false);
@@ -234,6 +260,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
       _showSuccessDialog('Subscription Activated!', 'You have successfully upgraded your tier.');
       _loadData();
     } else {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Failed to activate subscription. Please contact support.'),
@@ -243,8 +270,13 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
     }
   }
 
-  Future<void> _confirmBoostPurchase(int boostCount, String orderId, String paymentId) async {
-    final data = await ApiService.purchaseBoost(boostCount);
+  Future<void> _confirmBoostPurchase(int boostCount, String orderId, String paymentId, String signature) async {
+    final data = await ApiService.purchaseBoost(
+      boostCount: boostCount,
+      gatewayOrderId: orderId,
+      gatewayPaymentId: paymentId,
+      razorpaySignature: signature,
+    );
 
     setState(() => _isProcessing = false);
 
@@ -252,6 +284,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
       _showSuccessDialog('Boosts Credited!', '$boostCount profile boosts have been added to your account.');
       _loadData();
     } else {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Failed to purchase boosts. Please contact support.'),
@@ -316,22 +349,26 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0E0E12),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text(
+        title: Text(
           'LUNARA VIP',
-          style: TextStyle(fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 1),
+          style: TextStyle(
+            fontWeight: FontWeight.w900, 
+            color: Theme.of(context).colorScheme.onSurface, 
+            letterSpacing: 1
+          ),
         ),
-        backgroundColor: const Color(0xFF0E0E12),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
         centerTitle: true,
-        iconTheme: const IconThemeData(color: Colors.white),
+        iconTheme: IconThemeData(color: Theme.of(context).colorScheme.onSurface),
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: LunaraTheme.electricViolet,
           indicatorWeight: 3,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white38,
+          labelColor: Theme.of(context).colorScheme.onSurface,
+          unselectedLabelColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
           labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
           tabs: const [
             Tab(text: 'VIP PASSES'),
@@ -354,8 +391,11 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
   Widget _buildVIPPassesTab() {
     final pkg = _selectedPackage;
     if (pkg == null) {
-      return const Center(
-        child: Text('No subscription plans available.', style: TextStyle(color: Colors.white70)),
+      return Center(
+        child: Text(
+          'No subscription plans available.', 
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7)),
+        ),
       );
     }
 
@@ -391,9 +431,14 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
 
           // Elite Durations (only if Elite selected)
           if (tier == 'ELITE') ...[
-            const Text(
+            Text(
               'SELECT ELITE OPTION',
-              style: TextStyle(color: Colors.white60, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), 
+                fontSize: 11, 
+                fontWeight: FontWeight.bold, 
+                letterSpacing: 1
+              ),
             ),
             const SizedBox(height: 12),
             _buildEliteDurationsSelector(),
@@ -435,6 +480,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
 
   Widget _buildProfileBoostTab() {
     final selectedBoost = _boostOptions[_selectedBoostOption];
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -484,9 +530,14 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
           ),
           const SizedBox(height: 32),
 
-          const Text(
+          Text(
             'SELECT BOOST PACKAGE',
-            style: TextStyle(color: Colors.white60, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), 
+              fontSize: 11, 
+              fontWeight: FontWeight.bold, 
+              letterSpacing: 1
+            ),
           ),
           const SizedBox(height: 16),
 
@@ -504,15 +555,26 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
             itemBuilder: (context, index) {
               final option = _boostOptions[index];
               final isSelected = _selectedBoostOption == index;
+              final gridItemBg = isSelected
+                  ? Colors.purple.withValues(alpha: 0.15)
+                  : (isDark ? const Color(0xFF16161E) : const Color(0xFFF2F2F7));
+              final gridItemBorder = isSelected
+                  ? Colors.purple
+                  : (isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05));
+              final labelColor = isDark ? Colors.white : Colors.black87;
+              final priceColor = isSelected
+                  ? Colors.purpleAccent
+                  : (isDark ? Colors.white70 : Colors.black54);
+
               return GestureDetector(
                 onTap: () => setState(() => _selectedBoostOption = index),
                 child: Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: isSelected ? Colors.purple.withValues(alpha: 0.15) : const Color(0xFF16161E),
+                    color: gridItemBg,
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: isSelected ? Colors.purple : Colors.white.withValues(alpha: 0.05),
+                      color: gridItemBorder,
                       width: 2,
                     ),
                   ),
@@ -521,13 +583,13 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
                     children: [
                       Text(
                         option['label'],
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                        style: TextStyle(color: labelColor, fontWeight: FontWeight.bold, fontSize: 16),
                       ),
                       const SizedBox(height: 6),
                       Text(
                         '₹${option['price']}',
                         style: TextStyle(
-                          color: isSelected ? Colors.purpleAccent : Colors.white70,
+                          color: priceColor,
                           fontSize: 20,
                           fontWeight: FontWeight.w900,
                         ),
@@ -569,6 +631,17 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
 
   Widget _buildPlanPill(int index, String label, Color color) {
     final isSelected = _selectedPlanIndex == index;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final pillBgColor = isSelected
+        ? color.withValues(alpha: 0.15)
+        : (isDark ? const Color(0xFF16161E) : const Color(0xFFF2F2F7));
+    final pillBorderColor = isSelected
+        ? color
+        : (isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05));
+    final pillTextColor = isSelected
+        ? color
+        : (isDark ? Colors.white60 : Colors.black54);
+
     return GestureDetector(
       onTap: () => setState(() {
         _selectedPlanIndex = index;
@@ -579,17 +652,17 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         decoration: BoxDecoration(
-          color: isSelected ? color.withValues(alpha: 0.15) : const Color(0xFF16161E),
+          color: pillBgColor,
           borderRadius: BorderRadius.circular(30),
           border: Border.all(
-            color: isSelected ? color : Colors.white.withValues(alpha: 0.05),
+            color: pillBorderColor,
             width: 1.5,
           ),
         ),
         child: Text(
           label.toUpperCase(),
           style: TextStyle(
-            color: isSelected ? color : Colors.white60,
+            color: pillTextColor,
             fontWeight: FontWeight.bold,
             fontSize: 12,
             letterSpacing: 0.5,
@@ -607,17 +680,30 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
     final int duration = pkg['durationDays'] ?? 0;
     final bool isActive = _activePackageId == pkg['id'];
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBgColor = isDark ? const Color(0xFF16161E) : Colors.white;
+    final textOnCardColor = isDark ? Colors.white : Colors.black;
+    final subTextOnCardColor = isDark ? Colors.white38 : Colors.black38;
+    final descOnCardColor = isDark ? Colors.white60 : Colors.black54;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(28),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [color.withValues(alpha: 0.15), const Color(0xFF16161E)],
+          colors: [color.withValues(alpha: 0.15), cardBgColor],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: color.withValues(alpha: 0.3), width: 1.5),
+        boxShadow: isDark ? [] : [
+          BoxShadow(
+            color: color.withValues(alpha: 0.08),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -651,19 +737,19 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
             children: [
               Text(
                 '₹${price.toStringAsFixed(0)}',
-                style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.w900),
+                style: TextStyle(color: textOnCardColor, fontSize: 36, fontWeight: FontWeight.w900),
               ),
               const SizedBox(width: 8),
               Text(
                 '/ $duration DAYS',
-                style: const TextStyle(color: Colors.white38, fontSize: 14, fontWeight: FontWeight.bold),
+                style: TextStyle(color: subTextOnCardColor, fontSize: 14, fontWeight: FontWeight.bold),
               ),
             ],
           ),
           const SizedBox(height: 8),
           Text(
             _getPlanDescription(tier),
-            style: const TextStyle(color: Colors.white60, fontSize: 13, height: 1.4),
+            style: TextStyle(color: descOnCardColor, fontSize: 13, height: 1.4),
           ),
         ],
       ),
@@ -673,6 +759,9 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
   Widget _buildEliteDurationsSelector() {
     final elites = _elitePackages;
     if (elites.isEmpty) return const SizedBox.shrink();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final itemBgColor = isDark ? const Color(0xFF16161E) : const Color(0xFFF2F2F7);
+    final borderUnselectedColor = isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05);
 
     return Row(
       children: List.generate(elites.length, (index) {
@@ -694,10 +783,10 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
               margin: const EdgeInsets.only(right: 6),
               padding: const EdgeInsets.symmetric(vertical: 12),
               decoration: BoxDecoration(
-                color: isSelected ? const Color(0xFFFFB703).withValues(alpha: 0.15) : const Color(0xFF16161E),
+                color: isSelected ? const Color(0xFFFFB703).withValues(alpha: 0.15) : itemBgColor,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: isSelected ? const Color(0xFFFFB703) : Colors.white.withValues(alpha: 0.05),
+                  color: isSelected ? const Color(0xFFFFB703) : borderUnselectedColor,
                   width: 1.5,
                 ),
               ),
@@ -706,7 +795,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
                   Text(
                     label.toUpperCase(),
                     style: TextStyle(
-                      color: isSelected ? const Color(0xFFFFB703) : Colors.white70,
+                      color: isSelected ? const Color(0xFFFFB703) : (isDark ? Colors.white70 : Colors.black87),
                       fontWeight: FontWeight.bold,
                       fontSize: 13,
                     ),
@@ -715,7 +804,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
                   Text(
                     '₹${price.toStringAsFixed(0)}',
                     style: TextStyle(
-                      color: isSelected ? Colors.white : Colors.white38,
+                      color: isSelected ? (isDark ? Colors.white : Colors.black) : (isDark ? Colors.white38 : Colors.black38),
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
                     ),
@@ -767,9 +856,14 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'INCLUDED BENEFITS',
-          style: TextStyle(color: Colors.white60, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1),
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), 
+            fontSize: 11, 
+            fontWeight: FontWeight.bold, 
+            letterSpacing: 1
+          ),
         ),
         const SizedBox(height: 16),
         ...benefits.map((b) => _benefitItem(b['title']!, b['desc']!, color)),
@@ -796,12 +890,19 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
               children: [
                 Text(
                   title,
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface, 
+                    fontWeight: FontWeight.bold, 
+                    fontSize: 14
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   desc,
-                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4), 
+                    fontSize: 11
+                  ),
                 ),
               ],
             ),
@@ -823,6 +924,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
   }
 
   Widget _boostChecklistItem(String text) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Row(
@@ -836,7 +938,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(color: Color(0xCCFFFFFF), fontSize: 13),
+              style: TextStyle(color: isDark ? const Color(0xCCFFFFFF) : Colors.black87, fontSize: 13),
             ),
           ),
         ],

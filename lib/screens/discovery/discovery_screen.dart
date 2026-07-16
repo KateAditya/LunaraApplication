@@ -1803,6 +1803,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           final userObj = feed['user'] is Map ? feed['user'] : feed;
           final String? profilePhoto =
               (userObj['profilePhotoUrl'] ??
+                      userObj['profileImageUrl'] ??
+                      userObj['photoUrl'] ??
                       userObj['profilePhoto'] ??
                       feed['image'])
                   ?.toString();
@@ -2283,6 +2285,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                 if (id.isEmpty) return;
                                 final String? profilePhoto =
                                     (user['profilePhotoUrl'] ??
+                                            user['profileImageUrl'] ??
+                                            user['photoUrl'] ??
                                             user['profilePhoto'] ??
                                             user['image'])
                                         ?.toString();

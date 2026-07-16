@@ -139,6 +139,11 @@ class User {
       photo = url.startsWith('http')
           ? url
           : '${ApiService.baseUrl}${url.startsWith('/') ? '' : '/'}$url';
+    } else if (data['photoUrl'] != null) {
+      String url = data['photoUrl'].toString();
+      photo = url.startsWith('http')
+          ? url
+          : '${ApiService.baseUrl}${url.startsWith('/') ? '' : '/'}$url';
     } else if (data['images'] != null && (data['images'] as List).isNotEmpty) {
       final img = data['images'][0];
       if (img is Map && img['filePath'] != null) {

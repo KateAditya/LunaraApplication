@@ -48,6 +48,7 @@ class LunaraProfileImage extends StatelessWidget {
       String? photo =
           (userData!['profilePhotoUrl'] ??
                   userData!['profileImageUrl'] ??
+                  userData!['photoUrl'] ??
                   userData!['profilePhoto'] ??
                   userData!['userAvatar'] ??
                   userData!['image'] ??

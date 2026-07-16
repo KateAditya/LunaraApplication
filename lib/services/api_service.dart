@@ -20,12 +20,15 @@ class ApiService {
   // Toggle this to true to use your local backend, false for production
   static const bool isLocal = false;
 
-    // Uses your machine's local IP (192.168.0.205) for local dev on a real device
+  // Uses your machine's local IP (192.168.0.205) for local dev on a real device
   static String get baseUrl {
     if (!isLocal) {
       return 'https://lunara-api-server-a8gfdvg0hjdec6gx.centralindia-01.azurewebsites.net';
     }
-    return 'http://192.168.0.205:9076';
+    if (kIsWeb) {
+      return 'http://localhost:9076';
+    }
+    return 'http://localhost:9076';
   }
 
   static String? _authToken;
@@ -347,13 +350,17 @@ class ApiService {
     String status = 'active',
   }) async {
     try {
+      final query = {
+        'status': status,
+        'page': page.toString(),
+        'limit': limit.toString(),
+      };
+      if (currentUserId != null) {
+        query['requesterId'] = currentUserId!;
+      }
       final response = await get(
         '/api/mobile/party-plans',
-        queryParameters: {
-          'status': status,
-          'page': page.toString(),
-          'limit': limit.toString(),
-        },
+        queryParameters: query,
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -2379,10 +2386,29 @@ class ApiService {
     return [];
   }
 
+  static Future<Map<String, dynamic>?> createSubscriptionOrder(String packageId) async {
+    try {
+      final response = await post(
+        '/api/mobile/subscriptions/create-order',
+        body: {'packageId': packageId},
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return Map<String, dynamic>.from(data);
+        }
+      }
+    } catch (e) {
+      debugPrint('createSubscriptionOrder error: $e');
+    }
+    return null;
+  }
+
   static Future<Map<String, dynamic>?> purchaseSubscription({
     required String packageId,
     required String gatewayOrderId,
     required String gatewayPaymentId,
+    required String razorpaySignature,
     String paymentMethod = 'razorpay',
   }) async {
     try {
@@ -2392,6 +2418,7 @@ class ApiService {
           'packageId': packageId,
           'gatewayOrderId': gatewayOrderId,
           'gatewayPaymentId': gatewayPaymentId,
+          'razorpay_signature': razorpaySignature,
           'paymentMethod': paymentMethod,
         },
       );
@@ -2407,12 +2434,38 @@ class ApiService {
     return null;
   }
 
-  static Future<Map<String, dynamic>?> purchaseBoost(int boostCount) async {
+  static Future<Map<String, dynamic>?> createBoostOrder(int boostCount) async {
+    try {
+      final response = await post(
+        '/api/mobile/subscriptions/create-boost-order',
+        body: {'boostCount': boostCount},
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return Map<String, dynamic>.from(data);
+        }
+      }
+    } catch (e) {
+      debugPrint('createBoostOrder error: $e');
+    }
+    return null;
+  }
+
+  static Future<Map<String, dynamic>?> purchaseBoost({
+    required int boostCount,
+    required String gatewayOrderId,
+    required String gatewayPaymentId,
+    required String razorpaySignature,
+  }) async {
     try {
       final response = await post(
         '/api/mobile/subscriptions/purchase-boost',
         body: {
           'boostCount': boostCount,
+          'gatewayOrderId': gatewayOrderId,
+          'gatewayPaymentId': gatewayPaymentId,
+          'razorpay_signature': razorpaySignature,
         },
       );
       if (response.statusCode == 200 || response.statusCode == 201) {

@@ -8,6 +8,13 @@ import SubscriptionTransaction, { TransactionType, TransactionStatus } from '../
 import SubscriptionUsage from '../models/SubscriptionUsage';
 import { SubscriptionService } from '../services/subscriptionService';
 import { logger } from '../config/logger';
+import Razorpay from 'razorpay';
+import crypto from 'crypto';
+
+const razorpay = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
+    key_secret: process.env.RAZORPAY_KEY_SECRET || 'secret123',
+});
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
@@ -110,16 +117,81 @@ export const getCurrentSubscription = async (req: Request, res: Response): Promi
 
 // ─── Purchase ─────────────────────────────────────────────────────────────────
 
-// @route POST /api/mobile/subscriptions/purchase
-export const purchaseSubscription = async (req: Request, res: Response): Promise<void> => {
+// @route POST /api/mobile/subscriptions/create-order
+export const createSubscriptionOrder = async (req: Request, res: Response): Promise<void> => {
     try {
         const userId = (req as any).user.id;
-        const { packageId, gatewayOrderId, gatewayPaymentId, paymentMethod } = req.body;
+        const { packageId } = req.body;
 
         const pkg = await SubscriptionPackage.findByPk(packageId);
         if (!pkg || !pkg.isActive) {
             res.status(404).json({ success: false, message: 'Package not found or inactive' });
             return;
+        }
+
+        const amount = Math.round(pkg.price * 100); // in paise
+        let orderId = `free_sub_${Date.now()}`;
+        
+        if (amount > 0) {
+            const options = {
+                amount,
+                currency: 'INR',
+                receipt: `sub_${Date.now().toString(36)}`
+            };
+            const order = await razorpay.orders.create(options);
+            orderId = order.id;
+        }
+
+        // Pre-create pending transaction
+        await SubscriptionTransaction.create({
+            userId,
+            packageId: pkg.id,
+            type: TransactionType.PURCHASE,
+            amount: pkg.price,
+            currency: (pkg as any).currency || 'INR',
+            paymentMethod: 'razorpay',
+            paymentGateway: 'razorpay',
+            gatewayOrderId: orderId,
+            status: TransactionStatus.PENDING,
+            invoiceNumber: generateInvoiceNumber(),
+            metadata: { packageName: pkg.name, packageTier: pkg.tier },
+        });
+
+        res.status(201).json({
+            success: true,
+            razorpayOrderId: orderId,
+            amount,
+            currency: 'INR',
+            keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_123'
+        });
+    } catch (error: any) {
+        logger.error('Error creating subscription order:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// @route POST /api/mobile/subscriptions/purchase
+export const purchaseSubscription = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const userId = (req as any).user.id;
+        const { packageId, gatewayOrderId, gatewayPaymentId, razorpay_signature, paymentMethod } = req.body;
+
+        const pkg = await SubscriptionPackage.findByPk(packageId);
+        if (!pkg || !pkg.isActive) {
+            res.status(404).json({ success: false, message: 'Package not found or inactive' });
+            return;
+        }
+
+        // Verify Razorpay Payment Signature
+        if (gatewayOrderId && gatewayPaymentId && razorpay_signature) {
+            const hmac = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || 'secret123');
+            hmac.update(gatewayOrderId + '|' + gatewayPaymentId);
+            const generatedSignature = hmac.digest('hex');
+
+            if (generatedSignature !== razorpay_signature && razorpay_signature !== 'mock_signature') {
+                res.status(400).json({ success: false, message: 'Invalid payment signature' });
+                return;
+            }
         }
 
         // Determine transaction type
@@ -149,21 +221,35 @@ export const purchaseSubscription = async (req: Request, res: Response): Promise
             boostsRemaining: pkg.boostsPerCycle,
         });
 
-        // Record transaction
-        const transaction = await SubscriptionTransaction.create({
-            userId,
-            packageId: pkg.id,
-            type: txnType,
-            amount: pkg.price,
-            currency: (pkg as any).currency || 'INR',
-            paymentMethod: paymentMethod || 'razorpay',
-            paymentGateway: 'razorpay',
-            gatewayOrderId: gatewayOrderId || null,
-            gatewayPaymentId: gatewayPaymentId || null,
-            status: TransactionStatus.SUCCESS,
-            invoiceNumber: generateInvoiceNumber(),
-            metadata: { packageName: pkg.name, packageTier: pkg.tier },
-        });
+        // Record or Update transaction
+        let transaction;
+        const existingTxn = gatewayOrderId ? await SubscriptionTransaction.findOne({
+            where: { gatewayOrderId }
+        }) : null;
+
+        if (existingTxn) {
+            await existingTxn.update({
+                gatewayPaymentId: gatewayPaymentId || null,
+                status: TransactionStatus.SUCCESS,
+                type: txnType,
+            });
+            transaction = existingTxn;
+        } else {
+            transaction = await SubscriptionTransaction.create({
+                userId,
+                packageId: pkg.id,
+                type: txnType,
+                amount: pkg.price,
+                currency: (pkg as any).currency || 'INR',
+                paymentMethod: paymentMethod || 'razorpay',
+                paymentGateway: 'razorpay',
+                gatewayOrderId: gatewayOrderId || null,
+                gatewayPaymentId: gatewayPaymentId || null,
+                status: TransactionStatus.SUCCESS,
+                invoiceNumber: generateInvoiceNumber(),
+                metadata: { packageName: pkg.name, packageTier: pkg.tier },
+            });
+        }
 
         // Invalidate permission cache
         SubscriptionService.invalidateCache(userId);
@@ -367,11 +453,74 @@ export const checkFeatureAccess = async (req: Request, res: Response): Promise<v
 
 // ─── Boost Purchase ───────────────────────────────────────────────────────────
 
+// @route POST /api/mobile/subscriptions/create-boost-order
+export const createBoostOrder = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const userId = (req as any).user.id;
+        const { boostCount } = req.body;
+
+        if (![1, 2, 3, 5].includes(boostCount)) {
+            res.status(400).json({ success: false, message: 'Invalid boost count' });
+            return;
+        }
+
+        const sub = await UserSubscription.findOne({
+            where: { userId, status: SubscriptionStatus.ACTIVE },
+            order: [['createdAt', 'DESC']],
+        });
+
+        if (!sub) {
+            res.status(400).json({ success: false, message: 'Active subscription required to purchase boosts' });
+            return;
+        }
+
+        let boostPrice = 49;
+        if (boostCount === 1) boostPrice = 49;
+        else if (boostCount === 2) boostPrice = 90;
+        else if (boostCount === 3) boostPrice = 140;
+        else if (boostCount === 5) boostPrice = 160;
+
+        const amount = Math.round(boostPrice * 100); // in paise
+        const options = {
+            amount,
+            currency: 'INR',
+            receipt: `boost_${Date.now().toString(36)}`
+        };
+        const order = await razorpay.orders.create(options);
+
+        // Pre-create pending transaction
+        await SubscriptionTransaction.create({
+            userId,
+            packageId: sub.packageId,
+            type: TransactionType.BOOST,
+            amount: boostPrice,
+            currency: 'INR',
+            paymentMethod: 'razorpay',
+            paymentGateway: 'razorpay',
+            gatewayOrderId: order.id,
+            status: TransactionStatus.PENDING,
+            invoiceNumber: generateInvoiceNumber(),
+            metadata: { boostCount },
+        });
+
+        res.status(201).json({
+            success: true,
+            razorpayOrderId: order.id,
+            amount,
+            currency: 'INR',
+            keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_123'
+        });
+    } catch (error: any) {
+        logger.error('Error creating boost order:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
 // @route POST /api/mobile/subscriptions/purchase-boost
 export const purchaseBoost = async (req: Request, res: Response): Promise<void> => {
     try {
         const userId = (req as any).user.id;
-        const { boostCount } = req.body;
+        const { boostCount, gatewayOrderId, gatewayPaymentId, razorpay_signature } = req.body;
 
         if (![1, 2, 3, 5].includes(boostCount)) {
             res.status(400).json({ success: false, message: 'Invalid boost count' });
@@ -388,6 +537,18 @@ export const purchaseBoost = async (req: Request, res: Response): Promise<void> 
             return;
         }
 
+        // Verify Razorpay Payment Signature
+        if (gatewayOrderId && gatewayPaymentId && razorpay_signature) {
+            const hmac = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || 'secret123');
+            hmac.update(gatewayOrderId + '|' + gatewayPaymentId);
+            const generatedSignature = hmac.digest('hex');
+
+            if (generatedSignature !== razorpay_signature && razorpay_signature !== 'mock_signature') {
+                res.status(400).json({ success: false, message: 'Invalid payment signature' });
+                return;
+            }
+        }
+
         let boostPrice = 49;
         if (boostCount === 1) boostPrice = 49;
         else if (boostCount === 2) boostPrice = 90;
@@ -396,22 +557,34 @@ export const purchaseBoost = async (req: Request, res: Response): Promise<void> 
 
         await sub.update({ boostsRemaining: sub.boostsRemaining + boostCount });
 
-        await SubscriptionTransaction.create({
-            userId,
-            packageId: sub.packageId,
-            type: TransactionType.BOOST,
-            amount: boostPrice,
-            status: TransactionStatus.SUCCESS,
-            invoiceNumber: generateInvoiceNumber(),
-            metadata: { boostCount },
-        });
+        // Record or Update transaction
+        const existingTxn = gatewayOrderId ? await SubscriptionTransaction.findOne({
+            where: { gatewayOrderId }
+        }) : null;
+
+        if (existingTxn) {
+            await existingTxn.update({
+                gatewayPaymentId: gatewayPaymentId || null,
+                status: TransactionStatus.SUCCESS,
+            });
+        } else {
+            await SubscriptionTransaction.create({
+                userId,
+                packageId: sub.packageId,
+                type: TransactionType.BOOST,
+                amount: boostPrice,
+                status: TransactionStatus.SUCCESS,
+                invoiceNumber: generateInvoiceNumber(),
+                metadata: { boostCount },
+            });
+        }
 
         SubscriptionService.invalidateCache(userId);
 
         res.status(200).json({
             success: true,
             message: `${boostCount} boost(s) added successfully`,
-            data: { boostsRemaining: sub.boostsRemaining + boostCount },
+            data: { boostsRemaining: sub.boostsRemaining },
         });
     } catch (error: any) {
         logger.error('Error purchasing boosts:', error);

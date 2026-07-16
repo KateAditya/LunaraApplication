@@ -14,11 +14,13 @@ router.get('/packages', ctrl.getAvailablePackages);
 router.get('/current', ctrl.getCurrentSubscription);
 
 // ── Purchase Flow ──────────────────────────────────────────────────────────────
+router.post('/create-order', ctrl.createSubscriptionOrder);
 router.post('/purchase', ctrl.purchaseSubscription);
 router.post('/renew', ctrl.renewSubscription);
 router.post('/cancel', ctrl.cancelSubscription);
 
 // ── Boost Purchase ─────────────────────────────────────────────────────────────
+router.post('/create-boost-order', ctrl.createBoostOrder);
 router.post('/purchase-boost', ctrl.purchaseBoost);
 
 // ── History & Invoices ─────────────────────────────────────────────────────────

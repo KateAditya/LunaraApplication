@@ -187,6 +187,30 @@ export const connectDatabase = async (): Promise<void> => {
                     ('daily_backtracks', 'Daily Backtracks', 'Number of times you can backtrack per day', 'matching', 'integer', 21, 'rotate-left')
                 ON CONFLICT (key) DO NOTHING;
             `);
+
+            // Seed default subscription packages if none exist
+            const [pkgCountResult]: any = await sequelize.query(`SELECT count(*) as count FROM "SubscriptionPackages";`);
+            const pkgCount = parseInt(pkgCountResult[0]?.count || '0');
+            if (pkgCount === 0) {
+                logger.info('No subscription packages found. Seeding default subscription packages...');
+                await sequelize.query(`
+                    INSERT INTO "SubscriptionPackages" (
+                        id, name, tier, price, duration_days, 
+                        daily_match_requests, daily_likes, daily_posts, 
+                        superlikes_per_cycle, boosts_per_cycle, backtrack_limit,
+                        has_hide_profile, has_priority_visibility, has_trust_badge, 
+                        has_elite_badge, can_see_who_liked, is_active, 
+                        display_order, theme_color, created_at, updated_at
+                    ) VALUES 
+                        (gen_random_uuid(), 'Free Service (Basic Access)', 'FREE', 0.00, 3650, 3, 7, 5, 0, 0, 3, false, false, false, false, false, true, 0, '#6c757d', NOW(), NOW()),
+                        (gen_random_uuid(), 'Lunara Core', 'CORE', 199.00, 7, -1, -1, -1, 3, 0, 5, false, false, false, false, true, true, 1, '#00A9FF', NOW(), NOW()),
+                        (gen_random_uuid(), 'Lunara Plus', 'PLUS', 299.00, 7, -1, -1, -1, 10, 2, 10, true, false, false, false, true, true, 2, '#7F00FF', NOW(), NOW()),
+                        (gen_random_uuid(), 'Lunara Pro', 'PRO', 599.00, 14, -1, -1, -1, 14, 4, 15, true, true, true, false, true, true, 3, '#E100FF', NOW(), NOW()),
+                        (gen_random_uuid(), 'Lunara Elite - 15 Days', 'ELITE', 999.00, 15, -1, -1, -1, 9999, 9999, 9999, true, true, true, true, true, true, 4, '#FFB703', NOW(), NOW()),
+                        (gen_random_uuid(), 'Lunara Elite - 30 Days', 'ELITE', 1699.00, 30, -1, -1, -1, 9999, 9999, 9999, true, true, true, true, true, true, 5, '#FFB703', NOW(), NOW());
+                `);
+                logger.info('Default subscription packages seeded successfully.');
+            }
         } catch (alterError: any) {
             logger.warn('Dynamic table migration warning: ' + alterError.message);
         }
@@ -262,8 +286,12 @@ export const connectDatabase = async (): Promise<void> => {
 
         if (process.env.NODE_ENV === 'development') {
             // Sync models in development (be careful in production)
-            await sequelize.sync({ alter: true });
-            logger.info('Database models synchronized');
+            try {
+                await sequelize.sync();
+                logger.info('Database models synchronized');
+            } catch (syncErr: any) {
+                logger.warn('Sequelize sync warning: ' + syncErr.message);
+            }
         }
     } catch (error) {
         logger.error('Unable to connect to the database:', error);

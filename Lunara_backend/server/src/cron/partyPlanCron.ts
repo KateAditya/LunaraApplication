@@ -44,14 +44,14 @@ export const startPartyPlanCron = () => {
                 if (!hostPaid) {
                     // Host did not pay within their 30 min acceptance window:
                     await request.update({ status: PartyPlanRequestStatus.PAYMENT_FAILED });
-                    await plan.update({ status: PartyPlanStatus.ACTIVE, isLive: true });
+                    await plan.update({ status: PartyPlanStatus.ACTIVE, isLive: plan.visibility !== 'private' });
                     logger.info(`Plan ${plan.id} is live again because host failed to pay deposit within 30m.`);
                     await relistPartyPlanInSocket(plan.id);
                 } else if (hostPaid && !joinerPaid) {
                     // Joiner did not pay within their 30 min window (starts after host paid):
                     await request.update({ status: PartyPlanRequestStatus.PAYMENT_FAILED });
-                    // Host remains paid, and plan goes back live publicly!
-                    await plan.update({ status: PartyPlanStatus.ACTIVE, isLive: true });
+                    // Host remains paid, and plan goes back live publicly if not private!
+                    await plan.update({ status: PartyPlanStatus.ACTIVE, isLive: plan.visibility !== 'private' });
                     logger.info(`Plan ${plan.id} is live again because joiner (req ${request.id}) did not pay within 30m. Host is already paid.`);
                     await relistPartyPlanInSocket(plan.id);
 
@@ -275,7 +275,16 @@ async function relistPartyPlanInSocket(planId: string) {
             };
 
             const { io } = require('../server');
-            io.emit('party_plan_created', responseData);
+            if (relistedPlan.visibility === 'private') {
+                io.to(`user_${relistedPlan.userId}`).emit('party_plan_created', responseData);
+                if (Array.isArray(relistedPlan.selectedUsers)) {
+                    for (const invitedUserId of relistedPlan.selectedUsers) {
+                        io.to(`user_${invitedUserId}`).emit('party_plan_created', responseData);
+                    }
+                }
+            } else {
+                io.emit('party_plan_created', responseData);
+            }
         }
     } catch (socketErr) {
         logger.warn('Socket emission failed for relistPartyPlanInSocket:', socketErr);
