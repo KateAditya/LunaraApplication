@@ -17,7 +17,6 @@ import 'swipe_intro_screen.dart';
 import '../../widgets/venue_timing_error_dialog.dart';
 import '../discovery/upcoming_party_screen.dart';
 
-
 class PlanHubScreen extends StatefulWidget {
   final bool autoShowCreatePlan;
   final bool autoShowStrangersMeet;
@@ -88,7 +87,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     };
     final weekdayName = weekdaysMap[date.weekday];
     if (weekdayName == null) return false;
-    
+
     return daysOpen.any((d) {
       final str = d.toString().trim().toLowerCase();
       final fullDay = weekdayName.toLowerCase();
@@ -465,14 +464,14 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             ),
                             child: Transform.rotate(
                               angle: _rotateAnim.value * 2,
-                            child: Image.asset(
-                              'assets/images/logo_icon.png',
-                              width: 48,
-                              height: 48,
-                              color: Colors.white,
+                              child: Image.asset(
+                                'assets/images/logo.png',
+                                width: 48,
+                                height: 48,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
-                        ),
                       ],
                     ),
                   ),
@@ -559,9 +558,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
         onTap: () {
           Navigator.push(
             context,
-            MaterialPageRoute(
-              builder: (_) => const LiveFeedScreen(),
-            ),
+            MaterialPageRoute(builder: (_) => const LiveFeedScreen()),
           );
         },
         child: Container(
@@ -812,7 +809,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               Map<String, dynamic>? passVenueMap;
                               if (matchingVenue != null) {
                                 passVenueMap = matchingVenue.toMap();
-                              } else if (venueMap is Map && venueMap.isNotEmpty) {
+                              } else if (venueMap is Map &&
+                                  venueMap.isNotEmpty) {
                                 passVenueMap = Map<String, dynamic>.from(
                                   venueMap,
                                 );
@@ -829,7 +827,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               );
                             },
                             splashColor: Colors.white.withValues(alpha: 0.1),
-                            highlightColor: Colors.white.withValues(alpha: 0.05),
+                            highlightColor: Colors.white.withValues(
+                              alpha: 0.05,
+                            ),
                           ),
                         ),
                       ),
@@ -1318,7 +1318,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
 
             bool isDateOpen(DateTime date) {
               if (selectedVenue == null) return true;
-              
+
               // Check closed dates
               final closedDates = selectedVenue!.closedDates;
               if (closedDates != null) {
@@ -1342,13 +1342,18 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                 7: 'Sunday',
               };
               final weekdayName = weekdaysMap[date.weekday];
-              if (selectedVenue!.daysOpen != null && selectedVenue!.daysOpen!.isNotEmpty) {
-                final isOpenOnWeekday = weekdayName != null && selectedVenue!.daysOpen!.any((d) {
-                  final str = d.toString().trim().toLowerCase();
-                  final fullDay = weekdayName.toLowerCase();
-                  final shortDay = weekdayName.substring(0, 3).toLowerCase();
-                  return str.contains(fullDay) || str.contains(shortDay);
-                });
+              if (selectedVenue!.daysOpen != null &&
+                  selectedVenue!.daysOpen!.isNotEmpty) {
+                final isOpenOnWeekday =
+                    weekdayName != null &&
+                    selectedVenue!.daysOpen!.any((d) {
+                      final str = d.toString().trim().toLowerCase();
+                      final fullDay = weekdayName.toLowerCase();
+                      final shortDay = weekdayName
+                          .substring(0, 3)
+                          .toLowerCase();
+                      return str.contains(fullDay) || str.contains(shortDay);
+                    });
                 if (!isOpenOnWeekday) {
                   return false;
                 }
@@ -1361,7 +1366,10 @@ class _PlanHubScreenState extends State<PlanHubScreen>
               if (activeDate == null) return true;
               if (selectedVenue == null) return true;
 
-              final invalidReason = selectedVenue!.getInvalidReason(activeDate, time);
+              final invalidReason = selectedVenue!.getInvalidReason(
+                activeDate,
+                time,
+              );
               if (invalidReason != null) {
                 return false;
               }
@@ -1373,12 +1381,15 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                 time.hour,
                 time.minute,
               );
-              final minAllowedDateTime = DateTime.now().add(const Duration(hours: 1));
+              final minAllowedDateTime = DateTime.now().add(
+                const Duration(hours: 1),
+              );
               if (selectedDateTime.isBefore(minAllowedDateTime)) {
                 return false;
               }
               return true;
             }
+
             final List<DateTime> dynamicDates = [];
             DateTime checkDate = today;
             while (dynamicDates.length < 6) {
@@ -1403,7 +1414,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
               final mm = date.month.toString().padLeft(2, '0');
               final dd = date.day.toString().padLeft(2, '0');
               final dateStr = '$yyyy-$mm-$dd';
-              if (selectedVenue!.closedDates != null && selectedVenue!.closedDates!.contains(dateStr)) {
+              if (selectedVenue!.closedDates != null &&
+                  selectedVenue!.closedDates!.contains(dateStr)) {
                 VenueTimingErrorDialog.show(
                   context,
                   venueName: selectedVenue!.name,
@@ -1425,13 +1437,18 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                 7: 'Sunday',
               };
               final weekdayName = weekdaysMap[date.weekday];
-              final isOpenOnWeekday = weekdayName != null && selectedVenue!.daysOpen != null && selectedVenue!.daysOpen!.any((d) {
-                final str = d.toString().trim().toLowerCase();
-                final fullDay = weekdayName.toLowerCase();
-                final shortDay = weekdayName.substring(0, 3).toLowerCase();
-                return str.contains(fullDay) || str.contains(shortDay);
-              });
-              if (!isOpenOnWeekday && selectedVenue!.daysOpen != null && selectedVenue!.daysOpen!.isNotEmpty) {
+              final isOpenOnWeekday =
+                  weekdayName != null &&
+                  selectedVenue!.daysOpen != null &&
+                  selectedVenue!.daysOpen!.any((d) {
+                    final str = d.toString().trim().toLowerCase();
+                    final fullDay = weekdayName.toLowerCase();
+                    final shortDay = weekdayName.substring(0, 3).toLowerCase();
+                    return str.contains(fullDay) || str.contains(shortDay);
+                  });
+              if (!isOpenOnWeekday &&
+                  selectedVenue!.daysOpen != null &&
+                  selectedVenue!.daysOpen!.isNotEmpty) {
                 VenueTimingErrorDialog.show(
                   context,
                   venueName: selectedVenue!.name,
@@ -1459,14 +1476,19 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                 if (selectedDateTime.isBefore(DateTime.now())) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Selected date and time cannot be in the past.'),
+                      content: Text(
+                        'Selected date and time cannot be in the past.',
+                      ),
                       backgroundColor: Colors.redAccent,
                     ),
                   );
                   return;
                 }
 
-                final invalidReason = selectedVenue!.getInvalidReason(date, time);
+                final invalidReason = selectedVenue!.getInvalidReason(
+                  date,
+                  time,
+                );
                 if (invalidReason != null) {
                   VenueTimingErrorDialog.show(
                     context,
@@ -1514,7 +1536,11 @@ class _PlanHubScreenState extends State<PlanHubScreen>
               }
             }
 
-            Widget buildDateChip(String label, DateTime dateVal, bool isSelected) {
+            Widget buildDateChip(
+              String label,
+              DateTime dateVal,
+              bool isSelected,
+            ) {
               return GestureDetector(
                 onTap: () {
                   if (selectedVenue == null) {
@@ -1528,7 +1554,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                   }
                   setSheetState(() {
                     selectedDate = dateVal;
-                    if (selectedTime != null && !isTimeSlotValid(selectedTime!, dateVal)) {
+                    if (selectedTime != null &&
+                        !isTimeSlotValid(selectedTime!, dateVal)) {
                       selectedTime = null;
                     }
                     if (selectedDate != null && selectedTime != null) {
@@ -1546,12 +1573,19 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                   });
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
-                    color: isSelected ? LunaraTheme.electricViolet : Colors.grey[50],
+                    color: isSelected
+                        ? LunaraTheme.electricViolet
+                        : Colors.grey[50],
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: isSelected ? LunaraTheme.electricViolet : Colors.grey[300]!,
+                      color: isSelected
+                          ? LunaraTheme.electricViolet
+                          : Colors.grey[300]!,
                       width: 1,
                     ),
                   ),
@@ -1584,12 +1618,19 @@ class _PlanHubScreenState extends State<PlanHubScreen>
               return GestureDetector(
                 onTap: handleCustomDateSelection,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
-                    color: isSelected ? LunaraTheme.electricViolet : Colors.grey[50],
+                    color: isSelected
+                        ? LunaraTheme.electricViolet
+                        : Colors.grey[50],
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: isSelected ? LunaraTheme.electricViolet : Colors.grey[300]!,
+                      color: isSelected
+                          ? LunaraTheme.electricViolet
+                          : Colors.grey[300]!,
                       width: 1,
                     ),
                   ),
@@ -1618,10 +1659,12 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       const SizedBox(height: 2),
                       Text(
                         selectedDate != null &&
-                                !dynamicDates.any((d) =>
-                                    d.year == selectedDate!.year &&
-                                    d.month == selectedDate!.month &&
-                                    d.day == selectedDate!.day)
+                                !dynamicDates.any(
+                                  (d) =>
+                                      d.year == selectedDate!.year &&
+                                      d.month == selectedDate!.month &&
+                                      d.day == selectedDate!.day,
+                                )
                             ? DateFormat('MMM d').format(selectedDate!)
                             : 'Choose Date',
                         style: TextStyle(
@@ -1727,23 +1770,36 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     descriptionCtrl.text =
                                         "Let's party at ${v.name}! 🚀";
                                     // Validate previously selected date & time
-                                    if (selectedDate != null && selectedTime != null) {
-                                      final invalidReason = v.getInvalidReason(selectedDate!, selectedTime!);
+                                    if (selectedDate != null &&
+                                        selectedTime != null) {
+                                      final invalidReason = v.getInvalidReason(
+                                        selectedDate!,
+                                        selectedTime!,
+                                      );
                                       if (invalidReason != null) {
                                         selectedDate = null;
                                         selectedTime = null;
                                         dateCtrl.clear();
-                                        ScaffoldMessenger.of(context).showSnackBar(
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
                                           SnackBar(
-                                            content: Text('Cleared date/time selection: $invalidReason'),
-                                            backgroundColor: Colors.orangeAccent,
+                                            content: Text(
+                                              'Cleared date/time selection: $invalidReason',
+                                            ),
+                                            backgroundColor:
+                                                Colors.orangeAccent,
                                           ),
                                         );
                                       }
                                     } else if (selectedDate != null) {
                                       final yyyy = selectedDate!.year;
-                                      final mm = selectedDate!.month.toString().padLeft(2, '0');
-                                      final dd = selectedDate!.day.toString().padLeft(2, '0');
+                                      final mm = selectedDate!.month
+                                          .toString()
+                                          .padLeft(2, '0');
+                                      final dd = selectedDate!.day
+                                          .toString()
+                                          .padLeft(2, '0');
                                       final dateStr = '$yyyy-$mm-$dd';
                                       final weekdaysMap = {
                                         1: 'Monday',
@@ -1754,21 +1810,42 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         6: 'Saturday',
                                         7: 'Sunday',
                                       };
-                                      final weekdayName = weekdaysMap[selectedDate!.weekday];
-                                      final isOpenOnWeekday = weekdayName != null && v.daysOpen != null && v.daysOpen!.any((d) {
-                                        final str = d.toString().trim().toLowerCase();
-                                        final fullDay = weekdayName.toLowerCase();
-                                        final shortDay = weekdayName.substring(0, 3).toLowerCase();
-                                        return str.contains(fullDay) || str.contains(shortDay);
-                                      });
-                                      final isHoliday = v.closedDates != null && v.closedDates!.contains(dateStr);
-                                      if (isHoliday || (!isOpenOnWeekday && v.daysOpen != null && v.daysOpen!.isNotEmpty)) {
+                                      final weekdayName =
+                                          weekdaysMap[selectedDate!.weekday];
+                                      final isOpenOnWeekday =
+                                          weekdayName != null &&
+                                          v.daysOpen != null &&
+                                          v.daysOpen!.any((d) {
+                                            final str = d
+                                                .toString()
+                                                .trim()
+                                                .toLowerCase();
+                                            final fullDay = weekdayName
+                                                .toLowerCase();
+                                            final shortDay = weekdayName
+                                                .substring(0, 3)
+                                                .toLowerCase();
+                                            return str.contains(fullDay) ||
+                                                str.contains(shortDay);
+                                          });
+                                      final isHoliday =
+                                          v.closedDates != null &&
+                                          v.closedDates!.contains(dateStr);
+                                      if (isHoliday ||
+                                          (!isOpenOnWeekday &&
+                                              v.daysOpen != null &&
+                                              v.daysOpen!.isNotEmpty)) {
                                         selectedDate = null;
                                         dateCtrl.clear();
-                                        ScaffoldMessenger.of(context).showSnackBar(
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
                                           SnackBar(
-                                            content: Text('Cleared date selection because ${v.name} is closed on that day.'),
-                                            backgroundColor: Colors.orangeAccent,
+                                            content: Text(
+                                              'Cleared date selection because ${v.name} is closed on that day.',
+                                            ),
+                                            backgroundColor:
+                                                Colors.orangeAccent,
                                           ),
                                         );
                                       }
@@ -1860,22 +1937,29 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                 label = DateFormat('E').format(dateVal);
                               }
 
-                              final isSelected = selectedDate != null &&
+                              final isSelected =
+                                  selectedDate != null &&
                                   selectedDate!.year == dateVal.year &&
                                   selectedDate!.month == dateVal.month &&
                                   selectedDate!.day == dateVal.day;
 
                               return Padding(
                                 padding: const EdgeInsets.only(right: 8.0),
-                                child: buildDateChip(label, dateVal, isSelected),
+                                child: buildDateChip(
+                                  label,
+                                  dateVal,
+                                  isSelected,
+                                ),
                               );
                             }),
                             buildCustomChip(
                               selectedDate != null &&
-                              !dynamicDates.any((d) =>
-                                  d.year == selectedDate!.year &&
-                                  d.month == selectedDate!.month &&
-                                  d.day == selectedDate!.day)
+                                  !dynamicDates.any(
+                                    (d) =>
+                                        d.year == selectedDate!.year &&
+                                        d.month == selectedDate!.month &&
+                                        d.day == selectedDate!.day,
+                                  ),
                             ),
                           ],
                         ),
@@ -1899,18 +1983,26 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             const TimeOfDay(hour: 21, minute: 0), // 9 PM
                             const TimeOfDay(hour: 22, minute: 0), // 10 PM
                             const TimeOfDay(hour: 23, minute: 0), // 11 PM
-                            const TimeOfDay(hour: 0, minute: 0),  // 12 AM
+                            const TimeOfDay(hour: 0, minute: 0), // 12 AM
                           ];
 
-                          final validTimes = predefinedTimes.where((t) => isTimeSlotValid(t)).toList();
+                          final validTimes = predefinedTimes
+                              .where((t) => isTimeSlotValid(t))
+                              .toList();
 
                           String formatTimeOfDay(TimeOfDay tod) {
-                            final hour = tod.hour == 0 ? 12 : (tod.hour > 12 ? tod.hour - 12 : tod.hour);
+                            final hour = tod.hour == 0
+                                ? 12
+                                : (tod.hour > 12 ? tod.hour - 12 : tod.hour);
                             final ampm = tod.hour >= 12 ? 'PM' : 'AM';
                             return '$hour:00 $ampm';
                           }
 
-                          Widget buildTimeChip(String label, TimeOfDay tod, bool isSelected) {
+                          Widget buildTimeChip(
+                            String label,
+                            TimeOfDay tod,
+                            bool isSelected,
+                          ) {
                             return GestureDetector(
                               onTap: () {
                                 setSheetState(() {
@@ -1925,19 +2017,28 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                 });
                               },
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 10,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: isSelected ? LunaraTheme.electricViolet : Colors.grey[50],
+                                  color: isSelected
+                                      ? LunaraTheme.electricViolet
+                                      : Colors.grey[50],
                                   borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
-                                    color: isSelected ? LunaraTheme.electricViolet : Colors.grey[300]!,
+                                    color: isSelected
+                                        ? LunaraTheme.electricViolet
+                                        : Colors.grey[300]!,
                                     width: 1,
                                   ),
                                 ),
                                 child: Text(
                                   label,
                                   style: TextStyle(
-                                    color: isSelected ? Colors.white : Colors.black87,
+                                    color: isSelected
+                                        ? Colors.white
+                                        : Colors.black87,
                                     fontWeight: FontWeight.bold,
                                     fontSize: 12,
                                   ),
@@ -1949,7 +2050,11 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                           // Determine if selected time is a custom time (not in validTimes)
                           bool isCustomSelected = false;
                           if (selectedTime != null) {
-                            isCustomSelected = !validTimes.any((t) => t.hour == selectedTime!.hour && t.minute == selectedTime!.minute);
+                            isCustomSelected = !validTimes.any(
+                              (t) =>
+                                  t.hour == selectedTime!.hour &&
+                                  t.minute == selectedTime!.minute,
+                            );
                           }
 
                           return SingleChildScrollView(
@@ -1959,39 +2064,54 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               children: [
                                 ...validTimes.map((tod) {
                                   final label = formatTimeOfDay(tod);
-                                  final isSelected = selectedTime != null &&
+                                  final isSelected =
+                                      selectedTime != null &&
                                       selectedTime!.hour == tod.hour &&
                                       selectedTime!.minute == tod.minute;
 
                                   return Padding(
                                     padding: const EdgeInsets.only(right: 8.0),
-                                    child: buildTimeChip(label, tod, isSelected),
+                                    child: buildTimeChip(
+                                      label,
+                                      tod,
+                                      isSelected,
+                                    ),
                                   );
                                 }),
                                 GestureDetector(
                                   onTap: () async {
-                                    final TimeOfDay? picked = await showTimePicker(
-                                      context: context,
-                                      initialTime: selectedTime ?? const TimeOfDay(hour: 22, minute: 0),
-                                    );
+                                    final TimeOfDay? picked =
+                                        await showTimePicker(
+                                          context: context,
+                                          initialTime:
+                                              selectedTime ??
+                                              const TimeOfDay(
+                                                hour: 22,
+                                                minute: 0,
+                                              ),
+                                        );
                                     if (picked != null) {
                                       if (!isTimeSlotValid(picked)) {
                                         VenueTimingErrorDialog.show(
                                           context,
                                           venueName: selectedVenue!.name,
                                           daysOpen: selectedVenue!.daysOpen,
-                                          openingTime: selectedVenue!.openingTime,
-                                          closingTime: selectedVenue!.closingTime,
-                                          closedDates: selectedVenue!.closedDates,
+                                          openingTime:
+                                              selectedVenue!.openingTime,
+                                          closingTime:
+                                              selectedVenue!.closingTime,
+                                          closedDates:
+                                              selectedVenue!.closedDates,
                                         );
                                         return;
                                       }
                                       setSheetState(() {
                                         selectedTime = picked;
                                         if (selectedDate != null) {
-                                          final formattedTime = _formatTimeOfBooking(
-                                            '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}',
-                                          );
+                                          final formattedTime =
+                                              _formatTimeOfBooking(
+                                                '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}',
+                                              );
                                           dateCtrl.text =
                                               "${DateFormat('MMM dd, yyyy').format(selectedDate!)} at $formattedTime";
                                         }
@@ -1999,12 +2119,19 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     }
                                   },
                                   child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 10,
+                                    ),
                                     decoration: BoxDecoration(
-                                      color: isCustomSelected ? LunaraTheme.electricViolet : Colors.grey[50],
+                                      color: isCustomSelected
+                                          ? LunaraTheme.electricViolet
+                                          : Colors.grey[50],
                                       borderRadius: BorderRadius.circular(12),
                                       border: Border.all(
-                                        color: isCustomSelected ? LunaraTheme.electricViolet : Colors.grey[300]!,
+                                        color: isCustomSelected
+                                            ? LunaraTheme.electricViolet
+                                            : Colors.grey[300]!,
                                         width: 1,
                                       ),
                                     ),
@@ -2014,16 +2141,21 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         Icon(
                                           Icons.access_time,
                                           size: 12,
-                                          color: isCustomSelected ? Colors.white : Colors.black87,
+                                          color: isCustomSelected
+                                              ? Colors.white
+                                              : Colors.black87,
                                         ),
                                         const SizedBox(width: 4),
                                         Text(
                                           isCustomSelected
                                               ? _formatTimeOfBooking(
-                                                  '${selectedTime!.hour.toString().padLeft(2, '0')}:${selectedTime!.minute.toString().padLeft(2, '0')}')
+                                                  '${selectedTime!.hour.toString().padLeft(2, '0')}:${selectedTime!.minute.toString().padLeft(2, '0')}',
+                                                )
                                               : 'Custom',
                                           style: TextStyle(
-                                            color: isCustomSelected ? Colors.white : Colors.black87,
+                                            color: isCustomSelected
+                                                ? Colors.white
+                                                : Colors.black87,
                                             fontWeight: FontWeight.bold,
                                             fontSize: 12,
                                           ),
@@ -2141,25 +2273,38 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       const SizedBox(height: 8),
                       Row(
                         children: ['Split', 'Self Pay'].map((mode) {
-                          final isSelected = (mode == 'Split' && selectedPaymentType == 'split') ||
-                                             (mode == 'Self Pay' && selectedPaymentType == 'self_pay');
+                          final isSelected =
+                              (mode == 'Split' &&
+                                  selectedPaymentType == 'split') ||
+                              (mode == 'Self Pay' &&
+                                  selectedPaymentType == 'self_pay');
                           return Expanded(
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4.0,
+                              ),
                               child: GestureDetector(
                                 onTap: () {
                                   setSheetState(() {
-                                    selectedPaymentType = mode == 'Split' ? 'split' : 'self_pay';
+                                    selectedPaymentType = mode == 'Split'
+                                        ? 'split'
+                                        : 'self_pay';
                                   });
                                 },
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
                                   decoration: BoxDecoration(
-                                    gradient: isSelected ? LunaraTheme.purpleGradient : null,
+                                    gradient: isSelected
+                                        ? LunaraTheme.purpleGradient
+                                        : null,
                                     color: isSelected ? null : Colors.grey[50],
                                     borderRadius: BorderRadius.circular(12),
                                     border: Border.all(
-                                      color: isSelected ? Colors.transparent : Colors.grey[200]!,
+                                      color: isSelected
+                                          ? Colors.transparent
+                                          : Colors.grey[200]!,
                                     ),
                                   ),
                                   child: Center(
@@ -2168,7 +2313,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                       style: TextStyle(
                                         fontSize: 11,
                                         fontWeight: FontWeight.bold,
-                                        color: isSelected ? Colors.white : Colors.black54,
+                                        color: isSelected
+                                            ? Colors.white
+                                            : Colors.black54,
                                         letterSpacing: 1,
                                       ),
                                     ),
@@ -2207,28 +2354,49 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                 ),
                                 const SizedBox(height: 4),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: Colors.grey[50],
                                     borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: Colors.grey[200]!),
+                                    border: Border.all(
+                                      color: Colors.grey[200]!,
+                                    ),
                                   ),
                                   child: DropdownButtonHideUnderline(
                                     child: DropdownButtonFormField<String>(
                                       value: selectedFoodPref,
                                       isExpanded: true,
                                       decoration: const InputDecoration(
-                                        prefixIcon: Icon(Icons.restaurant, color: LunaraTheme.electricViolet, size: 14),
-                                        prefixIconConstraints: BoxConstraints(minWidth: 22, minHeight: 14),
+                                        prefixIcon: Icon(
+                                          Icons.restaurant,
+                                          color: LunaraTheme.electricViolet,
+                                          size: 14,
+                                        ),
+                                        prefixIconConstraints: BoxConstraints(
+                                          minWidth: 22,
+                                          minHeight: 14,
+                                        ),
                                         border: InputBorder.none,
-                                        contentPadding: EdgeInsets.symmetric(vertical: 8),
+                                        contentPadding: EdgeInsets.symmetric(
+                                          vertical: 8,
+                                        ),
                                       ),
-                                      items: const ['Veg', 'Non-Veg', 'Both'].map((String val) {
-                                        return DropdownMenuItem<String>(
-                                          value: val,
-                                          child: Text(val, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
-                                        );
-                                      }).toList(),
+                                      items: const ['Veg', 'Non-Veg', 'Both']
+                                          .map((String val) {
+                                            return DropdownMenuItem<String>(
+                                              value: val,
+                                              child: Text(
+                                                val,
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            );
+                                          })
+                                          .toList(),
                                       onChanged: (val) {
                                         if (val != null) {
                                           setSheetState(() {
@@ -2257,28 +2425,52 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                 ),
                                 const SizedBox(height: 4),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: Colors.grey[50],
                                     borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: Colors.grey[200]!),
+                                    border: Border.all(
+                                      color: Colors.grey[200]!,
+                                    ),
                                   ),
                                   child: DropdownButtonHideUnderline(
                                     child: DropdownButtonFormField<String>(
                                       value: selectedDrinkPref,
                                       isExpanded: true,
                                       decoration: const InputDecoration(
-                                        prefixIcon: Icon(Icons.local_bar, color: LunaraTheme.electricViolet, size: 14),
-                                        prefixIconConstraints: BoxConstraints(minWidth: 22, minHeight: 14),
+                                        prefixIcon: Icon(
+                                          Icons.local_bar,
+                                          color: LunaraTheme.electricViolet,
+                                          size: 14,
+                                        ),
+                                        prefixIconConstraints: BoxConstraints(
+                                          minWidth: 22,
+                                          minHeight: 14,
+                                        ),
                                         border: InputBorder.none,
-                                        contentPadding: EdgeInsets.symmetric(vertical: 8),
+                                        contentPadding: EdgeInsets.symmetric(
+                                          vertical: 8,
+                                        ),
                                       ),
-                                      items: const ['Alcoholic', 'Non-Alcoholic', 'Both'].map((String val) {
-                                        return DropdownMenuItem<String>(
-                                          value: val,
-                                          child: Text(val, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
-                                        );
-                                      }).toList(),
+                                      items:
+                                          const [
+                                            'Alcoholic',
+                                            'Non-Alcoholic',
+                                            'Both',
+                                          ].map((String val) {
+                                            return DropdownMenuItem<String>(
+                                              value: val,
+                                              child: Text(
+                                                val,
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            );
+                                          }).toList(),
                                       onChanged: (val) {
                                         if (val != null) {
                                           setSheetState(() {
@@ -2295,7 +2487,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                         ],
                       ),
 
-                      if (selectedPrivacy == 'Private' || selectedPrivacy == 'Both') ...[
+                      if (selectedPrivacy == 'Private' ||
+                          selectedPrivacy == 'Both') ...[
                         const SizedBox(height: 10),
                         _sheetField(
                           hint: 'Search profiles to invite...',
@@ -2525,15 +2718,24 @@ class _PlanHubScreenState extends State<PlanHubScreen>
 
                       if (sheetErrorMsg != null) ...[
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.redAccent.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+                            border: Border.all(
+                              color: Colors.redAccent.withValues(alpha: 0.3),
+                            ),
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.error_outline, color: Colors.redAccent, size: 20),
+                              const Icon(
+                                Icons.error_outline,
+                                color: Colors.redAccent,
+                                size: 20,
+                              ),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
@@ -2559,52 +2761,74 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               : (selectedUserIds.length > 20
                                     ? 'SUBMIT STRANGERS MEET'
                                     : (selectedPaymentType == 'self_pay'
-                                        ? 'POST PARTY PLAN (PAY ₹198)'
-                                        : 'POST PARTY PLAN (PAY ₹99)')),
+                                          ? 'POST PARTY PLAN (PAY ₹198)'
+                                          : 'POST PARTY PLAN (PAY ₹99)')),
                           onTap: isPosting
                               ? () {}
                               : () async {
-                                   setSheetState(() {
-                                     sheetErrorMsg = null;
-                                   });
-                                   if (selectedVenue == null) {
-                                     setSheetState(() => sheetErrorMsg = 'Please select a venue');
-                                     return;
-                                   }
-                                   if (selectedDate == null || selectedTime == null) {
-                                     setSheetState(() => sheetErrorMsg = 'Please select date and time');
-                                     return;
-                                   }
+                                  setSheetState(() {
+                                    sheetErrorMsg = null;
+                                  });
+                                  if (selectedVenue == null) {
+                                    setSheetState(
+                                      () => sheetErrorMsg =
+                                          'Please select a venue',
+                                    );
+                                    return;
+                                  }
+                                  if (selectedDate == null ||
+                                      selectedTime == null) {
+                                    setSheetState(
+                                      () => sheetErrorMsg =
+                                          'Please select date and time',
+                                    );
+                                    return;
+                                  }
 
-                                   final dt = DateTime(
-                                     selectedDate!.year,
-                                     selectedDate!.month,
-                                     selectedDate!.day,
-                                     selectedTime!.hour,
-                                     selectedTime!.minute,
-                                   );
+                                  final dt = DateTime(
+                                    selectedDate!.year,
+                                    selectedDate!.month,
+                                    selectedDate!.day,
+                                    selectedTime!.hour,
+                                    selectedTime!.minute,
+                                  );
 
-                                   if (dt.isBefore(DateTime.now())) {
-                                     setSheetState(() => sheetErrorMsg = 'Selected date and time cannot be in the past.');
-                                     return;
-                                   }
+                                  if (dt.isBefore(DateTime.now())) {
+                                    setSheetState(
+                                      () => sheetErrorMsg =
+                                          'Selected date and time cannot be in the past.',
+                                    );
+                                    return;
+                                  }
 
-                                   final invalidReason = selectedVenue!.getInvalidReason(selectedDate!, selectedTime!);
-                                   if (invalidReason != null) {
-                                     setSheetState(() => sheetErrorMsg = invalidReason);
-                                     return;
-                                   }
+                                  final invalidReason = selectedVenue!
+                                      .getInvalidReason(
+                                        selectedDate!,
+                                        selectedTime!,
+                                      );
+                                  if (invalidReason != null) {
+                                    setSheetState(
+                                      () => sheetErrorMsg = invalidReason,
+                                    );
+                                    return;
+                                  }
 
                                   final userId = ApiService.currentUserId;
                                   if (userId == null) {
-                                    setSheetState(() => sheetErrorMsg = 'Please login to post a plan');
+                                    setSheetState(
+                                      () => sheetErrorMsg =
+                                          'Please login to post a plan',
+                                    );
                                     return;
                                   }
 
                                   if ((selectedPrivacy == 'Private' ||
                                           selectedPrivacy == 'Both') &&
                                       selectedUserIds.isEmpty) {
-                                    setSheetState(() => sheetErrorMsg = 'Please select at least one profile to invite');
+                                    setSheetState(
+                                      () => sheetErrorMsg =
+                                          'Please select at least one profile to invite',
+                                    );
                                     return;
                                   }
 
@@ -2613,11 +2837,17 @@ class _PlanHubScreenState extends State<PlanHubScreen>
 
                                   if (isStrangersMeet) {
                                     if (subjectCtrl.text.trim().isEmpty) {
-                                      setSheetState(() => sheetErrorMsg = 'Please enter an event subject');
+                                      setSheetState(
+                                        () => sheetErrorMsg =
+                                            'Please enter an event subject',
+                                      );
                                       return;
                                     }
                                     if (taglineCtrl.text.trim().isEmpty) {
-                                      setSheetState(() => sheetErrorMsg = 'Please enter requirement details');
+                                      setSheetState(
+                                        () => sheetErrorMsg =
+                                            'Please enter requirement details',
+                                      );
                                       return;
                                     }
                                   }
@@ -2625,17 +2855,31 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                   final mobileRegExp = RegExp(r'^[6-9]\d{9}$');
                                   if (isStrangersMeet) {
                                     if (mobileCtrl.text.trim().isEmpty) {
-                                       setSheetState(() => sheetErrorMsg = 'Mobile number is required for Strangers Meet.');
-                                       return;
-                                     }
-                                     if (!mobileRegExp.hasMatch(mobileCtrl.text.trim())) {
-                                       setSheetState(() => sheetErrorMsg = 'Please enter a valid 10-digit mobile number.');
-                                       return;
-                                     }
-                                     if (altMobileCtrl.text.trim().isNotEmpty && !mobileRegExp.hasMatch(altMobileCtrl.text.trim())) {
-                                       setSheetState(() => sheetErrorMsg = 'Please enter a valid 10-digit alternate mobile number.');
-                                       return;
-                                     }
+                                      setSheetState(
+                                        () => sheetErrorMsg =
+                                            'Mobile number is required for Strangers Meet.',
+                                      );
+                                      return;
+                                    }
+                                    if (!mobileRegExp.hasMatch(
+                                      mobileCtrl.text.trim(),
+                                    )) {
+                                      setSheetState(
+                                        () => sheetErrorMsg =
+                                            'Please enter a valid 10-digit mobile number.',
+                                      );
+                                      return;
+                                    }
+                                    if (altMobileCtrl.text.trim().isNotEmpty &&
+                                        !mobileRegExp.hasMatch(
+                                          altMobileCtrl.text.trim(),
+                                        )) {
+                                      setSheetState(
+                                        () => sheetErrorMsg =
+                                            'Please enter a valid 10-digit alternate mobile number.',
+                                      );
+                                      return;
+                                    }
                                   }
                                   setSheetState(() => isPosting = true);
 
@@ -2652,8 +2896,11 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                             numberOfPersons:
                                                 selectedUserIds.length,
                                             chargesPerHead: 0.0,
-                                            mobileNumber: mobileCtrl.text.trim(),
-                                            alternateMobileNumber: altMobileCtrl.text.trim(),
+                                            mobileNumber: mobileCtrl.text
+                                                .trim(),
+                                            alternateMobileNumber: altMobileCtrl
+                                                .text
+                                                .trim(),
                                             foodPreference: selectedFoodPref,
                                             drinkPreference: selectedDrinkPref,
                                           );
@@ -2675,19 +2922,21 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                           ),
                                         );
                                       } else {
-                                         if (!mounted) return;
-                                         setSheetState(() {
-                                           isPosting = false;
-                                           sheetErrorMsg = 'Failed to submit Strangers Meet request.';
-                                         });
-                                       }
+                                        if (!mounted) return;
+                                        setSheetState(() {
+                                          isPosting = false;
+                                          sheetErrorMsg =
+                                              'Failed to submit Strangers Meet request.';
+                                        });
+                                      }
                                     } catch (e) {
-                                       if (!mounted) return;
-                                       setSheetState(() {
-                                         isPosting = false;
-                                         sheetErrorMsg = 'Error: ' + e.toString();
-                                       });
-                                     }
+                                      if (!mounted) return;
+                                      setSheetState(() {
+                                        isPosting = false;
+                                        sheetErrorMsg =
+                                            'Error: ' + e.toString();
+                                      });
+                                    }
                                     return;
                                   }
 
@@ -2722,13 +2971,14 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     });
 
                                     if (alreadyHasPlan) {
-                                       if (!mounted) return;
-                                       setSheetState(() {
-                                         isPosting = false;
-                                         sheetErrorMsg = 'You already have a party plan scheduled for this day. limit: 1 plan per day.';
-                                       });
-                                       return;
-                                     }
+                                      if (!mounted) return;
+                                      setSheetState(() {
+                                        isPosting = false;
+                                        sheetErrorMsg =
+                                            'You already have a party plan scheduled for this day. limit: 1 plan per day.';
+                                      });
+                                      return;
+                                    }
                                   } catch (e) {
                                     debugPrint(
                                       'Error validating unique plan: $e',
@@ -2744,7 +2994,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         'message': descriptionCtrl.text.isEmpty
                                             ? "Let's party at ${selectedVenue!.name}"
                                             : descriptionCtrl.text,
-                                        'planDateTime': dt.toUtc().toIso8601String(),
+                                        'planDateTime': dt
+                                            .toUtc()
+                                            .toIso8601String(),
                                         'privacyType': selectedPrivacy
                                             .toLowerCase(),
                                         'paymentStatus': 'pending',
@@ -2786,24 +3038,28 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         ),
                                       );
                                     } else {
-                                       if (!mounted) return;
-                                       String errorMsg = 'Failed to save plan data.';
-                                       try {
-                                         final data = jsonDecode(response.body);
-                                         errorMsg = data['message'] ?? data['error'] ?? errorMsg;
-                                       } catch (_) {}
-                                       setSheetState(() {
-                                         isPosting = false;
-                                         sheetErrorMsg = errorMsg;
-                                       });
-                                     }
+                                      if (!mounted) return;
+                                      String errorMsg =
+                                          'Failed to save plan data.';
+                                      try {
+                                        final data = jsonDecode(response.body);
+                                        errorMsg =
+                                            data['message'] ??
+                                            data['error'] ??
+                                            errorMsg;
+                                      } catch (_) {}
+                                      setSheetState(() {
+                                        isPosting = false;
+                                        sheetErrorMsg = errorMsg;
+                                      });
+                                    }
                                   } catch (e) {
-                                     if (!mounted) return;
-                                     setSheetState(() {
-                                       isPosting = false;
-                                       sheetErrorMsg = 'Error: ' + e.toString();
-                                     });
-                                   }
+                                    if (!mounted) return;
+                                    setSheetState(() {
+                                      isPosting = false;
+                                      sheetErrorMsg = 'Error: ' + e.toString();
+                                    });
+                                  }
                                 },
                         ),
                       ),
@@ -2878,13 +3134,18 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                 7: 'Sunday',
               };
               final weekdayName = weekdaysMap[date.weekday];
-              if (selectedVenue!.daysOpen != null && selectedVenue!.daysOpen!.isNotEmpty) {
-                final isOpenOnWeekday = weekdayName != null && selectedVenue!.daysOpen!.any((d) {
-                  final str = d.toString().trim().toLowerCase();
-                  final fullDay = weekdayName.toLowerCase();
-                  final shortDay = weekdayName.substring(0, 3).toLowerCase();
-                  return str.contains(fullDay) || str.contains(shortDay);
-                });
+              if (selectedVenue!.daysOpen != null &&
+                  selectedVenue!.daysOpen!.isNotEmpty) {
+                final isOpenOnWeekday =
+                    weekdayName != null &&
+                    selectedVenue!.daysOpen!.any((d) {
+                      final str = d.toString().trim().toLowerCase();
+                      final fullDay = weekdayName.toLowerCase();
+                      final shortDay = weekdayName
+                          .substring(0, 3)
+                          .toLowerCase();
+                      return str.contains(fullDay) || str.contains(shortDay);
+                    });
                 if (!isOpenOnWeekday) {
                   return false;
                 }
@@ -2897,7 +3158,10 @@ class _PlanHubScreenState extends State<PlanHubScreen>
               if (activeDate == null) return true;
               if (selectedVenue == null) return true;
 
-              final invalidReason = selectedVenue!.getInvalidReason(activeDate, time);
+              final invalidReason = selectedVenue!.getInvalidReason(
+                activeDate,
+                time,
+              );
               if (invalidReason != null) {
                 return false;
               }
@@ -2909,7 +3173,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                 time.hour,
                 time.minute,
               );
-              final minAllowedDateTime = DateTime.now().add(const Duration(hours: 1));
+              final minAllowedDateTime = DateTime.now().add(
+                const Duration(hours: 1),
+              );
               if (selectedDateTime.isBefore(minAllowedDateTime)) {
                 return false;
               }
@@ -2927,14 +3193,17 @@ class _PlanHubScreenState extends State<PlanHubScreen>
 
             Future<void> handleDateSelection(DateTime date) async {
               if (selectedVenue == null) {
-                setSheetState(() => sheetErrorMsg = 'Please select a venue first.');
+                setSheetState(
+                  () => sheetErrorMsg = 'Please select a venue first.',
+                );
                 return;
               }
               final yyyy = date.year;
               final mm = date.month.toString().padLeft(2, '0');
               final dd = date.day.toString().padLeft(2, '0');
               final dateStr = '$yyyy-$mm-$dd';
-              if (selectedVenue!.closedDates != null && selectedVenue!.closedDates!.contains(dateStr)) {
+              if (selectedVenue!.closedDates != null &&
+                  selectedVenue!.closedDates!.contains(dateStr)) {
                 VenueTimingErrorDialog.show(
                   context,
                   venueName: selectedVenue!.name,
@@ -2955,13 +3224,18 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                 7: 'Sunday',
               };
               final weekdayName = weekdaysMap[date.weekday];
-              if (selectedVenue!.daysOpen != null && selectedVenue!.daysOpen!.isNotEmpty) {
-                final isOpenOnWeekday = weekdayName != null && selectedVenue!.daysOpen!.any((d) {
-                  final str = d.toString().trim().toLowerCase();
-                  final fullDay = weekdayName.toLowerCase();
-                  final shortDay = weekdayName.substring(0, 3).toLowerCase();
-                  return str.contains(fullDay) || str.contains(shortDay);
-                });
+              if (selectedVenue!.daysOpen != null &&
+                  selectedVenue!.daysOpen!.isNotEmpty) {
+                final isOpenOnWeekday =
+                    weekdayName != null &&
+                    selectedVenue!.daysOpen!.any((d) {
+                      final str = d.toString().trim().toLowerCase();
+                      final fullDay = weekdayName.toLowerCase();
+                      final shortDay = weekdayName
+                          .substring(0, 3)
+                          .toLowerCase();
+                      return str.contains(fullDay) || str.contains(shortDay);
+                    });
                 if (!isOpenOnWeekday) {
                   VenueTimingErrorDialog.show(
                     context,
@@ -2977,7 +3251,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
 
               final time = await showTimePicker(
                 context: context,
-                initialTime: selectedTime ?? const TimeOfDay(hour: 22, minute: 0),
+                initialTime:
+                    selectedTime ?? const TimeOfDay(hour: 22, minute: 0),
               );
 
               if (time != null) {
@@ -2989,11 +3264,17 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                   time.minute,
                 );
                 if (selectedDateTime.isBefore(DateTime.now())) {
-                  setSheetState(() => sheetErrorMsg = 'Selected date and time cannot be in the past.');
+                  setSheetState(
+                    () => sheetErrorMsg =
+                        'Selected date and time cannot be in the past.',
+                  );
                   return;
                 }
 
-                final invalidReason = selectedVenue!.getInvalidReason(date, time);
+                final invalidReason = selectedVenue!.getInvalidReason(
+                  date,
+                  time,
+                );
                 if (invalidReason != null) {
                   VenueTimingErrorDialog.show(
                     context,
@@ -3020,7 +3301,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
 
             Future<void> handleCustomDateSelection() async {
               if (selectedVenue == null) {
-                setSheetState(() => sheetErrorMsg = 'Please select a venue first.');
+                setSheetState(
+                  () => sheetErrorMsg = 'Please select a venue first.',
+                );
                 return;
               }
               final date = await showDatePicker(
@@ -3034,16 +3317,23 @@ class _PlanHubScreenState extends State<PlanHubScreen>
               }
             }
 
-            Widget buildDateChip(String label, DateTime dateVal, bool isSelected) {
+            Widget buildDateChip(
+              String label,
+              DateTime dateVal,
+              bool isSelected,
+            ) {
               return GestureDetector(
                 onTap: () {
                   if (selectedVenue == null) {
-                    setSheetState(() => sheetErrorMsg = 'Please select a venue first.');
+                    setSheetState(
+                      () => sheetErrorMsg = 'Please select a venue first.',
+                    );
                     return;
                   }
                   setSheetState(() {
                     selectedDate = dateVal;
-                    if (selectedTime != null && !isTimeSlotValid(selectedTime!, dateVal)) {
+                    if (selectedTime != null &&
+                        !isTimeSlotValid(selectedTime!, dateVal)) {
                       selectedTime = null;
                     }
                     if (selectedDate != null && selectedTime != null) {
@@ -3061,12 +3351,19 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                   });
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
-                    color: isSelected ? LunaraTheme.electricViolet : Colors.grey[50],
+                    color: isSelected
+                        ? LunaraTheme.electricViolet
+                        : Colors.grey[50],
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: isSelected ? LunaraTheme.electricViolet : Colors.grey[300]!,
+                      color: isSelected
+                          ? LunaraTheme.electricViolet
+                          : Colors.grey[300]!,
                       width: 1,
                     ),
                   ),
@@ -3099,12 +3396,19 @@ class _PlanHubScreenState extends State<PlanHubScreen>
               return GestureDetector(
                 onTap: handleCustomDateSelection,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
-                    color: isSelected ? LunaraTheme.electricViolet : Colors.grey[50],
+                    color: isSelected
+                        ? LunaraTheme.electricViolet
+                        : Colors.grey[50],
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: isSelected ? LunaraTheme.electricViolet : Colors.grey[300]!,
+                      color: isSelected
+                          ? LunaraTheme.electricViolet
+                          : Colors.grey[300]!,
                       width: 1,
                     ),
                   ),
@@ -3133,10 +3437,12 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       const SizedBox(height: 2),
                       Text(
                         selectedDate != null &&
-                                !dynamicDates.any((d) =>
-                                    d.year == selectedDate!.year &&
-                                    d.month == selectedDate!.month &&
-                                    d.day == selectedDate!.day)
+                                !dynamicDates.any(
+                                  (d) =>
+                                      d.year == selectedDate!.year &&
+                                      d.month == selectedDate!.month &&
+                                      d.day == selectedDate!.day,
+                                )
                             ? DateFormat('MMM d').format(selectedDate!)
                             : 'Choose Date',
                         style: TextStyle(
@@ -3381,22 +3687,29 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                 label = DateFormat('E').format(dateVal);
                               }
 
-                              final isSelected = selectedDate != null &&
+                              final isSelected =
+                                  selectedDate != null &&
                                   selectedDate!.year == dateVal.year &&
                                   selectedDate!.month == dateVal.month &&
                                   selectedDate!.day == dateVal.day;
 
                               return Padding(
                                 padding: const EdgeInsets.only(right: 8.0),
-                                child: buildDateChip(label, dateVal, isSelected),
+                                child: buildDateChip(
+                                  label,
+                                  dateVal,
+                                  isSelected,
+                                ),
                               );
                             }),
                             buildCustomChip(
                               selectedDate != null &&
-                              !dynamicDates.any((d) =>
-                                  d.year == selectedDate!.year &&
-                                  d.month == selectedDate!.month &&
-                                  d.day == selectedDate!.day)
+                                  !dynamicDates.any(
+                                    (d) =>
+                                        d.year == selectedDate!.year &&
+                                        d.month == selectedDate!.month &&
+                                        d.day == selectedDate!.day,
+                                  ),
                             ),
                           ],
                         ),
@@ -3420,18 +3733,26 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             const TimeOfDay(hour: 21, minute: 0), // 9 PM
                             const TimeOfDay(hour: 22, minute: 0), // 10 PM
                             const TimeOfDay(hour: 23, minute: 0), // 11 PM
-                            const TimeOfDay(hour: 0, minute: 0),  // 12 AM
+                            const TimeOfDay(hour: 0, minute: 0), // 12 AM
                           ];
 
-                          final validTimes = predefinedTimes.where((t) => isTimeSlotValid(t)).toList();
+                          final validTimes = predefinedTimes
+                              .where((t) => isTimeSlotValid(t))
+                              .toList();
 
                           String formatTimeOfDay(TimeOfDay tod) {
-                            final hour = tod.hour == 0 ? 12 : (tod.hour > 12 ? tod.hour - 12 : tod.hour);
+                            final hour = tod.hour == 0
+                                ? 12
+                                : (tod.hour > 12 ? tod.hour - 12 : tod.hour);
                             final ampm = tod.hour >= 12 ? 'PM' : 'AM';
                             return '$hour:00 $ampm';
                           }
 
-                          Widget buildTimeChip(String label, TimeOfDay tod, bool isSelected) {
+                          Widget buildTimeChip(
+                            String label,
+                            TimeOfDay tod,
+                            bool isSelected,
+                          ) {
                             return GestureDetector(
                               onTap: () {
                                 setSheetState(() {
@@ -3446,19 +3767,28 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                 });
                               },
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 10,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: isSelected ? LunaraTheme.electricViolet : Colors.grey[50],
+                                  color: isSelected
+                                      ? LunaraTheme.electricViolet
+                                      : Colors.grey[50],
                                   borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
-                                    color: isSelected ? LunaraTheme.electricViolet : Colors.grey[300]!,
+                                    color: isSelected
+                                        ? LunaraTheme.electricViolet
+                                        : Colors.grey[300]!,
                                     width: 1,
                                   ),
                                 ),
                                 child: Text(
                                   label,
                                   style: TextStyle(
-                                    color: isSelected ? Colors.white : Colors.black87,
+                                    color: isSelected
+                                        ? Colors.white
+                                        : Colors.black87,
                                     fontWeight: FontWeight.bold,
                                     fontSize: 12,
                                   ),
@@ -3470,7 +3800,11 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                           // Determine if selected time is a custom time (not in validTimes)
                           bool isCustomSelected = false;
                           if (selectedTime != null) {
-                            isCustomSelected = !validTimes.any((t) => t.hour == selectedTime!.hour && t.minute == selectedTime!.minute);
+                            isCustomSelected = !validTimes.any(
+                              (t) =>
+                                  t.hour == selectedTime!.hour &&
+                                  t.minute == selectedTime!.minute,
+                            );
                           }
 
                           return SingleChildScrollView(
@@ -3480,39 +3814,54 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               children: [
                                 ...validTimes.map((tod) {
                                   final label = formatTimeOfDay(tod);
-                                  final isSelected = selectedTime != null &&
+                                  final isSelected =
+                                      selectedTime != null &&
                                       selectedTime!.hour == tod.hour &&
                                       selectedTime!.minute == tod.minute;
 
                                   return Padding(
                                     padding: const EdgeInsets.only(right: 8.0),
-                                    child: buildTimeChip(label, tod, isSelected),
+                                    child: buildTimeChip(
+                                      label,
+                                      tod,
+                                      isSelected,
+                                    ),
                                   );
                                 }),
                                 GestureDetector(
                                   onTap: () async {
-                                    final TimeOfDay? picked = await showTimePicker(
-                                      context: context,
-                                      initialTime: selectedTime ?? const TimeOfDay(hour: 22, minute: 0),
-                                    );
+                                    final TimeOfDay? picked =
+                                        await showTimePicker(
+                                          context: context,
+                                          initialTime:
+                                              selectedTime ??
+                                              const TimeOfDay(
+                                                hour: 22,
+                                                minute: 0,
+                                              ),
+                                        );
                                     if (picked != null) {
                                       if (!isTimeSlotValid(picked)) {
                                         VenueTimingErrorDialog.show(
                                           context,
                                           venueName: selectedVenue!.name,
                                           daysOpen: selectedVenue!.daysOpen,
-                                          openingTime: selectedVenue!.openingTime,
-                                          closingTime: selectedVenue!.closingTime,
-                                          closedDates: selectedVenue!.closedDates,
+                                          openingTime:
+                                              selectedVenue!.openingTime,
+                                          closingTime:
+                                              selectedVenue!.closingTime,
+                                          closedDates:
+                                              selectedVenue!.closedDates,
                                         );
                                         return;
                                       }
                                       setSheetState(() {
                                         selectedTime = picked;
                                         if (selectedDate != null) {
-                                          final formattedTime = _formatTimeOfBooking(
-                                            '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}',
-                                          );
+                                          final formattedTime =
+                                              _formatTimeOfBooking(
+                                                '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}',
+                                              );
                                           dateCtrl.text =
                                               "${DateFormat('MMM dd, yyyy').format(selectedDate!)} at $formattedTime";
                                         }
@@ -3520,12 +3869,19 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     }
                                   },
                                   child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 10,
+                                    ),
                                     decoration: BoxDecoration(
-                                      color: isCustomSelected ? LunaraTheme.electricViolet : Colors.grey[50],
+                                      color: isCustomSelected
+                                          ? LunaraTheme.electricViolet
+                                          : Colors.grey[50],
                                       borderRadius: BorderRadius.circular(12),
                                       border: Border.all(
-                                        color: isCustomSelected ? LunaraTheme.electricViolet : Colors.grey[300]!,
+                                        color: isCustomSelected
+                                            ? LunaraTheme.electricViolet
+                                            : Colors.grey[300]!,
                                         width: 1,
                                       ),
                                     ),
@@ -3535,16 +3891,21 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         Icon(
                                           Icons.access_time,
                                           size: 12,
-                                          color: isCustomSelected ? Colors.white : Colors.black87,
+                                          color: isCustomSelected
+                                              ? Colors.white
+                                              : Colors.black87,
                                         ),
                                         const SizedBox(width: 4),
                                         Text(
                                           isCustomSelected
                                               ? _formatTimeOfBooking(
-                                                  '${selectedTime!.hour.toString().padLeft(2, '0')}:${selectedTime!.minute.toString().padLeft(2, '0')}')
+                                                  '${selectedTime!.hour.toString().padLeft(2, '0')}:${selectedTime!.minute.toString().padLeft(2, '0')}',
+                                                )
                                               : 'Custom',
                                           style: TextStyle(
-                                            color: isCustomSelected ? Colors.white : Colors.black87,
+                                            color: isCustomSelected
+                                                ? Colors.white
+                                                : Colors.black87,
                                             fontWeight: FontWeight.bold,
                                             fontSize: 12,
                                           ),
@@ -3627,30 +3988,53 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                 ),
                                 const SizedBox(height: 6),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: Colors.grey[50],
                                     borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: Colors.grey[200]!),
+                                    border: Border.all(
+                                      color: Colors.grey[200]!,
+                                    ),
                                   ),
                                   child: DropdownButtonHideUnderline(
                                     child: DropdownButtonFormField<String>(
                                       value: foodPreference,
                                       decoration: const InputDecoration(
-                                        prefixIcon: Icon(Icons.restaurant, color: Color(0xFF7C3AED), size: 16),
-                                        prefixIconConstraints: BoxConstraints(minWidth: 24, minHeight: 16),
+                                        prefixIcon: Icon(
+                                          Icons.restaurant,
+                                          color: Color(0xFF7C3AED),
+                                          size: 16,
+                                        ),
+                                        prefixIconConstraints: BoxConstraints(
+                                          minWidth: 24,
+                                          minHeight: 16,
+                                        ),
                                         border: InputBorder.none,
-                                        contentPadding: EdgeInsets.symmetric(vertical: 8),
+                                        contentPadding: EdgeInsets.symmetric(
+                                          vertical: 8,
+                                        ),
                                       ),
-                                      items: const ['Veg', 'Non-Veg', 'Both'].map((String val) {
-                                        return DropdownMenuItem<String>(
-                                          value: val,
-                                          child: Text(val, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
-                                        );
-                                      }).toList(),
+                                      items: const ['Veg', 'Non-Veg', 'Both']
+                                          .map((String val) {
+                                            return DropdownMenuItem<String>(
+                                              value: val,
+                                              child: Text(
+                                                val,
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            );
+                                          })
+                                          .toList(),
                                       onChanged: (val) {
                                         if (val != null) {
-                                          setSheetState(() => foodPreference = val);
+                                          setSheetState(
+                                            () => foodPreference = val,
+                                          );
                                         }
                                       },
                                     ),
@@ -3674,30 +4058,56 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                 ),
                                 const SizedBox(height: 6),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: Colors.grey[50],
                                     borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: Colors.grey[200]!),
+                                    border: Border.all(
+                                      color: Colors.grey[200]!,
+                                    ),
                                   ),
                                   child: DropdownButtonHideUnderline(
                                     child: DropdownButtonFormField<String>(
                                       value: drinkPreference,
                                       decoration: const InputDecoration(
-                                        prefixIcon: Icon(Icons.local_bar, color: Color(0xFF7C3AED), size: 16),
-                                        prefixIconConstraints: BoxConstraints(minWidth: 24, minHeight: 16),
+                                        prefixIcon: Icon(
+                                          Icons.local_bar,
+                                          color: Color(0xFF7C3AED),
+                                          size: 16,
+                                        ),
+                                        prefixIconConstraints: BoxConstraints(
+                                          minWidth: 24,
+                                          minHeight: 16,
+                                        ),
                                         border: InputBorder.none,
-                                        contentPadding: EdgeInsets.symmetric(vertical: 8),
+                                        contentPadding: EdgeInsets.symmetric(
+                                          vertical: 8,
+                                        ),
                                       ),
-                                      items: const ['Alcoholic', 'Non-Alcoholic', 'Both'].map((String val) {
-                                        return DropdownMenuItem<String>(
-                                          value: val,
-                                          child: Text(val, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
-                                        );
-                                      }).toList(),
+                                      items:
+                                          const [
+                                            'Alcoholic',
+                                            'Non-Alcoholic',
+                                            'Both',
+                                          ].map((String val) {
+                                            return DropdownMenuItem<String>(
+                                              value: val,
+                                              child: Text(
+                                                val,
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            );
+                                          }).toList(),
                                       onChanged: (val) {
                                         if (val != null) {
-                                          setSheetState(() => drinkPreference = val);
+                                          setSheetState(
+                                            () => drinkPreference = val,
+                                          );
                                         }
                                       },
                                     ),
@@ -3734,9 +4144,13 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             child: GestureDetector(
                               onTap: () => setSheetState(() => useUPI = true),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 10,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: useUPI ? const Color(0xFF7C3AED) : Colors.grey[100],
+                                  color: useUPI
+                                      ? const Color(0xFF7C3AED)
+                                      : Colors.grey[100],
                                   borderRadius: const BorderRadius.only(
                                     topLeft: Radius.circular(10),
                                     bottomLeft: Radius.circular(10),
@@ -3749,7 +4163,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     style: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
-                                      color: useUPI ? Colors.white : Colors.black54,
+                                      color: useUPI
+                                          ? Colors.white
+                                          : Colors.black54,
                                     ),
                                   ),
                                 ),
@@ -3760,9 +4176,13 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             child: GestureDetector(
                               onTap: () => setSheetState(() => useUPI = false),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 10,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: !useUPI ? const Color(0xFF7C3AED) : Colors.grey[100],
+                                  color: !useUPI
+                                      ? const Color(0xFF7C3AED)
+                                      : Colors.grey[100],
                                   borderRadius: const BorderRadius.only(
                                     topRight: Radius.circular(10),
                                     bottomRight: Radius.circular(10),
@@ -3775,7 +4195,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     style: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
-                                      color: !useUPI ? Colors.white : Colors.black54,
+                                      color: !useUPI
+                                          ? Colors.white
+                                          : Colors.black54,
                                     ),
                                   ),
                                 ),
@@ -3932,15 +4354,24 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       if (sheetErrorMsg != null) ...[
                         const SizedBox(height: 12),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.redAccent.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+                            border: Border.all(
+                              color: Colors.redAccent.withValues(alpha: 0.3),
+                            ),
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.error_outline, color: Colors.redAccent, size: 20),
+                              const Icon(
+                                Icons.error_outline,
+                                color: Colors.redAccent,
+                                size: 20,
+                              ),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
@@ -3966,42 +4397,73 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                           onTap: () async {
                             setSheetState(() => sheetErrorMsg = null);
                             if (selectedVenue == null) {
-                              setSheetState(() => sheetErrorMsg = 'Please select a venue');
+                              setSheetState(
+                                () => sheetErrorMsg = 'Please select a venue',
+                              );
                               return;
                             }
                             if (subjectCtrl.text.trim().isEmpty) {
-                              setSheetState(() => sheetErrorMsg = 'Please enter an event subject');
+                              setSheetState(
+                                () => sheetErrorMsg =
+                                    'Please enter an event subject',
+                              );
                               return;
                             }
                             if (taglineCtrl.text.trim().isEmpty) {
-                              setSheetState(() => sheetErrorMsg = 'Please enter requirement details');
+                              setSheetState(
+                                () => sheetErrorMsg =
+                                    'Please enter requirement details',
+                              );
                               return;
                             }
                             if (selectedDate == null || selectedTime == null) {
-                              setSheetState(() => sheetErrorMsg = 'Please select date and time');
+                              setSheetState(
+                                () => sheetErrorMsg =
+                                    'Please select date and time',
+                              );
                               return;
                             }
                             if (numberOfPersons <= 20 || numberOfPersons > 50) {
-                              setSheetState(() => sheetErrorMsg = 'Number of persons must be between 21 and 50');
+                              setSheetState(
+                                () => sheetErrorMsg =
+                                    'Number of persons must be between 21 and 50',
+                              );
                               return;
                             }
                             final mobileRegExp = RegExp(r'^[6-9]\d{9}$');
                             if (mobileCtrl.text.trim().isEmpty) {
-                              setSheetState(() => sheetErrorMsg = 'Please enter mobile number');
+                              setSheetState(
+                                () => sheetErrorMsg =
+                                    'Please enter mobile number',
+                              );
                               return;
                             }
-                            if (!mobileRegExp.hasMatch(mobileCtrl.text.trim())) {
-                              setSheetState(() => sheetErrorMsg = 'Please enter a valid 10-digit mobile number.');
+                            if (!mobileRegExp.hasMatch(
+                              mobileCtrl.text.trim(),
+                            )) {
+                              setSheetState(
+                                () => sheetErrorMsg =
+                                    'Please enter a valid 10-digit mobile number.',
+                              );
                               return;
                             }
-                            if (altMobileCtrl.text.trim().isNotEmpty && !mobileRegExp.hasMatch(altMobileCtrl.text.trim())) {
-                              setSheetState(() => sheetErrorMsg = 'Please enter a valid 10-digit alternate mobile number.');
+                            if (altMobileCtrl.text.trim().isNotEmpty &&
+                                !mobileRegExp.hasMatch(
+                                  altMobileCtrl.text.trim(),
+                                )) {
+                              setSheetState(
+                                () => sheetErrorMsg =
+                                    'Please enter a valid 10-digit alternate mobile number.',
+                              );
                               return;
                             }
 
                             final userId = ApiService.currentUserId;
                             if (userId == null) {
-                              setSheetState(() => sheetErrorMsg = 'Please login to continue');
+                              setSheetState(
+                                () =>
+                                    sheetErrorMsg = 'Please login to continue',
+                              );
                               return;
                             }
 
@@ -4014,7 +4476,10 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             );
 
                             if (dt.isBefore(DateTime.now())) {
-                              setSheetState(() => sheetErrorMsg = 'Please select a future time');
+                              setSheetState(
+                                () => sheetErrorMsg =
+                                    'Please select a future time',
+                              );
                               return;
                             }
 
@@ -4028,24 +4493,33 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             );
 
                             final success =
-                                 await ApiService.submitStrangersMeetRequest(
-                                   venueId: selectedVenue!.id,
-                                   subject: subjectCtrl.text.trim(),
-                                   tagline: taglineCtrl.text.trim(),
-                                   eventDateTime: dt.toUtc().toIso8601String(),
-                                   numberOfPersons: numberOfPersons,
-                                   chargesPerHead: 0.0,
-                                   mobileNumber: mobileCtrl.text.trim(),
-                                   alternateMobileNumber: altMobileCtrl.text.trim(),
-                                   // Bank/UPI details
-                                   upiId: useUPI ? upiCtrl.text.trim() : null,
-                                   bankName: !useUPI ? bankNameCtrl.text.trim() : null,
-                                   accountNumber: !useUPI ? accountNumberCtrl.text.trim() : null,
-                                   accountHolderName: !useUPI ? accountHolderCtrl.text.trim() : null,
-                                   ifscCode: !useUPI ? ifscCtrl.text.trim() : null,
-                                   foodPreference: foodPreference,
-                                   drinkPreference: drinkPreference,
-                                 );
+                                await ApiService.submitStrangersMeetRequest(
+                                  venueId: selectedVenue!.id,
+                                  subject: subjectCtrl.text.trim(),
+                                  tagline: taglineCtrl.text.trim(),
+                                  eventDateTime: dt.toUtc().toIso8601String(),
+                                  numberOfPersons: numberOfPersons,
+                                  chargesPerHead: 0.0,
+                                  mobileNumber: mobileCtrl.text.trim(),
+                                  alternateMobileNumber: altMobileCtrl.text
+                                      .trim(),
+                                  // Bank/UPI details
+                                  upiId: useUPI ? upiCtrl.text.trim() : null,
+                                  bankName: !useUPI
+                                      ? bankNameCtrl.text.trim()
+                                      : null,
+                                  accountNumber: !useUPI
+                                      ? accountNumberCtrl.text.trim()
+                                      : null,
+                                  accountHolderName: !useUPI
+                                      ? accountHolderCtrl.text.trim()
+                                      : null,
+                                  ifscCode: !useUPI
+                                      ? ifscCtrl.text.trim()
+                                      : null,
+                                  foodPreference: foodPreference,
+                                  drinkPreference: drinkPreference,
+                                );
 
                             if (context.mounted) {
                               Navigator.pop(context); // Close loading dialog
@@ -4066,7 +4540,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             } else {
                               if (context.mounted) {
                                 setSheetState(() {
-                                  sheetErrorMsg = 'Failed to submit request. Please try again.';
+                                  sheetErrorMsg =
+                                      'Failed to submit request. Please try again.';
                                 });
                               }
                             }

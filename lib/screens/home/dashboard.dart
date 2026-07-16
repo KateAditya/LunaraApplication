@@ -54,10 +54,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
 
   Future<void> _initApp() async {
     try {
-      await Future.wait([
-        _loadProfile(),
-        _fetchBadges(),
-      ]);
+      await Future.wait([_loadProfile(), _fetchBadges()]);
     } catch (e) {
       debugPrint('Error during dashboard initialization: $e');
     } finally {
@@ -135,8 +132,13 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       if (matchedUserRaw != null) {
         final matchedUserMap = {
           'id': matchedUserRaw['id'],
-          'name': '${matchedUserRaw['firstName'] ?? ''} ${matchedUserRaw['lastName'] ?? ''}'.trim().toUpperCase(),
-          'image': matchedUserRaw['profileImageUrl'] ?? 'https://picsum.photos/400/600',
+          'name':
+              '${matchedUserRaw['firstName'] ?? ''} ${matchedUserRaw['lastName'] ?? ''}'
+                  .trim()
+                  .toUpperCase(),
+          'image':
+              matchedUserRaw['profileImageUrl'] ??
+              'https://picsum.photos/400/600',
           'isAsset': false,
         };
         showGeneralDialog(
@@ -193,9 +195,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       return const Scaffold(
         backgroundColor: Color(0xFF0F001E),
         body: Center(
-          child: CircularProgressIndicator(
-            color: LunaraTheme.cyberCyan,
-          ),
+          child: CircularProgressIndicator(color: LunaraTheme.cyberCyan),
         ),
       );
     }
@@ -207,7 +207,6 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
             index: _currentIndex == 2 ? 0 : _currentIndex,
             children: _screens,
           ),
-
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
@@ -284,7 +283,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                 shape: BoxShape.circle,
               ),
               child: Image.asset(
-                'assets/images/logo_icon.png',
+                'assets/images/logo.png',
                 width: 30,
                 height: 30,
                 color: Colors.white,
