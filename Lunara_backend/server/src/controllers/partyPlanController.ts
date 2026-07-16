@@ -249,7 +249,7 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
         }
 
         // ── Validate Venue Timings and Holidays ────────────────────────────────
-        const timingValidation = validateVenueTimingAndHolidays(venue, partyDate);
+        const timingValidation = validateVenueTimingAndHolidays(venue, planDateTime);
         if (!timingValidation.isValid) {
             res.status(400).json({ success: false, message: timingValidation.reason });
             return;
@@ -392,18 +392,14 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
 
         // ── Push notification ──────────────────────────────────────────
         // For private plans: notify each invited user.
-        // (Public plans are discoverable via feed; no mass-blast needed.)
+        // For public plans: notify all users in the same city.
         setImmediate(async () => {
             try {
                 const isPrivate = parsedVisibility === PartyPlanVisibility.PRIVATE || parsedVisibility === PartyPlanVisibility.BOTH;
+                const isPublic = parsedVisibility === PartyPlanVisibility.PUBLIC || parsedVisibility === PartyPlanVisibility.BOTH;
                 const hostName = `${user.firstName} ${user.lastName}`.trim();
                 const venueName = venue.name;
-                const notifTitle = isPrivate 
-                    ? `🎉 Private Invitation!`
-                    : `🎉 New Party Plan at ${venueName}`;
-                const notifBody = isPrivate
-                    ? `${hostName} has invited you privately for "${partyPlan.message}".`
-                    : `${hostName} has created a party plan. Tap to view!`;
+                const venueCity = venue.city;
                 const notifData = {
                     type: 'new_party_plan',
                     partyPlanId: partyPlan.id,
@@ -411,20 +407,36 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                     hostId: userId,
                 };
 
+                // 1. Notify invited users for Private / Both
                 if (isPrivate && Array.isArray(selectedUsers) && selectedUsers.length > 0) {
-                    // Fetch FCM tokens for invited users
                     const invitedUsers = await User.findAll({
                         where: { id: { [Op.in]: selectedUsers } },
                         attributes: ['id', 'fcmToken'],
                     });
-                    const tokens = invitedUsers
+                    const privateTokens = invitedUsers
                         .map((u: any) => u.fcmToken)
                         .filter((t: any) => t && t.trim() !== '') as string[];
 
-                    if (tokens.length > 0) {
-                        await sendMulticastPushNotification(tokens, {
-                            title: notifTitle,
-                            body: notifBody,
+                    if (privateTokens.length > 0) {
+                        await sendMulticastPushNotification(privateTokens, {
+                            title: `🎉 Private Invitation!`,
+                            body: `${hostName} has invited you privately for "${partyPlan.message}".`,
+                            data: notifData,
+                        });
+                    }
+                }
+
+                // 2. Notify other users in the same city for Public / Both
+                if (isPublic && venueCity) {
+                    const { getEligibleUsersForEventNotification } = require('../services/fcmService');
+                    // Exclude creator and invited users (who already received private notification)
+                    const excludedUserIds = isPrivate && Array.isArray(selectedUsers) ? selectedUsers : [];
+                    const publicTokens = await getEligibleUsersForEventNotification(userId, venueCity, excludedUserIds);
+
+                    if (publicTokens.length > 0) {
+                        await sendMulticastPushNotification(publicTokens, {
+                            title: `🎉 New Party Plan at ${venueName}`,
+                            body: `${hostName} has created a party plan. Tap to view!`,
                             data: notifData,
                         });
                     }

@@ -1263,15 +1263,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             width: double.infinity,
             height: 60,
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF00FF87), Color(0xFF60EFFF)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+              gradient: LunaraTheme.purpleGradient,
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF00FF87).withValues(alpha: 0.3),
+                  color: const Color(0xFFb952eb).withValues(alpha: 0.3),
                   blurRadius: 20,
                   offset: const Offset(0, 10),
                 ),
@@ -1287,13 +1283,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.payment_rounded, color: Colors.black87),
+                  const Icon(Icons.payment_rounded, color: Colors.white),
                   const SizedBox(width: 12),
                   Text(
                     payText,
                     style: const TextStyle(
                       fontFamily: 'AllroundGothic',
-                      color: Colors.black87,
+                      color: Colors.white,
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1,

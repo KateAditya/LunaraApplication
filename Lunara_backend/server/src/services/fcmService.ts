@@ -142,3 +142,81 @@ export async function sendMulticastPushNotification(
         logger.warn(`FCM multicast failed: ${err.message}`);
     }
 }
+
+/**
+ * Helper to fetch all eligible users for notification:
+ * - Excludes the creator/host of the event
+ * - Filters for users in the same city as the venue (case-insensitive)
+ * - Excludes users who have blocked the creator, or whom the creator has blocked
+ * - Only includes active users with customer role and a valid FCM token
+ */
+export async function getEligibleUsersForEventNotification(
+    creatorId: string,
+    venueCity: string,
+    additionalExcludedIds: string[] = []
+): Promise<string[]> {
+    if (!venueCity || venueCity.trim() === '') return [];
+
+    try {
+        // Import models dynamically to avoid circular dependencies
+        const { default: User } = require('../models/User');
+        const { default: UserProfile } = require('../models/UserProfile');
+        const { default: SocialConnection } = require('../models/SocialConnection');
+        const { ConnectionStatus } = require('../models/SocialConnection');
+        const { Op } = require('sequelize');
+
+        // 1. Fetch blocked user IDs (either blocked by creator or blocked the creator)
+        const blockedConnections = await SocialConnection.findAll({
+            where: {
+                status: ConnectionStatus.BLOCKED,
+                [Op.or]: [
+                    { requesterId: creatorId },
+                    { receiverId: creatorId }
+                ]
+            },
+            attributes: ['requesterId', 'receiverId']
+        });
+
+        const blockedUserIds = new Set<string>();
+        for (const conn of blockedConnections) {
+            if (conn.requesterId !== creatorId) blockedUserIds.add(conn.requesterId);
+            if (conn.receiverId !== creatorId) blockedUserIds.add(conn.receiverId);
+        }
+
+        const excludedIds = Array.from(blockedUserIds).concat(creatorId).concat(additionalExcludedIds);
+
+        // 2. Fetch all other users in the same city with a valid FCM token
+        const eligibleUsers = await User.findAll({
+            where: {
+                id: {
+                    [Op.notIn]: excludedIds
+                },
+                fcmToken: {
+                    [Op.and]: [
+                        { [Op.ne]: null },
+                        { [Op.ne]: '' }
+                    ]
+                },
+                role: 'customer',
+                isActive: true
+            },
+            include: [{
+                model: UserProfile,
+                as: 'profile',
+                where: {
+                    city: {
+                        [Op.iLike]: venueCity.trim()
+                    }
+                },
+                required: true
+            }],
+            attributes: ['fcmToken']
+        });
+
+        return eligibleUsers.map((u: any) => u.fcmToken).filter(Boolean);
+    } catch (err: any) {
+        logger.error('Error fetching eligible users for notification:', err.message);
+        return [];
+    }
+}
+

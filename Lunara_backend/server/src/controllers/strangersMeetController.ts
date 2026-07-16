@@ -261,7 +261,7 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
         if (!venue) { res.status(404).json({ success: false, message: 'Venue not found' }); return; }
 
         // Validate Venue Timings and Holidays
-        const timingValidation = validateVenueTimingAndHolidays(venue, eventDate);
+        const timingValidation = validateVenueTimingAndHolidays(venue, eventDateTime);
         if (!timingValidation.isValid) {
             res.status(400).json({ success: false, message: timingValidation.reason });
             return;
@@ -488,23 +488,50 @@ export const confirmPayment = async (req: Request, res: Response): Promise<void>
                 razorpaySignature: razorpay_signature,
             });
 
-            // Send notification to host that the meet is now published
-            try {
-                const host = await User.findByPk(request.userId);
-                if (host?.fcmToken) {
-                    const { sendPushNotification } = require('../services/fcmService');
-                    await sendPushNotification(host.fcmToken, {
-                        title: '🚀 Stranger Meet Published!',
-                        body: `Your Stranger Meet "${request.subject}" is now live and public.`,
-                        data: {
-                            type: 'strangers_meet_published',
-                            requestId: request.id,
+            // Send notification to host that the meet is now published and notify users in the same city
+            setImmediate(async () => {
+                try {
+                    const host = await User.findByPk(request.userId);
+                    const hostName = host ? `${host.firstName} ${host.lastName}`.trim() : 'A host';
+                    const { default: Venue } = require('../models/Venue');
+                    const venue = await Venue.findByPk(request.venueId);
+                    const venueCity = venue?.city || '';
+                    const venueName = venue?.name || 'Club';
+
+                    const { sendPushNotification, sendMulticastPushNotification, getEligibleUsersForEventNotification } = require('../services/fcmService');
+
+                    // 1. Notify the host
+                    if (host?.fcmToken) {
+                        await sendPushNotification(host.fcmToken, {
+                            title: '🚀 Stranger Meet Published!',
+                            body: `Your Stranger Meet "${request.subject}" is now live and public.`,
+                            data: {
+                                type: 'strangers_meet_published',
+                                requestId: request.id,
+                            }
+                        });
+                    }
+
+                    // 2. Notify other users in the same city
+                    if (venueCity) {
+                        const tokens = await getEligibleUsersForEventNotification(request.userId, venueCity);
+                        if (tokens.length > 0) {
+                            await sendMulticastPushNotification(tokens, {
+                                title: `🤝 New Stranger Meet: ${request.subject}`,
+                                body: `${hostName} has scheduled a Stranger Meet at ${venueName}. Tap to view and join!`,
+                                data: {
+                                    type: 'strangers_meet_published',
+                                    requestId: request.id,
+                                    venueId: request.venueId,
+                                    hostId: request.userId,
+                                }
+                            });
                         }
-                    });
+                    }
+                } catch (notifErr: any) {
+                    logger.warn('Failed to send published notification: ' + notifErr.message);
                 }
-            } catch (notifErr: any) {
-                logger.warn('Failed to send published notification: ' + notifErr.message);
-            }
+            });
 
             res.json({
                 success: true,

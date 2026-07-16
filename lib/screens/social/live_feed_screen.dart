@@ -484,7 +484,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
   Widget build(BuildContext context) {
     final strangerMeetUnreadCount = _feedItems.where((i) =>
         i['type'] == 'incoming_request' &&
-        (i['requestType'] == 'table_plan' || i['requestType'] == 'stranger_meet') &&
+        (i['requestType'] == 'table_plan' || i['requestType'] == 'stranger_meet' || i['requestType'] == 'stranger_meet_join') &&
         i['status'] == 'pending' &&
         !_readRequestIds.contains(i['id']?.toString() ?? '')).length;
 
@@ -638,7 +638,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
       if (_clearedFeedItemIds.contains(id)) return false;
       return type == 'table_plan' ||
           ((type == 'incoming_request' || type == 'my_request') &&
-              (reqType == 'table_plan' || reqType == 'stranger_meet'));
+              (reqType == 'table_plan' || reqType == 'stranger_meet' || reqType == 'stranger_meet_join'));
     }).toList();
 
     return RefreshIndicator(
@@ -1024,6 +1024,8 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                         final reqStatus = _optimisticStates[reqId] ??
                             myReq['status']?.toString().toLowerCase() ??
                             'pending';
+                        final joinerPaid = myReq['joinerPaymentStatus']?.toString().toLowerCase() == 'paid' ||
+                                           myReq['joinerPaymentStatus']?.toString().toLowerCase() == 'confirmed';
 
                         if (reqStatus == 'pending') {
                           return Expanded(
@@ -1057,8 +1059,8 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                               ),
                             ),
                           );
-                        } else if (reqStatus == 'accepted' ||
-                            reqStatus == 'payment_pending') {
+                        } else if ((reqStatus == 'accepted' ||
+                            reqStatus == 'payment_pending') && !joinerPaid) {
                           return Expanded(
                             child: CountdownPayButton(
                               myReq: myReq,
@@ -1068,7 +1070,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                                   _loadFeed(showLoader: false),
                             ),
                           );
-                        } else if (reqStatus == 'paid') {
+                        } else if (reqStatus == 'paid' || joinerPaid) {
                           return Expanded(
                             child: Container(
                               padding: const EdgeInsets.symmetric(vertical: 11),
@@ -2479,16 +2481,16 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.blue.withValues(alpha: 0.1),
+                    color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                    border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.3)),
                   ),
                   child: Column(
                     children: [
                       Text(
                         'APPROVED! PLATFORM DEPOSIT REQUIRED: ₹${req['paymentAmount'] ?? '0'}',
                         style: const TextStyle(
-                          color: Colors.blue,
+                          color: LunaraTheme.electricViolet,
                           fontWeight: FontWeight.bold,
                           fontSize: 12,
                         ),
@@ -2500,7 +2502,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                             child: _actionButton(
                               icon: Icons.payment,
                               label: 'PAY NOW',
-                              color: Colors.blue,
+                              color: LunaraTheme.electricViolet,
                               outline: false,
                               onTap: () {
                                 final meetReq = StrangersMeetRequest.fromJson(req);
@@ -2722,20 +2724,20 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                     ),
                   ),
                 ),
-              ] else if ((currentStatus == 'accepted' || currentStatus == 'payment_pending') && req['joinerPaymentStatus'] != 'paid') ...[
+              ] else if (currentStatus == 'accepted' || currentStatus == 'payment_pending') ...[
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.blue.withValues(alpha: 0.1),
+                    color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                    border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.3)),
                   ),
                   child: Column(
                     children: [
                       Text(
                         'ACCEPTED! CHARGES PER HEAD: ₹${req['chargesPerHead'] ?? '0'}',
                         style: const TextStyle(
-                          color: Colors.blue,
+                          color: LunaraTheme.electricViolet,
                           fontWeight: FontWeight.bold,
                           fontSize: 12,
                         ),
@@ -2747,7 +2749,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                             child: _actionButton(
                               icon: Icons.payment,
                               label: 'PAY NOW',
-                              color: Colors.blue,
+                              color: LunaraTheme.electricViolet,
                               outline: false,
                               onTap: () {
                                 final meetPlan = StrangersMeetRequest.fromJson(req['plan'] ?? {});
@@ -2951,7 +2953,8 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                   ),
                 ],
               ] else if ((currentStatus == 'accepted' || currentStatus == 'payment_pending') &&
-                  req['joinerPaymentStatus']?.toString().toLowerCase() != 'confirmed') ...[
+                  req['joinerPaymentStatus']?.toString().toLowerCase() != 'confirmed' &&
+                  req['joinerPaymentStatus']?.toString().toLowerCase() != 'paid') ...[
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(

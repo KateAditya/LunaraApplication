@@ -12,37 +12,105 @@ export const validateVenueTimingAndHolidays = (
     eventDateTime: Date | string
 ): { isValid: boolean; reason?: string } => {
     try {
-        const date = new Date(eventDateTime);
-        if (isNaN(date.getTime())) {
-            return { isValid: false, reason: 'Invalid date format' };
+        let year: number;
+        let month: number;
+        let day: number;
+        let hour: number;
+        let minute: number;
+
+        if (typeof eventDateTime === 'string') {
+            const trimmed = eventDateTime.trim();
+            // Check if there is a timezone offset (ends with Z, or contains +XX:XX or -XX:XX or +XX or -XX at the end)
+            const hasTimezone = /Z$/i.test(trimmed) || /[+-]\d{2}:?\d{2}$/.test(trimmed) || /[+-]\d{2}$/.test(trimmed);
+            if (!hasTimezone) {
+                // Try parsing YYYY-MM-DD[T or space]HH:mm:ss
+                const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+                if (match) {
+                    year = parseInt(match[1], 10);
+                    month = parseInt(match[2], 10) - 1; // 0-indexed
+                    day = parseInt(match[3], 10);
+                    hour = parseInt(match[4], 10);
+                    minute = parseInt(match[5], 10);
+                } else {
+                    const matchDateOnly = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                    if (matchDateOnly) {
+                        year = parseInt(matchDateOnly[1], 10);
+                        month = parseInt(matchDateOnly[2], 10) - 1;
+                        day = parseInt(matchDateOnly[3], 10);
+                        hour = 12; // Noon to avoid boundary shifts
+                        minute = 0;
+                    } else {
+                        // Fallback to Date object parsing
+                        const date = new Date(eventDateTime);
+                        if (isNaN(date.getTime())) {
+                            return { isValid: false, reason: 'Invalid date format' };
+                        }
+                        const formatter = new Intl.DateTimeFormat('en-US', {
+                            timeZone: 'Asia/Kolkata',
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: false
+                        });
+                        const parts = formatter.formatToParts(date);
+                        const getPart = (type: string) => parts.find(p => p.type === type)?.value || '';
+                        year = parseInt(getPart('year'), 10);
+                        month = parseInt(getPart('month'), 10) - 1;
+                        day = parseInt(getPart('day'), 10);
+                        hour = parseInt(getPart('hour'), 10);
+                        minute = parseInt(getPart('minute'), 10);
+                    }
+                }
+            } else {
+                // Fallback to Date object parsing
+                const date = new Date(eventDateTime);
+                if (isNaN(date.getTime())) {
+                    return { isValid: false, reason: 'Invalid date format' };
+                }
+                const formatter = new Intl.DateTimeFormat('en-US', {
+                    timeZone: 'Asia/Kolkata',
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false
+                });
+                const parts = formatter.formatToParts(date);
+                const getPart = (type: string) => parts.find(p => p.type === type)?.value || '';
+                year = parseInt(getPart('year'), 10);
+                month = parseInt(getPart('month'), 10) - 1;
+                day = parseInt(getPart('day'), 10);
+                hour = parseInt(getPart('hour'), 10);
+                minute = parseInt(getPart('minute'), 10);
+            }
+        } else {
+            // It is a Date object already. Since we don't have the original string, we format using Asia/Kolkata.
+            // Note: If the Date object was parsed on the server from a timezone-less string, it may already be wrong.
+            // Therefore, controllers should pass the raw string whenever possible.
+            const date = eventDateTime;
+            if (isNaN(date.getTime())) {
+                return { isValid: false, reason: 'Invalid date format' };
+            }
+            const formatter = new Intl.DateTimeFormat('en-US', {
+                timeZone: 'Asia/Kolkata',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false
+            });
+            const parts = formatter.formatToParts(date);
+            const getPart = (type: string) => parts.find(p => p.type === type)?.value || '';
+            year = parseInt(getPart('year'), 10);
+            month = parseInt(getPart('month'), 10) - 1;
+            day = parseInt(getPart('day'), 10);
+            hour = parseInt(getPart('hour'), 10);
+            minute = parseInt(getPart('minute'), 10);
         }
-
-        // We need to work in the local timezone of the venue (assuming India IST +05:30 for Lunara)
-        // Since the Node server might run in UTC or another timezone, we'll extract the local time components.
-        // A simple way is to use the Date object which uses the server's local time, but to be safe, 
-        // let's format it in Asia/Kolkata explicitly.
-        
-        const formatter = new Intl.DateTimeFormat('en-US', {
-            timeZone: 'Asia/Kolkata',
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            weekday: 'short',
-            hour12: false
-        });
-
-        // Parts looks like: [ { type: 'weekday', value: 'Sat' }, ..., { type: 'hour', value: '01' } ]
-        const parts = formatter.formatToParts(date);
-        const getPart = (type: string) => parts.find(p => p.type === type)?.value || '';
-
-        const year = parseInt(getPart('year'));
-        const month = parseInt(getPart('month')) - 1; // 0-indexed
-        const day = parseInt(getPart('day'));
-        const hour = parseInt(getPart('hour'));
-        const minute = parseInt(getPart('minute'));
 
         // Reconstruct local date for business logic
         const localDate = new Date(year, month, day, hour, minute);

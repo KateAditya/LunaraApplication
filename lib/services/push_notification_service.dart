@@ -251,6 +251,7 @@ class PushNotificationService {
       case 'strangers_meet_approved':
       case 'strangers_meet_request_submitted':
       case 'strangers_meet_settlement_paid':
+      case 'strangers_meet_published':
         final requestId = data['requestId']?.toString();
         if (requestId != null && requestId.isNotEmpty) {
           _navigateToStrangersMeet(navigator, requestId);
