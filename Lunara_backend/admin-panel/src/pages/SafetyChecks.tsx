@@ -249,15 +249,22 @@ export const SafetyChecks: React.FC = () => {
                                         </td>
                                         <td>
                                             <div className="d-flex flex-wrap gap-1" style={{ maxWidth: 200 }}>
-                                                {check.prebuiltAnswers && check.prebuiltAnswers.length > 0 ? (
-                                                    check.prebuiltAnswers.map((answer, index) => (
-                                                        <span key={index} className="vz-badge secondary" style={{ fontSize: '10px' }}>
-                                                            {answer}
-                                                        </span>
-                                                    ))
-                                                ) : (
-                                                    <span className="text-muted" style={{ fontSize: '11px' }}>None</span>
-                                                )}
+                                                {(() => {
+                                                    const answers = typeof check.prebuiltAnswers === 'string'
+                                                        ? (check.prebuiltAnswers as string).split(',').map(s => s.trim()).filter(Boolean)
+                                                        : Array.isArray(check.prebuiltAnswers)
+                                                        ? check.prebuiltAnswers
+                                                        : [];
+                                                    return answers.length > 0 ? (
+                                                        answers.map((answer, index) => (
+                                                            <span key={index} className="vz-badge secondary" style={{ fontSize: '10px' }}>
+                                                                {answer}
+                                                            </span>
+                                                        ))
+                                                     ) : (
+                                                        <span className="text-muted" style={{ fontSize: '11px' }}>None</span>
+                                                     );
+                                                 })()}
                                             </div>
                                         </td>
                                         <td>
@@ -327,11 +334,18 @@ export const SafetyChecks: React.FC = () => {
                                                 {selectedCheck.feltSafe ? 'YES' : 'NO'}
                                             </span>
                                         </div>
-                                        {selectedCheck.prebuiltAnswers && selectedCheck.prebuiltAnswers.length > 0 && (
-                                            <div className="mt-2">
-                                                <strong>Reasons:</strong> {selectedCheck.prebuiltAnswers.join(', ')}
-                                            </div>
-                                        )}
+                                        {(() => {
+                                            const answers = typeof selectedCheck.prebuiltAnswers === 'string'
+                                                ? (selectedCheck.prebuiltAnswers as string).split(',').map(s => s.trim()).filter(Boolean)
+                                                : Array.isArray(selectedCheck.prebuiltAnswers)
+                                                ? selectedCheck.prebuiltAnswers
+                                                : [];
+                                            return answers.length > 0 ? (
+                                                <div className="mt-2">
+                                                    <strong>Reasons:</strong> {answers.join(', ')}
+                                                </div>
+                                            ) : null;
+                                        })()}
                                         {selectedCheck.opinion && (
                                             <div className="mt-2">
                                                 <strong>User's Opinion:</strong> "{selectedCheck.opinion}"

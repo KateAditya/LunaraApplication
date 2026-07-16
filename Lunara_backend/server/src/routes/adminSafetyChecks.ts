@@ -24,7 +24,17 @@ router.get('/', async (_req, res) => {
             order: [['createdAt', 'DESC']]
         });
         
-        return res.json({ success: true, data: safetyChecks });
+        const formattedSafetyChecks = safetyChecks.map(sc => {
+            const json = sc.toJSON() as any;
+            return {
+                ...json,
+                prebuiltAnswers: json.prebuiltAnswers 
+                    ? json.prebuiltAnswers.split(',').map((s: string) => s.trim()).filter(Boolean)
+                    : []
+            };
+        });
+        
+        return res.json({ success: true, data: formattedSafetyChecks });
     } catch (error: any) {
         console.error('Error fetching safety checks for admin:', error);
         return res.status(500).json({ success: false, message: 'Failed to fetch safety checks.' });
@@ -53,7 +63,15 @@ router.post(
             safetyCheck.status = 'resolved';
             await safetyCheck.save();
             
-            return res.json({ success: true, data: safetyCheck });
+            const json = safetyCheck.toJSON() as any;
+            const formatted = {
+                ...json,
+                prebuiltAnswers: json.prebuiltAnswers 
+                    ? json.prebuiltAnswers.split(',').map((s: string) => s.trim()).filter(Boolean)
+                    : []
+            };
+            
+            return res.json({ success: true, data: formatted });
         } catch (error: any) {
             console.error('Error submitting safety check feedback:', error);
             return res.status(500).json({ success: false, message: 'Failed to submit feedback.' });

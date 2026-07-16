@@ -521,7 +521,7 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
         // Exclude hidden profiles, but allow those without preference records or with true
         const prefConditions = {
             [Op.or]: [
-                { '$preferences.showMeInMatching$': { [Op.ne]: false } },
+                { '$preferences.show_me_in_matching$': { [Op.ne]: false } },
                 { '$preferences.id$': null }
             ]
         };
@@ -578,6 +578,7 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
             limit,
             offset,
             distinct: true,   // Needed for correct count with includes
+            subQuery: false,
         });
 
         const totalPages = Math.ceil(count / limit);
