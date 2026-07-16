@@ -3,7 +3,7 @@ import { body, param } from 'express-validator';
 import { validate } from '../middleware/validate';
 import { uploadTempPhotos } from '../middleware/upload';
 import mobileUserController from '../controllers/mobileUserController';
-import { User, UserMatch, Payment, PartyPlanRequest, PlanJoinRequest, Conversation, Message, Plan, PartyPlan, Venue, StrangersMeetRequest, StrangersMeetJoiner } from '../models';
+import { User, UserMatch, Payment, PartyPlanRequest, PlanJoinRequest, Conversation, Message, Plan, PartyPlan, Venue, StrangersMeetRequest, StrangersMeetJoiner, SafetyCheck } from '../models';
 import { Op } from 'sequelize';
 import { optionalAuth } from '../middleware/auth';
 
@@ -199,7 +199,7 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
         ? await PartyPlanRequest.findAll({
             where: {
                 planId: { [Op.in]: myHostedPlans.map(p => p.id) },
-                status: { [Op.in]: ['accepted', 'paid'] }
+                status: { [Op.in]: ['accepted', 'payment_pending'] }
             },
             include: [
                 {
@@ -586,6 +586,49 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
             }
         });
     });
+    // Fetch safety check feedbacks for the user
+    try {
+        const safetyFeedbacks = await SafetyCheck.findAll({
+            where: {
+                userId: uId,
+                adminFeedback: { [Op.ne]: null as any }
+            },
+            include: [
+                {
+                    model: User,
+                    as: 'partner',
+                    attributes: ['firstName', 'lastName', 'profileImageUrl']
+                }
+            ],
+            order: [['updatedAt', 'DESC']],
+            limit: 10
+        });
+
+        for (const sf of safetyFeedbacks) {
+            const partner = (sf as any).partner;
+            const partnerName = partner ? `${partner.firstName} ${partner.lastName}` : 'your partner';
+            const notificationId = `safety_feedback_${sf.id}`;
+            notifications.push({
+                id: notificationId,
+                title: 'Safety Check Feedback',
+                body: `Regarding your safety check with ${partnerName}: ${sf.adminFeedback}`,
+                createdAt: sf.updatedAt ? sf.updatedAt.toISOString() : new Date().toISOString(),
+                read: activeReadNotificationIds.has(notificationId),
+                sender: partner ? {
+                    id: sf.partnerId,
+                    firstName: partner.firstName,
+                    lastName: partner.lastName,
+                    profileImageUrl: partner.profileImageUrl,
+                } : null,
+                data: {
+                    type: 'safety_check_feedback',
+                    safetyCheckId: sf.id,
+                }
+            });
+        }
+    } catch (err) {
+        console.error('Error fetching safety check feedbacks for notifications:', err);
+    }
 
     notifications.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     return notifications.filter(n => new Date(n.createdAt).getTime() > clearedAt);
@@ -796,5 +839,32 @@ router.post('/chat/request-extension', chatSubCtrl.requestExtension);
 
 /** POST /api/mobile/chat/accept-extension-request */
 router.post('/chat/accept-extension-request', chatSubCtrl.acceptExtensionRequest);
+
+/**
+ * POST /api/mobile/user/safety-check
+ * Submits safety check report
+ */
+router.post('/safety-check', async (req, res) => {
+    try {
+        const { userId, partnerId, feltSafe, prebuiltAnswers, opinion } = req.body;
+        if (!userId || !partnerId || feltSafe === undefined) {
+            return res.status(400).json({ success: false, message: 'userId, partnerId, and feltSafe are required.' });
+        }
+        
+        const safetyCheck = await SafetyCheck.create({
+            userId,
+            partnerId,
+            feltSafe,
+            prebuiltAnswers: Array.isArray(prebuiltAnswers) ? prebuiltAnswers.join(',') : prebuiltAnswers,
+            opinion,
+            status: 'pending'
+        });
+        
+        return res.status(201).json({ success: true, data: safetyCheck });
+    } catch (error: any) {
+        console.error('Error submitting safety check:', error);
+        return res.status(500).json({ success: false, message: 'Failed to submit safety check.' });
+    }
+});
 
 export default router;

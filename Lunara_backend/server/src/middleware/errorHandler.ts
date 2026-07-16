@@ -32,6 +32,9 @@ export const errorHandler = (
     if (err instanceof ApiError) {
         statusCode = err.statusCode;
         message = err.message;
+    } else if (err.name === 'SequelizeDatabaseError' && (err as any).parent?.code === '22P02') {
+        statusCode = 400;
+        message = 'Invalid input syntax: ' + ((err as any).parent?.message || err.message);
     }
 
     // Log the error

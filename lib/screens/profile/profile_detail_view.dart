@@ -7,6 +7,7 @@ import 'edit_profile_screen.dart';
 import '../../services/block_service.dart';
 import '../../services/api_service.dart';
 import 'package:intl/intl.dart';
+import '../../widgets/profile_share_sheet.dart';
 
 class ProfileDetailView extends StatefulWidget {
   final User user;
@@ -870,7 +871,16 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                 'SHARE PROFILE',
                 LunaraTheme.electricViolet,
                 Colors.white,
-                () {},
+                () {
+                  ProfileShareSheet.show(
+                    context,
+                    profileId: _currentUser.id,
+                    name: _currentUser.fullName,
+                    age: _currentUser.age?.toString(),
+                    city: _currentUser.city,
+                    profilePhotoUrl: _currentUser.profilePhoto,
+                  );
+                },
               ),
             ),
           ],

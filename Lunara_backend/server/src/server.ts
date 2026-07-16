@@ -91,9 +91,16 @@ app.get('/health', (_req, res) => {
 });
 
 // Serve static files from uploads directory (or redirect to Azure Blob Storage)
-if (process.env.AZURE_STORAGE_ACCOUNT_NAME) {
-    const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
-    const containerName = process.env.AZURE_STORAGE_CONTAINER_NAME || 'lunara-uploads';
+let accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+if (!accountName && process.env.AZURE_STORAGE_CONNECTION_STRING) {
+    const match = process.env.AZURE_STORAGE_CONNECTION_STRING.match(/AccountName=([^;]+)/);
+    if (match) {
+        accountName = match[1];
+    }
+}
+
+if (accountName) {
+    const containerName = process.env.AZURE_STORAGE_CONTAINER_NAME || 'uploads';
     const blobBaseUrl = `https://${accountName}.blob.core.windows.net/${containerName}`;
     
     app.use('/uploads', (req, res) => {
@@ -135,6 +142,7 @@ import mobileSubscriptionRoutes from './routes/mobileSubscription';
 import mobileWalletRoutes from './routes/mobileWallet';
 import { getAdminChatSettings, updateAdminChatSettings } from './controllers/chatSubscriptionController';
 import dbRestoreRoutes from './routes/dbRestore';
+import adminSafetyChecksRoutes from './routes/adminSafetyChecks';
 
 app.get('/api', (_req, res) => {
     res.json({
@@ -176,6 +184,7 @@ app.use('/api/admin/strangers-meet', adminStrangersMeetRoutes);
 app.use('/api/admin/bookings', adminBookingsRoutes);   // Strangers Meet (Admin)
 app.use('/api/mobile/cities', mobileCityRoutes);                   // Cities (Mobile App)
 app.use('/api/admin/subscriptions', adminSubscriptionRoutes); // Subscriptions (Admin)
+app.use('/api/admin/safety-checks', adminSafetyChecksRoutes); // Safety Checks (Admin)
 app.use('/api/mobile/subscriptions', mobileSubscriptionRoutes); // Subscriptions (Mobile)
 app.use('/api/mobile/wallet', mobileWalletRoutes);             // Wallet (Mobile)
 
