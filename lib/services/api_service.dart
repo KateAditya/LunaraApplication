@@ -2490,6 +2490,21 @@ class ApiService {
     return null;
   }
 
+  static Future<Map<String, dynamic>?> useBoost() async {
+    try {
+      final response = await post('/api/mobile/subscriptions/use-boost');
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return Map<String, dynamic>.from(data);
+        }
+      }
+    } catch (e) {
+      debugPrint('useBoost error: $e');
+    }
+    return null;
+  }
+
   /// Fetches all subscription transactions for the current user
   static Future<List<Map<String, dynamic>>> fetchSubscriptionHistory({
     int page = 1,

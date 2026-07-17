@@ -49,7 +49,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
       final dateStr = booking['bookingDate']?.toString();
       if (dateStr == null) return false;
 
-      final bookingDate = DateTime.parse(dateStr);
+      final bookingDate = DateTime.parse(dateStr).toLocal();
       final today = DateTime.now();
       final todayStart = DateTime(today.year, today.month, today.day);
       final bookingDateStart = DateTime(bookingDate.year, bookingDate.month, bookingDate.day);
@@ -79,7 +79,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
 
   String _formatBookingDateTime(String bookingDateStr, String startTimeStr) {
     try {
-      final date = DateTime.parse(bookingDateStr);
+      final date = DateTime.parse(bookingDateStr).toLocal();
       final timeParts = startTimeStr.split(':');
       final hour = int.parse(timeParts[0]);
       final minute = int.parse(timeParts[1]);

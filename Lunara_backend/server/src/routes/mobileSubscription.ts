@@ -22,6 +22,7 @@ router.post('/cancel', ctrl.cancelSubscription);
 // ── Boost Purchase ─────────────────────────────────────────────────────────────
 router.post('/create-boost-order', ctrl.createBoostOrder);
 router.post('/purchase-boost', ctrl.purchaseBoost);
+router.post('/use-boost', ctrl.useBoost);
 
 // ── History & Invoices ─────────────────────────────────────────────────────────
 router.get('/history', ctrl.getSubscriptionHistory);

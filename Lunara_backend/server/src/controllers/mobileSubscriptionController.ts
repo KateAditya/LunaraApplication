@@ -636,3 +636,53 @@ export const purchaseBoost = async (req: Request, res: Response): Promise<void> 
         res.status(500).json({ success: false, message: 'Server error' });
     }
 };
+
+// @route POST /api/mobile/subscriptions/use-boost
+export const useBoost = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const userId = (req as any).user.id;
+
+        const sub = await UserSubscription.findOne({
+            where: { userId, status: SubscriptionStatus.ACTIVE },
+            order: [['createdAt', 'DESC']],
+        });
+
+        if (!sub) {
+            res.status(400).json({ success: false, message: 'No active subscription found to use a boost' });
+            return;
+        }
+
+        if (sub.boostsRemaining <= 0) {
+            res.status(400).json({ success: false, message: 'No boost credits remaining. Upgrade or purchase boosts.' });
+            return;
+        }
+
+        // Decrement boostsRemaining (if not unlimited / 9999)
+        if (sub.boostsRemaining < 9999) {
+            await sub.update({ boostsRemaining: sub.boostsRemaining - 1 });
+        }
+
+        // Record a BOOST type transaction with amount 0 (representing boost usage)
+        await SubscriptionTransaction.create({
+            userId,
+            packageId: sub.packageId,
+            type: TransactionType.BOOST,
+            amount: 0,
+            status: TransactionStatus.SUCCESS,
+            invoiceNumber: `BOOST-USE-${Date.now().toString(36).toUpperCase()}`,
+            metadata: { boostUsed: 1, remaining: sub.boostsRemaining },
+        });
+
+        SubscriptionService.invalidateCache(userId);
+
+        res.status(200).json({
+            success: true,
+            message: 'Profile boost activated successfully!',
+            data: { boostsRemaining: sub.boostsRemaining },
+        });
+    } catch (error: any) {
+        logger.error('Error activating boost:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+

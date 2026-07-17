@@ -205,7 +205,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               String dateStr = ad['toDate'] ?? ad['fromDate'] ?? '';
               if (dateStr.isNotEmpty) {
                 try {
-                  final dt = DateTime.parse(dateStr);
+                  final dt = DateTime.parse(dateStr).toLocal();
                   dateStr = DateFormat('EEEE, MMM dd').format(dt);
                 } catch (_) {}
               } else {

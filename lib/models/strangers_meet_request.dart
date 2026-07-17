@@ -95,7 +95,7 @@ class StrangersMeetRequest {
       tagline: json['tagline'] ?? '',
       eventDateTime: DateTime.parse(
         eventDateRaw ?? DateTime.now().toIso8601String(),
-      ),
+      ).toLocal(),
       numberOfPersons: numPersonsRaw ?? 21,
       chargesPerHead: chargesPerHeadRaw != null
           ? (chargesPerHeadRaw is String
@@ -113,7 +113,7 @@ class StrangersMeetRequest {
       adminNotes: json['adminNotes'] ?? json['admin_notes'],
       ticketId: json['ticketId'] ?? json['ticket_id'],
       createdAt: (json['createdAt'] ?? json['created_at']) != null
-          ? DateTime.parse(json['createdAt'] ?? json['created_at'])
+          ? DateTime.parse(json['createdAt'] ?? json['created_at']).toLocal()
           : null,
       mobileNumber: json['mobileNumber'] ?? json['mobile_number'],
       alternateMobileNumber:
@@ -146,7 +146,7 @@ class StrangersMeetRequest {
           : null,
       settlementDate:
           (json['settlementDate'] ?? json['settlement_date']) != null
-          ? DateTime.parse(json['settlementDate'] ?? json['settlement_date'])
+          ? DateTime.parse(json['settlementDate'] ?? json['settlement_date']).toLocal()
           : null,
       settlementMethod: json['settlementMethod'] ?? json['settlement_method'],
       joinedCount: json['joinedCount'] ?? json['joined_count'] ?? 0,

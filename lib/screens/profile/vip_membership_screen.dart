@@ -20,6 +20,8 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
   List<dynamic> _allPackages = [];
   String? _activePackageId;
   int _activeRemainingDays = 0;
+  String? _activePackageTier;
+  int _boostsRemaining = 0;
 
   // Selected Options
   int _selectedPlanIndex = 0; // 0: Core, 1: Plus, 2: Pro, 3: Elite
@@ -61,12 +63,25 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
 
       setState(() {
         _allPackages = packages;
-        if (currentSub['subscription'] != null) {
-          _activePackageId = currentSub['subscription']['packageId'];
-          _activeRemainingDays = currentSub['remainingDays'] ?? 0;
+        final sub = currentSub['subscription'];
+        if (sub != null) {
+          final packageData = sub['package'];
+          final tier = packageData != null ? packageData['tier'] : null;
+          if (tier == 'FREE') {
+            _activePackageId = null;
+            _activeRemainingDays = 0;
+            _activePackageTier = null;
+          } else {
+            _activePackageId = sub['packageId'];
+            _activeRemainingDays = currentSub['remainingDays'] ?? 0;
+            _activePackageTier = tier;
+          }
+          _boostsRemaining = sub['boostsRemaining'] ?? 0;
         } else {
           _activePackageId = null;
           _activeRemainingDays = 0;
+          _activePackageTier = null;
+          _boostsRemaining = 0;
         }
         _isLoading = false;
       });
@@ -312,6 +327,38 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
     }
   }
 
+  Future<void> _useActiveBoost() async {
+    setState(() => _isProcessing = true);
+    try {
+      final result = await ApiService.useBoost();
+      setState(() => _isProcessing = false);
+      if (result != null && result['success'] == true) {
+        _showSuccessDialog(
+          'Profile Boosted! ⚡',
+          'Your profile is now boosted for the next 30 minutes! Get ready for more matches and views.',
+        );
+        _loadData();
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to activate boost. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _isProcessing = false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   void _showSuccessDialog(String title, String subtitle) {
     showDialog(
       context: context,
@@ -505,6 +552,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
   Widget _buildProfileBoostTab() {
     final selectedBoost = _boostOptions[_selectedBoostOption];
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final hasActiveBoosts = _boostsRemaining > 0 || _activePackageTier == 'ELITE';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -552,7 +600,115 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
               ],
             ),
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 24),
+
+          // Active Boost Credit Section
+          if (hasActiveBoosts) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: isDark 
+                      ? [const Color(0xFF2E1A47), const Color(0xFF140D24)]
+                      : [Colors.purple.shade50, Colors.white],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: Colors.purple.withValues(alpha: 0.3),
+                  width: 1.5,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.purple.withValues(alpha: isDark ? 0.3 : 0.1),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'ACTIVE BOOST CREDITS',
+                            style: TextStyle(
+                              color: Colors.purpleAccent,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.5,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            _activePackageTier == 'ELITE' ? 'UNLIMITED BOOSTS' : '$_boostsRemaining BOOSTS AVAILABLE',
+                            style: TextStyle(
+                              color: isDark ? Colors.white : Colors.black87,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.purple.withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.rocket_launch_rounded,
+                          color: Colors.purpleAccent,
+                          size: 26,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: _isProcessing ? null : _useActiveBoost,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.purple,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        elevation: 4,
+                        shadowColor: Colors.purple.withValues(alpha: 0.5),
+                      ),
+                      child: _isProcessing
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.bolt, color: Colors.amber),
+                                SizedBox(width: 8),
+                                Text(
+                                  'ACTIVATE BOOST NOW',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 32),
+          ],
 
           Text(
             'SELECT BOOST PACKAGE',

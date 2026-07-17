@@ -2296,7 +2296,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                                       builder: (_) => PaymentConfirmationScreen(
                                         venue: venue,
                                         date: booking['bookingDate'] != null
-                                            ? DateFormat('dd/MM/yyyy').format(DateTime.parse(booking['bookingDate']))
+                                            ? DateFormat('dd/MM/yyyy').format(DateTime.parse(booking['bookingDate']).toLocal())
                                             : 'Tonight',
                                         package: 'Large Party Booking Deposit',
                                         time: booking['startTime'] ?? '21:00',

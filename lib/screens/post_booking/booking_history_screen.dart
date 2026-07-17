@@ -52,7 +52,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       try {
         final dateStr = b['bookingDate']?.toString();
         if (dateStr != null) {
-          final dt = DateTime.parse(dateStr);
+          final dt = DateTime.parse(dateStr).toLocal();
           final mStr = DateFormat('MMM yyyy').format(dt).toUpperCase();
           months.add(mStr);
         }
@@ -78,7 +78,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       try {
         final dateStr = b['bookingDate']?.toString();
         if (dateStr == null) return false;
-        final dt = DateTime.parse(dateStr);
+        final dt = DateTime.parse(dateStr).toLocal();
         final mStr = DateFormat('MMM yyyy').format(dt).toUpperCase();
         return mStr == _selectedMonth;
       } catch (_) {
@@ -140,7 +140,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
 
   String _formatBookingDate(String bookingDateStr) {
     try {
-      final date = DateTime.parse(bookingDateStr);
+      final date = DateTime.parse(bookingDateStr).toLocal();
       return DateFormat('EEE, MMM d').format(date);
     } catch (_) {
       return bookingDateStr;
