@@ -1045,22 +1045,40 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   Widget _buildGroupPartyCard(Map<String, dynamic> booking) {
-    final bookingId = (booking['id'] ?? booking['bookingId'] ?? '').toString();
+    final bookingId = (booking['id'] ?? booking['bookingId'] ?? booking['booking_id'] ?? '').toString();
     final venue = booking['venue'];
     final venueName = (venue is Map ? venue['name'] : null) ??
-        booking['venueName']?.toString() ?? 'Venue';
-    final venueAddress = (venue is Map ? venue['address'] : null)?.toString() ?? '';
+        booking['venueName']?.toString() ??
+        booking['venue_name']?.toString() ??
+        'Venue';
+    final venueAddress = (venue is Map ? (venue['address'] ?? venue['addressLine1'] ?? venue['address_line1'] ?? venue['city'] ?? '') : null)?.toString() ??
+        booking['venueAddress']?.toString() ??
+        booking['venue_address']?.toString() ??
+        '';
     final venueImage = (venue is Map ? (venue['images'] is List && (venue['images'] as List).isNotEmpty
         ? (venue['images'] as List).first?.toString()
-        : venue['imageUrl']?.toString()) : null);
+        : (venue['imageUrl'] ?? venue['image_url'])?.toString()) : null);
 
-    final rawStatus = (booking['adminApprovalStatus'] ?? booking['status'] ?? booking['bookingStatus'] ?? 'pending').toString().toLowerCase();
-    final guests = booking['numberOfGuests']?.toString() ?? '?';
-    final subject = booking['partySubject']?.toString() ?? '';
-    final bookingDate = booking['bookingDate']?.toString();
-    final startTime = booking['startTime']?.toString() ?? '';
-    final approvedAmount = booking['approvedAmount'] ?? booking['charges'] ?? booking['totalAmount'] ?? booking['adminPaymentAmount'];
-    final createdAt = booking['createdAt']?.toString();
+    final rawStatus = (booking['adminApprovalStatus'] ??
+            booking['admin_approval_status'] ??
+            booking['status'] ??
+            booking['bookingStatus'] ??
+            booking['booking_status'] ??
+            'pending')
+        .toString()
+        .toLowerCase();
+    final guests = (booking['numberOfGuests'] ?? booking['number_of_guests'] ?? '?').toString();
+    final subject = (booking['partySubject'] ?? booking['party_subject'] ?? '').toString();
+    final bookingDate = (booking['bookingDate'] ?? booking['booking_date'])?.toString();
+    final startTime = (booking['startTime'] ?? booking['start_time'] ?? '').toString();
+    final approvedAmount = booking['approvedAmount'] ??
+        booking['approved_amount'] ??
+        booking['charges'] ??
+        booking['totalAmount'] ??
+        booking['total_amount'] ??
+        booking['adminPaymentAmount'] ??
+        booking['admin_payment_amount'];
+    final createdAt = (booking['createdAt'] ?? booking['created_at'])?.toString();
 
     // Normalise status
     final isAwaitingPayment = rawStatus == 'approved' ||
