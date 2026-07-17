@@ -631,11 +631,11 @@ export const initiateLargePartyPayment = async (req: Request, res: Response) => 
             return res.status(400).json({ success: false, message: 'Not a large party request booking' });
         }
 
-        if (booking.adminApprovalStatus !== 'approved') {
+        if (booking.adminApprovalStatus !== 'approved' && booking.adminApprovalStatus !== 'payment_sent') {
             return res.status(400).json({ success: false, message: 'Booking is not approved by admin or payment already done/initiated' });
         }
 
-        const amount = Number(booking.totalAmount);
+        const amount = Number(booking.adminPaymentAmount || booking.totalAmount);
         if (isNaN(amount) || amount <= 0) {
             return res.status(400).json({ success: false, message: 'Invalid total amount set by admin' });
         }
