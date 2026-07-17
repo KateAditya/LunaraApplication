@@ -18,7 +18,7 @@ import '../screens/auth/autoblocked_warning_screen.dart';
 
 class ApiService {
   // Toggle this to true to use your local backend, false for production
-  static const bool isLocal = true;
+  static const bool isLocal = false;
 
   // Uses your machine's local IP (192.168.0.150) for local dev on a real device
   static String get baseUrl {

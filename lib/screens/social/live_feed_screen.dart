@@ -302,7 +302,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
       try {
         _razorpay?.open({
           'key': razorpayKey,
-          'order_id': orderData['id']?.toString(),
+          'order_id': orderData['razorpayOrderId']?.toString() ?? orderData['id']?.toString(),
           'amount': orderData['amount'],
           'name': 'Lunara – Group Party',
           'description': 'Group Party at ${booking['venue']?['name'] ?? booking['venueName'] ?? 'venue'}',
@@ -331,7 +331,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
           Navigator.pop(context); // Close loader
           _handleLargePartySuccess(
             paymentId: 'mock_payment',
-            orderId: orderData['id']?.toString() ?? 'mock_order_id',
+            orderId: orderData['razorpayOrderId']?.toString() ?? orderData['id']?.toString() ?? 'mock_order_id',
             signature: 'mock_signature',
           );
         });
