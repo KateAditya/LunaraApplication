@@ -8,8 +8,9 @@ import 'vip_membership_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final User? user;
+  final List<User>? allProfiles;
 
-  const ProfileScreen({super.key, this.user});
+  const ProfileScreen({super.key, this.user, this.allProfiles});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -96,6 +97,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _loadAllProfiles() async {
     try {
       final me = await ApiService.fetchProfile();
+      if (mounted) {
+        setState(() {
+          _me = me;
+        });
+      }
+
+      if (widget.allProfiles != null && widget.allProfiles!.isNotEmpty) {
+        if (mounted) {
+          setState(() {
+            _allProfiles = List<User>.from(widget.allProfiles!);
+            _isProfilesLoading = false;
+            _updateCurrentProfileIndex();
+          });
+        }
+        _loadPlanLimits();
+        return;
+      }
+
       final String? myGender = me?.gender?.toLowerCase();
       final String? myId = ApiService.currentUserId;
 
@@ -114,7 +133,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
       if (mounted) {
         setState(() {
-          _me = me;
           _allProfiles = resolvedUsers;
           _isProfilesLoading = false;
           _updateCurrentProfileIndex();
@@ -133,6 +151,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _currentProfileIndex = _allProfiles.indexWhere(
         (u) => u.id == _displayUser!.id,
       );
+      if (_currentProfileIndex == -1) {
+        _allProfiles.insert(0, _displayUser!);
+        _currentProfileIndex = 0;
+      }
     }
   }
 

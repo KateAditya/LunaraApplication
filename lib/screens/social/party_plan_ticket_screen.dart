@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme.dart';
 import '../../widgets/lunara_profile_image.dart';
+import '../../widgets/lunara_ticket_widget.dart';
 import '../../services/api_service.dart';
 
 class PartyPlanTicketScreen extends StatefulWidget {
@@ -203,11 +204,16 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
     // Prefer backend ticket code; fall back to request ID
     final ticketId = (_canonicalTicketCode ?? widget.request['id']?.toString() ?? 'TICKET').toUpperCase();
 
-    final hostUser = _freshHostUser ?? widget.plan['user'] ?? widget.plan['host'] ?? {};
+    final hostUser = _freshHostUser ??
+        (widget.plan['user'] is Map ? Map<String, dynamic>.from(widget.plan['user']) : null) ??
+        (widget.plan['host'] is Map ? Map<String, dynamic>.from(widget.plan['host']) : null) ??
+        <String, dynamic>{};
     final hostName = '${hostUser['firstName'] ?? ''} ${hostUser['lastName'] ?? ''}'.trim();
     final cleanHostName = hostName.isNotEmpty ? hostName : 'Host';
 
-    final joinerUser = _freshJoinerUser ?? widget.request['requester'] ?? {};
+    final joinerUser = _freshJoinerUser ??
+        (widget.request['requester'] is Map ? Map<String, dynamic>.from(widget.request['requester']) : null) ??
+        <String, dynamic>{};
     final joinerName = '${joinerUser['firstName'] ?? ''} ${joinerUser['lastName'] ?? ''}'.trim();
     final cleanJoinerName = joinerName.isNotEmpty ? joinerName : 'Joiner';
 
@@ -246,13 +252,18 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
         : DateTime.now();
 
     // Prefer backend-refreshed user data so profile photos are always resolved
-    final hostUser = _freshHostUser ?? widget.plan['user'] ?? widget.plan['host'] ?? {};
+    final hostUser = _freshHostUser ??
+        (widget.plan['user'] is Map ? Map<String, dynamic>.from(widget.plan['user']) : null) ??
+        (widget.plan['host'] is Map ? Map<String, dynamic>.from(widget.plan['host']) : null) ??
+        <String, dynamic>{};
     final hostName =
         '${hostUser['firstName'] ?? ''} ${hostUser['lastName'] ?? ''}'.trim();
     final cleanHostName = hostName.isNotEmpty ? hostName : 'Host';
     final hostUsername = '@${hostUser['username'] ?? hostUser['firstName']?.toString().toLowerCase() ?? 'host'}';
 
-    final joinerUser = _freshJoinerUser ?? widget.request['requester'] ?? {};
+    final joinerUser = _freshJoinerUser ??
+        (widget.request['requester'] is Map ? Map<String, dynamic>.from(widget.request['requester']) : null) ??
+        <String, dynamic>{};
     final joinerName =
         '${joinerUser['firstName'] ?? ''} ${joinerUser['lastName'] ?? ''}'
             .trim();
@@ -347,342 +358,246 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
               const SizedBox(height: 32),
 
               // The Ticket Card
-              Container(
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [LunaraTheme.electricViolet, Color(0xFF4C1D95)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    BoxShadow(
-                      color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
-                      blurRadius: 20,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    // Top Info Section
-                    Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+              LunaraTicketWidget(
+                topSection: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: const Text(
-                                  'LUNARA VIBE',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 1,
-                                  ),
-                                ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: const Text(
+                              'LUNARA VIBE',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1,
                               ),
-                              Text(
-                                ticketId.length > 12
-                                    ? ticketId.substring(0, 12)
-                                    : ticketId,
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  fontFamily: 'monospace',
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          // Countdown badge — expires at planDateTime
-                          _buildCountdownBadge(),
-                          const SizedBox(height: 20),
-                          Text(
-                            description,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 22,
-                              fontWeight: FontWeight.w900,
-                              height: 1.2,
                             ),
                           ),
-                          const SizedBox(height: 24),
-
-                          // Details Grid
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildTicketDetail(
-                                  'DATE',
-                                  DateFormat('MMM dd, yyyy').format(planDateTime),
-                                ),
-                              ),
-                              Expanded(
-                                child: _buildTicketDetail(
-                                  'TIME',
-                                  DateFormat('hh:mm a').format(planDateTime),
-                                ),
-                              ),
-                            ],
+                          Text(
+                            ticketId.length > 12
+                                ? ticketId.substring(0, 12)
+                                : ticketId,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              fontFamily: 'monospace',
+                            ),
                           ),
                         ],
                       ),
-                    ),
+                      const SizedBox(height: 10),
+                      // Countdown badge — expires at planDateTime
+                      _buildCountdownBadge(),
+                      const SizedBox(height: 20),
+                      Text(
+                        description,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                          height: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
 
-                    // Dashed Divider line
-                    Row(
-                      children: [
-                        Container(
-                          width: 12,
-                          height: 24,
-                          decoration: const BoxDecoration(
-                            color: LunaraTheme.midnightBlack,
-                            borderRadius: BorderRadius.horizontal(
-                              right: Radius.circular(12),
+                      // Details Grid
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildTicketDetail(
+                              'DATE',
+                              DateFormat('MMM dd, yyyy').format(planDateTime),
                             ),
                           ),
-                        ),
-                        Expanded(
-                          child: LayoutBuilder(
-                            builder: (context, constraints) {
-                              return Flex(
-                                direction: Axis.horizontal,
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                mainAxisSize: MainAxisSize.max,
-                                children: List.generate(
-                                  (constraints.constrainWidth() / 10).floor(),
-                                  (index) => const SizedBox(
-                                    width: 5,
-                                    height: 2,
-                                    child: DecoratedBox(
-                                      decoration: BoxDecoration(
-                                        color: Colors.white54,
-                                      ),
+                          Expanded(
+                            child: _buildTicketDetail(
+                              'TIME',
+                              DateFormat('hh:mm a').format(planDateTime),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                bottomSection: Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                  child: Column(
+                    children: [
+                      // Dual Profile Section
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          // Host Column
+                          Expanded(
+                            child: Column(
+                              children: [
+                                LunaraProfileImage(
+                                  userData: hostUser,
+                                  radius: 32,
+                                  showGradientBorder: true,
+                                  isInteractive: true,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  cleanHostName,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
+                                ),
+                                Text(
+                                  hostUsername,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.6),
+                                    fontSize: 10,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.5), width: 1),
+                                  ),
+                                  child: const Text(
+                                    'HOST',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1,
                                     ),
                                   ),
                                 ),
-                              );
-                            },
-                          ),
-                        ),
-                        Container(
-                          width: 12,
-                          height: 24,
-                          decoration: const BoxDecoration(
-                            color: LunaraTheme.midnightBlack,
-                            borderRadius: BorderRadius.horizontal(
-                              left: Radius.circular(12),
+                              ],
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-
-                    // Dynamic Info & Profiles Section (Replacing QR)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-                      child: Column(
-                        children: [
-                          // Dual Profile Section
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                            children: [
-                              // Host Column
-                              Expanded(
-                                child: Column(
-                                  children: [
-                                    LunaraProfileImage(
-                                      userData: hostUser,
-                                      radius: 32,
-                                      showGradientBorder: true,
-                                      isInteractive: true,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      cleanHostName,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      textAlign: TextAlign.center,
-                                    ),
-                                    Text(
-                                      hostUsername,
-                                      style: TextStyle(
-                                        color: Colors.white.withValues(alpha: 0.6),
-                                        fontSize: 10,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      textAlign: TextAlign.center,
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
-                                        borderRadius: BorderRadius.circular(10),
-                                        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.5), width: 1),
-                                      ),
-                                      child: const Text(
-                                        'HOST',
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 8,
-                                          fontWeight: FontWeight.bold,
-                                          letterSpacing: 1,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              // Heart connector icon
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.08),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.favorite_rounded,
-                                  color: LunaraTheme.hotPink,
-                                  size: 18,
-                                ),
-                              ),
-                              // Joiner/Partner Column
-                              Expanded(
-                                child: Column(
-                                  children: [
-                                    LunaraProfileImage(
-                                      userData: joinerUser,
-                                      radius: 32,
-                                      showGradientBorder: true,
-                                      isInteractive: true,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      cleanJoinerName,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      textAlign: TextAlign.center,
-                                    ),
-                                    Text(
-                                      joinerUsername,
-                                      style: TextStyle(
-                                        color: Colors.white.withValues(alpha: 0.6),
-                                        fontSize: 10,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      textAlign: TextAlign.center,
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: LunaraTheme.cyberCyan.withValues(alpha: 0.2),
-                                        borderRadius: BorderRadius.circular(10),
-                                        border: Border.all(color: LunaraTheme.cyberCyan.withValues(alpha: 0.4), width: 1),
-                                      ),
-                                      child: const Text(
-                                        'PARTNER',
-                                        style: TextStyle(
-                                          color: LunaraTheme.cyberCyan,
-                                          fontSize: 8,
-                                          fontWeight: FontWeight.bold,
-                                          letterSpacing: 1,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-
-                          // Payment details card
+                          // Heart connector icon
                           Container(
-                            padding: const EdgeInsets.all(14),
+                            padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.05),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.1),
-                              ),
+                              color: Colors.white.withValues(alpha: 0.08),
+                              shape: BoxShape.circle,
                             ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            child: const Icon(
+                              Icons.favorite_rounded,
+                              color: LunaraTheme.hotPink,
+                              size: 18,
+                            ),
+                          ),
+                          // Joiner/Partner Column
+                          Expanded(
+                            child: Column(
                               children: [
-                                Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(8),
-                                      decoration: BoxDecoration(
-                                        color: LunaraTheme.cyberCyan.withValues(alpha: 0.1),
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: const Icon(
-                                        Icons.account_balance_wallet_rounded,
-                                        color: LunaraTheme.cyberCyan,
-                                        size: 18,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    const Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'DEPOSIT STATUS',
-                                          style: TextStyle(
-                                            color: Colors.white70,
-                                            fontSize: 8,
-                                            fontWeight: FontWeight.bold,
-                                            letterSpacing: 0.5,
-                                          ),
-                                        ),
-                                        SizedBox(height: 2),
-                                        Text(
-                                          'Lunara Secure Pay',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
+                                LunaraProfileImage(
+                                  userData: joinerUser,
+                                  radius: 32,
+                                  showGradientBorder: true,
+                                  isInteractive: true,
                                 ),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                const SizedBox(height: 8),
+                                Text(
+                                  cleanJoinerName,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
+                                ),
+                                Text(
+                                  joinerUsername,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.6),
+                                    fontSize: 10,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: LunaraTheme.cyberCyan.withValues(alpha: 0.2),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: LunaraTheme.cyberCyan.withValues(alpha: 0.4), width: 1),
+                                  ),
+                                  child: const Text(
+                                    'PARTNER',
+                                    style: TextStyle(
+                                      color: LunaraTheme.cyberCyan,
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Payment details card
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.1),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: LunaraTheme.cyberCyan.withValues(alpha: 0.1),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.account_balance_wallet_rounded,
+                                    color: LunaraTheme.cyberCyan,
+                                    size: 18,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                const Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Text(
-                                      'AMOUNT PAID',
+                                    Text(
+                                      'DEPOSIT STATUS',
                                       style: TextStyle(
                                         color: Colors.white70,
                                         fontSize: 8,
@@ -690,175 +605,196 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
                                         letterSpacing: 0.5,
                                       ),
                                     ),
-                                    const SizedBox(height: 2),
-                                    Row(
-                                      children: [
-                                        Text(
-                                          '₹${amountPaid.toStringAsFixed(0)}',
-                                          style: const TextStyle(
-                                            color: Colors.greenAccent,
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                          decoration: BoxDecoration(
-                                            color: Colors.greenAccent.withValues(alpha: 0.2),
-                                            borderRadius: BorderRadius.circular(4),
-                                          ),
-                                          child: const Text(
-                                            'PAID',
-                                            style: TextStyle(
-                                              color: Colors.greenAccent,
-                                              fontSize: 7,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
+                                    SizedBox(height: 2),
+                                    Text(
+                                      'Lunara Secure Pay',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ],
                                 ),
                               ],
                             ),
-                          ),
-                          const SizedBox(height: 12),
-
-                          // Venue Details Card with map navigation
-                          Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.05),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.1),
-                              ),
-                            ),
-                            child: Column(
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
+                                const Text(
+                                  'AMOUNT PAID',
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
                                 Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Container(
-                                      width: 40,
-                                      height: 40,
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(10),
-                                        image: DecorationImage(
-                                          image: NetworkImage(
-                                            cleanVenueImageUrl.isNotEmpty
-                                                ? cleanVenueImageUrl
-                                                : 'https://picsum.photos/seed/venue/100/100',
-                                          ),
-                                          fit: BoxFit.cover,
-                                        ),
-                                        border: Border.all(color: Colors.white24),
+                                    Text(
+                                      '₹${amountPaid.toStringAsFixed(0)}',
+                                      style: const TextStyle(
+                                        color: Colors.greenAccent,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
                                       ),
                                     ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            children: [
-                                              Expanded(
-                                                child: Text(
-                                                  venueName.toUpperCase(),
-                                                  style: const TextStyle(
-                                                    color: Colors.white,
-                                                    fontSize: 13,
-                                                    fontWeight: FontWeight.w900,
-                                                  ),
-                                                ),
-                                              ),
-                                              if (distanceText.isNotEmpty) ...[
-                                                const SizedBox(width: 8),
-                                                Container(
-                                                  padding: const EdgeInsets.symmetric(
-                                                    horizontal: 8,
-                                                    vertical: 2,
-                                                  ),
-                                                  decoration: BoxDecoration(
-                                                    color: LunaraTheme.cyberCyan.withValues(alpha: 0.2),
-                                                    borderRadius: BorderRadius.circular(8),
-                                                    border: Border.all(
-                                                      color: LunaraTheme.cyberCyan.withValues(alpha: 0.4),
-                                                      width: 0.5,
-                                                    ),
-                                                  ),
-                                                  child: Text(
-                                                    distanceText,
-                                                    style: const TextStyle(
-                                                      color: LunaraTheme.cyberCyan,
-                                                      fontSize: 9,
-                                                      fontWeight: FontWeight.w900,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ],
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            venueAddress,
-                                            style: const TextStyle(
-                                              color: Colors.white70,
-                                              fontSize: 10,
-                                            ),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ],
+                                    const SizedBox(width: 4),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                      decoration: BoxDecoration(
+                                        color: Colors.greenAccent.withValues(alpha: 0.2),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: const Text(
+                                        'PAID',
+                                        style: TextStyle(
+                                          color: Colors.greenAccent,
+                                          fontSize: 7,
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
                                     ),
                                   ],
                                 ),
-                                const Divider(color: Colors.white12, height: 16),
-                                SizedBox(
-                                  width: double.infinity,
-                                  height: 32,
-                                  child: TextButton.icon(
-                                    onPressed: () async {
-                                      final mapUrl = Uri.parse(
-                                        'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent("$venueName, $venueAddress")}',
-                                      );
-                                      if (await canLaunchUrl(mapUrl)) {
-                                        await launchUrl(mapUrl, mode: LaunchMode.externalApplication);
-                                      }
-                                    },
-                                    icon: const Icon(
-                                      Icons.map_rounded,
-                                      color: LunaraTheme.cyberCyan,
-                                      size: 14,
-                                    ),
-                                    label: const Text(
-                                      'VIEW MAP DIRECTIONS',
-                                      style: TextStyle(
-                                        color: LunaraTheme.cyberCyan,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
-                                        letterSpacing: 0.5,
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Venue Details Card with map navigation
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.1),
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(10),
+                                    image: DecorationImage(
+                                      image: NetworkImage(
+                                        cleanVenueImageUrl.isNotEmpty
+                                            ? cleanVenueImageUrl
+                                            : 'https://picsum.photos/seed/venue/100/100',
                                       ),
+                                      fit: BoxFit.cover,
                                     ),
-                                    style: TextButton.styleFrom(
-                                      padding: EdgeInsets.zero,
-                                      backgroundColor: LunaraTheme.cyberCyan.withValues(alpha: 0.08),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.white24),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              venueName.toUpperCase(),
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w900,
+                                              ),
+                                            ),
+                                          ),
+                                          if (distanceText.isNotEmpty) ...[
+                                            const SizedBox(width: 8),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 8,
+                                                vertical: 2,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: LunaraTheme.cyberCyan.withValues(alpha: 0.2),
+                                                borderRadius: BorderRadius.circular(8),
+                                                border: Border.all(
+                                                  color: LunaraTheme.cyberCyan.withValues(alpha: 0.4),
+                                                  width: 0.5,
+                                                ),
+                                              ),
+                                              child: Text(
+                                                distanceText,
+                                                style: const TextStyle(
+                                                  color: LunaraTheme.cyberCyan,
+                                                  fontSize: 9,
+                                                  fontWeight: FontWeight.w900,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
                                       ),
-                                    ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        venueAddress,
+                                        style: const TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 10,
+                                        ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],
                             ),
-                          ),
-                        ],
+                            const Divider(color: Colors.white12, height: 16),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 32,
+                              child: TextButton.icon(
+                                onPressed: () async {
+                                  final mapUrl = Uri.parse(
+                                      'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent("$venueName, $venueAddress")}');
+                                  if (await canLaunchUrl(mapUrl)) {
+                                    await launchUrl(mapUrl,
+                                        mode: LaunchMode.externalApplication);
+                                  }
+                                },
+                                icon: const Icon(Icons.map_rounded,
+                                    color: LunaraTheme.cyberCyan, size: 14),
+                                label: const Text(
+                                  'VIEW MAP DIRECTIONS',
+                                  style: TextStyle(
+                                    color: LunaraTheme.cyberCyan,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                                style: TextButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  backgroundColor: LunaraTheme.cyberCyan
+                                      .withValues(alpha: 0.08),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
 

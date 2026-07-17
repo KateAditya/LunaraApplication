@@ -6,7 +6,7 @@ import '../services/api_service.dart';
 
 class LunaraProfileImage extends StatelessWidget {
   final User? user;
-  final Map<String, dynamic>? userData;
+  final Map<dynamic, dynamic>? userData;
   final double radius;
   final bool showGradientBorder;
   final bool isInteractive;
@@ -31,7 +31,7 @@ class LunaraProfileImage extends StatelessWidget {
     if (user != null) return user;
     if (userData != null) {
       try {
-        return User.fromJson(userData!);
+        return User.fromJson(Map<String, dynamic>.from(userData!));
       } catch (e) {
         debugPrint('Error resolving user in LunaraProfileImage: $e');
         return null;

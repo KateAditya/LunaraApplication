@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import GroupParty, { GroupPartyStatus, GroupPartyPaymentStatus } from '../models/GroupParty';
 import Venue from '../models/Venue';
+import User from '../models/User';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import { logger } from '../config/logger';
@@ -112,6 +113,31 @@ export const createGroupParty = async (req: Request, res: Response): Promise<voi
             paymentId: order ? order.id : `free_${Date.now()}`
         });
 
+        try {
+            const host = await User.findByPk(userId, { attributes: ['id', 'fcmToken'] });
+            if (host && host.fcmToken) {
+                const { sendPushNotification } = require('../services/fcmService');
+                const isPaid = totalAmount <= 0;
+                await sendPushNotification(host.fcmToken, {
+                    title: isPaid ? 'Group Party Booked! 🎉' : 'Group Party Initiated 💳',
+                    body: isPaid
+                        ? `Your group party of ${numberOfFriends} friends at ${venue.name} is confirmed!`
+                        : `Your group party of ${numberOfFriends} friends at ${venue.name} is initiated. Complete payment to confirm.`,
+                    data: {
+                        type: isPaid ? 'group_party_confirmed' : 'group_party_initiated',
+                        partyId: groupParty.id,
+                    }
+                });
+            }
+            const { io } = require('../server');
+            io.to(`user_${userId}`).emit('group_party_status_update', {
+                partyId: groupParty.id,
+                status: groupParty.status
+            });
+        } catch (pushErr) {
+            logger.warn('Failed to send push/socket for group party creation: ' + pushErr);
+        }
+
         res.status(201).json({
             success: true,
             data: groupParty,
@@ -146,6 +172,28 @@ export const verifyPayment = async (req: Request, res: Response): Promise<void> 
                 paymentStatus: GroupPartyPaymentStatus.PAID,
                 status: GroupPartyStatus.CONFIRMED
             });
+
+            try {
+                const host = await User.findByPk(groupParty.userId, { attributes: ['id', 'fcmToken'] });
+                const venue = await Venue.findByPk(groupParty.venueId, { attributes: ['id', 'name'] });
+                const venueName = venue?.name || 'Venue';
+                if (host && host.fcmToken) {
+                    const { sendPushNotification } = require('../services/fcmService');
+                    await sendPushNotification(host.fcmToken, {
+                        title: 'Group Party Booked! 🎉',
+                        body: `Your payment is verified. Group party at ${venueName} is confirmed!`,
+                        data: {
+                            type: 'group_party_confirmed',
+                            partyId: groupParty.id,
+                        }
+                    });
+                }
+                const { io } = require('../server');
+                io.to(`user_${groupParty.userId}`).emit('group_party_payment_success', { partyId: groupParty.id });
+            } catch (pushErr) {
+                logger.warn('Failed to send push/socket for group party verification: ' + pushErr);
+            }
+
             res.json({ success: true, message: 'Payment verified successfully', data: groupParty });
         } else {
             await groupParty.update({ paymentStatus: GroupPartyPaymentStatus.FAILED });
@@ -153,6 +201,36 @@ export const verifyPayment = async (req: Request, res: Response): Promise<void> 
         }
     } catch (err: any) {
         logger.error('verifyPayment error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+
+export const getMyGroupParties = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { userId } = req.query;
+        if (!userId) {
+            res.status(400).json({ success: false, message: 'userId is required' });
+            return;
+        }
+
+        const groupParties = await GroupParty.findAll({
+            where: { userId: userId as string },
+            include: [
+                {
+                    model: Venue,
+                    as: 'venue',
+                    attributes: ['id', 'name', 'addressLine1', 'city', 'images', 'imageUrl'],
+                },
+            ],
+            order: [['createdAt', 'DESC']],
+        });
+
+        res.json({
+            success: true,
+            data: groupParties,
+        });
+    } catch (err: any) {
+        logger.error('getMyGroupParties error:', err);
         res.status(500).json({ success: false, error: err.message });
     }
 };

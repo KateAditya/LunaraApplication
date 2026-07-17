@@ -14,6 +14,8 @@ import '../../models/strangers_meet_request.dart';
 import 'strangers_meet_payment_screen.dart';
 import 'strangers_meet_ticket_screen.dart';
 import 'chat_screen.dart';
+import 'large_party_ticket_screen.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 class LiveFeedScreen extends StatefulWidget {
   final bool isTab;
@@ -33,8 +35,14 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
 
   List<Map<String, dynamic>> _feedItems = [];
   List<Map<String, dynamic>> _notifications = [];
+  List<Map<String, dynamic>> _largePartyBookings = [];
   bool _isLoading = true;
+  bool _isLoadingGroupParties = false;
   Timer? _pollingTimer;
+
+  // Razorpay for large party payments
+  Razorpay? _razorpay;
+  String? _pendingLargePartyBookingId;
 
   // Track optimistic state changes for buttons
   final Map<String, String> _optimisticStates = {};
@@ -54,7 +62,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this, initialIndex: widget.initialTabIndex);
+    _tabController = TabController(length: 4, vsync: this, initialIndex: widget.initialTabIndex);
     _tabController.addListener(_handleTabChange);
     _pulseController = AnimationController(
       vsync: this,
@@ -64,11 +72,19 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
     _loadFeed();
+    _loadGroupPartyBookings();
     _initSocketListeners();
+
+    // Razorpay setup
+    _razorpay = Razorpay();
+    _razorpay!.on(Razorpay.EVENT_PAYMENT_SUCCESS, _onLargePartyPaymentSuccess);
+    _razorpay!.on(Razorpay.EVENT_PAYMENT_ERROR, _onLargePartyPaymentError);
+    _razorpay!.on(Razorpay.EVENT_EXTERNAL_WALLET, _onLargePartyExternalWallet);
 
     // Fast polling every 15 seconds
     _pollingTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       _loadFeed(showLoader: false);
+      _loadGroupPartyBookings();
     });
   }
 
@@ -79,6 +95,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     _pollingTimer?.cancel();
     _pulseController.dispose();
     _tabController.dispose();
+    _razorpay?.clear();
     super.dispose();
   }
 
@@ -238,6 +255,138 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     } catch (e) {
       debugPrint('Error handling plan_unavailable: $e');
     }
+  }
+
+  // ── Group Party (Large Party) loading ─────────────────────────────────────
+
+  Future<void> _loadGroupPartyBookings() async {
+    if (_isLoadingGroupParties) return;
+    setState(() => _isLoadingGroupParties = true);
+    try {
+      final bookings = await ApiService.fetchMyLargePartyBookings();
+      if (mounted) {
+        setState(() {
+          _largePartyBookings = bookings;
+          _isLoadingGroupParties = false;
+        });
+        widget.onCountChanged?.call();
+      }
+    } catch (e) {
+      debugPrint('Error loading group party bookings: $e');
+      if (mounted) setState(() => _isLoadingGroupParties = false);
+    }
+  }
+
+  // ── Razorpay handlers for large party payments ─────────────────────────────
+
+  Future<void> _initiateLargePartyPayment(Map<String, dynamic> booking) async {
+    final bookingId = booking['id']?.toString() ?? booking['bookingId']?.toString();
+    if (bookingId == null) return;
+
+    try {
+      final result = await ApiService.initiateLargePartyPayment(bookingId);
+      if (!mounted) return;
+      if (result == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to initiate payment. Please try again.'), backgroundColor: Colors.red),
+        );
+        return;
+      }
+
+      final orderData = result['order'] ?? result['data'] ?? result;
+      final razorpayKey = result['razorpayKeyId']?.toString() ??
+          orderData['key']?.toString() ?? '';
+      _pendingLargePartyBookingId = bookingId;
+
+      _razorpay?.open({
+        'key': razorpayKey,
+        'order_id': orderData['id']?.toString(),
+        'amount': orderData['amount'],
+        'name': 'Lunara – Group Party',
+        'description': 'Group Party at ${booking['venue']?['name'] ?? booking['venueName'] ?? 'venue'}',
+        'prefill': {
+          'contact': booking['mobileNumber']?.toString() ?? '',
+        },
+        'theme': {'color': '#7C3AED'},
+      });
+    } catch (e) {
+      debugPrint('_initiateLargePartyPayment error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Payment error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  void _onLargePartyPaymentSuccess(PaymentSuccessResponse response) async {
+    final bookingId = _pendingLargePartyBookingId;
+    _pendingLargePartyBookingId = null;
+    if (bookingId == null) return;
+
+    try {
+      final verified = await ApiService.verifyLargePartyPayment(
+        bookingId,
+        razorpayOrderId: response.orderId ?? '',
+        razorpayPaymentId: response.paymentId ?? '',
+        razorpaySignature: response.signature ?? '',
+      );
+      if (!mounted) return;
+      if (verified) {
+        // Refresh bookings and show success
+        await _loadGroupPartyBookings();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🎉 Payment Successful! Your group party is confirmed.'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 4),
+          ),
+        );
+        // Navigate to ticket
+        final updated = _largePartyBookings.firstWhere(
+          (b) => (b['id'] ?? b['bookingId'])?.toString() == bookingId,
+          orElse: () => {'id': bookingId},
+        );
+        if (mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => LargePartyTicketScreen(
+                booking: updated,
+                venue: Map<dynamic, dynamic>.from(
+                  updated['venue'] is Map ? updated['venue'] : {},
+                ),
+              ),
+            ),
+          );
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Payment verification failed. Please contact support.'), backgroundColor: Colors.orange),
+        );
+      }
+    } catch (e) {
+      debugPrint('_onLargePartyPaymentSuccess error: $e');
+    }
+  }
+
+  void _onLargePartyPaymentError(PaymentFailureResponse response) {
+    _pendingLargePartyBookingId = null;
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Payment failed: ${response.message ?? 'Unknown error'}'),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+
+  void _onLargePartyExternalWallet(ExternalWalletResponse response) {
+    _pendingLargePartyBookingId = null;
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('External wallet selected: ${response.walletName}')),
+    );
   }
 
   void _handleTabChange() {
@@ -522,6 +671,12 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     final otherUnreadCount = _notifications.where((n) =>
         n['isRead'] != true && n['read'] != true).length;
 
+    // Group Parties badge: bookings awaiting host payment
+    final groupPartyAwaitingCount = _largePartyBookings.where((b) {
+      final st = (b['status'] ?? b['bookingStatus'] ?? '').toString().toLowerCase();
+      return st == 'approved' || st == 'approved_awaiting_payment' || st == 'awaiting_payment';
+    }).length;
+
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
@@ -533,6 +688,8 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
               labelColor: LunaraTheme.electricViolet,
               unselectedLabelColor: Colors.grey,
               indicatorColor: LunaraTheme.electricViolet,
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
               labelStyle: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
@@ -563,6 +720,17 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                 Tab(
                   child: Badge(
                     label: Text(
+                      '$groupPartyAwaitingCount',
+                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                    ),
+                    isLabelVisible: groupPartyAwaitingCount > 0,
+                    backgroundColor: Colors.orange,
+                    child: const Text('Group Parties'),
+                  ),
+                ),
+                Tab(
+                  child: Badge(
+                    label: Text(
                       '$otherUnreadCount',
                       style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                     ),
@@ -581,6 +749,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                       children: [
                         _buildStrangerMeetFeed(),
                         _buildPartyPlanFeed(),
+                        _buildGroupPartiesFeed(),
                         _buildNotificationsFeed(),
                       ],
                     ),
@@ -686,33 +855,6 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                           letterSpacing: 0.5,
                         ),
                       ),
-                      TextButton.icon(
-                        onPressed: () {
-                          setState(() {
-                            for (var item in strangerItems) {
-                              final id = item['id']?.toString() ?? '';
-                              if (id.isNotEmpty) _clearedFeedItemIds.add(id);
-                            }
-                          });
-                        },
-                        icon: const Icon(Icons.clear_all_rounded, color: LunaraTheme.electricViolet, size: 18),
-                        label: const Text(
-                          'CLEAR ALL',
-                          style: TextStyle(
-                            color: LunaraTheme.electricViolet,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 11,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          backgroundColor: LunaraTheme.electricViolet.withValues(alpha: 0.1),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -787,33 +929,6 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                           letterSpacing: 0.5,
                         ),
                       ),
-                      TextButton.icon(
-                        onPressed: () {
-                          setState(() {
-                            for (var item in partyItems) {
-                              final id = item['id']?.toString() ?? '';
-                              if (id.isNotEmpty) _clearedFeedItemIds.add(id);
-                            }
-                          });
-                        },
-                        icon: const Icon(Icons.clear_all_rounded, color: LunaraTheme.electricViolet, size: 18),
-                        label: const Text(
-                          'CLEAR ALL',
-                          style: TextStyle(
-                            color: LunaraTheme.electricViolet,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 11,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          backgroundColor: LunaraTheme.electricViolet.withValues(alpha: 0.1),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -838,6 +953,334 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                 ),
               ],
             ),
+    );
+  }
+
+  // ── Group Parties Feed ─────────────────────────────────────────────────────
+
+  Widget _buildGroupPartiesFeed() {
+    return RefreshIndicator(
+      onRefresh: () => _loadGroupPartyBookings(),
+      child: _isLoadingGroupParties && _largePartyBookings.isEmpty
+          ? const Center(child: CircularProgressIndicator())
+          : _largePartyBookings.isEmpty
+              ? _buildEmptyState(
+                  'No group party requests yet.\nSubmit one from the Plan Hub!',
+                  icon: Icons.groups_rounded,
+                )
+              : Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 16.0, bottom: 8.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Group Parties',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.onSurface,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.refresh_rounded, color: LunaraTheme.electricViolet, size: 20),
+                            onPressed: _loadGroupPartyBookings,
+                            tooltip: 'Refresh',
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        itemCount: _largePartyBookings.length,
+                        itemBuilder: (context, index) =>
+                            _buildGroupPartyCard(_largePartyBookings[index]),
+                      ),
+                    ),
+                  ],
+                ),
+    );
+  }
+
+  Widget _buildGroupPartyCard(Map<String, dynamic> booking) {
+    final bookingId = (booking['id'] ?? booking['bookingId'] ?? '').toString();
+    final venue = booking['venue'];
+    final venueName = (venue is Map ? venue['name'] : null) ??
+        booking['venueName']?.toString() ?? 'Venue';
+    final venueAddress = (venue is Map ? venue['address'] : null)?.toString() ?? '';
+    final venueImage = (venue is Map ? (venue['images'] is List && (venue['images'] as List).isNotEmpty
+        ? (venue['images'] as List).first?.toString()
+        : venue['imageUrl']?.toString()) : null);
+
+    final rawStatus = (booking['status'] ?? booking['bookingStatus'] ?? 'pending').toString().toLowerCase();
+    final guests = booking['numberOfGuests']?.toString() ?? '?';
+    final subject = booking['partySubject']?.toString() ?? '';
+    final bookingDate = booking['bookingDate']?.toString();
+    final startTime = booking['startTime']?.toString() ?? '';
+    final approvedAmount = booking['approvedAmount'] ?? booking['charges'];
+    final createdAt = booking['createdAt']?.toString();
+
+    // Normalise status
+    final isAwaitingPayment = rawStatus == 'approved' ||
+        rawStatus == 'approved_awaiting_payment' ||
+        rawStatus == 'awaiting_payment';
+    final isPaid = rawStatus == 'paid' || rawStatus == 'confirmed';
+    final isRejected = rawStatus == 'rejected' || rawStatus == 'cancelled';
+
+    Color statusColor;
+    String statusLabel;
+    IconData statusIcon;
+
+    if (isPaid) {
+      statusColor = Colors.green;
+      statusLabel = 'BOOKING CONFIRMED 🎉';
+      statusIcon = Icons.check_circle_rounded;
+    } else if (isAwaitingPayment) {
+      statusColor = Colors.orange;
+      statusLabel = 'APPROVED – PAYMENT PENDING';
+      statusIcon = Icons.payment_rounded;
+    } else if (isRejected) {
+      statusColor = Colors.red;
+      statusLabel = 'REJECTED';
+      statusIcon = Icons.cancel_rounded;
+    } else {
+      statusColor = LunaraTheme.electricViolet;
+      statusLabel = 'PENDING REVIEW';
+      statusIcon = Icons.hourglass_top_rounded;
+    }
+
+    String dateDisplay = 'TBD';
+    if (bookingDate != null) {
+      try {
+        final dt = DateTime.parse(bookingDate).toLocal();
+        dateDisplay = DateFormat('EEE, dd MMM yyyy').format(dt);
+        if (startTime.isNotEmpty) dateDisplay += ' at $startTime';
+      } catch (_) {
+        dateDisplay = bookingDate;
+      }
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 14),
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: isAwaitingPayment
+              ? Colors.orange.withValues(alpha: 0.5)
+              : isPaid
+                  ? Colors.green.withValues(alpha: 0.4)
+                  : LunaraTheme.electricViolet.withValues(alpha: 0.18),
+          width: 1.5,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Venue image / header ──────────────────────────────────────
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            child: Container(
+              height: 90,
+              width: double.infinity,
+              color: LunaraTheme.electricViolet.withValues(alpha: 0.12),
+              child: venueImage != null && venueImage.isNotEmpty
+                  ? Image.network(venueImage, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _groupPartyHeaderPlaceholder(venueName))
+                  : _groupPartyHeaderPlaceholder(venueName),
+            ),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Booking ID + time ─────────────────────────────────
+                Row(
+                  children: [
+                    const Icon(Icons.confirmation_number_outlined,
+                        size: 13, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      bookingId.length > 14 ? bookingId.substring(0, 14) : bookingId,
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
+                    const Spacer(),
+                    if (createdAt != null)
+                      Text(
+                        _formatTimeAgo(createdAt),
+                        style: const TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+
+                // ── Venue name ────────────────────────────────────────
+                Text(
+                  venueName,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                if (venueAddress.isNotEmpty)
+                  Text(venueAddress,
+                      style: const TextStyle(fontSize: 12, color: Colors.grey)),
+
+                const SizedBox(height: 8),
+                const Divider(height: 1),
+                const SizedBox(height: 8),
+
+                // ── Details grid ──────────────────────────────────────
+                Wrap(
+                  spacing: 16,
+                  runSpacing: 6,
+                  children: [
+                    _infoChip(Icons.calendar_today_outlined, dateDisplay),
+                    _infoChip(Icons.people_outline, '$guests guests'),
+                    if (subject.isNotEmpty) _infoChip(Icons.label_outline, subject),
+                    if (approvedAmount != null)
+                      _infoChip(Icons.currency_rupee_rounded,
+                          '₹${(approvedAmount is num ? approvedAmount.toStringAsFixed(0) : approvedAmount)}'),
+                  ],
+                ),
+
+                const SizedBox(height: 10),
+
+                // ── Status badge ──────────────────────────────────────
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: statusColor.withValues(alpha: 0.4)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(statusIcon, size: 15, color: statusColor),
+                      const SizedBox(width: 6),
+                      Text(
+                        statusLabel,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: statusColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // ── Action buttons ────────────────────────────────────
+                if (isAwaitingPayment && approvedAmount != null)
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () => _initiateLargePartyPayment(booking),
+                      icon: const Icon(Icons.payment_rounded, size: 18),
+                      label: Text(
+                        'PAY ₹${(approvedAmount is num ? approvedAmount.toStringAsFixed(0) : approvedAmount)} TO CONFIRM',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  ),
+
+                if (isPaid)
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => LargePartyTicketScreen(
+                            booking: booking,
+                            venue: Map<dynamic, dynamic>.from(
+                              booking['venue'] is Map ? booking['venue'] : {},
+                            ),
+                          ),
+                        ),
+                      ),
+                      icon: const Icon(Icons.confirmation_number_rounded, size: 18),
+                      label: const Text(
+                        'VIEW TICKET',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: LunaraTheme.electricViolet,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  ),
+
+                if (isAwaitingPayment && approvedAmount == null)
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 15, color: Colors.orange),
+                        SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Admin will send you the payment link shortly.',
+                            style: TextStyle(fontSize: 12, color: Colors.orange),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _groupPartyHeaderPlaceholder(String venueName) {
+    return Container(
+      color: LunaraTheme.electricViolet.withValues(alpha: 0.15),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.groups_rounded, color: LunaraTheme.electricViolet, size: 32),
+            const SizedBox(height: 4),
+            Text(venueName,
+                style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: LunaraTheme.electricViolet)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _infoChip(IconData icon, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 13, color: Colors.grey),
+        const SizedBox(width: 4),
+        Text(label,
+            style: const TextStyle(fontSize: 12, color: Colors.grey)),
+      ],
     );
   }
 
@@ -2435,22 +2878,87 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                   padding: const EdgeInsets.all(12),
                   width: double.infinity,
                   decoration: BoxDecoration(
-                    color: Colors.blue.withValues(alpha: 0.1),
+                    color: Colors.green.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                    border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
                   ),
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  child: Column(
                     children: [
-                      Icon(Icons.check_circle, color: Colors.blue, size: 16),
-                      SizedBox(width: 6),
-                      Text(
-                        'PAYMENT CONFIRMED & BOOKED',
-                        style: TextStyle(
-                          color: Colors.blue,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
+                      const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.check_circle, color: Colors.green, size: 16),
+                          SizedBox(width: 6),
+                          Text(
+                            'BOOKING CONFIRMED 🎉',
+                            style: TextStyle(
+                              color: Colors.green,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => LargePartyTicketScreen(
+                                      booking: booking,
+                                      venue: venue,
+                                    ),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.qr_code_2_rounded, size: 16, color: Colors.white),
+                              label: const Text(
+                                'VIEW TICKET',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: LunaraTheme.electricViolet,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                final chatTarget = venue['user'] ?? venue['creator'] ?? venue['admin'] ?? {
+                                  'id': 'venue_support',
+                                  'firstName': venue['name'] ?? 'Venue Support',
+                                  'lastName': '',
+                                  'username': 'support',
+                                };
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => ChatScreen(user: {
+                                      ...Map<String, dynamic>.from(chatTarget),
+                                      'contextType': 'large_party',
+                                      'bookingId': booking['id']?.toString(),
+                                    }),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16, color: Colors.white),
+                              label: const Text(
+                                'CHAT',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: LunaraTheme.hotPink,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),

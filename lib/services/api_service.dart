@@ -442,6 +442,83 @@ class ApiService {
     return null;
   }
 
+  /// Fetches only the current user's large-party (group party) booking requests.
+  /// Returns them as a typed list sorted newest-first.
+  static Future<List<Map<String, dynamic>>> fetchMyLargePartyBookings() async {
+    try {
+      final userId = currentUserId;
+      if (userId == null) return [];
+
+      // 1. Fetch normal large party request bookings
+      final List<Map<String, dynamic>> bookingParties = [];
+      final raw = await fetchBookings();
+      if (raw != null) {
+        bookingParties.addAll(
+          raw
+              .whereType<Map>()
+              .where((b) => b['goingMode']?.toString() == 'party_request')
+              .map((b) => Map<String, dynamic>.from(b))
+        );
+      }
+
+      // 2. Fetch group parties (<= 20 friends)
+      final List<Map<String, dynamic>> groupParties = [];
+      try {
+        final response = await get(
+          '/api/mobile/group-parties',
+          queryParameters: {'userId': userId},
+        );
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          if (data['success'] == true && data['data'] != null) {
+            final List rawList = data['data'];
+            for (final gp in rawList) {
+              if (gp is Map) {
+                // Map to unified booking schema
+                groupParties.add({
+                  'id': gp['id'],
+                  'bookingId': gp['id'],
+                  'venue': gp['venue'],
+                  'venueName': gp['venue']?['name'],
+                  'venueAddress': gp['venue']?['addressLine1'] ?? gp['venue']?['city'] ?? '',
+                  'status': gp['status']?.toString() ?? 'pending',
+                  'bookingStatus': gp['status']?.toString() ?? 'pending',
+                  'numberOfGuests': gp['numberOfFriends'],
+                  'partySubject': 'Group Party',
+                  'bookingDate': gp['partyDate'],
+                  'startTime': '08:00 PM',
+                  'approvedAmount': gp['totalAmount'],
+                  'charges': gp['totalAmount'],
+                  'createdAt': gp['createdAt'],
+                  'mobileNumber': gp['mobileNumber'],
+                  'optionalMobileNumber': gp['optionalMobileNumber'],
+                  'goingMode': 'party_request', // unified for the feed
+                });
+              }
+            }
+          }
+        }
+      } catch (gpErr) {
+        debugPrint('fetchMyGroupParties in fetchMyLargePartyBookings error: $gpErr');
+      }
+
+      // Combine both
+      final List<Map<String, dynamic>> combined = [...bookingParties, ...groupParties];
+
+      // Sort newest-first by createdAt
+      combined.sort((a, b) {
+        final da = DateTime.tryParse(a['createdAt']?.toString() ?? '') ?? DateTime(0);
+        final db = DateTime.tryParse(b['createdAt']?.toString() ?? '') ?? DateTime(0);
+        return db.compareTo(da);
+      });
+
+      return combined;
+    } catch (e) {
+      debugPrint('fetchMyLargePartyBookings error: $e');
+      return [];
+    }
+  }
+
   static Future<Map<String, dynamic>?> swipeUser({
     required String targetUserId,
     required String action,

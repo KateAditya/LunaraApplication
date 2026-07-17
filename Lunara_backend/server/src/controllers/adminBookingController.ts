@@ -50,6 +50,32 @@ export const approveLargePartyRequest = async (req: Request, res: Response) => {
 
         await booking.save();
 
+        try {
+            const host = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
+            const venue = await Venue.findByPk(booking.venueId, { attributes: ['id', 'name'] });
+            const venueName = venue?.name || 'Venue';
+            if (host && host.fcmToken) {
+                const { sendPushNotification } = require('../services/fcmService');
+                await sendPushNotification(host.fcmToken, {
+                    title: status === 'approved' ? 'Large Party Approved! 🎉' : 'Large Party Rejected ❌',
+                    body: status === 'approved'
+                        ? `Your large party request at ${venueName} has been approved! Complete payment to confirm.`
+                        : `Your large party request at ${venueName} was rejected by the admin.`,
+                    data: {
+                        type: status === 'approved' ? 'large_party_approved' : 'large_party_rejected',
+                        bookingId: booking.id,
+                    }
+                });
+            }
+            const { io } = require('../server');
+            io.to(`user_${booking.userId}`).emit('large_party_status_update', {
+                bookingId: booking.id,
+                status: booking.adminApprovalStatus
+            });
+        } catch (pushErr) {
+            logger.warn('Failed to send push/socket for admin approval: ' + pushErr);
+        }
+
         return res.json({ success: true, message: `Request ${status} successfully`, data: booking });
     } catch (err: any) {
         logger.error('approveLargePartyRequest:', err);
@@ -85,6 +111,30 @@ export const sendPaymentLink = async (req: Request, res: Response) => {
             adminApprovalStatus: AdminApprovalStatus.PAYMENT_SENT,
         });
 
+        try {
+            const host = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
+            const venue = await Venue.findByPk(booking.venueId, { attributes: ['id', 'name'] });
+            const venueName = venue?.name || 'Venue';
+            if (host && host.fcmToken) {
+                const { sendPushNotification } = require('../services/fcmService');
+                await sendPushNotification(host.fcmToken, {
+                    title: 'Payment Link Received 💳',
+                    body: `Admin sent a payment link of ₹${paymentAmount} for your party at ${venueName}. Click to pay!`,
+                    data: {
+                        type: 'large_party_payment_link',
+                        bookingId: booking.id,
+                    }
+                });
+            }
+            const { io } = require('../server');
+            io.to(`user_${booking.userId}`).emit('large_party_status_update', {
+                bookingId: booking.id,
+                status: booking.adminApprovalStatus
+            });
+        } catch (pushErr) {
+            logger.warn('Failed to send push/socket for sendPaymentLink: ' + pushErr);
+        }
+
         return res.json({
             success: true,
             message: 'Payment link sent to user. It will appear in their Live Feed.',
@@ -115,6 +165,27 @@ export const markPaymentDone = async (req: Request, res: Response) => {
         await (booking as any).update({
             adminApprovalStatus: AdminApprovalStatus.PAYMENT_DONE,
         });
+
+        try {
+            const host = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
+            const venue = await Venue.findByPk(booking.venueId, { attributes: ['id', 'name'] });
+            const venueName = venue?.name || 'Venue';
+            if (host && host.fcmToken) {
+                const { sendPushNotification } = require('../services/fcmService');
+                await sendPushNotification(host.fcmToken, {
+                    title: 'Party Confirmed! 🎉',
+                    body: `Your payment of ₹${booking.totalAmount} for your party at ${venueName} is verified. Booking confirmed!`,
+                    data: {
+                        type: 'large_party_confirmed',
+                        bookingId: booking.id,
+                    }
+                });
+            }
+            const { io } = require('../server');
+            io.to(`user_${booking.userId}`).emit('large_party_payment_success', { bookingId: booking.id });
+        } catch (pushErr) {
+            logger.warn('Failed to send push/socket for markPaymentDone: ' + pushErr);
+        }
 
         return res.json({ success: true, message: 'Payment marked as done', data: booking });
     } catch (err: any) {

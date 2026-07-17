@@ -2160,10 +2160,19 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                         Map<String, dynamic>.from(user),
                       );
                     } catch (_) {}
+                    final List<User> resolvedAllProfiles = [];
+                    for (var u in users) {
+                      try {
+                        resolvedAllProfiles.add(User.fromJson(Map<String, dynamic>.from(u)));
+                      } catch (_) {}
+                    }
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => ProfileScreen(user: resolvedUser),
+                        builder: (_) => ProfileScreen(
+                          user: resolvedUser,
+                          allProfiles: resolvedAllProfiles,
+                        ),
                       ),
                     );
                   },

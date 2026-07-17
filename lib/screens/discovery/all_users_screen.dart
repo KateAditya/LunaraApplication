@@ -303,11 +303,20 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
                         onTap: () {
                           try {
                             final resolvedUser = User.fromJson(user);
+                            final List<User> resolvedAllProfiles = [];
+                            for (var u in _filteredUsers) {
+                              try {
+                                resolvedAllProfiles.add(User.fromJson(Map<String, dynamic>.from(u)));
+                              } catch (_) {}
+                            }
                             Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder: (context) =>
-                                    ProfileScreen(user: resolvedUser),
+                                    ProfileScreen(
+                                      user: resolvedUser,
+                                      allProfiles: resolvedAllProfiles,
+                                    ),
                               ),
                             );
                           } catch (e) {

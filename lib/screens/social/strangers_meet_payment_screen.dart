@@ -203,363 +203,369 @@ class _StrangersMeetPaymentScreenState
                     topRight: Radius.circular(28),
                   ),
                 ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 28,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Handle indicator
-                    Center(
-                      child: Container(
-                        width: 48,
-                        height: 5,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    const Text(
-                      '💵 Decide Entry Price',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Set your per-seat charge. Participants will pay this to join. Set ₹0 to make it free.',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                        height: 1.4,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-
-                    // Live Profit Preview
-                    Builder(
-                      builder: (ctx) {
-                        final totalSeats = widget.request.numberOfPersons;
-                        final platformTotal = widget.request.paymentAmount ?? 0;
-                        final platformPerSeat =
-                            widget.request.platformChargePerSeat ??
-                            (platformTotal / totalSeats);
-                        // Estimated: assume half seats filled for preview
-                        final estimatedFilled = totalSeats;
-                        final hostRevenue = selectedCharges * estimatedFilled;
-                        final netProfit = hostRevenue - platformTotal;
-                        return Container(
-                          padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Handle indicator
+                      Center(
+                        child: Container(
+                          width: 48,
+                          height: 5,
                           decoration: BoxDecoration(
-                            color: netProfit >= 0
-                                ? Colors.green.withValues(alpha: 0.06)
-                                : Colors.orange.withValues(alpha: 0.06),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
+                            color: Colors.grey[300],
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      const Text(
+                        '💵 Decide Entry Price',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Set your per-seat charge. Participants will pay this to join. Set ₹0 to make it free.',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Live Profit Preview
+                      Builder(
+                        builder: (ctx) {
+                          final totalSeats = widget.request.numberOfPersons;
+                          final platformTotal = widget.request.paymentAmount ?? 0;
+                          final platformPerSeat =
+                              widget.request.platformChargePerSeat ??
+                              (platformTotal / totalSeats);
+                          // Estimated: assume half seats filled for preview
+                          final estimatedFilled = totalSeats;
+                          final hostRevenue = selectedCharges * estimatedFilled;
+                          final netProfit = hostRevenue - platformTotal;
+                          return Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
                               color: netProfit >= 0
-                                  ? Colors.green.withValues(alpha: 0.3)
-                                  : Colors.orange.withValues(alpha: 0.3),
+                                  ? Colors.green.withValues(alpha: 0.06)
+                                  : Colors.orange.withValues(alpha: 0.06),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: netProfit >= 0
+                                    ? Colors.green.withValues(alpha: 0.3)
+                                    : Colors.orange.withValues(alpha: 0.3),
+                              ),
                             ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'PROFIT ESTIMATE (if all $totalSeats seats filled)',
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey,
-                                  letterSpacing: 1,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'PROFIT ESTIMATE (if all $totalSeats seats filled)',
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.grey,
+                                    letterSpacing: 1,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'Platform fee paid',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey[600],
-                                    ),
-                                  ),
-                                  Text(
-                                    '- ₹${platformTotal.toStringAsFixed(0)}',
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.red,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'Your revenue ($totalSeats × ₹${selectedCharges.toStringAsFixed(0)})',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey[600],
-                                    ),
-                                  ),
-                                  Text(
-                                    '+ ₹${hostRevenue.toStringAsFixed(0)}',
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.green,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const Divider(height: 16),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text(
-                                    'Your net profit',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  Text(
-                                    '₹${netProfit.toStringAsFixed(0)}',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w900,
-                                      color: netProfit >= 0
-                                          ? Colors.green
-                                          : Colors.orange,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Platform charge/seat: ₹${platformPerSeat.toStringAsFixed(0)} · Unfilled seats refunded by platform',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.grey[500],
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 20),
-
-                    // Custom Input Field
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[50],
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.grey[200]!),
-                      ),
-                      child: TextField(
-                        controller: chargesController,
-                        keyboardType: TextInputType.number,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        decoration: const InputDecoration(
-                          hintText: 'Enter charges per head',
-                          prefixText: '₹ ',
-                          border: InputBorder.none,
-                        ),
-                        onChanged: (val) {
-                          setModalState(() {
-                            selectedCharges = double.tryParse(val) ?? 0.0;
-                          });
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Quick Selection Chips
-                    const Text(
-                      'QUICK SELECTIONS',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey,
-                        letterSpacing: 1,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        _buildQuickChip('Free', 0.0, selectedCharges, (val) {
-                          setModalState(() {
-                            selectedCharges = val;
-                            chargesController.text = val.toStringAsFixed(0);
-                          });
-                        }),
-                        const SizedBox(width: 8),
-                        _buildQuickChip('₹99', 99.0, selectedCharges, (val) {
-                          setModalState(() {
-                            selectedCharges = val;
-                            chargesController.text = val.toStringAsFixed(0);
-                          });
-                        }),
-                        const SizedBox(width: 8),
-                        _buildQuickChip('₹199', 199.0, selectedCharges, (val) {
-                          setModalState(() {
-                            selectedCharges = val;
-                            chargesController.text = val.toStringAsFixed(0);
-                          });
-                        }),
-                        const SizedBox(width: 8),
-                        _buildQuickChip('₹499', 499.0, selectedCharges, (val) {
-                          setModalState(() {
-                            selectedCharges = val;
-                            chargesController.text = val.toStringAsFixed(0);
-                          });
-                        }),
-                      ],
-                    ),
-                    const SizedBox(height: 32),
-
-                    // Confirm and Publish Button
-                    SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: ElevatedButton(
-                        onPressed: isSaving
-                            ? null
-                            : () async {
-                                if (selectedCharges < 0) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        'Charges cannot be negative',
+                                const SizedBox(height: 10),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'Platform fee paid',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[600],
                                       ),
                                     ),
-                                  );
-                                  return;
-                                }
-                                setModalState(() {
-                                  isSaving = true;
-                                });
+                                    Text(
+                                      '- ₹${platformTotal.toStringAsFixed(0)}',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.red,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'Your revenue ($totalSeats × ₹${selectedCharges.toStringAsFixed(0)})',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      '+ ₹${hostRevenue.toStringAsFixed(0)}',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.green,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const Divider(height: 16),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text(
+                                      'Your net profit',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    Text(
+                                      '₹${netProfit.toStringAsFixed(0)}',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w900,
+                                        color: netProfit >= 0
+                                            ? Colors.green
+                                            : Colors.orange,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Platform charge/seat: ₹${platformPerSeat.toStringAsFixed(0)} · Unfilled seats refunded by platform',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey[500],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 20),
 
-                                final success =
-                                    await ApiService.updateStrangersMeetCharges(
-                                      widget.request.id,
-                                      selectedCharges,
+                      // Custom Input Field
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: TextField(
+                          controller: chargesController,
+                          keyboardType: TextInputType.number,
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          decoration: const InputDecoration(
+                            hintText: 'Enter charges per head',
+                            prefixText: '₹ ',
+                            border: InputBorder.none,
+                          ),
+                          onChanged: (val) {
+                            setModalState(() {
+                              selectedCharges = double.tryParse(val) ?? 0.0;
+                            });
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Quick Selection Chips
+                      const Text(
+                        'QUICK SELECTIONS',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _buildQuickChip('Free', 0.0, selectedCharges, (val) {
+                            setModalState(() {
+                              selectedCharges = val;
+                              chargesController.text = val.toStringAsFixed(0);
+                            });
+                          }),
+                          _buildQuickChip('₹99', 99.0, selectedCharges, (val) {
+                            setModalState(() {
+                              selectedCharges = val;
+                              chargesController.text = val.toStringAsFixed(0);
+                            });
+                          }),
+                          _buildQuickChip('₹199', 199.0, selectedCharges, (val) {
+                            setModalState(() {
+                              selectedCharges = val;
+                              chargesController.text = val.toStringAsFixed(0);
+                            });
+                          }),
+                          _buildQuickChip('₹499', 499.0, selectedCharges, (val) {
+                            setModalState(() {
+                              selectedCharges = val;
+                              chargesController.text = val.toStringAsFixed(0);
+                            });
+                          }),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Confirm and Publish Button
+                      SizedBox(
+                        width: double.infinity,
+                        height: 56,
+                        child: ElevatedButton(
+                          onPressed: isSaving
+                              ? null
+                              : () async {
+                                  if (selectedCharges < 0) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Charges cannot be negative',
+                                        ),
+                                      ),
+                                    );
+                                    return;
+                                  }
+                                  setModalState(() {
+                                    isSaving = true;
+                                  });
+
+                                  final success =
+                                      await ApiService.updateStrangersMeetCharges(
+                                        widget.request.id,
+                                        selectedCharges,
+                                      );
+
+                                  if (success) {
+                                    Navigator.pop(context); // Close bottom sheet
+
+                                    // Update the local request
+                                    final updatedReq = StrangersMeetRequest(
+                                      id: widget.request.id,
+                                      subject: widget.request.subject,
+                                      tagline: widget.request.tagline,
+                                      eventDateTime: widget.request.eventDateTime,
+                                      numberOfPersons:
+                                          widget.request.numberOfPersons,
+                                      chargesPerHead: selectedCharges,
+                                      slotsFilled: widget.request.slotsFilled,
+                                      status: widget.request.status,
+                                      paymentAmount: widget.request.paymentAmount,
+                                      paymentStatus: 'paid',
+                                      adminNotes: widget.request.adminNotes,
+                                      ticketId: result['ticketId'],
+                                      createdAt: widget.request.createdAt,
+                                      mobileNumber: widget.request.mobileNumber,
+                                      alternateMobileNumber:
+                                          widget.request.alternateMobileNumber,
+                                      bankName: widget.request.bankName,
+                                      accountNumber: widget.request.accountNumber,
+                                      accountHolderName:
+                                          widget.request.accountHolderName,
+                                      ifscCode: widget.request.ifscCode,
+                                      upiId: widget.request.upiId,
+                                      platformChargePerSeat:
+                                          widget.request.platformChargePerSeat,
+                                      settlementStatus:
+                                          widget.request.settlementStatus,
+                                      bankDetails: widget.request.bankDetails,
+                                      settlementTransactionId:
+                                          widget.request.settlementTransactionId,
+                                      settlementAmount:
+                                          widget.request.settlementAmount,
+                                      settlementDate:
+                                          widget.request.settlementDate,
+                                      settlementMethod:
+                                          widget.request.settlementMethod,
+                                      user: widget.request.user,
+                                      venue: widget.request.venue,
+                                      joiners: widget.request.joiners,
                                     );
 
-                                if (success) {
-                                  Navigator.pop(context); // Close bottom sheet
-
-                                  // Update the local request
-                                  final updatedReq = StrangersMeetRequest(
-                                    id: widget.request.id,
-                                    subject: widget.request.subject,
-                                    tagline: widget.request.tagline,
-                                    eventDateTime: widget.request.eventDateTime,
-                                    numberOfPersons:
-                                        widget.request.numberOfPersons,
-                                    chargesPerHead: selectedCharges,
-                                    slotsFilled: widget.request.slotsFilled,
-                                    status: widget.request.status,
-                                    paymentAmount: widget.request.paymentAmount,
-                                    paymentStatus: 'paid',
-                                    adminNotes: widget.request.adminNotes,
-                                    ticketId: result['ticketId'],
-                                    createdAt: widget.request.createdAt,
-                                    mobileNumber: widget.request.mobileNumber,
-                                    alternateMobileNumber:
-                                        widget.request.alternateMobileNumber,
-                                    bankName: widget.request.bankName,
-                                    accountNumber: widget.request.accountNumber,
-                                    accountHolderName:
-                                        widget.request.accountHolderName,
-                                    ifscCode: widget.request.ifscCode,
-                                    upiId: widget.request.upiId,
-                                    platformChargePerSeat:
-                                        widget.request.platformChargePerSeat,
-                                    settlementStatus:
-                                        widget.request.settlementStatus,
-                                    bankDetails: widget.request.bankDetails,
-                                    settlementTransactionId:
-                                        widget.request.settlementTransactionId,
-                                    settlementAmount:
-                                        widget.request.settlementAmount,
-                                    settlementDate:
-                                        widget.request.settlementDate,
-                                    settlementMethod:
-                                        widget.request.settlementMethod,
-                                    user: widget.request.user,
-                                    venue: widget.request.venue,
-                                    joiners: widget.request.joiners,
-                                  );
-
-                                  // Push to Ticket Screen
-                                  if (mounted) {
-                                    Navigator.pushReplacement(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            StrangersMeetTicketScreen(
-                                              request: updatedReq,
-                                            ),
+                                    // Push to Ticket Screen
+                                    if (mounted) {
+                                      Navigator.pushReplacement(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              StrangersMeetTicketScreen(
+                                                request: updatedReq,
+                                              ),
+                                        ),
+                                      );
+                                    }
+                                  } else {
+                                    setModalState(() {
+                                      isSaving = false;
+                                    });
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Failed to update charges per head. Please try again.',
+                                        ),
+                                        backgroundColor: Colors.red,
                                       ),
                                     );
                                   }
-                                } else {
-                                  setModalState(() {
-                                    isSaving = false;
-                                  });
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        'Failed to update charges per head. Please try again.',
-                                      ),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                }
-                              },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: LunaraTheme.electricViolet,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: LunaraTheme.electricViolet,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
                           ),
-                        ),
-                        child: isSaving
-                            ? const CircularProgressIndicator(
-                                color: Colors.white,
-                              )
-                            : const Text(
-                                'PUBLISH MEETUP',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
+                          child: isSaving
+                              ? const CircularProgressIndicator(
                                   color: Colors.white,
-                                  letterSpacing: 1,
+                                )
+                              : const Text(
+                                  'PUBLISH MEETUP',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                    letterSpacing: 1,
+                                  ),
                                 ),
-                              ),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             );

@@ -13,7 +13,7 @@ import 'package:intl/intl.dart';
 import '../../widgets/lunara_profile_image.dart';
 import '../../services/app_tour_service.dart';
 import 'package:lunara_app/screens/social/live_feed_screen.dart';
-import 'swipe_intro_screen.dart';
+import '../profile/profile_screen.dart';
 import '../../widgets/venue_timing_error_dialog.dart';
 import '../discovery/upcoming_party_screen.dart';
 
@@ -108,9 +108,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
         ApiService.fetchPartyPlans(),
         ApiService.fetchActiveAds(city: ApiService.selectedCity, type: 'Party'),
       ]);
-      final customers = results[0] as List<Map<String, dynamic>>;
-      final plans = results[1] as List<Map<String, dynamic>>;
-      final dynamicPartyAds = results[2] as List<Map<String, dynamic>>;
+      final customers = results[0];
+      final plans = results[1];
+      final dynamicPartyAds = results[2];
 
       List<Map<String, dynamic>> upcoming = [];
       if (dynamicPartyAds.isNotEmpty) {
@@ -947,41 +947,67 @@ class _PlanHubScreenState extends State<PlanHubScreen>
 
                     final vibe = person['gender'] ?? person['vibe'] ?? 'Party';
 
-                    return Container(
-                      width: 80,
-                      margin: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Column(
-                        children: [
-                          LunaraProfileImage(
-                            userData: person,
-                            user: isMe ? _currentUser : null,
-                            radius: 30,
-                            showGradientBorder: true,
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            isMe ? 'Me' : name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.black87,
+                    return GestureDetector(
+                      onTap: () {
+                        if (isMe) return;
+                        try {
+                          final resolvedUser = User.fromJson(person);
+                          final List<User> resolvedAllProfiles = [];
+                          for (var u in filteredList) {
+                            try {
+                              resolvedAllProfiles.add(User.fromJson(u));
+                            } catch (_) {}
+                          }
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ProfileScreen(
+                                user: resolvedUser,
+                                allProfiles: resolvedAllProfiles,
+                              ),
                             ),
-                          ),
-                          Text(
-                            vibe,
-                            style: TextStyle(
-                              fontSize: 9,
-                              color: isMe
-                                  ? const Color(0xFFB952EB)
-                                  : LunaraTheme.electricViolet.withValues(
-                                      alpha: 0.8,
-                                    ),
-                              fontWeight: FontWeight.w600,
+                          );
+                        } catch (e) {
+                          debugPrint('Error navigating: $e');
+                        }
+                      },
+                      child: Container(
+                        width: 80,
+                        margin: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Column(
+                          children: [
+                            LunaraProfileImage(
+                              userData: person,
+                              user: isMe ? _currentUser : null,
+                              radius: 30,
+                              showGradientBorder: true,
+                              isInteractive: false,
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 6),
+                            Text(
+                              isMe ? 'Me' : name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            Text(
+                              vibe,
+                              style: TextStyle(
+                                fontSize: 9,
+                                color: isMe
+                                    ? const Color(0xFFB952EB)
+                                    : LunaraTheme.electricViolet.withValues(
+                                        alpha: 0.8,
+                                      ),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     );
                   },
@@ -1098,133 +1124,161 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       person['gender'] ?? person['vibe'] ?? 'Discovery';
                   final matchPct = ApiService.calculateMatchPercentage(person);
 
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: const Color(0x1A7F00FF),
-                        width: 1.2,
+                  return GestureDetector(
+                    onTap: () {
+                      try {
+                        final resolvedUser = User.fromJson(person);
+                        final List<User> resolvedAllProfiles = [];
+                        for (var item in scoredList) {
+                          try {
+                            final rawUser = item['user'];
+                            if (rawUser is Map) {
+                              resolvedAllProfiles.add(User.fromJson(Map<String, dynamic>.from(rawUser)));
+                            }
+                          } catch (_) {}
+                        }
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ProfileScreen(
+                              user: resolvedUser,
+                              allProfiles: resolvedAllProfiles,
+                            ),
+                          ),
+                        );
+                      } catch (e) {
+                        debugPrint('Error navigating: $e');
+                      }
+                    },
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: const Color(0x1A7F00FF),
+                          width: 1.2,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0x0D7F00FF),
+                            blurRadius: 16,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0x0D7F00FF),
-                          blurRadius: 16,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        LunaraProfileImage(
-                          userData: person,
-                          radius: 26,
-                          showGradientBorder: false,
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Text(
-                                    '$name, $age',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 15,
-                                      color: Colors.black,
+                      child: Row(
+                        children: [
+                          LunaraProfileImage(
+                            userData: person,
+                            radius: 26,
+                            showGradientBorder: false,
+                            isInteractive: false,
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      '$name, $age',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15,
+                                        color: Colors.black,
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  const Icon(
-                                    Icons.verified,
-                                    color: LunaraTheme.cyberCyan,
-                                    size: 14,
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
-                                vibe,
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: LunaraTheme.electricViolet,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: 1,
+                                    const SizedBox(width: 4),
+                                    const Icon(
+                                      Icons.verified,
+                                      color: LunaraTheme.cyberCyan,
+                                      size: 14,
+                                    ),
+                                  ],
                                 ),
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.event_note,
-                                    color: Colors.amber[700],
-                                    size: 12,
+                                const SizedBox(height: 3),
+                                Text(
+                                  vibe,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: LunaraTheme.electricViolet,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 1,
                                   ),
-                                  const SizedBox(width: 3),
-                                  Text(
-                                    '$planCount Plans',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: Colors.grey[600],
-                                      fontWeight: FontWeight.w600,
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.event_note,
+                                      color: Colors.amber[700],
+                                      size: 12,
                                     ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Icon(
-                                    Icons.star,
-                                    color: Colors.amber[600],
-                                    size: 12,
-                                  ),
-                                  const SizedBox(width: 3),
-                                  Text(
-                                    '$superLikes Super Likes',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: Colors.grey[600],
-                                      fontWeight: FontWeight.w600,
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      '$planCount Plans',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.grey[600],
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
+                                    const SizedBox(width: 10),
+                                    Icon(
+                                      Icons.star,
+                                      color: Colors.amber[600],
+                                      size: 12,
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      '$superLikes Super Likes',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.grey[600],
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: matchPct >= 80
+                                      ? const Color(
+                                          0xFF10B981,
+                                        ).withValues(alpha: 0.12)
+                                      : LunaraTheme.electricViolet.withValues(
+                                          alpha: 0.1,
+                                        ),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  '$matchPct%',
+                                  style: TextStyle(
+                                    color: matchPct >= 80
+                                        ? const Color(0xFF10B981)
+                                        : LunaraTheme.electricViolet,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
                                   ),
-                                ],
+                                ),
                               ),
                             ],
                           ),
-                        ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: matchPct >= 80
-                                    ? const Color(
-                                        0xFF10B981,
-                                      ).withValues(alpha: 0.12)
-                                    : LunaraTheme.electricViolet.withValues(
-                                        alpha: 0.1,
-                                      ),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                '$matchPct%',
-                                style: TextStyle(
-                                  color: matchPct >= 80
-                                      ? const Color(0xFF10B981)
-                                      : LunaraTheme.electricViolet,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   );
                 },

@@ -66,6 +66,18 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
     }
   }
 
+  String _normalizeUrl(String? path) {
+    if (path == null || path.isEmpty) return '';
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+    final cleanPath = path.replaceAll('\\', '/');
+    if (cleanPath.startsWith('/')) {
+      return '${ApiService.baseUrl}$cleanPath';
+    }
+    return '${ApiService.baseUrl}/$cleanPath';
+  }
+
   @override
   Widget build(BuildContext context) {
 
@@ -359,7 +371,8 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
     final double deposit = double.tryParse(event['depositAmount']?.toString() ?? '99.00') ?? 99.00;
     final String role = (event['role'] ?? 'host').toString().toUpperCase();
     final String waitingFor = event['waitingFor'] ?? 'Participant Payment';
-    final String coverImage = venue['coverImage'] ?? 'https://picsum.photos/seed/lunara/600/400';
+    final String rawCoverImage = venue['coverImage'] ?? 'https://picsum.photos/seed/lunara/600/400';
+    final String coverImage = _normalizeUrl(rawCoverImage);
 
     final isHost = role == 'HOST';
 
@@ -596,7 +609,7 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
               radius: 12,
               backgroundColor: Colors.grey[200],
               backgroundImage: avatar != null && avatar.isNotEmpty
-                  ? (avatar.startsWith('http') ? NetworkImage(avatar) : NetworkImage('${ApiService.baseUrl}$avatar'))
+                  ? NetworkImage(_normalizeUrl(avatar))
                   : null,
               child: avatar == null || avatar.isEmpty
                   ? const Icon(Icons.person, size: 12, color: Colors.grey)
@@ -628,8 +641,10 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
             CircleAvatar(
               radius: 12,
               backgroundColor: Colors.grey[200],
-              backgroundImage: avatar != null ? NetworkImage(avatar) : null,
-              child: avatar == null
+              backgroundImage: avatar != null && avatar.isNotEmpty
+                  ? NetworkImage(_normalizeUrl(avatar))
+                  : null,
+              child: avatar == null || avatar.isEmpty
                   ? const Icon(Icons.person, size: 12, color: Colors.grey)
                   : null,
             ),
@@ -676,8 +691,10 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
           CircleAvatar(
             radius: 12,
             backgroundColor: Colors.grey[200],
-            backgroundImage: avatar != null ? NetworkImage(avatar) : null,
-            child: avatar == null
+            backgroundImage: avatar != null && avatar.isNotEmpty
+                ? NetworkImage(_normalizeUrl(avatar))
+                : null,
+            child: avatar == null || avatar.isEmpty
                 ? const Icon(Icons.person, size: 12, color: Colors.grey)
                 : null,
           ),

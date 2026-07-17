@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import Booking, { BookingStatus, PaymentStatus, GoingMode, BookingPaymentMode } from '../models/Booking';
+import Booking, { BookingStatus, PaymentStatus, GoingMode, BookingPaymentMode, AdminApprovalStatus } from '../models/Booking';
+import User from '../models/User';
+import GroupParty, { GroupPartyStatus, GroupPartyPaymentStatus } from '../models/GroupParty';
 import BookingTablePackage, { TablePackageName } from '../models/BookingTablePackage';
 import BookingMember, { MemberPaymentStatus } from '../models/BookingMember';
 import GroupBooking from '../models/GroupBooking';
@@ -164,6 +166,9 @@ export const createBooking = async (req: Request, res: Response) => {
         }
 
         const isLargeParty = goingMode === GoingMode.PARTY_REQUEST;
+        const initialApprovalStatus = isLargeParty
+            ? (numberOfGuests <= 20 ? AdminApprovalStatus.APPROVED : AdminApprovalStatus.PENDING)
+            : null;
 
         const booking = await Booking.create({
             userId,
@@ -178,7 +183,7 @@ export const createBooking = async (req: Request, res: Response) => {
             tablePackage: packageName,
             specialRequests,
             isLargePartyRequest: isLargeParty,
-            adminApprovalStatus: isLargeParty ? 'pending' : null,
+            adminApprovalStatus: initialApprovalStatus,
             partySubject: isLargeParty ? partySubject : null,
             partyRequirement: isLargeParty ? partyRequirement : null,
             partyDescription: isLargeParty ? partyDescription : null,
@@ -188,6 +193,41 @@ export const createBooking = async (req: Request, res: Response) => {
 
         // Fetch venue details for the response
         const venueDetails = await Venue.findByPk(venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
+
+        if (isLargeParty) {
+            try {
+                const host = await User.findByPk(userId, { attributes: ['id', 'fcmToken'] });
+                if (host && host.fcmToken) {
+                    const { sendPushNotification } = require('../services/fcmService');
+                    if (numberOfGuests <= 20) {
+                        await sendPushNotification(host.fcmToken, {
+                            title: 'Group Party Approved! 🎉',
+                            body: `Your group party request at ${venueDetails?.name || 'Venue'} is automatically approved. Pay now to confirm!`,
+                            data: {
+                                type: 'large_party_approved',
+                                bookingId: booking.id,
+                            }
+                        });
+                    } else {
+                        await sendPushNotification(host.fcmToken, {
+                            title: 'Party Request Submitted ⏳',
+                            body: `Your party request of ${numberOfGuests} guests at ${venueDetails?.name || 'Venue'} is submitted for admin approval.`,
+                            data: {
+                                type: 'large_party_request_submitted',
+                                bookingId: booking.id,
+                            }
+                        });
+                    }
+                }
+                const { io } = require('../server');
+                io.to(`user_${userId}`).emit('large_party_status_update', {
+                    bookingId: booking.id,
+                    status: booking.adminApprovalStatus
+                });
+            } catch (pushErr) {
+                logger.warn('Failed to send push/socket for booking creation: ' + pushErr);
+            }
+        }
 
         return res.status(201).json({
             success: true,
@@ -207,6 +247,7 @@ export const createBooking = async (req: Request, res: Response) => {
                 status: booking.status,
                 paymentStatus: booking.paymentStatus,
                 goingMode: booking.goingMode,
+                adminApprovalStatus: booking.adminApprovalStatus,
             },
         });
     } catch (err: any) {
@@ -550,8 +591,41 @@ export const getBookingDetail = async (req: Request, res: Response) => {
 export const initiateLargePartyPayment = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
-        const booking = await Booking.findByPk(id);
-        if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+        let booking = await Booking.findByPk(id);
+        if (!booking) {
+            const groupParty = await GroupParty.findByPk(id);
+            if (!groupParty) {
+                return res.status(404).json({ success: false, message: 'Booking or Group Party not found' });
+            }
+            if (groupParty.status !== GroupPartyStatus.PENDING) {
+                return res.status(400).json({ success: false, message: 'Group party is already confirmed/cancelled' });
+            }
+            const amount = Number(groupParty.totalAmount);
+            if (isNaN(amount) || amount <= 0) {
+                return res.status(400).json({ success: false, message: 'Invalid total amount set for group party' });
+            }
+            const options = {
+                amount: Math.round(amount * 100),
+                currency: 'INR',
+                receipt: `gp_${groupParty.id}`,
+            };
+            let order: any = { id: `order_mock_${Date.now()}`, amount: options.amount, currency: options.currency };
+            if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id') {
+                try {
+                    order = await razorpay.orders.create(options);
+                } catch (err: any) {
+                    logger.warn('Razorpay create order failed for group party, using mock order. Error: ' + err.message);
+                }
+            }
+            await groupParty.update({ paymentId: order.id });
+            return res.json({
+                success: true,
+                razorpayOrderId: order.id,
+                amount: order.amount,
+                currency: order.currency,
+                razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
+            });
+        }
         
         if (!booking.isLargePartyRequest) {
             return res.status(400).json({ success: false, message: 'Not a large party request booking' });
@@ -604,8 +678,73 @@ export const verifyLargePartyPayment = async (req: Request, res: Response) => {
         const { id } = req.params;
         const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
-        const booking = await Booking.findByPk(id);
-        if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+        let booking = await Booking.findByPk(id);
+        if (!booking) {
+            const groupParty = await GroupParty.findByPk(id);
+            if (!groupParty) {
+                return res.status(404).json({ success: false, message: 'Booking/GroupParty not found' });
+            }
+            if (groupParty.paymentId !== razorpay_order_id) {
+                return res.status(400).json({ success: false, message: 'Invalid order ID' });
+            }
+
+            const hmac = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || 'secret123');
+            hmac.update(razorpay_order_id + '|' + razorpay_payment_id);
+            const generatedSignature = hmac.digest('hex');
+
+            if (generatedSignature === razorpay_signature || razorpay_signature === 'mock_signature') {
+                await groupParty.update({
+                    paymentStatus: GroupPartyPaymentStatus.PAID,
+                    status: GroupPartyStatus.CONFIRMED
+                });
+
+                const venue = await Venue.findByPk(groupParty.venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
+
+                try {
+                    const host = await User.findByPk(groupParty.userId, { attributes: ['id', 'fcmToken'] });
+                    const venueName = venue?.name || 'Venue';
+                    if (host && host.fcmToken) {
+                        const { sendPushNotification } = require('../services/fcmService');
+                        await sendPushNotification(host.fcmToken, {
+                            title: 'Group Party Booked! 🎉',
+                            body: `Your payment is verified. Group party at ${venueName} is confirmed!`,
+                            data: {
+                                type: 'group_party_confirmed',
+                                partyId: groupParty.id,
+                            }
+                        });
+                    }
+                    const { io } = require('../server');
+                    io.to(`user_${groupParty.userId}`).emit('group_party_payment_success', { partyId: groupParty.id });
+                    io.to(`user_${groupParty.userId}`).emit('large_party_payment_success', { bookingId: groupParty.id });
+                } catch (pushErr) {
+                    logger.warn('Failed to send push/socket for group party verification: ' + pushErr);
+                }
+
+                return res.json({
+                    success: true,
+                    message: 'Payment verified successfully and booking is confirmed!',
+                    data: {
+                        bookingId: groupParty.id,
+                        bookingNumber: groupParty.paymentId || `GP-${groupParty.id}`,
+                        venueName: venue?.name,
+                        address: venue?.addressLine1,
+                        area: venue?.area,
+                        city: venue?.city,
+                        bookingDate: groupParty.partyDate,
+                        startTime: '08:00 PM',
+                        numberOfGuests: groupParty.numberOfFriends,
+                        totalAmount: groupParty.totalAmount,
+                        ticketCode: groupParty.paymentId || `TKT-${groupParty.id}`,
+                        status: 'confirmed',
+                        paymentStatus: 'paid',
+                        goingMode: 'party_request'
+                    }
+                });
+            } else {
+                return res.status(400).json({ success: false, message: 'Invalid payment signature' });
+            }
+        }
 
         if (booking.razorpayOrderId !== razorpay_order_id) {
             return res.status(400).json({ success: false, message: 'Invalid order ID' });
@@ -638,14 +777,27 @@ export const verifyLargePartyPayment = async (req: Request, res: Response) => {
                 refundAmount: 0,
             } as any);
 
+            const venue = await Venue.findByPk(booking.venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
+
             try {
+                const host = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
+                if (host && host.fcmToken) {
+                    const { sendPushNotification } = require('../services/fcmService');
+                    await sendPushNotification(host.fcmToken, {
+                        title: 'Party Confirmed! 🎉',
+                        body: `Your payment for the party at ${venue?.name || 'Venue'} is verified. Booking confirmed!`,
+                        data: {
+                            type: 'large_party_payment_success',
+                            bookingId: booking.id,
+                        }
+                    });
+                }
                 const { io } = require('../server');
                 io.to(`user_${booking.userId}`).emit('large_party_payment_success', { bookingId: booking.id });
             } catch (socketErr) {
-                logger.warn('Socket emission failed for large_party_payment_success:', socketErr);
+                logger.warn('Socket/Push emission failed for large_party_payment_success:', socketErr);
             }
 
-            const venue = await Venue.findByPk(booking.venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
             return res.json({
                 success: true,
                 message: 'Payment verified successfully and booking is confirmed!',

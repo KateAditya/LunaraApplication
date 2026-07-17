@@ -405,6 +405,8 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
       );
     }
 
+    final double originalTopPadding = MediaQuery.of(context).padding.top;
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: MediaQuery.removePadding(
@@ -412,7 +414,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
         removeTop: true,
         child: CustomScrollView(
           slivers: [
-            _buildSliverAppBar(),
+            _buildSliverAppBar(originalTopPadding),
             SliverToBoxAdapter(
               child: Column(
                 children: [
@@ -436,7 +438,32 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
     );
   }
 
-  Widget _buildSliverAppBar() {
+  /// Wraps [child] in a 44×44 frosted-glass circular container used for
+  /// both the back button and the 3-dots menu button.
+  Widget _buildNavBtn({required Widget child}) {
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: ClipOval(
+        child: BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.black.withValues(alpha: 0.38),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.22),
+                width: 1.4,
+              ),
+            ),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSliverAppBar(double topPadding) {
     final photos = _userPhotos;
     final photo = photos.isNotEmpty && _currentPhotoIndex < photos.length
         ? photos[_currentPhotoIndex]
@@ -452,110 +479,12 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
 
     return SliverAppBar(
       expandedHeight: MediaQuery.of(context).size.height,
+      toolbarHeight: 0,
+      collapsedHeight: 0,
       pinned: true,
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: Colors.transparent,
       elevation: 0,
-      leading: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: ClipOval(
-          child: BackdropFilter(
-            filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.black.withValues(alpha: 0.35),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  width: 1.5,
-                ),
-              ),
-              child: IconButton(
-                padding: EdgeInsets.zero,
-                icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ),
-          ),
-        ),
-      ),
-      actions: [
-        if (widget.isMe)
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: ClipOval(
-              child: BackdropFilter(
-                filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                child: Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.black.withValues(alpha: 0.35),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      width: 1.5,
-                    ),
-                  ),
-                  child: IconButton(
-                    padding: EdgeInsets.zero,
-                    icon: const Icon(
-                      Icons.settings_outlined,
-                      color: Colors.white,
-                    ),
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          )
-        else
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: ClipOval(
-              child: BackdropFilter(
-                filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                child: Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.black.withValues(alpha: 0.35),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      width: 1.5,
-                    ),
-                  ),
-                  child: PopupMenuButton<String>(
-                    icon: const Icon(Icons.more_vert, color: Colors.white),
-                    color: Colors.white,
-                    onSelected: (value) async {
-                      if (value == 'block') {
-                        await _toggleBlock();
-                      } else if (value == 'report') {
-                        _reportUser();
-                      }
-                    },
-                    itemBuilder: (BuildContext context) =>
-                        <PopupMenuEntry<String>>[
-                          PopupMenuItem<String>(
-                            value: 'block',
-                            child: Text(
-                              _isBlocked ? 'Unblock User' : 'Block User',
-                            ),
-                          ),
-                          const PopupMenuItem<String>(
-                            value: 'report',
-                            child: Text(
-                              'Report User',
-                              style: TextStyle(color: Colors.red),
-                            ),
-                          ),
-                        ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
+      automaticallyImplyLeading: false,
       flexibleSpace: FlexibleSpaceBar(
         background: GestureDetector(
           behavior: HitTestBehavior.opaque,
@@ -641,6 +570,62 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                       ],
                     ),
                   ),
+                ),
+              ),
+
+              // ── Nav buttons (back + menu) ──────────────────────────────────
+              // Using Positioned so they always sit just below the status bar,
+              // regardless of whether the device has system navigation buttons
+              // or gesture navigation enabled.
+              Positioned(
+                top: topPadding + 12,
+                left: 12,
+                child: _buildNavBtn(
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 22),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: topPadding + 12,
+                right: 12,
+                child: _buildNavBtn(
+                  child: widget.isMe
+                      ? IconButton(
+                          padding: EdgeInsets.zero,
+                          icon: const Icon(Icons.settings_outlined, color: Colors.white, size: 22),
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                          ),
+                        )
+                      : PopupMenuButton<String>(
+                          padding: EdgeInsets.zero,
+                          icon: const Icon(Icons.more_vert, color: Colors.white, size: 22),
+                          color: Colors.white,
+                          onSelected: (value) async {
+                            if (value == 'block') {
+                              await _toggleBlock();
+                            } else if (value == 'report') {
+                              _reportUser();
+                            }
+                          },
+                          itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                            PopupMenuItem<String>(
+                              value: 'block',
+                              child: Text(_isBlocked ? 'Unblock User' : 'Block User'),
+                            ),
+                            const PopupMenuItem<String>(
+                              value: 'report',
+                              child: Text(
+                                'Report User',
+                                style: TextStyle(color: Colors.red),
+                              ),
+                            ),
+                          ],
+                        ),
                 ),
               ),
 

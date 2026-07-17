@@ -4,7 +4,7 @@ import { body, param } from 'express-validator';
 import { validate } from '../middleware/validate';
 import { uploadTempPhotos } from '../middleware/upload';
 import mobileUserController from '../controllers/mobileUserController';
-import { User, UserMatch, Payment, PartyPlanRequest, PlanJoinRequest, Conversation, Message, Plan, PartyPlan, Venue, StrangersMeetRequest, StrangersMeetJoiner, SafetyCheck } from '../models';
+import { User, UserMatch, Payment, PartyPlanRequest, PlanJoinRequest, Conversation, Message, Plan, PartyPlan, Venue, StrangersMeetRequest, StrangersMeetJoiner, SafetyCheck, Booking, GroupParty } from '../models';
 import { Op } from 'sequelize';
 import { optionalAuth } from '../middleware/auth';
 
@@ -677,6 +677,122 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
         }
     } catch (err) {
         console.error('Error fetching safety check feedbacks for notifications:', err);
+    }
+
+    // Fetch Booking records (goingMode = party_request)
+    try {
+        const largePartyBookings = await Booking.findAll({
+            where: { userId: uId, goingMode: 'party_request' },
+            include: [{ model: Venue, as: 'venue', attributes: ['name'] }],
+            order: [['createdAt', 'DESC']],
+            limit: 20
+        });
+
+        for (const booking of largePartyBookings) {
+            const venueName = (booking as any).venue?.name || 'Venue';
+            const notificationId = `large_party_${booking.id}_${booking.adminApprovalStatus}`;
+            
+            let title = '';
+            let body = '';
+            let showNotification = false;
+            let type = '';
+
+            if (booking.adminApprovalStatus === 'pending') {
+                title = 'Large Party Request Submitted ⏳';
+                body = `Your party request of ${booking.numberOfGuests} guests at ${venueName} is pending admin approval.`;
+                showNotification = true;
+                type = 'large_party_pending';
+            } else if (booking.adminApprovalStatus === 'approved') {
+                title = 'Large Party Request Approved! 🎉';
+                body = `Your party request at ${venueName} has been approved! Complete payment to confirm.`;
+                showNotification = true;
+                type = 'large_party_approved';
+            } else if (booking.adminApprovalStatus === 'rejected') {
+                title = 'Large Party Request Rejected ❌';
+                body = `Your party request at ${venueName} was rejected by admin.`;
+                showNotification = true;
+                type = 'large_party_rejected';
+            } else if (booking.adminApprovalStatus === 'payment_sent') {
+                title = 'Large Party Payment Link Received 💳';
+                body = `Admin sent a payment link of ₹${booking.adminPaymentAmount} for your party at ${venueName}. Complete payment.`;
+                showNotification = true;
+                type = 'large_party_payment_link';
+            } else if (booking.adminApprovalStatus === 'payment_done') {
+                title = 'Large Party Confirmed! 🎉';
+                body = `Your party of ${booking.numberOfGuests} guests at ${venueName} is fully confirmed. Enjoy your night!`;
+                showNotification = true;
+                type = 'large_party_confirmed';
+            }
+
+            if (showNotification) {
+                notifications.push({
+                    id: notificationId,
+                    title,
+                    body,
+                    createdAt: booking.updatedAt ? booking.updatedAt.toISOString() : (booking.createdAt ? booking.createdAt.toISOString() : new Date().toISOString()),
+                    read: activeReadNotificationIds.has(notificationId),
+                    data: {
+                        type,
+                        bookingId: booking.id,
+                    }
+                });
+            }
+        }
+    } catch (bookingErr) {
+        console.error('Error fetching large party booking notifications:', bookingErr);
+    }
+
+    // Fetch GroupParty records (<= 20 guests)
+    try {
+        const groupParties = await GroupParty.findAll({
+            where: { userId: uId },
+            include: [{ model: Venue, as: 'venue', attributes: ['name'] }],
+            order: [['createdAt', 'DESC']],
+            limit: 20
+        });
+
+        for (const gp of groupParties) {
+            const venueName = (gp as any).venue?.name || 'Venue';
+            const notificationId = `group_party_${gp.id}_${gp.status}`;
+
+            let title = '';
+            let body = '';
+            let showNotification = false;
+            let type = '';
+
+            if (gp.status === 'pending') {
+                title = 'Group Party Initiated 💳';
+                body = `Please complete the payment for your group party at ${venueName} to confirm.`;
+                showNotification = true;
+                type = 'group_party_initiated';
+            } else if (gp.status === 'confirmed') {
+                title = 'Group Party Confirmed! 🎉';
+                body = `Your group party of ${gp.numberOfFriends} friends at ${venueName} is confirmed!`;
+                showNotification = true;
+                type = 'group_party_confirmed';
+            } else if (gp.status === 'cancelled') {
+                title = 'Group Party Cancelled ❌';
+                body = `Your group party booking at ${venueName} was cancelled.`;
+                showNotification = true;
+                type = 'group_party_cancelled';
+            }
+
+            if (showNotification) {
+                notifications.push({
+                    id: notificationId,
+                    title,
+                    body,
+                    createdAt: gp.updatedAt ? gp.updatedAt.toISOString() : (gp.createdAt ? gp.createdAt.toISOString() : new Date().toISOString()),
+                    read: activeReadNotificationIds.has(notificationId),
+                    data: {
+                        type,
+                        partyId: gp.id,
+                    }
+                });
+            }
+        }
+    } catch (gpErr) {
+        console.error('Error fetching group party notifications:', gpErr);
     }
 
     notifications.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
