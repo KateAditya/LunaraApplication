@@ -367,7 +367,7 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
     String dateStr = 'TBD';
     if (event['planDateTime'] != null) {
       try {
-        final dt = DateTime.parse(event['planDateTime']);
+        final dt = DateTime.parse(event['planDateTime']).toLocal();
         dateStr = DateFormat('EEE, MMM d • h:mm a').format(dt).toUpperCase();
       } catch (_) {}
     }
@@ -727,7 +727,7 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
     String dateStr = 'TBD';
     if (txn['createdAt'] != null) {
       try {
-        final dt = DateTime.parse(txn['createdAt']);
+        final dt = DateTime.parse(txn['createdAt']).toLocal();
         dateStr = DateFormat('MMM d, yyyy • h:mm a').format(dt);
       } catch (_) {}
     }
@@ -880,7 +880,7 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
     String dateStr = 'N/A';
     if (txn['createdAt'] != null) {
       try {
-        final dt = DateTime.parse(txn['createdAt']);
+        final dt = DateTime.parse(txn['createdAt']).toLocal();
         dateStr = DateFormat('MMMM d, yyyy • h:mm a').format(dt);
       } catch (_) {}
     }
@@ -1048,7 +1048,7 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
         String dateStr = 'TBD';
         if (txn['createdAt'] != null) {
           try {
-            final dt = DateTime.parse(txn['createdAt']);
+            final dt = DateTime.parse(txn['createdAt']).toLocal();
             dateStr = DateFormat('MMM d, yyyy • h:mm a').format(dt);
           } catch (_) {}
         }
