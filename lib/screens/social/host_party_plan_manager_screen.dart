@@ -510,27 +510,60 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                                   else if (hostPaid && joinerPaid) ...[
                                     const Text('Match Successful! Booking Confirmed 🎉', style: TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.bold)),
                                     const SizedBox(height: 6),
-                                    ElevatedButton.icon(
-                                      onPressed: () {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) => PartyPlanTicketScreen(
-                                              request: req,
-                                              plan: plan,
-                                              isHost: true,
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: ElevatedButton.icon(
+                                            onPressed: () {
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (_) => PartyPlanTicketScreen(
+                                                    request: req,
+                                                    plan: plan,
+                                                    isHost: true,
+                                                  ),
+                                                ),
+                                              );
+                                            },
+                                            icon: const Icon(Icons.qr_code_rounded, size: 14, color: Colors.white),
+                                            label: const Text('VIEW TICKET', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: LunaraTheme.electricViolet,
+                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                              minimumSize: const Size(0, 32),
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                             ),
                                           ),
-                                        );
-                                      },
-                                      icon: const Icon(Icons.qr_code_rounded, size: 14, color: Colors.white),
-                                      label: const Text('VIEW TICKET', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: LunaraTheme.electricViolet,
-                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                        minimumSize: const Size(0, 32),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                      ),
+                                        ),
+                                        if (reqUser != null && reqUser.isNotEmpty) ...[
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: ElevatedButton.icon(
+                                              onPressed: () {
+                                                Navigator.push(
+                                                  context,
+                                                  MaterialPageRoute(
+                                                    builder: (_) => ChatScreen(user: {
+                                                      ...reqUser,
+                                                      'contextType': 'party_plan',
+                                                      'planId': plan['id']?.toString(),
+                                                    }),
+                                                  ),
+                                                );
+                                              },
+                                              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 14, color: Colors.white),
+                                              label: const Text('CHAT', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: LunaraTheme.hotPink,
+                                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                                minimumSize: const Size(0, 32),
+                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
                                     ),
                                   ]
                                 ]

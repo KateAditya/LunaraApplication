@@ -100,6 +100,19 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
         });
         if (existingBooking) {
             logger.info(`Booking already exists for plan ${plan.id}, skipping creation.`);
+            // Still emit ticket_generated with existing data so late-arriving clients get it
+            try {
+                const { io } = require('../server');
+                const ticketData = {
+                    bookingId: existingBooking.id,
+                    ticketCode: existingBooking.ticketCode,
+                    planId: plan.id,
+                    requestId: request.id,
+                    expiresAt: plan.planDateTime.toISOString(),
+                };
+                io.to(`user_${plan.userId}`).emit('party_plan_ticket_generated', ticketData);
+                io.to(`user_${request.requesterId}`).emit('party_plan_ticket_generated', ticketData);
+            } catch (_) {}
             return;
         }
 
@@ -107,7 +120,21 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
         const bookingDate = dateObj.toISOString().split('T')[0];
         const startTime = dateObj.toTimeString().split(' ')[0];
 
+        // Ticket code format: PP-XXXXXX (uppercase alphanumeric)
         const ticketCode = 'PP-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+
+        // Persist structured ticket metadata in specialRequests (JSON)
+        const ticketMetadata = JSON.stringify({
+            planId: plan.id,
+            requestId: request.id,
+            hostId: plan.userId,
+            joinerId: request.requesterId,
+            ticketCode,
+            expiresAt: plan.planDateTime.toISOString(),  // Ticket is valid until party starts
+            paymentType: plan.paymentType,
+            totalDeposit: 198.00,
+            generatedAt: new Date().toISOString(),
+        });
 
         const booking = await Booking.create({
             userId: plan.userId,
@@ -123,6 +150,7 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
             isGroupBooking: false,
             goingMode: GoingMode.PARTY_REQUEST,
             ticketCode,
+            specialRequests: ticketMetadata,
         });
 
         // Create Payment record for Host
@@ -151,10 +179,27 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
             refundAmount: 0,
         });
 
+        // Emit party_plan_ticket_generated so the client can refresh the ticket screen
+        // with the canonical ticketCode and expiresAt
+        try {
+            const { io } = require('../server');
+            const ticketData = {
+                bookingId: booking.id,
+                ticketCode,
+                planId: plan.id,
+                requestId: request.id,
+                expiresAt: plan.planDateTime.toISOString(),
+            };
+            io.to(`user_${plan.userId}`).emit('party_plan_ticket_generated', ticketData);
+            io.to(`user_${request.requesterId}`).emit('party_plan_ticket_generated', ticketData);
+        } catch (socketErr) {
+            logger.warn('Socket emission failed for party_plan_ticket_generated:', socketErr);
+        }
+
         // Unlock Chat!
         await autoOpenChat(plan.userId, request.requesterId);
 
-        logger.info(`Successfully created Booking ${booking.id} and Payments for plan ${plan.id}`);
+        logger.info(`Successfully created Booking ${booking.id} (ticket: ${ticketCode}) for plan ${plan.id}`);
     } catch (err) {
         logger.error('Error in createBookingAndPayments:', err);
     }
@@ -2161,6 +2206,146 @@ export const cancelPartyPlan = async (req: Request, res: Response): Promise<void
     } catch (err: any) {
         logger.error('cancelPartyPlan error:', err);
         res.status(500).json({ success: false, message: 'Failed to cancel plan', error: err.message });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/mobile/party-plans/requests/:reqId/ticket
+// Fetch a complete ticket payload (plan + both users with photos + ticketCode)
+// ─────────────────────────────────────────────────────────────────────────────
+const TICKET_USER_ATTRS = ['id', 'firstName', 'lastName', 'email', 'username', 'profileImageUrl', 'subscriptionTier'];
+
+export const getPartyPlanTicket = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { reqId } = req.params;
+
+        const request = await PartyPlanRequest.findByPk(reqId, {
+            include: [
+                {
+                    model: PartyPlan,
+                    as: 'plan',
+                    include: [
+                        {
+                            model: User,
+                            as: 'creator',
+                            attributes: TICKET_USER_ATTRS,
+                            include: [
+                                { model: UserProfile, as: 'profile', attributes: PROFILE_ATTRS, required: false },
+                                { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary', 'displayOrder'], required: false },
+                            ],
+                        },
+                        {
+                            model: Venue,
+                            as: 'venue',
+                            attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'coverChargeMale', 'coverChargeFemale', 'latitude', 'longitude'],
+                            include: [
+                                {
+                                    model: VenueImage,
+                                    as: 'images',
+                                    attributes: ['id', 'filePath', 'imageType', 'isPrimary'],
+                                    where: { isPrimary: true },
+                                    required: false,
+                                }
+                            ],
+                        },
+                    ] as any,
+                },
+                {
+                    model: User,
+                    as: 'requester',
+                    attributes: TICKET_USER_ATTRS,
+                    include: [
+                        { model: UserProfile, as: 'profile', attributes: PROFILE_ATTRS, required: false },
+                        { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary', 'displayOrder'], required: false },
+                    ],
+                },
+            ],
+        });
+
+        if (!request) {
+            res.status(404).json({ success: false, message: 'Request not found' });
+            return;
+        }
+
+        const plan = (request as any).plan as PartyPlan;
+        if (!plan) {
+            res.status(404).json({ success: false, message: 'Plan not found for this request' });
+            return;
+        }
+
+        // Helper to extract photo URL from a user record with embedded photos array
+        const resolveUserPhoto = (u: any): string | null => {
+            if (!u) return null;
+            let photoUrl: string | null = u.profileImageUrl ?? null;
+            if (u.photos && u.photos.length > 0) {
+                const primary = u.photos.find((p: any) => p.isPrimary) || u.photos[0];
+                if (primary?.filePath) {
+                    photoUrl = '/' + primary.filePath.replace(/\\/g, '/');
+                }
+            }
+            return photoUrl;
+        };
+
+        const hostRaw = (plan as any).creator;
+        const joinerRaw = (request as any).requester;
+
+        // Fetch the booking record to retrieve the ticketCode
+        const booking = await Booking.findOne({
+            where: { goingMode: GoingMode.PARTY_REQUEST, userId: plan.userId, venueId: plan.venueId },
+            order: [['createdAt', 'DESC']],
+            attributes: ['id', 'ticketCode', 'specialRequests'],
+        });
+
+        res.json({
+            success: true,
+            data: {
+                request: {
+                    id: request.id,
+                    planId: request.planId,
+                    status: request.status,
+                    joinerPaymentStatus: request.joinerPaymentStatus,
+                    createdAt: request.createdAt,
+                    requester: joinerRaw ? {
+                        id: joinerRaw.id,
+                        firstName: joinerRaw.firstName,
+                        lastName: joinerRaw.lastName,
+                        username: joinerRaw.username,
+                        profilePhotoUrl: resolveUserPhoto(joinerRaw),
+                        subscriptionTier: joinerRaw.subscriptionTier,
+                        bio: joinerRaw.profile?.bio ?? null,
+                        city: joinerRaw.profile?.city ?? null,
+                    } : null,
+                },
+                plan: {
+                    id: plan.id,
+                    message: plan.message,
+                    planDateTime: plan.planDateTime,
+                    // Ticket is valid until the moment the party begins
+                    expiresAt: plan.planDateTime,
+                    paymentType: plan.paymentType,
+                    depositAmount: plan.depositAmount,
+                    status: plan.status,
+                    foodPreference: plan.foodPreference,
+                    drinkPreference: plan.drinkPreference,
+                    user: hostRaw ? {
+                        id: hostRaw.id,
+                        firstName: hostRaw.firstName,
+                        lastName: hostRaw.lastName,
+                        username: hostRaw.username,
+                        profilePhotoUrl: resolveUserPhoto(hostRaw),
+                        subscriptionTier: hostRaw.subscriptionTier,
+                        bio: hostRaw.profile?.bio ?? null,
+                        city: hostRaw.profile?.city ?? null,
+                    } : null,
+                    venue: buildVenueData(plan as any),
+                },
+                ticketCode: booking?.ticketCode ?? null,
+                bookingId: booking?.id ?? null,
+            },
+        });
+    } catch (err: any) {
+        logger.error('getPartyPlanTicket error:', err);
+        res.status(500).json({ success: false, message: 'Failed to fetch ticket data', error: err.message });
     }
 };
 

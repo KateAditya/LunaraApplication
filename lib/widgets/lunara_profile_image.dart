@@ -41,8 +41,13 @@ class LunaraProfileImage extends StatelessWidget {
   }
 
   String? get _profilePhoto {
+    // Try resolved user first — but only use the photo if it is actually non-null.
+    // User.fromJson may succeed (e.g. id/name are present) yet yield a null
+    // profilePhoto when the map key is 'profilePhotoUrl' instead of 'profileImageUrl'.
+    // In that case we must fall through to the direct map lookup below.
     final resolved = _resolvedUser;
-    if (resolved != null) return resolved.profilePhoto;
+    final fromResolved = resolved?.profilePhoto;
+    if (fromResolved != null && fromResolved.isNotEmpty) return fromResolved;
 
     if (userData != null) {
       String? photo =

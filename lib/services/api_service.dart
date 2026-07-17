@@ -2602,5 +2602,21 @@ class ApiService {
     }
     return null;
   }
+  /// Fetch full ticket data for a party plan request (host + joiner profiles, ticketCode, expiresAt)
+  static Future<Map<String, dynamic>?> fetchPartyPlanTicket(String reqId) async {
+    try {
+      final response = await get('/api/mobile/party-plans/requests/$reqId/ticket');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return Map<String, dynamic>.from(data['data']);
+        }
+      }
+      debugPrint('fetchPartyPlanTicket failed [${response.statusCode}]: ${response.body}');
+    } catch (e) {
+      debugPrint('fetchPartyPlanTicket error: $e');
+    }
+    return null;
+  }
 }
 

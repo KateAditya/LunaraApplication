@@ -1,5 +1,4 @@
 import { Request, Response } from 'express';
-import { Op } from 'sequelize';
 import { Conversation, Message, User } from '../models';
 import ChatSubscription, { ChatSubscriptionStatus, ChatSubscriptionType } from '../models/ChatSubscription';
 import { logger } from '../config/logger';
@@ -48,33 +47,16 @@ export const getChatSettings = () => chatSettings;
 // Helper: get or compute session status for a conversation
 // Returns { canChat, expiresAt, daysLeft, isFree, subscriptionId }
 // ─────────────────────────────────────────────────────────────────────────────
-export async function getChatSessionStatus(conversationId: string, _userId: string) {
-    const activeSubs = await ChatSubscription.findAll({
-        where: {
-            conversationId,
-            status: ChatSubscriptionStatus.ACTIVE,
-            validUntil: { [Op.gt]: new Date() },
-        },
-        order: [['valid_until', 'DESC']],
-    });
-
-    if (!activeSubs.length) {
-        return { canChat: false, expiresAt: null, daysLeft: 0, isFree: false, subscriptionId: null };
-    }
-
-    // The latest valid_until across all active subs for this conversation
-    const latest = activeSubs.reduce((best, s) =>
-        s.validUntil > best.validUntil ? s : best,
-        activeSubs[0]
-    );
-
-    const daysLeft = latest.daysRemaining();
+export async function getChatSessionStatus(_conversationId: string, _userId: string) {
+    // Legacy subscription gating has been deprecated. All matched chat sessions are free.
+    const infiniteExpiry = new Date();
+    infiniteExpiry.setFullYear(infiniteExpiry.getFullYear() + 10); // 10 years in the future
     return {
-        canChat:        daysLeft > 0,
-        expiresAt:      latest.validUntil,
-        daysLeft,
-        isFree:         latest.subscriptionType === ChatSubscriptionType.FREE,
-        subscriptionId: latest.id,
+        canChat: true,
+        expiresAt: infiniteExpiry,
+        daysLeft: 3650,
+        isFree: true,
+        subscriptionId: 'free_unlimited'
     };
 }
 

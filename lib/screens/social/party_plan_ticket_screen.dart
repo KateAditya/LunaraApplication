@@ -28,16 +28,129 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
   Position? _currentPosition;
   StreamSubscription<Position>? _positionStreamSubscription;
 
+  // ── Countdown to party ─────────────────────────────────────────────────────
+  Timer? _countdownTimer;
+  Duration _timeRemaining = Duration.zero;
+
+  // ── Backend-refreshed ticket data ─────────────────────────────────────────
+  Map<String, dynamic>? _freshHostUser;
+  Map<String, dynamic>? _freshJoinerUser;
+  String? _canonicalTicketCode;
+  bool _isFetchingTicket = false;
+
   @override
   void initState() {
     super.initState();
     _initLocation();
+    _initCountdown();
+    _fetchTicketData();
   }
 
   @override
   void dispose() {
     _positionStreamSubscription?.cancel();
+    _countdownTimer?.cancel();
     super.dispose();
+  }
+
+  // ── Countdown logic ────────────────────────────────────────────────────────
+  void _initCountdown() {
+    final planDateTime = widget.plan['planDateTime'] != null
+        ? DateTime.tryParse(widget.plan['planDateTime'].toString())?.toLocal()
+        : null;
+    if (planDateTime == null) return;
+
+    void update() {
+      if (!mounted) return;
+      final remaining = planDateTime.difference(DateTime.now());
+      setState(() {
+        _timeRemaining = remaining.isNegative ? Duration.zero : remaining;
+      });
+    }
+
+    update();
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) => update());
+  }
+
+  // ── Fetch fresh profile photos + ticketCode from backend ───────────────────
+  Future<void> _fetchTicketData() async {
+    final reqId = widget.request['id']?.toString();
+    if (reqId == null) return;
+    if (!mounted) return;
+    setState(() => _isFetchingTicket = true);
+    try {
+      final data = await ApiService.fetchPartyPlanTicket(reqId);
+      if (data != null && mounted) {
+        setState(() {
+          final planData = data['plan'];
+          final requestData = data['request'];
+          if (planData?['user'] != null) {
+            _freshHostUser = Map<String, dynamic>.from(planData['user']);
+          }
+          if (requestData?['requester'] != null) {
+            _freshJoinerUser = Map<String, dynamic>.from(requestData['requester']);
+          }
+          _canonicalTicketCode = data['ticketCode']?.toString();
+        });
+      }
+    } catch (e) {
+      debugPrint('_fetchTicketData error: $e');
+    } finally {
+      if (mounted) setState(() => _isFetchingTicket = false);
+    }
+  }
+
+  // ── Countdown display ──────────────────────────────────────────────────────
+  Widget _buildCountdownBadge() {
+    if (_timeRemaining == Duration.zero) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.greenAccent.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.4)),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.celebration_rounded, color: Colors.greenAccent, size: 12),
+            SizedBox(width: 4),
+            Text('PARTY TIME!', style: TextStyle(color: Colors.greenAccent, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+          ],
+        ),
+      );
+    }
+
+    final d = _timeRemaining.inDays;
+    final h = _timeRemaining.inHours.remainder(24);
+    final m = _timeRemaining.inMinutes.remainder(60);
+    final s = _timeRemaining.inSeconds.remainder(60);
+
+    final String label = d > 0
+        ? '${d}d ${h}h ${m}m'
+        : h > 0
+            ? '${h}h ${m}m ${s}s'
+            : '${m}m ${s}s';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.timer_outlined, color: Colors.white70, size: 11),
+          const SizedBox(width: 4),
+          Text(
+            'Expires in $label',
+            style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w500, letterSpacing: 0.3),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _initLocation() async {
@@ -87,13 +200,14 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
     final dateStr = DateFormat('MMM dd, yyyy').format(planDateTime);
     final timeStr = DateFormat('hh:mm a').format(planDateTime);
     final description = widget.plan['message'] ?? widget.plan['description'] ?? 'Party Plan Vibe';
-    final ticketId = (widget.request['id']?.toString() ?? 'TICKET').toUpperCase();
+    // Prefer backend ticket code; fall back to request ID
+    final ticketId = (_canonicalTicketCode ?? widget.request['id']?.toString() ?? 'TICKET').toUpperCase();
 
-    final hostUser = widget.plan['user'] ?? widget.plan['host'] ?? {};
+    final hostUser = _freshHostUser ?? widget.plan['user'] ?? widget.plan['host'] ?? {};
     final hostName = '${hostUser['firstName'] ?? ''} ${hostUser['lastName'] ?? ''}'.trim();
     final cleanHostName = hostName.isNotEmpty ? hostName : 'Host';
 
-    final joinerUser = widget.request['requester'] ?? {};
+    final joinerUser = _freshJoinerUser ?? widget.request['requester'] ?? {};
     final joinerName = '${joinerUser['firstName'] ?? ''} ${joinerUser['lastName'] ?? ''}'.trim();
     final cleanJoinerName = joinerName.isNotEmpty ? joinerName : 'Joiner';
 
@@ -102,7 +216,7 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
         'Venue: $venueName\n'
         'Date: $dateStr • $timeStr\n'
         'Host: $cleanHostName\n'
-        'Joiner: $cleanJoinerName\n'
+        'Partner: $cleanJoinerName\n'
         'Ticket ID: $ticketId\n\n'
         'See you there! 💜';
 
@@ -131,20 +245,22 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
               DateTime.now()
         : DateTime.now();
 
-    final hostUser = widget.plan['user'] ?? widget.plan['host'] ?? {};
+    // Prefer backend-refreshed user data so profile photos are always resolved
+    final hostUser = _freshHostUser ?? widget.plan['user'] ?? widget.plan['host'] ?? {};
     final hostName =
         '${hostUser['firstName'] ?? ''} ${hostUser['lastName'] ?? ''}'.trim();
     final cleanHostName = hostName.isNotEmpty ? hostName : 'Host';
     final hostUsername = '@${hostUser['username'] ?? hostUser['firstName']?.toString().toLowerCase() ?? 'host'}';
 
-    final joinerUser = widget.request['requester'] ?? {};
+    final joinerUser = _freshJoinerUser ?? widget.request['requester'] ?? {};
     final joinerName =
         '${joinerUser['firstName'] ?? ''} ${joinerUser['lastName'] ?? ''}'
             .trim();
-    final cleanJoinerName = joinerName.isNotEmpty ? joinerName : 'Joiner';
-    final joinerUsername = '@${joinerUser['username'] ?? joinerUser['firstName']?.toString().toLowerCase() ?? 'joiner'}';
+    final cleanJoinerName = joinerName.isNotEmpty ? joinerName : 'Partner';
+    final joinerUsername = '@${joinerUser['username'] ?? joinerUser['firstName']?.toString().toLowerCase() ?? 'partner'}';
 
-    final ticketId = (widget.request['id']?.toString() ?? 'TICKET').toUpperCase();
+    // Prefer canonical backend ticket code over raw request ID
+    final ticketId = (_canonicalTicketCode ?? widget.request['id']?.toString() ?? 'TICKET').toUpperCase();
     final description =
         widget.plan['message'] ?? widget.plan['description'] ?? 'Party Plan Vibe';
 
@@ -291,6 +407,9 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
                               ),
                             ],
                           ),
+                          const SizedBox(height: 10),
+                          // Countdown badge — expires at planDateTime
+                          _buildCountdownBadge(),
                           const SizedBox(height: 20),
                           Text(
                             description,

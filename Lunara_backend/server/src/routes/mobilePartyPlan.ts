@@ -19,6 +19,7 @@ import {
     initiateJoinerPayment,
     confirmSelfPaidJoin,
     acceptPartyPlanInvite,
+    getPartyPlanTicket,
 } from '../controllers/partyPlanController';
 
 const router = Router();
@@ -324,6 +325,19 @@ router.post(
         validate,
     ],
     initiateJoinerPayment
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/mobile/party-plans/requests/:reqId/ticket
+// Fetch a full ticket payload (plan + host photo + joiner photo + ticketCode)
+// ─────────────────────────────────────────────────────────────────────────────
+router.get(
+    '/requests/:reqId/ticket',
+    [
+        param('reqId').isUUID().withMessage('reqId must be a valid UUID'),
+        validate,
+    ],
+    getPartyPlanTicket
 );
 
 export default router;

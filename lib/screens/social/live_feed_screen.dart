@@ -1469,7 +1469,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                               ),
                             ),
                           );
-                        } else if ((reqStatus == 'accepted' || reqStatus == 'payment_pending') && !joinerPaid) {
+                        } else if (!joinerPaid) {
                           final hostPaid = myReq['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'paid' ||
                               myReq['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'refunded';
                           if (!hostPaid) {
@@ -1508,64 +1508,78 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                                   _loadFeed(showLoader: false),
                             ),
                           );
-                        } else if (reqStatus == 'paid' || reqStatus == 'accepted' || joinerPaid) {
-                          return Expanded(
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: ElevatedButton.icon(
-                                    onPressed: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) => PartyPlanTicketScreen(
-                                            request: myReq,
-                                            plan: myReq['plan'] ?? plan,
-                                            isHost: false,
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                    icon: const Icon(Icons.qr_code_rounded, size: 14, color: Colors.white),
-                                    label: const Text('VIEW TICKET', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: LunaraTheme.electricViolet,
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(vertical: 11),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                    ),
-                                  ),
+                        } else {
+                          // Joiner has paid
+                          final hostPaid = myReq['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'paid' ||
+                              myReq['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'refunded';
+                          if (!hostPaid) {
+                            return Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 11),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
                                 ),
-                                if (myReq['plan']?['creator'] != null || plan['host'] != null) ...[
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: ElevatedButton.icon(
-                                      onPressed: () {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) => ChatScreen(user: {
-                                              ...(myReq['plan']?['creator'] ?? plan['host'] ?? {}),
-                                              'contextType': 'party_plan',
-                                              'planId': myReq['plan']?['id']?.toString() ?? plan['id']?.toString(),
-                                            }),
-                                          ),
-                                        );
-                                      },
-                                      icon: const Icon(Icons.chat_bubble_outline_rounded, size: 14, color: Colors.white),
-                                      label: const Text('CHAT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: LunaraTheme.hotPink,
-                                        foregroundColor: Colors.white,
-                                        padding: const EdgeInsets.symmetric(vertical: 11),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                child: const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.hourglass_empty_rounded, color: Colors.orange, size: 15),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      'AWAITING HOST PAYMENT',
+                                      style: TextStyle(
+                                        color: Colors.orange,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
                                       ),
                                     ),
-                                  ),
-                                ],
-                              ],
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
+                          // Both paid! Show CHAT only (VIEW TICKET is host-only).
+                          if (myReq['plan']?['creator'] != null || plan['host'] != null) {
+                            return Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => ChatScreen(user: {
+                                        ...(myReq['plan']?['creator'] ?? plan['host'] ?? {}),
+                                        'contextType': 'party_plan',
+                                        'planId': myReq['plan']?['id']?.toString() ?? plan['id']?.toString(),
+                                      }),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 14, color: Colors.white),
+                                label: const Text('CHAT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: LunaraTheme.hotPink,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 11),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                              ),
+                            );
+                          }
+                          return Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 11),
+                              decoration: BoxDecoration(
+                                color: Colors.green.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.green.withValues(alpha: 0.5)),
+                              ),
+                              child: const Center(
+                                child: Text('MATCH CONFIRMED', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green)),
+                              ),
                             ),
                           );
+                        }
                         } else if (reqStatus == 'rejected') {
                           return Expanded(
                             child: Container(
@@ -3064,89 +3078,94 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
               ] else if (currentStatus == 'paid' || 
                          req['joinerPaymentStatus']?.toString().toLowerCase() == 'paid' ||
                          req['joinerPaymentStatus']?.toString().toLowerCase() == 'confirmed') ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    children: [
-                      const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.check_circle, color: Colors.green, size: 16),
-                          SizedBox(width: 6),
-                          Text(
-                            'PARTY PLAN CONFIRMED 🎉',
-                            style: TextStyle(
-                              color: Colors.green,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => PartyPlanTicketScreen(
-                                      request: req,
-                                      plan: req['plan'] ?? plan,
-                                      isHost: false,
-                                    ),
-                                  ),
-                                );
-                              },
-                              icon: const Icon(Icons.qr_code_rounded, size: 16, color: Colors.white),
-                              label: const Text(
-                                'VIEW TICKET',
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: LunaraTheme.electricViolet,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                            ),
-                          ),
-                          if (req['plan']?['creator'] != null) ...[
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => ChatScreen(user: {
-                                        ...req['plan']?['creator'],
-                                        'contextType': 'party_plan',
-                                        'planId': req['plan']?['id']?.toString(),
-                                      }),
-                                    ),
-                                  );
-                                },
-                                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16, color: Colors.white),
-                                label: const Text(
-                                  'CHAT',
-                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
-                                ),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: LunaraTheme.hotPink,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ),
+                Builder(
+                  builder: (context) {
+                    final hostPaid = req['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'paid' ||
+                        req['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'refunded';
+                    if (!hostPaid) {
+                      return Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.hourglass_empty_rounded, color: Colors.orange, size: 15),
+                            SizedBox(width: 6),
+                            Text(
+                              'AWAITING HOST PAYMENT',
+                              style: TextStyle(
+                                color: Colors.orange,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
                           ],
+                        ),
+                      );
+                    }
+                    return Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        children: [
+                          const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.check_circle, color: Colors.green, size: 16),
+                              SizedBox(width: 6),
+                              Text(
+                                'PARTY PLAN CONFIRMED 🎉',
+                                style: TextStyle(
+                                  color: Colors.green,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              if (req['plan']?['creator'] != null)
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => ChatScreen(user: {
+                                            ...req['plan']?['creator'],
+                                            'contextType': 'party_plan',
+                                            'planId': req['plan']?['id']?.toString(),
+                                          }),
+                                        ),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16, color: Colors.white),
+                                    label: const Text(
+                                      'CHAT',
+                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: LunaraTheme.hotPink,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ],
                       ),
-                    ],
-                  ),
+                    );
+                  }
                 ),
               ] else ...[
                 Container(
