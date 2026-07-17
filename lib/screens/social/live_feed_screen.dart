@@ -1469,117 +1469,118 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                               ),
                             ),
                           );
-                        } else if (!joinerPaid) {
-                          final hostPaid = myReq['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'paid' ||
-                              myReq['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'refunded';
-                          if (!hostPaid) {
-                            return Expanded(
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 11),
-                                decoration: BoxDecoration(
-                                  color: Colors.orange.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
-                                ),
-                                child: const Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.hourglass_empty_rounded, color: Colors.orange, size: 15),
-                                    SizedBox(width: 6),
-                                    Text(
-                                      'AWAITING HOST PAYMENT',
-                                      style: TextStyle(
-                                        color: Colors.orange,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          }
-                          return Expanded(
-                            child: CountdownPayButton(
-                              myReq: myReq,
-                              venue: venue,
-                              plan: plan,
-                              onPaymentSuccess: () =>
-                                  _loadFeed(showLoader: false),
-                            ),
-                          );
-                        } else {
-                          // Joiner has paid
-                          final hostPaid = myReq['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'paid' ||
-                              myReq['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'refunded';
-                          if (!hostPaid) {
-                            return Expanded(
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 11),
-                                decoration: BoxDecoration(
-                                  color: Colors.orange.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
-                                ),
-                                child: const Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.hourglass_empty_rounded, color: Colors.orange, size: 15),
-                                    SizedBox(width: 6),
-                                    Text(
-                                      'AWAITING HOST PAYMENT',
-                                      style: TextStyle(
-                                        color: Colors.orange,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          }
-                          // Both paid! Show CHAT only (VIEW TICKET is host-only).
-                          if (myReq['plan']?['creator'] != null || plan['host'] != null) {
-                            return Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => ChatScreen(user: {
-                                        ...(myReq['plan']?['creator'] ?? plan['host'] ?? {}),
-                                        'contextType': 'party_plan',
-                                        'planId': myReq['plan']?['id']?.toString() ?? plan['id']?.toString(),
-                                      }),
-                                    ),
-                                  );
-                                },
-                                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 14, color: Colors.white),
-                                label: const Text('CHAT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: LunaraTheme.hotPink,
-                                  foregroundColor: Colors.white,
+                        } else if (reqStatus == 'accepted' || reqStatus == 'payment_pending') {
+                          if (!joinerPaid) {
+                            final hostPaid = myReq['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'paid' ||
+                                myReq['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'refunded';
+                            if (!hostPaid) {
+                              return Expanded(
+                                child: Container(
                                   padding: const EdgeInsets.symmetric(vertical: 11),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
+                                  ),
+                                  child: const Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.hourglass_empty_rounded, color: Colors.orange, size: 15),
+                                      SizedBox(width: 6),
+                                      Text(
+                                        'AWAITING HOST PAYMENT',
+                                        style: TextStyle(
+                                          color: Colors.orange,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }
+                            return Expanded(
+                              child: CountdownPayButton(
+                                myReq: myReq,
+                                venue: venue,
+                                plan: plan,
+                                onPaymentSuccess: () =>
+                                    _loadFeed(showLoader: false),
+                              ),
+                            );
+                          } else {
+                            // Joiner has paid
+                            final hostPaid = myReq['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'paid' ||
+                                myReq['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'refunded';
+                            if (!hostPaid) {
+                              return Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 11),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
+                                  ),
+                                  child: const Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.hourglass_empty_rounded, color: Colors.orange, size: 15),
+                                      SizedBox(width: 6),
+                                      Text(
+                                        'AWAITING HOST PAYMENT',
+                                        style: TextStyle(
+                                          color: Colors.orange,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }
+                            // Both paid! Show CHAT only (VIEW TICKET is host-only).
+                            if (myReq['plan']?['creator'] != null || plan['host'] != null) {
+                              return Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => ChatScreen(user: {
+                                          ...(myReq['plan']?['creator'] ?? plan['host'] ?? {}),
+                                          'contextType': 'party_plan',
+                                          'planId': myReq['plan']?['id']?.toString() ?? plan['id']?.toString(),
+                                        }),
+                                      ),
+                                    );
+                                  },
+                                  icon: const Icon(Icons.chat_bubble_outline_rounded, size: 14, color: Colors.white),
+                                  label: const Text('CHAT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: LunaraTheme.hotPink,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(vertical: 11),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                ),
+                              );
+                            }
+                            return Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 11),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.green.withValues(alpha: 0.5)),
+                                ),
+                                child: const Center(
+                                  child: Text('MATCH CONFIRMED', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green)),
                                 ),
                               ),
                             );
                           }
-                          return Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 11),
-                              decoration: BoxDecoration(
-                                color: Colors.green.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.green.withValues(alpha: 0.5)),
-                              ),
-                              child: const Center(
-                                child: Text('MATCH CONFIRMED', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green)),
-                              ),
-                            ),
-                          );
-                        }
                         } else if (reqStatus == 'rejected') {
                           return Expanded(
                             child: Container(
@@ -2096,7 +2097,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                             height: 40,
                             child: ElevatedButton.icon(
                               onPressed: () {
-                                final planId = (req['planId']?.toString()?.isNotEmpty == true
+                                final planId = (req['planId']?.toString().isNotEmpty == true
                                     ? req['planId'].toString()
                                     : plan['id']?.toString() ?? '');
                                 _startHostPayment(planId, plan);
@@ -3603,11 +3604,11 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => PartyPlanTicketScreen(
-                    request: widget.myReq,
-                    plan: widget.plan.isNotEmpty ? widget.plan : (widget.myReq['plan'] ?? {}),
-                    isHost: false,
-                  ),
+                  builder: (_) => ChatScreen(user: {
+                    ...(widget.myReq['plan']?['creator'] ?? widget.plan['host'] ?? {}),
+                    'contextType': 'party_plan',
+                    'planId': widget.myReq['plan']?['id']?.toString() ?? widget.plan['id']?.toString(),
+                  }),
                 ),
               );
             } else {
@@ -3682,11 +3683,11 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
                       Navigator.pushReplacement(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => PartyPlanTicketScreen(
-                            request: widget.myReq,
-                            plan: widget.plan.isNotEmpty ? widget.plan : (widget.myReq['plan'] ?? {}),
-                            isHost: false,
-                          ),
+                          builder: (_) => ChatScreen(user: {
+                            ...(widget.myReq['plan']?['creator'] ?? widget.plan['host'] ?? {}),
+                            'contextType': 'party_plan',
+                            'planId': widget.myReq['plan']?['id']?.toString() ?? widget.plan['id']?.toString(),
+                          }),
                         ),
                       );
                     } else {
@@ -3718,11 +3719,11 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
                       Navigator.pushReplacement(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => PartyPlanTicketScreen(
-                            request: widget.myReq,
-                            plan: widget.plan.isNotEmpty ? widget.plan : (widget.myReq['plan'] ?? {}),
-                            isHost: false,
-                          ),
+                          builder: (_) => ChatScreen(user: {
+                            ...(widget.myReq['plan']?['creator'] ?? widget.plan['host'] ?? {}),
+                            'contextType': 'party_plan',
+                            'planId': widget.myReq['plan']?['id']?.toString() ?? widget.plan['id']?.toString(),
+                          }),
                         ),
                       );
                     } else {

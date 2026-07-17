@@ -5,6 +5,7 @@ import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../discovery/payment_confirmation_screen.dart';
 import 'party_plan_ticket_screen.dart';
+import 'chat_screen.dart';
 
 class HostPartyPlanManagerScreen extends StatefulWidget {
   const HostPartyPlanManagerScreen({super.key});

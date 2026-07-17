@@ -5,6 +5,7 @@ import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../discovery/payment_confirmation_screen.dart';
 import 'party_plan_ticket_screen.dart';
+import 'chat_screen.dart';
 
 class PartyPlanRequestsScreen extends StatefulWidget {
   const PartyPlanRequestsScreen({super.key});
@@ -512,43 +513,44 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 40,
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => PartyPlanTicketScreen(
-                                request: req,
-                                plan: plan,
-                                isHost: false,
+                    if (host.isNotEmpty)
+                      SizedBox(
+                        width: double.infinity,
+                        height: 40,
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ChatScreen(user: {
+                                  ...host,
+                                  'contextType': 'party_plan',
+                                  'planId': plan['id']?.toString(),
+                                }),
                               ),
-                            ),
-                          );
-                        },
-                        icon: const Icon(
-                          Icons.qr_code_rounded,
-                          size: 16,
-                          color: Colors.white,
-                        ),
-                        label: const Text(
-                          'VIEW TICKET',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
+                            );
+                          },
+                          icon: const Icon(
+                            Icons.chat_bubble_outline_rounded,
+                            size: 16,
                             color: Colors.white,
                           ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: LunaraTheme.electricViolet,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
+                          label: const Text(
+                            'CHAT',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                              color: Colors.white,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: LunaraTheme.hotPink,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
                           ),
                         ),
                       ),
-                    ),
                   ],
                 ),
               ),
