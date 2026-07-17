@@ -15,6 +15,7 @@ class HostPartyPlanManagerScreen extends StatefulWidget {
 
 class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen> {
   bool _isLoading = true;
+  bool _isProcessing = false;
   List<Map<String, dynamic>> _myPlans = [];
   Map<String, List<Map<String, dynamic>>> _planRequests = {};
 
@@ -24,6 +25,7 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
   void initState() {
     super.initState();
     _loadData();
+    _initSocketListeners();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) setState(() {});
     });
@@ -31,8 +33,47 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
 
   @override
   void dispose() {
+    _disposeSocketListeners();
     _timer?.cancel();
     super.dispose();
+  }
+
+  void _initSocketListeners() {
+    ApiService.addSocketListener('plan_unavailable', _onPlanUnavailable);
+    ApiService.addSocketListener('party_plan_request_accepted', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_match_success', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_host_paid', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_joiner_paid', _onSocketUpdate);
+  }
+
+  void _disposeSocketListeners() {
+    ApiService.removeSocketListener('plan_unavailable', _onPlanUnavailable);
+    ApiService.removeSocketListener('party_plan_request_accepted', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_match_success', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_host_paid', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_joiner_paid', _onSocketUpdate);
+  }
+
+  void _onPlanUnavailable(dynamic data) {
+    if (!mounted) return;
+    try {
+      final planId = data['planId']?.toString();
+      final requestId = data['requestId']?.toString();
+      if (planId != null && requestId != null) {
+        setState(() {
+          if (_planRequests.containsKey(planId)) {
+            _planRequests[planId]!.removeWhere((r) => r['id']?.toString() == requestId);
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Error handling plan_unavailable socket: $e');
+    }
+  }
+
+  void _onSocketUpdate(dynamic data) {
+    if (!mounted) return;
+    _loadData();
   }
 
   String _getTimeRemaining(String? timeoutStr) {
@@ -168,48 +209,64 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
   }
 
   void _onAcceptRequest(String reqId, Map<String, dynamic> plan) async {
-    final result = await ApiService.acceptPartyPlanRequest(reqId);
-    if (!mounted) return;
-    if (result != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Request Accepted! Complete your deposit to lock match.')),
-      );
-      await _loadData();
-      final hostOrderId = result['hostRazorpayOrderId']?.toString();
-      if (hostOrderId != null) {
-        final updatedPlan = _myPlans.firstWhere(
-          (p) => p['id']?.toString() == plan['id']?.toString(),
-          orElse: () => <String, dynamic>{},
+    if (_isProcessing) return;
+    setState(() => _isProcessing = true);
+    try {
+      final result = await ApiService.acceptPartyPlanRequest(reqId);
+      if (!mounted) return;
+      if (result != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Request Accepted! Complete your deposit to lock match.')),
         );
-        if (updatedPlan.isNotEmpty) {
-          final newPlan = Map<String, dynamic>.from(updatedPlan);
-          newPlan['hostRazorpayOrderId'] = hostOrderId;
-          _onHostPayDeposit(newPlan);
-        } else {
-          final newPlan = Map<String, dynamic>.from(plan);
-          newPlan['hostRazorpayOrderId'] = hostOrderId;
-          _onHostPayDeposit(newPlan);
+        await _loadData();
+        final hostOrderId = result['hostRazorpayOrderId']?.toString();
+        if (hostOrderId != null) {
+          final updatedPlan = _myPlans.firstWhere(
+            (p) => p['id']?.toString() == plan['id']?.toString(),
+            orElse: () => <String, dynamic>{},
+          );
+          if (updatedPlan.isNotEmpty) {
+            final newPlan = Map<String, dynamic>.from(updatedPlan);
+            newPlan['hostRazorpayOrderId'] = hostOrderId;
+            _onHostPayDeposit(newPlan);
+          } else {
+            final newPlan = Map<String, dynamic>.from(plan);
+            newPlan['hostRazorpayOrderId'] = hostOrderId;
+            _onHostPayDeposit(newPlan);
+          }
         }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to accept request.'), backgroundColor: Colors.red),
+        );
       }
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to accept request.'), backgroundColor: Colors.red),
-      );
+    } finally {
+      if (mounted) {
+        setState(() => _isProcessing = false);
+      }
     }
   }
 
   void _onCancelPlan(String planId) async {
-    final success = await ApiService.cancelPartyPlan(planId);
-    if (!mounted) return;
-    if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Plan Cancelled successfully.')),
-      );
-      _loadData();
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to cancel plan.'), backgroundColor: Colors.red),
-      );
+    if (_isProcessing) return;
+    setState(() => _isProcessing = true);
+    try {
+      final success = await ApiService.cancelPartyPlan(planId);
+      if (!mounted) return;
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Plan Cancelled successfully.')),
+        );
+        await _loadData();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to cancel plan.'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isProcessing = false);
+      }
     }
   }
 
@@ -486,22 +543,26 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                           ),
                           if (status.toString().toLowerCase() == 'pending' && req['isInvite'] != true)
                             ElevatedButton(
-                              onPressed: () => _onAcceptRequest(req['id'], plan),
+                              onPressed: _isProcessing ? null : () => _onAcceptRequest(req['id'], plan),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: LunaraTheme.electricViolet,
                                 foregroundColor: Colors.white,
+                                disabledBackgroundColor: LunaraTheme.electricViolet.withValues(alpha: 0.4),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                 minimumSize: const Size(0, 36),
                               ),
-                              child: const Text('ACCEPT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                              child: _isProcessing
+                                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                  : const Text('ACCEPT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                             ),
                           if ((status.toString().toLowerCase() == 'payment_pending' || status.toString().toLowerCase() == 'accepted') && !hostPaid)
                             ElevatedButton(
-                              onPressed: () => _onHostPayDeposit(plan),
+                              onPressed: _isProcessing ? null : () => _onHostPayDeposit(plan),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green,
                                 foregroundColor: Colors.white,
+                                disabledBackgroundColor: Colors.green.withValues(alpha: 0.4),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                 minimumSize: const Size(0, 36),

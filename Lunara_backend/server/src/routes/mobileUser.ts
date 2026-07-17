@@ -352,6 +352,7 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
         let title = 'Plan Request Update';
         const notificationId = `ppr_${pr.id}`;
         let isRead = false;
+        let type = 'party_plan_request';
 
         if (pr.status === 'accepted' || pr.status === 'payment_pending') {
             const isInvite = plan && plan.selectedUsers && plan.selectedUsers.includes(uId);
@@ -383,10 +384,17 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
             }
         } else if (pr.status === 'rejected') {
             const isInvite = plan && plan.selectedUsers && plan.selectedUsers.includes(uId);
-            if (isInvite) {
-                body = `The Party Plan at ${venueName} is no longer available.`;
+            if (plan && plan.status === 'inactive') {
+                title = 'Plan Unavailable';
+                body = `The Party Plan at ${venueName} has been confirmed with another user. Feel free to find another plan!`;
+                type = 'plan_unavailable';
             } else {
-                body = `Your request to join Party Plan at ${venueName} was declined.`;
+                if (isInvite) {
+                    body = `The Party Plan at ${venueName} is no longer available.`;
+                } else {
+                    body = `Your request to join Party Plan at ${venueName} was declined.`;
+                }
+                type = 'party_plan_request';
             }
             isRead = true;
         } else if (pr.status === 'pending' && plan && (plan.visibility === 'private' || plan.visibility === 'both') && plan.selectedUsers?.includes(uId)) {
@@ -408,6 +416,7 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
             body,
             createdAt: pr.updatedAt ? pr.updatedAt.toISOString() : (pr.createdAt ? pr.createdAt.toISOString() : new Date().toISOString()),
             read: isRead || activeReadNotificationIds.has(notificationId),
+            type,
         });
     }
 

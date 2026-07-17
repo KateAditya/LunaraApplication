@@ -160,6 +160,71 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
     }
 }
 
+async function rejectAndNotifyStaleRequests(plan: PartyPlan, acceptedRequestId: string) {
+    try {
+        const otherRequests = await PartyPlanRequest.findAll({
+            where: {
+                planId: plan.id,
+                id: { [Op.ne]: acceptedRequestId },
+                status: { [Op.in]: [PartyPlanRequestStatus.PENDING, PartyPlanRequestStatus.PAYMENT_PENDING] }
+            }
+        });
+
+        for (const req of otherRequests) {
+            await req.update({ status: PartyPlanRequestStatus.REJECTED });
+            
+            let venueName = 'Club';
+            if (plan.venueId) {
+                const venue = await Venue.findByPk(plan.venueId);
+                if (venue && venue.name) {
+                    venueName = venue.name;
+                }
+            }
+
+            try {
+                const { io } = require('../server');
+                // Emit plan_unavailable so the client prunes the stale request card
+                io.to(`user_${req.requesterId}`).emit('plan_unavailable', {
+                    planId: plan.id,
+                    requestId: req.id,
+                });
+                // Emit notification_created
+                io.to(`user_${req.requesterId}`).emit('notification_created', {
+                    id: `ppr_rejected_${req.id}`,
+                    title: 'Plan Unavailable',
+                    body: `The Party Plan at ${venueName} has been confirmed with another user. Feel free to find another plan!`,
+                    createdAt: new Date().toISOString(),
+                    read: false,
+                    type: 'plan_unavailable',
+                });
+            } catch (socketErr) {
+                logger.warn(`Socket emission failed in rejectAndNotifyStaleRequests for request ${req.id}:`, socketErr);
+            }
+
+            setImmediate(async () => {
+                try {
+                    const joiner = await User.findByPk(req.requesterId);
+                    if (joiner && joiner.fcmToken) {
+                        await sendMulticastPushNotification([joiner.fcmToken], {
+                            title: 'Plan Unavailable',
+                            body: `The Party Plan at ${venueName} has been confirmed with another user. Feel free to find another plan!`,
+                            data: {
+                                type: 'plan_unavailable',
+                                partyPlanId: plan.id,
+                                requestId: req.id,
+                            },
+                        });
+                    }
+                } catch (pushErr: any) {
+                    logger.warn(`Push notification failed in rejectAndNotifyStaleRequests for request ${req.id}:`, pushErr.message);
+                }
+            });
+        }
+    } catch (err: any) {
+        logger.error('Error in rejectAndNotifyStaleRequests:', err);
+    }
+}
+
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
     key_secret: process.env.RAZORPAY_KEY_SECRET || 'secret123',
@@ -568,17 +633,8 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
                         // Create Booking & Payments
                         await createBookingAndPayments(plan, activeReq);
 
-                        // Reject all other requests now that match is fully confirmed
-                        await PartyPlanRequest.update(
-                            { status: PartyPlanRequestStatus.REJECTED },
-                            {
-                                where: {
-                                    planId: plan.id,
-                                    id: { [Op.ne]: activeReq.id },
-                                    status: { [Op.in]: [PartyPlanRequestStatus.PENDING, PartyPlanRequestStatus.PAYMENT_PENDING] }
-                                }
-                            }
-                        );
+                        // Reject and notify all other requests now that match is fully confirmed
+                        await rejectAndNotifyStaleRequests(plan, activeReq.id);
 
                         // Notify both about confirmed booking and ticket
                         setImmediate(async () => {
@@ -1061,6 +1117,33 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
             return;
         }
 
+        // Reject if target plan is inactive or cancelled
+        if (plan.status === PartyPlanStatus.INACTIVE || plan.status === PartyPlanStatus.CANCELLED) {
+            res.status(400).json({ success: false, message: 'This party plan is no longer active.' });
+            return;
+        }
+
+        // Check if there is already a request on the plan that is accepted or in active payment_pending status
+        const acceptedOrPendingReq = await PartyPlanRequest.findOne({
+            where: {
+                planId: plan.id,
+                [Op.or]: [
+                    { status: PartyPlanRequestStatus.ACCEPTED },
+                    {
+                        status: PartyPlanRequestStatus.PAYMENT_PENDING,
+                        paymentTimeoutAt: { [Op.gt]: new Date() }
+                    }
+                ]
+            }
+        });
+        if (acceptedOrPendingReq) {
+            res.status(400).json({
+                success: false,
+                message: 'This party plan already has an accepted or processing request.'
+            });
+            return;
+        }
+
         if (plan.userId === userId) {
             res.status(400).json({ success: false, message: 'You cannot request to join your own plan' });
             return;
@@ -1268,16 +1351,8 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
 
                 await createBookingAndPayments(plan, request);
 
-                await PartyPlanRequest.update(
-                    { status: PartyPlanRequestStatus.REJECTED },
-                    {
-                        where: {
-                            planId: plan.id,
-                            id: { [Op.ne]: request.id },
-                            status: { [Op.in]: [PartyPlanRequestStatus.PENDING, PartyPlanRequestStatus.PAYMENT_PENDING] }
-                        }
-                    }
-                );
+                // Reject and notify all other requests now that match is fully confirmed
+                await rejectAndNotifyStaleRequests(plan, request.id);
 
                 setImmediate(async () => {
                     try {
@@ -1636,17 +1711,8 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
                 // Create Booking & Payments
                 await createBookingAndPayments(plan, request);
 
-                // Reject all other requests now that match is fully confirmed
-                await PartyPlanRequest.update(
-                    { status: PartyPlanRequestStatus.REJECTED },
-                    {
-                        where: {
-                            planId: plan.id,
-                            id: { [Op.ne]: request.id },
-                            status: { [Op.in]: [PartyPlanRequestStatus.PENDING, PartyPlanRequestStatus.PAYMENT_PENDING] }
-                        }
-                    }
-                );
+                // Reject and notify all other requests now that match is fully confirmed
+                await rejectAndNotifyStaleRequests(plan, request.id);
 
                 // Notify both about confirmed booking and ticket
                 setImmediate(async () => {
@@ -1757,16 +1823,8 @@ export const confirmSelfPaidJoin = async (req: Request, res: Response): Promise<
 
             await createBookingAndPayments(plan, request);
 
-            await PartyPlanRequest.update(
-                { status: PartyPlanRequestStatus.REJECTED },
-                {
-                    where: {
-                        planId: plan.id,
-                        id: { [Op.ne]: request.id },
-                        status: { [Op.in]: [PartyPlanRequestStatus.PENDING, PartyPlanRequestStatus.PAYMENT_PENDING] }
-                    }
-                }
-            );
+            // Reject and notify all other requests now that match is fully confirmed
+            await rejectAndNotifyStaleRequests(plan, request.id);
 
             setImmediate(async () => {
                 try {
@@ -1881,16 +1939,8 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
                 });
                 await createBookingAndPayments(plan, request);
 
-                await PartyPlanRequest.update(
-                    { status: PartyPlanRequestStatus.REJECTED },
-                    {
-                        where: {
-                            planId: plan.id,
-                            id: { [Op.ne]: request.id },
-                            status: { [Op.in]: [PartyPlanRequestStatus.PENDING, PartyPlanRequestStatus.PAYMENT_PENDING] }
-                        }
-                    }
-                );
+                // Reject and notify all other requests now that match is fully confirmed
+                await rejectAndNotifyStaleRequests(plan, request.id);
 
                 // Send push notification & socket events
                 setImmediate(async () => {

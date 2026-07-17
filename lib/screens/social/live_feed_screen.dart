@@ -89,6 +89,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.addSocketListener('party_plan_match_success', _onPartyPlanMatchSuccess);
     ApiService.addSocketListener('party_plan_host_paid', _onPartyPlanHostPaid);
     ApiService.addSocketListener('party_plan_joiner_paid', _onPartyPlanJoinerPaid);
+    ApiService.addSocketListener('plan_unavailable', _onPlanUnavailable);
   }
 
   void _disposeSocketListeners() {
@@ -98,6 +99,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.removeSocketListener('party_plan_match_success', _onPartyPlanMatchSuccess);
     ApiService.removeSocketListener('party_plan_host_paid', _onPartyPlanHostPaid);
     ApiService.removeSocketListener('party_plan_joiner_paid', _onPartyPlanJoinerPaid);
+    ApiService.removeSocketListener('plan_unavailable', _onPlanUnavailable);
   }
 
   void _onPartyPlanCreated(dynamic data) {
@@ -212,6 +214,29 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
       }
     } catch (e) {
       debugPrint('Error handling party_plan_joiner_paid: $e');
+    }
+  }
+
+  void _onPlanUnavailable(dynamic data) {
+    if (!mounted) return;
+    try {
+      final planId = data['planId']?.toString();
+      final requestId = data['requestId']?.toString();
+      setState(() {
+        // Remove the specific stale request card from the feed
+        if (requestId != null) {
+          _feedItems.removeWhere((item) => item['id']?.toString() == requestId);
+        }
+        // Also remove any lingering plan card for that planId
+        if (planId != null) {
+          _feedItems.removeWhere((item) =>
+              (item['id']?.toString() == planId && item['type'] == 'party_plan') ||
+              (item['plan'] != null && item['plan']['id']?.toString() == planId &&
+               item['status'] != 'accepted' && item['status'] != 'paid'));
+        }
+      });
+    } catch (e) {
+      debugPrint('Error handling plan_unavailable: $e');
     }
   }
 
