@@ -46,7 +46,14 @@ export const getAvailablePackages = async (_req: Request, res: Response): Promis
             if (planFeatures.length > 0) {
                 for (const pf of planFeatures) {
                     const feat = (pf as any).feature;
-                    if (feat) features[feat.key] = { ...pf.value, name: feat.name, icon: feat.icon };
+                    if (feat) {
+                        features[feat.key] = { 
+                            ...pf.value, 
+                            name: feat.name, 
+                            icon: feat.icon,
+                            description: feat.description
+                        };
+                    }
                 } 
             }
 

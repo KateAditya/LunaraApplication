@@ -54,6 +54,7 @@ export const createPackage = async (req: Request, res: Response): Promise<void> 
         }
 
         const newPackage = await SubscriptionPackage.create(packageData);
+        SubscriptionService.invalidateCache();
 
         logger.info(`Admin ${adminId} created subscription package: ${newPackage.id}`);
         res.status(201).json({ success: true, data: newPackage, message: 'Subscription package created' });
@@ -110,6 +111,7 @@ export const deletePackage = async (req: Request, res: Response): Promise<void> 
         }
 
         await pkg.destroy();
+        SubscriptionService.invalidateCache();
         res.status(200).json({ success: true, message: 'Package deleted' });
     } catch (error: any) {
         logger.error('Error deleting package:', error);
@@ -364,6 +366,7 @@ export const getAllFeatures = async (_req: Request, res: Response): Promise<void
 export const createFeature = async (req: Request, res: Response): Promise<void> => {
     try {
         const feature = await SubscriptionFeature.create(req.body);
+        SubscriptionService.invalidateCache();
         res.status(201).json({ success: true, data: feature, message: 'Feature created' });
     } catch (error: any) {
         logger.error('Error creating feature:', error);
@@ -403,6 +406,7 @@ export const deleteFeature = async (req: Request, res: Response): Promise<void> 
         }
 
         await feature.destroy(); // cascades to SubscriptionPlanFeatures
+        SubscriptionService.invalidateCache();
         res.status(200).json({ success: true, message: 'Feature deleted' });
     } catch (error: any) {
         logger.error('Error deleting feature:', error);

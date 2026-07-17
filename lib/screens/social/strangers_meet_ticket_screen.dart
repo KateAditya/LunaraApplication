@@ -1,23 +1,122 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme.dart';
 import '../../models/strangers_meet_request.dart';
+import '../../widgets/lunara_profile_image.dart';
+import '../../services/api_service.dart';
 
 class StrangersMeetTicketScreen extends StatelessWidget {
   final StrangersMeetRequest request;
 
   const StrangersMeetTicketScreen({super.key, required this.request});
 
+  void _shareTicket(BuildContext context) {
+    final venueName = request.venue?['name'] ?? 'Unknown Venue';
+    final dateStr = DateFormat('MMM dd, yyyy').format(request.eventDateTime);
+    final timeStr = DateFormat('hh:mm a').format(request.eventDateTime);
+    final ticketId = request.ticketId ?? 'TICKET';
+
+    final hostUser = request.user ?? {};
+    final hostName = '${hostUser['firstName'] ?? ''} ${hostUser['lastName'] ?? ''}'.trim();
+    final cleanHostName = hostName.isNotEmpty ? hostName : 'Host';
+
+    final joinerUser = _resolveJoinerUser();
+    final joinerName = '${joinerUser['firstName'] ?? ''} ${joinerUser['lastName'] ?? ''}'.trim();
+    final cleanJoinerName = joinerName.isNotEmpty ? joinerName : 'Joiner';
+
+    final shareText = 'My Strangers Meet Booking on Lunara is Confirmed! 🥳\n\n'
+        'Event: ${request.subject}\n'
+        'Tagline: ${request.tagline}\n'
+        'Venue: $venueName\n'
+        'Date: $dateStr • $timeStr\n'
+        'Host: $cleanHostName\n'
+        'Joiner: $cleanJoinerName\n'
+        'Ticket ID: $ticketId\n\n'
+        'See you there! 💜';
+
+    final box = context.findRenderObject() as RenderBox?;
+    Share.share(
+      shareText,
+      subject: 'My Lunara Ticket',
+      sharePositionOrigin: box != null
+          ? box.localToGlobal(Offset.zero) & box.size
+          : null,
+    );
+  }
+
+  Map<String, dynamic> _resolveJoinerUser() {
+    Map<String, dynamic> joinerUser = {};
+    if (request.joiners != null && request.joiners!.isNotEmpty) {
+      final currentUid = ApiService.currentUserId;
+      final match = request.joiners!.firstWhere(
+        (j) => (j['user']?['id'] ?? j['user']?['_id'] ?? '') == currentUid || (j['id'] ?? j['_id'] ?? '') == currentUid,
+        orElse: () => request.joiners![0],
+      );
+      if (match is Map) {
+        joinerUser = Map<String, dynamic>.from(match['user'] ?? match);
+      }
+    }
+    if (joinerUser.isEmpty && ApiService.cachedCurrentUser != null) {
+      final cur = ApiService.cachedCurrentUser!;
+      joinerUser = {
+        'firstName': cur.firstName,
+        'lastName': cur.lastName,
+        'profilePhoto': cur.profilePhoto,
+        'subscriptionTier': cur.subscriptionTier,
+        'username': '${cur.firstName.toLowerCase()}.${cur.lastName.toLowerCase()}',
+      };
+    }
+    return joinerUser;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final venueName = request.venue?['name'] ?? 'Unknown Venue';
+    final venueCity = request.venue?['city'] ?? 'Unknown City';
+    final venueArea = request.venue?['area'] ?? '';
+    final venueAddress = request.venue?['address'] ?? '${venueArea.isNotEmpty ? "$venueArea, " : ""}$venueCity';
+    final images = request.venue?['images'];
+    final String venueImageUrl = request.venue?['imageUrl'] ?? (images is List && images.isNotEmpty ? (images.first?['filePath']?.toString() ?? '') : '') ?? '';
+    final cleanVenueImageUrl = venueImageUrl.startsWith('/') ? '${ApiService.baseUrl}$venueImageUrl' : venueImageUrl;
+
+    final hostUser = request.user ?? {};
+    final hostName = '${hostUser['firstName'] ?? ''} ${hostUser['lastName'] ?? ''}'.trim();
+    final cleanHostName = hostName.isNotEmpty ? hostName : 'Host';
+    final hostUsername = '@${hostUser['username'] ?? hostUser['firstName']?.toString().toLowerCase() ?? 'host'}';
+
+    final joinerUser = _resolveJoinerUser();
+    final joinerName = '${joinerUser['firstName'] ?? ''} ${joinerUser['lastName'] ?? ''}'.trim();
+    final cleanJoinerName = joinerName.isNotEmpty ? joinerName : 'Joiner';
+    final joinerUsername = '@${joinerUser['username'] ?? joinerUser['firstName']?.toString().toLowerCase() ?? 'joiner'}';
+
+    final ticketId = request.ticketId ?? 'TICKET';
+    final amountPaid = request.paymentAmount ?? request.chargesPerHead;
+
     return Scaffold(
       backgroundColor: LunaraTheme.midnightBlack,
       appBar: AppBar(
-        title: const Text('Your Ticket', style: TextStyle(fontWeight: FontWeight.w900)),
+        title: const Text(
+          'Your Ticket',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+            fontSize: 16,
+            letterSpacing: 2,
+          ),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.share_outlined, color: Colors.white),
+            onPressed: () => _shareTicket(context),
+          ),
+          const SizedBox(width: 8),
+        ],
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -25,7 +124,6 @@ class StrangersMeetTicketScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Success Header
               const Icon(Icons.check_circle_outline_rounded, color: Colors.greenAccent, size: 64),
               const SizedBox(height: 16),
               const Text(
@@ -41,9 +139,8 @@ class StrangersMeetTicketScreen extends StatelessWidget {
                 'Your strangers meet event is confirmed.',
                 style: TextStyle(color: Colors.grey[400], fontSize: 14),
               ),
-              const SizedBox(height: 40),
+              const SizedBox(height: 32),
 
-              // Ticket Card
               Container(
                 width: double.infinity,
                 decoration: BoxDecoration(
@@ -63,7 +160,6 @@ class StrangersMeetTicketScreen extends StatelessWidget {
                 ),
                 child: Column(
                   children: [
-                    // Top Section
                     Padding(
                       padding: const EdgeInsets.all(24),
                       child: Column(
@@ -84,8 +180,8 @@ class StrangersMeetTicketScreen extends StatelessWidget {
                                 ),
                               ),
                               Text(
-                                request.ticketId ?? 'TICKET',
-                                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
+                                ticketId,
+                                style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
                               ),
                             ],
                           ),
@@ -100,19 +196,6 @@ class StrangersMeetTicketScreen extends StatelessWidget {
                             style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 14),
                           ),
                           const SizedBox(height: 32),
-                          
-                          // Details Grid
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildTicketDetail('VENUE', request.venue?['name'] ?? 'Unknown Venue'),
-                              ),
-                              Expanded(
-                                child: _buildTicketDetail('CITY', request.venue?['city'] ?? 'Unknown'),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
                           Row(
                             children: [
                               Expanded(
@@ -129,25 +212,12 @@ class StrangersMeetTicketScreen extends StatelessWidget {
                               Expanded(
                                 child: _buildTicketDetail('PERSONS', '${request.numberOfPersons} pax'),
                               ),
-                              Expanded(
-                                child: _buildTicketDetail('HOST', '${request.user?['firstName'] ?? ''} ${request.user?['lastName'] ?? ''}'),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildTicketDetail('CHARGES PER HEAD', '₹${request.chargesPerHead.toStringAsFixed(0)}'),
-                              ),
                               const Spacer(),
                             ],
                           ),
                         ],
                       ),
                     ),
-
-                    // Divider (dashed line)
                     Row(
                       children: [
                         Container(width: 12, height: 24, decoration: const BoxDecoration(color: LunaraTheme.midnightBlack, borderRadius: BorderRadius.horizontal(right: Radius.circular(12)))),
@@ -172,27 +242,137 @@ class StrangersMeetTicketScreen extends StatelessWidget {
                         Container(width: 12, height: 24, decoration: const BoxDecoration(color: LunaraTheme.midnightBlack, borderRadius: BorderRadius.horizontal(left: Radius.circular(12)))),
                       ],
                     ),
-
-                    // Bottom Section (QR)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(24),
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
-                      ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
                       child: Column(
                         children: [
-                          QrImageView(
-                            data: request.ticketId ?? request.id,
-                            version: QrVersions.auto,
-                            size: 160.0,
-                            backgroundColor: Colors.white,
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  children: [
+                                    LunaraProfileImage(
+                                      userData: hostUser,
+                                      radius: 32,
+                                      showGradientBorder: true,
+                                      isInteractive: true,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(cleanHostName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+                                    Text(hostUsername, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 10), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+                                    const SizedBox(height: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                      decoration: BoxDecoration(color: LunaraTheme.electricViolet.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(10), border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.5), width: 1)),
+                                      child: const Text('HOST', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.08), shape: BoxShape.circle), child: const Icon(Icons.favorite_rounded, color: LunaraTheme.hotPink, size: 18)),
+                              Expanded(
+                                child: Column(
+                                  children: [
+                                    LunaraProfileImage(
+                                      userData: joinerUser,
+                                      radius: 32,
+                                      showGradientBorder: true,
+                                      isInteractive: true,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(cleanJoinerName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+                                    Text(joinerUsername, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 10), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+                                    const SizedBox(height: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                      decoration: BoxDecoration(color: LunaraTheme.cyberCyan.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(10), border: Border.all(color: LunaraTheme.cyberCyan.withValues(alpha: 0.4), width: 1)),
+                                      child: const Text('PARTNER', style: TextStyle(color: LunaraTheme.cyberCyan, fontSize: 8, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 16),
-                          const Text(
-                            'Scan at venue to verify',
-                            style: TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.w500),
+                          const SizedBox(height: 20),
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white.withValues(alpha: 0.1))),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: LunaraTheme.cyberCyan.withValues(alpha: 0.1), shape: BoxShape.circle), child: const Icon(Icons.account_balance_wallet_rounded, color: LunaraTheme.cyberCyan, size: 18)),
+                                    const SizedBox(width: 10),
+                                    const Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text('DEPOSIT STATUS', style: TextStyle(color: Colors.white70, fontSize: 8, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                                        SizedBox(height: 2),
+                                        Text('Lunara Secure Pay', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    const Text('AMOUNT PAID', style: TextStyle(color: Colors.white70, fontSize: 8, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                                    const SizedBox(height: 2),
+                                    Row(
+                                      children: [
+                                        Text('₹${amountPaid.toStringAsFixed(0)}', style: const TextStyle(color: Colors.greenAccent, fontSize: 14, fontWeight: FontWeight.bold)),
+                                        const SizedBox(width: 4),
+                                        Container(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1), decoration: BoxDecoration(color: Colors.greenAccent.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(4)), child: const Text('PAID', style: TextStyle(color: Colors.greenAccent, fontSize: 7, fontWeight: FontWeight.bold))),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white.withValues(alpha: 0.1))),
+                            child: Column(
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      width: 40, height: 40,
+                                      decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), image: DecorationImage(image: NetworkImage(cleanVenueImageUrl.isNotEmpty ? cleanVenueImageUrl : 'https://picsum.photos/seed/venue/100/100'), fit: BoxFit.cover), border: Border.all(color: Colors.white24)),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(venueName.toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900)),
+                                          const SizedBox(height: 2),
+                                          Text(venueAddress, style: const TextStyle(color: Colors.white70, fontSize: 10), maxLines: 2, overflow: TextOverflow.ellipsis),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const Divider(color: Colors.white12, height: 16),
+                                SizedBox(
+                                  width: double.infinity, height: 32,
+                                  child: TextButton.icon(
+                                    onPressed: () async {
+                                      final mapUrl = Uri.parse('https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent("$venueName, $venueAddress")}');
+                                      if (await canLaunchUrl(mapUrl)) { await launchUrl(mapUrl, mode: LaunchMode.externalApplication); }
+                                    },
+                                    icon: const Icon(Icons.map_rounded, color: LunaraTheme.cyberCyan, size: 14),
+                                    label: const Text('VIEW MAP DIRECTIONS', style: TextStyle(color: LunaraTheme.cyberCyan, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                                    style: TextButton.styleFrom(padding: EdgeInsets.zero, backgroundColor: LunaraTheme.cyberCyan.withValues(alpha: 0.08), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
@@ -203,17 +383,13 @@ class StrangersMeetTicketScreen extends StatelessWidget {
 
               const SizedBox(height: 40),
 
-              // Action Buttons
               SizedBox(
                 width: double.infinity,
                 height: 56,
                 child: ElevatedButton.icon(
-                  onPressed: () {
-                    // Just a placeholder for saving/sharing
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Take a screenshot to save your ticket!')));
-                  },
-                  icon: const Icon(Icons.download_rounded, color: Colors.white),
-                  label: const Text('SAVE TICKET', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                  onPressed: () => _shareTicket(context),
+                  icon: const Icon(Icons.share_rounded, color: Colors.white),
+                  label: const Text('SHARE TICKET', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white.withValues(alpha: 0.1),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -224,7 +400,6 @@ class StrangersMeetTicketScreen extends StatelessWidget {
               const SizedBox(height: 16),
               TextButton(
                 onPressed: () {
-                  // Pop back to My Requests
                   Navigator.pop(context);
                 },
                 child: const Text('BACK TO REQUESTS', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),

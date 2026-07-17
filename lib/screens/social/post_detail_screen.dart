@@ -35,14 +35,27 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     if (widget.post['type'] == 'strangers_meet') {
       _loadStrangersMeetDetails();
+      ApiService.addSocketListener('strangers_meet_updated', _onStrangersMeetUpdated);
     } else {
       _isLoading = false;
+    }
+  }
+
+  void _onStrangersMeetUpdated(dynamic data) {
+    if (data is Map) {
+      final reqId = data['requestId']?.toString();
+      if (reqId == widget.post['id']?.toString()) {
+        _loadStrangersMeetDetails(showFullScreenLoader: false);
+      }
     }
   }
 
   @override
   void dispose() {
     _razorpay.clear();
+    if (widget.post['type'] == 'strangers_meet') {
+      ApiService.removeSocketListener('strangers_meet_updated', _onStrangersMeetUpdated);
+    }
     super.dispose();
   }
 

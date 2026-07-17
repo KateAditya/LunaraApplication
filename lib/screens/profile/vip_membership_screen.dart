@@ -76,35 +76,53 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
     }
   }
 
-  // Get grouped plans
-  Map<String, dynamic>? get _corePackage => _allPackages.firstWhere(
-      (p) => p['tier'] == 'CORE', orElse: () => null);
+  // Selected duration index map per tier index
+  final Map<int, int> _selectedDurationIndexMap = {};
 
-  Map<String, dynamic>? get _plusPackage => _allPackages.firstWhere(
-      (p) => p['tier'] == 'PLUS', orElse: () => null);
+  // Get list of unique tiers in display order
+  List<String> get _tiers {
+    final Set<String> tiers = {};
+    for (final p in _allPackages) {
+      final tier = p['tier'] as String?;
+      if (tier != null && tier != 'FREE') {
+        tiers.add(tier);
+      }
+    }
+    final List<String> sortedTiers = tiers.toList();
+    const order = ['CORE', 'PLUS', 'PRO', 'ELITE'];
+    sortedTiers.sort((a, b) {
+      final idxA = order.indexOf(a);
+      final idxB = order.indexOf(b);
+      if (idxA != -1 && idxB != -1) return idxA.compareTo(idxB);
+      if (idxA != -1) return -1;
+      if (idxB != -1) return 1;
+      return a.compareTo(b);
+    });
+    return sortedTiers;
+  }
 
-  Map<String, dynamic>? get _proPackage => _allPackages.firstWhere(
-      (p) => p['tier'] == 'PRO', orElse: () => null);
-
-  List<dynamic> get _elitePackages {
-    final list = _allPackages.where((p) => p['tier'] == 'ELITE').toList();
+  List<dynamic> get _packagesForSelectedTier {
+    final listTiers = _tiers;
+    if (listTiers.isEmpty || _selectedPlanIndex >= listTiers.length) return [];
+    final tier = listTiers[_selectedPlanIndex];
+    final list = _allPackages.where((p) => p['tier'] == tier).toList();
     list.sort((a, b) => (a['durationDays'] as num).compareTo(b['durationDays'] as num));
     return list;
   }
 
+
+
   dynamic get _selectedPackage {
-    if (_selectedPlanIndex == 0) return _corePackage;
-    if (_selectedPlanIndex == 1) return _plusPackage;
-    if (_selectedPlanIndex == 2) return _proPackage;
-    if (_selectedPlanIndex == 3) {
-      final elites = _elitePackages;
-      if (elites.isEmpty) return null;
-      if (_selectedEliteIndex >= elites.length) {
-        _selectedEliteIndex = 0;
-      }
-      return elites[_selectedEliteIndex];
+    final pkgs = _packagesForSelectedTier;
+    if (pkgs.isEmpty) return null;
+    int durationIndex = _selectedDurationIndexMap[_selectedPlanIndex] ?? 0;
+    if (_selectedPlanIndex < _tiers.length && _tiers[_selectedPlanIndex] == 'ELITE') {
+      durationIndex = _selectedEliteIndex;
     }
-    return null;
+    if (durationIndex >= pkgs.length) {
+      durationIndex = 0;
+    }
+    return pkgs[durationIndex];
   }
 
   void _handleRazorpaySuccess(PaymentSuccessResponse response) {
@@ -412,15 +430,21 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
-              children: [
-                _buildPlanPill(0, 'Core', const Color(0xFF00A9FF)),
-                const SizedBox(width: 8),
-                _buildPlanPill(1, 'Plus', const Color(0xFF7F00FF)),
-                const SizedBox(width: 8),
-                _buildPlanPill(2, 'Pro', const Color(0xFFE100FF)),
-                const SizedBox(width: 8),
-                _buildPlanPill(3, 'Elite VIP', const Color(0xFFFFB703)),
-              ],
+              children: List.generate(_tiers.length, (index) {
+                final tierName = _tiers[index];
+                String label = tierName;
+                if (tierName == 'CORE') label = 'Core';
+                if (tierName == 'PLUS') label = 'Plus';
+                if (tierName == 'PRO') label = 'Pro';
+                if (tierName == 'ELITE') label = 'Elite VIP';
+
+                final firstPkg = _allPackages.firstWhere((p) => p['tier'] == tierName, orElse: () => null);
+                final color = _getPlanThemeColor(firstPkg);
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: _buildPlanPill(index, label, color),
+                );
+              }),
             ),
           ),
           const SizedBox(height: 24),
@@ -429,10 +453,10 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
           _buildPremiumCard(pkg),
           const SizedBox(height: 24),
 
-          // Elite Durations (only if Elite selected)
-          if (tier == 'ELITE') ...[
+          // Durations Selector (if selected tier has multiple options)
+          if (_packagesForSelectedTier.length > 1) ...[
             Text(
-              'SELECT ELITE OPTION',
+              'SELECT PLAN DURATION',
               style: TextStyle(
                 color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), 
                 fontSize: 11, 
@@ -441,7 +465,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
               ),
             ),
             const SizedBox(height: 12),
-            _buildEliteDurationsSelector(),
+            _buildDurationsSelector(),
             const SizedBox(height: 24),
           ],
 
@@ -456,7 +480,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
             child: ElevatedButton(
               onPressed: _isProcessing ? null : (isActive ? null : _initiatePurchase),
               style: ElevatedButton.styleFrom(
-                backgroundColor: isActive ? Colors.grey[800] : _getPlanThemeColor(tier),
+                backgroundColor: isActive ? Colors.grey[800] : _getPlanThemeColor(pkg),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               ),
               child: _isProcessing
@@ -645,8 +669,11 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
     return GestureDetector(
       onTap: () => setState(() {
         _selectedPlanIndex = index;
-        if (index == 3) {
+        if (index < _tiers.length && _tiers[index] == 'ELITE') {
           _selectedEliteIndex = 0;
+        }
+        if (!_selectedDurationIndexMap.containsKey(index)) {
+          _selectedDurationIndexMap[index] = 0;
         }
       }),
       child: Container(
@@ -673,12 +700,13 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
   }
 
   Widget _buildPremiumCard(dynamic pkg) {
-    final String tier = pkg['tier'];
-    final Color color = _getPlanThemeColor(tier);
+    final Color color = _getPlanThemeColor(pkg);
     final String name = pkg['name'];
     final double price = double.tryParse(pkg['price'].toString()) ?? 0.0;
     final int duration = pkg['durationDays'] ?? 0;
     final bool isActive = _activePackageId == pkg['id'];
+
+    final String? badgeText = pkg['badge'] ?? (pkg['is_popular'] == true ? 'POPULAR' : (pkg['is_recommended'] == true ? 'RECOMMENDED' : null));
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardBgColor = isDark ? const Color(0xFF16161E) : Colors.white;
@@ -711,10 +739,27 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                name.toUpperCase(),
-                style: TextStyle(color: color, fontSize: 24, fontWeight: FontWeight.w900, letterSpacing: -0.5),
+              Expanded(
+                child: Text(
+                  name.toUpperCase(),
+                  style: TextStyle(color: color, fontSize: 24, fontWeight: FontWeight.w900, letterSpacing: -0.5),
+                ),
               ),
+              if (badgeText != null && badgeText.isNotEmpty) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: color),
+                  ),
+                  child: Text(
+                    badgeText.toUpperCase(),
+                    style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
               if (isActive)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -748,7 +793,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
           ),
           const SizedBox(height: 8),
           Text(
-            _getPlanDescription(tier),
+            _getPlanDescription(pkg),
             style: TextStyle(color: descOnCardColor, fontSize: 13, height: 1.4),
           ),
         ],
@@ -756,21 +801,27 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
     );
   }
 
-  Widget _buildEliteDurationsSelector() {
-    final elites = _elitePackages;
-    if (elites.isEmpty) return const SizedBox.shrink();
+  Widget _buildDurationsSelector() {
+    final pkgs = _packagesForSelectedTier;
+    if (pkgs.isEmpty) return const SizedBox.shrink();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final itemBgColor = isDark ? const Color(0xFF16161E) : const Color(0xFFF2F2F7);
     final borderUnselectedColor = isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05);
 
+    final color = _getPlanThemeColor(_selectedPackage);
+
     return Row(
-      children: List.generate(elites.length, (index) {
-        final item = elites[index];
-        final isSelected = _selectedEliteIndex == index;
+      children: List.generate(pkgs.length, (index) {
+        final item = pkgs[index];
+        final currentSelectedIdx = _selectedDurationIndexMap[_selectedPlanIndex] ?? 0;
+        final isSelected = currentSelectedIdx == index;
         final int days = item['durationDays'] ?? 0;
         final double price = double.tryParse(item['price'].toString()) ?? 0.0;
         
         String label = '${days}d';
+        if (days == 7) label = '7d';
+        if (days == 14) label = '14d';
+        if (days == 15) label = '15d';
         if (days == 30) label = '30d';
         if (days == 90) label = '3m';
         if (days == 180) label = '6m';
@@ -778,15 +829,20 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
 
         return Expanded(
           child: GestureDetector(
-            onTap: () => setState(() => _selectedEliteIndex = index),
+            onTap: () => setState(() {
+              _selectedDurationIndexMap[_selectedPlanIndex] = index;
+              if (_tiers[_selectedPlanIndex] == 'ELITE') {
+                _selectedEliteIndex = index;
+              }
+            }),
             child: Container(
               margin: const EdgeInsets.only(right: 6),
               padding: const EdgeInsets.symmetric(vertical: 12),
               decoration: BoxDecoration(
-                color: isSelected ? const Color(0xFFFFB703).withValues(alpha: 0.15) : itemBgColor,
+                color: isSelected ? color.withValues(alpha: 0.15) : itemBgColor,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: isSelected ? const Color(0xFFFFB703) : borderUnselectedColor,
+                  color: isSelected ? color : borderUnselectedColor,
                   width: 1.5,
                 ),
               ),
@@ -795,7 +851,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
                   Text(
                     label.toUpperCase(),
                     style: TextStyle(
-                      color: isSelected ? const Color(0xFFFFB703) : (isDark ? Colors.white70 : Colors.black87),
+                      color: isSelected ? color : (isDark ? Colors.white70 : Colors.black87),
                       fontWeight: FontWeight.bold,
                       fontSize: 13,
                     ),
@@ -818,39 +874,91 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
     );
   }
 
-  Widget _buildDynamicFeatures(dynamic pkg) {
-    final String tier = pkg['tier'];
-    final Color color = _getPlanThemeColor(tier);
 
-    // List out benefits based on tier
+
+  Widget _buildDynamicFeatures(dynamic pkg) {
+    final String tier = pkg['tier'] ?? '';
+    final Color color = _getPlanThemeColor(pkg);
+
+    // List out benefits based on features in the pkg
     List<Map<String, String>> benefits = [];
-    if (tier == 'CORE' || tier == 'PLUS' || tier == 'PRO' || tier == 'ELITE') {
-      benefits.addAll([
-        {'title': 'Send Unlimited Match Requests', 'desc': 'No daily swipe restrictions'},
-        {'title': 'Unlimited Posts & Likes', 'desc': 'Share and engage with no limits'},
-        {'title': 'Who Liked/Viewed Your Profile', 'desc': 'Unmask interested users instantly'},
-      ]);
+
+    final featuresMap = pkg['features'] as Map<String, dynamic>?;
+    if (featuresMap != null && featuresMap.isNotEmpty) {
+      final sortedKeys = featuresMap.keys.toList();
+      for (final key in sortedKeys) {
+        final val = featuresMap[key];
+        if (val is Map && val['enabled'] == true) {
+          final String name = val['name'] ?? key;
+          String desc = val['description'] ?? '';
+          if (desc.isEmpty) {
+            if (key == 'daily_likes') {
+              final limit = val['value'] ?? 'unlimited';
+              desc = 'Send up to $limit likes per day';
+            } else if (key == 'daily_match_requests') {
+              final limit = val['value'] ?? 'unlimited';
+              desc = 'Send up to $limit match requests per day';
+            } else if (key == 'daily_posts') {
+              final limit = val['value'] ?? 'unlimited';
+              desc = 'Create up to $limit posts per day';
+            } else if (key == 'super_likes') {
+              final limit = val['value'] ?? 0;
+              desc = 'Includes $limit super likes per cycle';
+            } else if (key == 'boosts') {
+              final limit = val['value'] ?? 0;
+              desc = 'Includes $limit profile boosts per cycle';
+            } else if (key == 'hide_profile') {
+              desc = 'Browse matches silently and anonymously';
+            } else if (key == 'priority_visibility') {
+              desc = 'Appear in front of users before non-premium users';
+            } else if (key == 'trust_badge') {
+              desc = 'Adds a premium verify check on your profile';
+            } else if (key == 'elite_badge') {
+              desc = 'Exclusive elite member badge layout';
+            } else if (key == 'who_liked_me') {
+              desc = 'Unmask interested users instantly';
+            } else if (key == 'who_viewed_me') {
+              desc = 'See who viewed your profile';
+            }
+          }
+          benefits.add({
+            'title': name,
+            'desc': desc,
+          });
+        }
+      }
     }
-    if (tier == 'PLUS' || tier == 'PRO' || tier == 'ELITE') {
-      benefits.addAll([
-        {'title': '10 Superlikes Per Cycle', 'desc': 'Stand out in their notifications'},
-        {'title': '2 Free Profile Boosts', 'desc': 'Automatic ranking push in searches'},
-        {'title': 'Hide Profile Mode', 'desc': 'Browse matches silently and anonymously'},
-      ]);
-    }
-    if (tier == 'PRO' || tier == 'ELITE') {
-      benefits.addAll([
-        {'title': 'Priority Visibility', 'desc': 'Appear in front of users before non-Pro users'},
-        {'title': '4 Free Profile Boosts', 'desc': 'Enhanced package cycle boosts'},
-        {'title': 'Trust Badge', 'desc': 'Adds a premium verify check on your profile'},
-      ]);
-    }
-    if (tier == 'ELITE') {
-      benefits.addAll([
-        {'title': 'Maximum Profile Boost', 'desc': 'Stay at the very top of search feeds'},
-        {'title': 'Elite User Badge', 'desc': 'Exclusive premium badge layout'},
-        {'title': 'Early Access to Pro Features', 'desc': 'Test and access new updates first'},
-      ]);
+
+    // Backwards compatibility fallback if no features mapped
+    if (benefits.isEmpty) {
+      if (tier == 'CORE' || tier == 'PLUS' || tier == 'PRO' || tier == 'ELITE') {
+        benefits.addAll([
+          {'title': 'Send Unlimited Match Requests', 'desc': 'No daily swipe restrictions'},
+          {'title': 'Unlimited Posts & Likes', 'desc': 'Share and engage with no limits'},
+          {'title': 'Who Liked/Viewed Your Profile', 'desc': 'Unmask interested users instantly'},
+        ]);
+      }
+      if (tier == 'PLUS' || tier == 'PRO' || tier == 'ELITE') {
+        benefits.addAll([
+          {'title': '10 Superlikes Per Cycle', 'desc': 'Stand out in their notifications'},
+          {'title': '2 Free Profile Boosts', 'desc': 'Automatic ranking push in searches'},
+          {'title': 'Hide Profile Mode', 'desc': 'Browse matches silently and anonymously'},
+        ]);
+      }
+      if (tier == 'PRO' || tier == 'ELITE') {
+        benefits.addAll([
+          {'title': 'Priority Visibility', 'desc': 'Appear in front of users before non-Pro users'},
+          {'title': '4 Free Profile Boosts', 'desc': 'Enhanced package cycle boosts'},
+          {'title': 'Trust Badge', 'desc': 'Adds a premium verify check on your profile'},
+        ]);
+      }
+      if (tier == 'ELITE') {
+        benefits.addAll([
+          {'title': 'Maximum Profile Boost', 'desc': 'Stay at the very top of search feeds'},
+          {'title': 'Elite User Badge', 'desc': 'Exclusive premium badge layout'},
+          {'title': 'Early Access to Pro Features', 'desc': 'Test and access new updates first'},
+        ]);
+      }
     }
 
     return Column(
@@ -946,15 +1054,29 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
     );
   }
 
-  Color _getPlanThemeColor(String tier) {
+  Color _getPlanThemeColor(dynamic pkg) {
+    if (pkg == null) return const Color(0xFF7F00FF);
+    final String? themeStr = pkg['theme_color'] ?? pkg['themeColor'];
+    if (themeStr != null && themeStr.startsWith('#')) {
+      try {
+        final hex = themeStr.replaceFirst('#', '');
+        return Color(int.parse('FF$hex', radix: 16));
+      } catch (_) {}
+    }
+    final String tier = pkg['tier'] ?? '';
     if (tier == 'CORE') return const Color(0xFF00A9FF);
     if (tier == 'PLUS') return const Color(0xFF7F00FF);
     if (tier == 'PRO') return const Color(0xFFE100FF);
     if (tier == 'ELITE') return const Color(0xFFFFB703);
-    return Colors.white;
+    return const Color(0xFF7F00FF);
   }
 
-  String _getPlanDescription(String tier) {
+  String _getPlanDescription(dynamic pkg) {
+    if (pkg == null) return '';
+    final String? desc = pkg['description'];
+    if (desc != null && desc.isNotEmpty) return desc;
+    
+    final String tier = pkg['tier'] ?? '';
     if (tier == 'CORE') return 'Perfect for daily swiping and standard messaging.';
     if (tier == 'PLUS') return 'Boost your reach and browse anonymously.';
     if (tier == 'PRO') return 'Stand out from the crowd with priority visibility.';

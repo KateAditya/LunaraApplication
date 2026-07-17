@@ -128,7 +128,7 @@ function formatRequest(r: StrangersMeetRequest) {
         eventDateTime: r.eventDateTime,
         numberOfPersons: r.numberOfPersons,
         chargesPerHead: Number(r.chargesPerHead || 0),
-        slotsFilled: Number(r.slotsFilled || 0),
+        slotsFilled: joinedCount,  // Use live-computed count, not stale DB column
         status: r.status,
         paymentAmount: r.paymentAmount ?? null,
         paymentStatus: r.paymentStatus,
@@ -967,6 +967,23 @@ export const confirmJoinPayment = async (req: Request, res: Response): Promise<v
             logger.warn('Failed to send join confirmation notification: ' + notifErr.message);
         }
 
+        // Emit socket event for real-time slots updates
+        try {
+            const updatedRequest = await StrangersMeetRequest.findByPk(request.id, { include: buildIncludes() });
+            if (updatedRequest) {
+                const formatted = formatRequest(updatedRequest);
+                const { io } = require('../server');
+                io.emit('strangers_meet_updated', {
+                    requestId: request.id,
+                    slotsFilled: formatted.slotsFilled,
+                    joinedCount: formatted.joinedCount,
+                    paymentCount: formatted.paymentCount,
+                });
+            }
+        } catch (socketErr) {
+            logger.warn('Socket emission failed for strangers_meet_updated:', socketErr);
+        }
+
         res.json({
             success: true,
             message: 'Successfully joined strangers meet! 🎉',
@@ -1254,9 +1271,43 @@ export const handleJoinRequest = async (req: Request, res: Response): Promise<vo
                 logger.warn('Failed to send join request accepted notification: ' + notifErr.message);
             }
 
+            // Emit socket event for real-time slots updates
+            try {
+                const updatedRequest = await StrangersMeetRequest.findByPk(request.id, { include: buildIncludes() });
+                if (updatedRequest) {
+                    const formatted = formatRequest(updatedRequest);
+                    const { io } = require('../server');
+                    io.emit('strangers_meet_updated', {
+                        requestId: request.id,
+                        slotsFilled: formatted.slotsFilled,
+                        joinedCount: formatted.joinedCount,
+                        paymentCount: formatted.paymentCount,
+                    });
+                }
+            } catch (socketErr) {
+                logger.warn('Socket emission failed for strangers_meet_updated:', socketErr);
+            }
+
             res.json({ success: true, message: 'Join request accepted!', data: joiner });
         } else {
             await joiner.update({ status: 'rejected' as any });
+
+            // Emit socket event for real-time slots updates
+            try {
+                const updatedRequest = await StrangersMeetRequest.findByPk(request.id, { include: buildIncludes() });
+                if (updatedRequest) {
+                    const formatted = formatRequest(updatedRequest);
+                    const { io } = require('../server');
+                    io.emit('strangers_meet_updated', {
+                        requestId: request.id,
+                        slotsFilled: formatted.slotsFilled,
+                        joinedCount: formatted.joinedCount,
+                        paymentCount: formatted.paymentCount,
+                    });
+                }
+            } catch (socketErr) {
+                logger.warn('Socket emission failed for strangers_meet_updated:', socketErr);
+            }
 
             res.json({ success: true, message: 'Join request rejected.', data: joiner });
         }
