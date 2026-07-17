@@ -52,110 +52,125 @@ class _OtpScreenState extends State<OtpScreen>
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeader(context),
-              const SizedBox(height: 40),
-              if (widget.isRegistration) _buildProgressBar(),
-              const SizedBox(height: 40),
-              Text(
-                'VERIFICATION',
-                style: LunaraTheme.bodyStyle.copyWith(
-                  fontSize: 12,
-                  letterSpacing: 2,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'ENTER OTP',
-                style: LunaraTheme.headingStyle.copyWith(
-                  fontSize: 32,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'We sent a 4-digit code to your registered mobile number.',
-                style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), height: 1.5),
-              ),
-              const SizedBox(height: 60),
-              _buildOtpFields(),
-              const SizedBox(height: 40),
-              Center(
-                child: TextButton(
-                  onPressed: () {},
-                  child: const Text(
-                    'RESEND CODE IN 00:59',
-                    style: TextStyle(
-                      color: LunaraTheme.primaryRich,
-                      letterSpacing: 1.5,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              physics: const ClampingScrollPhysics(),
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: constraints.maxHeight - 48,
+                  ),
+                  child: IntrinsicHeight(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildHeader(context),
+                        const SizedBox(height: 40),
+                        if (widget.isRegistration) _buildProgressBar(),
+                        const SizedBox(height: 40),
+                        Text(
+                          'VERIFICATION',
+                          style: LunaraTheme.bodyStyle.copyWith(
+                            fontSize: 12,
+                            letterSpacing: 2,
+                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'ENTER OTP',
+                          style: LunaraTheme.headingStyle.copyWith(
+                            fontSize: 32,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'We sent a 4-digit code to your registered mobile number.',
+                          style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), height: 1.5),
+                        ),
+                        const SizedBox(height: 40),
+                        _buildOtpFields(),
+                        const SizedBox(height: 40),
+                        Center(
+                          child: TextButton(
+                            onPressed: () {},
+                            child: const Text(
+                              'RESEND CODE IN 00:59',
+                              style: TextStyle(
+                                color: LunaraTheme.primaryRich,
+                                letterSpacing: 1.5,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        const SizedBox(height: 24),
+                        _isLoading
+                            ? const Center(
+                                child: CircularProgressIndicator(
+                                  color: LunaraTheme.primaryRich,
+                                ),
+                              )
+                            : LunaraActionButton(
+                                text: 'VERIFY',
+                                onPressed: () async {
+                                  String otp = _controllers.map((c) => c.text).join();
+                                  if (otp.length != 4) {
+                                    TopErrorBanner.show(context, 'Please enter a valid 4-digit OTP');
+                                    return;
+                                  }
+
+                                  String phone = widget.collectedData?['phone'] ?? '';
+                                  if (phone.isEmpty) {
+                                    TopErrorBanner.show(context, 'Phone number missing');
+                                    return;
+                                  }
+
+                                  setState(() => _isLoading = true);
+                                  final error = await AuthService.verifyOtp(phone, otp);
+
+                                  if (!mounted) return;
+                                  setState(() => _isLoading = false);
+
+                                  if (error != null) {
+                                    TopErrorBanner.show(context, error);
+                                    return;
+                                  }
+
+                                  if (widget.isRegistration) {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => PasswordSetupScreen(
+                                          collectedData: widget.collectedData,
+                                        ),
+                                      ),
+                                    );
+                                  } else {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => ResetPasswordScreen(
+                                          phone: phone,
+                                          otp: otp,
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                },
+                              ),
+                      ],
                     ),
                   ),
                 ),
               ),
-              const Spacer(),
-              _isLoading
-                  ? const Center(
-                      child: CircularProgressIndicator(
-                        color: LunaraTheme.primaryRich,
-                      ),
-                    )
-                  : LunaraActionButton(
-                      text: 'VERIFY',
-                      onPressed: () async {
-                        String otp = _controllers.map((c) => c.text).join();
-                        if (otp.length != 4) {
-                          TopErrorBanner.show(context, 'Please enter a valid 4-digit OTP');
-                          return;
-                        }
-
-                        String phone = widget.collectedData?['phone'] ?? '';
-                        if (phone.isEmpty) {
-                          TopErrorBanner.show(context, 'Phone number missing');
-                          return;
-                        }
-
-                        setState(() => _isLoading = true);
-                        final error = await AuthService.verifyOtp(phone, otp);
-
-                        if (!mounted) return;
-                        setState(() => _isLoading = false);
-
-                        if (error != null) {
-                          TopErrorBanner.show(context, error);
-                          return;
-                        }
-
-                        if (widget.isRegistration) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => PasswordSetupScreen(
-                                collectedData: widget.collectedData,
-                              ),
-                            ),
-                          );
-                        } else {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => ResetPasswordScreen(
-                                phone: phone,
-                                otp: otp,
-                              ),
-                            ),
-                          );
-                        }
-                      },
-                    ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );

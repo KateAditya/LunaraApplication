@@ -23,6 +23,31 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     // Check if the user's own plan (no join button needed) and
     // pre-mark as already requested if provided by feed data.
     _alreadyRequested = widget.plan['hasRequested'] == true;
+    _checkRequestStatus();
+  }
+
+  Future<void> _checkRequestStatus() async {
+    try {
+      final myRequests = await ApiService.fetchMyPartyPlanRequests();
+      final targetPlanId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
+      if (targetPlanId.isEmpty) return;
+      
+      bool requested = false;
+      for (final req in myRequests) {
+        final planId = req['partyPlanId']?.toString() ?? req['planId']?.toString();
+        if (planId == targetPlanId) {
+          requested = true;
+          break;
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _alreadyRequested = requested;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error checking request status in PartyPlanDetailScreen: $e');
+    }
   }
 
   String _formatDateTime(dynamic raw) {

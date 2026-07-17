@@ -53,12 +53,18 @@ class ProfileShareSheet extends StatelessWidget {
     final whatsappUrl = Uri.parse('whatsapp://send?text=${Uri.encodeComponent(_shareText)}');
     final webUrl = Uri.parse('https://wa.me/?text=${Uri.encodeComponent(_shareText)}');
     
-    if (await canLaunchUrl(whatsappUrl)) {
+    final canWhatsApp = await canLaunchUrl(whatsappUrl);
+    if (!context.mounted) return;
+    if (canWhatsApp) {
       await launchUrl(whatsappUrl);
-    } else if (await canLaunchUrl(webUrl)) {
-      await launchUrl(webUrl, mode: LaunchMode.externalApplication);
     } else {
-      _showSnackbar(context, 'Could not open WhatsApp.', Colors.red);
+      final canWeb = await canLaunchUrl(webUrl);
+      if (!context.mounted) return;
+      if (canWeb) {
+        await launchUrl(webUrl, mode: LaunchMode.externalApplication);
+      } else {
+        _showSnackbar(context, 'Could not open WhatsApp.', Colors.red);
+      }
     }
   }
 
@@ -66,7 +72,9 @@ class ProfileShareSheet extends StatelessWidget {
     final emailUrl = Uri.parse(
       'mailto:?subject=${Uri.encodeComponent("Check out $name on Lunara!")}&body=${Uri.encodeComponent(_shareText)}',
     );
-    if (await canLaunchUrl(emailUrl)) {
+    final canEmail = await canLaunchUrl(emailUrl);
+    if (!context.mounted) return;
+    if (canEmail) {
       await launchUrl(emailUrl);
     } else {
       _showSnackbar(context, 'Could not open Email client.', Colors.red);
@@ -90,6 +98,7 @@ class ProfileShareSheet extends StatelessWidget {
             : null,
       );
     } catch (e) {
+      if (!context.mounted) return;
       _showSnackbar(context, 'Could not share natively.', Colors.red);
     }
   }

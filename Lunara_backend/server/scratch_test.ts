@@ -11,3 +11,6 @@ const venue = {
 
 console.log('Without Z (TZ=UTC):', validateVenueTimingAndHolidays(venue, '2026-07-19T20:00:00.000'));
 console.log('With Z (TZ=UTC):', validateVenueTimingAndHolidays(venue, '2026-07-19T20:00:00.000Z'));
+console.log('14:30Z (8 PM IST) With Z:', validateVenueTimingAndHolidays(venue, '2026-07-24T14:30:00.000Z'));
+console.log('14:30 without Z:', validateVenueTimingAndHolidays(venue, '2026-07-24T14:30:00.000'));
+

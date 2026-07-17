@@ -22,6 +22,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _isLoading = true;
   StrangersMeetRequest? _meetRequest;
   bool _isProcessing = false;
+  bool _alreadyRequested = false;
   late Razorpay _razorpay;
   String? _lastOrderId;
 
@@ -33,11 +34,36 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handleRazorpayError);
     _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
 
+    _alreadyRequested = widget.post['hasRequested'] == true;
+
     if (widget.post['type'] == 'strangers_meet') {
       _loadStrangersMeetDetails();
       ApiService.addSocketListener('strangers_meet_updated', _onStrangersMeetUpdated);
     } else {
       _isLoading = false;
+      _loadPartyPlanDetails();
+    }
+  }
+
+  Future<void> _loadPartyPlanDetails() async {
+    try {
+      final myRequests = await ApiService.fetchMyPartyPlanRequests();
+      final targetPlanId = widget.post['id']?.toString() ?? '';
+      bool requested = false;
+      for (final req in myRequests) {
+        final planId = req['partyPlanId']?.toString() ?? req['planId']?.toString();
+        if (planId == targetPlanId) {
+          requested = true;
+          break;
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _alreadyRequested = requested;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading party plan details in PostDetailScreen: $e');
     }
   }
 
@@ -1546,110 +1572,166 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           : SafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                child: Container(
-                  width: double.infinity,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    gradient: LunaraTheme.purpleGradient,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFFb952eb).withValues(alpha: 0.3),
-                        blurRadius: 20,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
-                  ),
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      final messenger = ScaffoldMessenger.of(context);
-                      final success = await ApiService.requestToJoinPartyPlan(
-                        widget.post['id'],
-                      );
-                      if (success) {
-                        messenger.showSnackBar(
-                          SnackBar(
-                            backgroundColor: Colors.transparent,
-                            elevation: 0,
-                            behavior: SnackBarBehavior.floating,
-                            content: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 16,
-                              ),
-                              decoration: BoxDecoration(
-                                gradient: LunaraTheme.purpleGradient,
-                                borderRadius: BorderRadius.circular(16),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
-                                    blurRadius: 15,
-                                    offset: const Offset(0, 8),
-                                  ),
-                                ],
-                              ),
-                              child: const Row(
-                                children: [
-                                  Icon(
-                                    Icons.auto_awesome,
-                                    color: Colors.white,
-                                    size: 20,
-                                  ),
-                                  SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      'YOUR REQUEST TO JOIN THE VIBE HAS BEEN SENT!',
-                                      style: TextStyle(
-                                        fontFamily: 'AllroundGothic',
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        letterSpacing: 0.5,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      } else {
-                        messenger.showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Failed to send request. You may have already requested.',
-                            ),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.transparent,
-                      shadowColor: Colors.transparent,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                    ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.bolt, color: Colors.white),
-                        SizedBox(width: 12),
-                        Text(
-                          'JOIN THE VIBE',
-                          style: TextStyle(
-                            fontFamily: 'AllroundGothic',
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1,
+                child: _alreadyRequested
+                    ? Container(
+                        width: double.infinity,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          color: Colors.green.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: Colors.green.withValues(alpha: 0.4),
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.check_circle_rounded, color: Colors.green),
+                            SizedBox(width: 12),
+                            Text(
+                              'REQUEST SENT — AWAITING HOST APPROVAL',
+                              style: TextStyle(
+                                fontFamily: 'AllroundGothic',
+                                color: Colors.green,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : Container(
+                        width: double.infinity,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          gradient: _isProcessing
+                              ? null
+                              : LunaraTheme.purpleGradient,
+                          color: _isProcessing
+                              ? Colors.grey.withValues(alpha: 0.3)
+                              : null,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: _isProcessing
+                              ? null
+                              : [
+                                  BoxShadow(
+                                    color: const Color(0xFFb952eb).withValues(alpha: 0.3),
+                                    blurRadius: 20,
+                                    offset: const Offset(0, 10),
+                                  ),
+                                ],
+                        ),
+                        child: ElevatedButton(
+                          onPressed: _isProcessing
+                              ? null
+                              : () async {
+                                  setState(() => _isProcessing = true);
+                                  final messenger = ScaffoldMessenger.of(context);
+                                  final success = await ApiService.requestToJoinPartyPlan(
+                                    widget.post['id'],
+                                  );
+                                  if (mounted) {
+                                    setState(() => _isProcessing = false);
+                                  }
+                                  if (success) {
+                                    if (mounted) {
+                                      setState(() {
+                                        _alreadyRequested = true;
+                                      });
+                                    }
+                                    messenger.showSnackBar(
+                                      SnackBar(
+                                        backgroundColor: Colors.transparent,
+                                        elevation: 0,
+                                        behavior: SnackBarBehavior.floating,
+                                        content: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 20,
+                                            vertical: 16,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            gradient: LunaraTheme.purpleGradient,
+                                            borderRadius: BorderRadius.circular(16),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                                                blurRadius: 15,
+                                                offset: const Offset(0, 8),
+                                              ),
+                                            ],
+                                          ),
+                                          child: const Row(
+                                            children: [
+                                              Icon(
+                                                Icons.auto_awesome,
+                                                color: Colors.white,
+                                                size: 20,
+                                              ),
+                                              SizedBox(width: 12),
+                                              Expanded(
+                                                child: Text(
+                                                  'YOUR REQUEST TO JOIN THE VIBE HAS BEEN SENT!',
+                                                  style: TextStyle(
+                                                    fontFamily: 'AllroundGothic',
+                                                    color: Colors.white,
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.bold,
+                                                    letterSpacing: 0.5,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  } else {
+                                    messenger.showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Failed to send request. You may have already requested.',
+                                        ),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            shadowColor: Colors.transparent,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _isProcessing
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.bolt, color: Colors.white),
+                              const SizedBox(width: 12),
+                              Text(
+                                _isProcessing ? 'SENDING REQUEST...' : 'JOIN THE VIBE',
+                                style: const TextStyle(
+                                  fontFamily: 'AllroundGothic',
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 1,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
               ),
             ),
     );

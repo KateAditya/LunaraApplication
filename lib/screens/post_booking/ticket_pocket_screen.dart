@@ -326,6 +326,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                   table: table,
                   guests: guests.toString(),
                   package: table,
+                  totalPrice: booking['totalAmount']?.toString() ?? booking['paymentAmount']?.toString(),
                   ticketId: booking['ticketCode'] ?? booking['id']?.toString().substring(0, 8),
                 ),
               ),

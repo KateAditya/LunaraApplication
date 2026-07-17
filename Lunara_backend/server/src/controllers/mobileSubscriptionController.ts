@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { Op } from 'sequelize';
-import SubscriptionPackage from '../models/SubscriptionPackage';
+import SubscriptionPackage, { PackageTier } from '../models/SubscriptionPackage';
 import SubscriptionFeature from '../models/SubscriptionFeature';
 import SubscriptionPlanFeature from '../models/SubscriptionPlanFeature';
 import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription';
@@ -471,14 +471,33 @@ export const createBoostOrder = async (req: Request, res: Response): Promise<voi
             return;
         }
 
-        const sub = await UserSubscription.findOne({
+        let sub = await UserSubscription.findOne({
             where: { userId, status: SubscriptionStatus.ACTIVE },
             order: [['createdAt', 'DESC']],
         });
 
         if (!sub) {
-            res.status(400).json({ success: false, message: 'Active subscription required to purchase boosts' });
-            return;
+            // Find FREE package or any package to associate with this subscription
+            let freePackage = await SubscriptionPackage.findOne({
+                where: { tier: PackageTier.FREE }
+            });
+            if (!freePackage) {
+                freePackage = await SubscriptionPackage.findOne({ order: [['price', 'ASC']] });
+            }
+            if (freePackage) {
+                sub = await UserSubscription.create({
+                    userId,
+                    packageId: freePackage.id,
+                    status: SubscriptionStatus.ACTIVE,
+                    startDate: new Date(),
+                    endDate: new Date(2099, 0, 1), // practically lifetime
+                    superlikesRemaining: 0,
+                    boostsRemaining: 0,
+                });
+            } else {
+                res.status(400).json({ success: false, message: 'No subscription package found to link boost' });
+                return;
+            }
         }
 
         let boostPrice = 49;
@@ -534,14 +553,33 @@ export const purchaseBoost = async (req: Request, res: Response): Promise<void> 
             return;
         }
 
-        const sub = await UserSubscription.findOne({
+        let sub = await UserSubscription.findOne({
             where: { userId, status: SubscriptionStatus.ACTIVE },
             order: [['createdAt', 'DESC']],
         });
 
         if (!sub) {
-            res.status(400).json({ success: false, message: 'Active subscription required' });
-            return;
+            // Find FREE package or any package to associate with this subscription
+            let freePackage = await SubscriptionPackage.findOne({
+                where: { tier: PackageTier.FREE }
+            });
+            if (!freePackage) {
+                freePackage = await SubscriptionPackage.findOne({ order: [['price', 'ASC']] });
+            }
+            if (freePackage) {
+                sub = await UserSubscription.create({
+                    userId,
+                    packageId: freePackage.id,
+                    status: SubscriptionStatus.ACTIVE,
+                    startDate: new Date(),
+                    endDate: new Date(2099, 0, 1), // practically lifetime
+                    superlikesRemaining: 0,
+                    boostsRemaining: 0,
+                });
+            } else {
+                res.status(400).json({ success: false, message: 'No subscription package found to link boost' });
+                return;
+            }
         }
 
         // Verify Razorpay Payment Signature

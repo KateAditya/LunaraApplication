@@ -20,8 +20,10 @@ export const validateVenueTimingAndHolidays = (
 
         if (typeof eventDateTime === 'string') {
             const trimmed = eventDateTime.trim();
+            // Check if the string has a timezone designator (like 'Z', '+05:30', '-08:00')
+            const hasTimezone = /Z|[+-]\d{2}(:?\d{2})?$/.test(trimmed);
             // Try parsing YYYY-MM-DD[T or space]HH:mm:ss literally first (ignoring any timezone offset)
-            const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+            const match = !hasTimezone ? trimmed.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/) : null;
             if (match) {
                 year = parseInt(match[1], 10);
                 month = parseInt(match[2], 10) - 1; // 0-indexed

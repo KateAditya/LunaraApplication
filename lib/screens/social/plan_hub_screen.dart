@@ -71,64 +71,18 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     });
   }
 
-  bool _isVenueOpenOnDate(Venue venue, DateTime date) {
-    final daysOpen = venue.daysOpen;
-    if (daysOpen == null || daysOpen.isEmpty) {
-      return true; // default to open
-    }
-    final weekdaysMap = {
-      1: 'Monday',
-      2: 'Tuesday',
-      3: 'Wednesday',
-      4: 'Thursday',
-      5: 'Friday',
-      6: 'Saturday',
-      7: 'Sunday',
-    };
-    final weekdayName = weekdaysMap[date.weekday];
-    if (weekdayName == null) return false;
-
-    return daysOpen.any((d) {
-      final str = d.toString().trim().toLowerCase();
-      final fullDay = weekdayName.toLowerCase();
-      final shortDay = weekdayName.substring(0, 3).toLowerCase();
-      return str.contains(fullDay) || str.contains(shortDay);
-    });
+  String _formatToISTString(DateTime date, TimeOfDay time) {
+    final y = date.year.toString().padLeft(4, '0');
+    final m = date.month.toString().padLeft(2, '0');
+    final d = date.day.toString().padLeft(2, '0');
+    final h = time.hour.toString().padLeft(2, '0');
+    final min = time.minute.toString().padLeft(2, '0');
+    return '$y-$m-${d}T$h:$min:00.000+05:30';
   }
 
-  bool _isTimeWithinVenueHours(
-    TimeOfDay time,
-    String? openingStr,
-    String? closingStr,
-  ) {
-    if (openingStr == null ||
-        openingStr.isEmpty ||
-        closingStr == null ||
-        closingStr.isEmpty) {
-      return true; // no timing constraint
-    }
-
-    final openParts = openingStr.split(':');
-    if (openParts.length < 2) return true;
-    final openHour = int.tryParse(openParts[0]) ?? 0;
-    final openMin = int.tryParse(openParts[1]) ?? 0;
-
-    final closeParts = closingStr.split(':');
-    if (closeParts.length < 2) return true;
-    final closeHour = int.tryParse(closeParts[0]) ?? 0;
-    final closeMin = int.tryParse(closeParts[1]) ?? 0;
-
-    final selectedMinutes = time.hour * 60 + time.minute;
-    final openMinutes = openHour * 60 + openMin;
-    final closeMinutes = closeHour * 60 + closeMin;
-
-    if (closeMinutes < openMinutes) {
-      // Overlap past midnight, e.g. 12:00 PM to 01:30 AM next day
-      return selectedMinutes >= openMinutes || selectedMinutes <= closeMinutes;
-    } else {
-      // Normal hours, e.g. 10:00 AM to 11:00 PM
-      return selectedMinutes >= openMinutes && selectedMinutes <= closeMinutes;
-    }
+  DateTime _parseToKolkata(String isoStr) {
+    final dt = DateTime.parse(isoStr).toUtc();
+    return dt.add(const Duration(hours: 5, minutes: 30));
   }
 
   String _formatTimeOfBooking(String? timeStr) {
@@ -1793,48 +1747,13 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         );
                                       }
                                     } else if (selectedDate != null) {
-                                      final yyyy = selectedDate!.year;
-                                      final mm = selectedDate!.month
-                                          .toString()
-                                          .padLeft(2, '0');
-                                      final dd = selectedDate!.day
-                                          .toString()
-                                          .padLeft(2, '0');
-                                      final dateStr = '$yyyy-$mm-$dd';
-                                      final weekdaysMap = {
-                                        1: 'Monday',
-                                        2: 'Tuesday',
-                                        3: 'Wednesday',
-                                        4: 'Thursday',
-                                        5: 'Friday',
-                                        6: 'Saturday',
-                                        7: 'Sunday',
-                                      };
-                                      final weekdayName =
-                                          weekdaysMap[selectedDate!.weekday];
-                                      final isOpenOnWeekday =
-                                          weekdayName != null &&
-                                          v.daysOpen != null &&
-                                          v.daysOpen!.any((d) {
-                                            final str = d
-                                                .toString()
-                                                .trim()
-                                                .toLowerCase();
-                                            final fullDay = weekdayName
-                                                .toLowerCase();
-                                            final shortDay = weekdayName
-                                                .substring(0, 3)
-                                                .toLowerCase();
-                                            return str.contains(fullDay) ||
-                                                str.contains(shortDay);
-                                          });
-                                      final isHoliday =
-                                          v.closedDates != null &&
-                                          v.closedDates!.contains(dateStr);
-                                      if (isHoliday ||
-                                          (!isOpenOnWeekday &&
-                                              v.daysOpen != null &&
-                                              v.daysOpen!.isNotEmpty)) {
+                                      final invalidReason = v.getInvalidReason(
+                                        selectedDate!,
+                                        const TimeOfDay(hour: 12, minute: 0),
+                                      );
+                                      if (invalidReason != null &&
+                                          (invalidReason.contains('closed') ||
+                                              invalidReason.contains('not open'))) {
                                         selectedDate = null;
                                         dateCtrl.clear();
                                         ScaffoldMessenger.of(
@@ -1842,7 +1761,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         ).showSnackBar(
                                           SnackBar(
                                             content: Text(
-                                              'Cleared date selection because ${v.name} is closed on that day.',
+                                              'Cleared date selection: $invalidReason',
                                             ),
                                             backgroundColor:
                                                 Colors.orangeAccent,
@@ -2890,9 +2809,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                             venueId: selectedVenue!.id,
                                             subject: subjectCtrl.text.trim(),
                                             tagline: taglineCtrl.text.trim(),
-                                            eventDateTime: dt
-                                                .toUtc()
-                                                .toIso8601String(),
+                                            eventDateTime: _formatToISTString(selectedDate!, selectedTime!),
                                             numberOfPersons:
                                                 selectedUserIds.length,
                                             chargesPerHead: 0.0,
@@ -2958,9 +2875,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                       final pDtStr = p['planDateTime'];
                                       if (pDtStr == null) return false;
                                       try {
-                                        final pDt = DateTime.parse(
-                                          pDtStr,
-                                        ).toLocal();
+                                        final pDt = _parseToKolkata(pDtStr);
                                         final pDateStr = DateFormat(
                                           'yyyy-MM-dd',
                                         ).format(pDt);
@@ -2994,9 +2909,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         'message': descriptionCtrl.text.isEmpty
                                             ? "Let's party at ${selectedVenue!.name}"
                                             : descriptionCtrl.text,
-                                        'planDateTime': dt
-                                            .toUtc()
-                                            .toIso8601String(),
+                                        'planDateTime': _formatToISTString(selectedDate!, selectedTime!),
                                         'privacyType': selectedPrivacy
                                             .toLowerCase(),
                                         'paymentStatus': 'pending',
@@ -3547,49 +3460,49 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     selectedVenue = v;
                                     // Validate previously selected date & time
                                     if (selectedDate != null &&
-                                        !_isVenueOpenOnDate(v, selectedDate!)) {
-                                      selectedDate = null;
-                                      selectedTime = null;
-                                      dateCtrl.clear();
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            'Cleared date selection because ${v.name} is closed on that day.',
-                                          ),
-                                          backgroundColor: Colors.orangeAccent,
-                                        ),
+                                        selectedTime != null) {
+                                      final invalidReason = v.getInvalidReason(
+                                        selectedDate!,
+                                        selectedTime!,
                                       );
-                                    } else if (selectedTime != null &&
-                                        !_isTimeWithinVenueHours(
-                                          selectedTime!,
-                                          v.openingTime,
-                                          v.closingTime,
-                                        )) {
-                                      selectedTime = null;
-                                      dateCtrl.clear();
-                                      if (selectedDate != null) {
-                                        dateCtrl.text = DateFormat(
-                                          'MMM dd, yyyy',
-                                        ).format(selectedDate!);
+                                      if (invalidReason != null) {
+                                        selectedDate = null;
+                                        selectedTime = null;
+                                        dateCtrl.clear();
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Cleared date/time selection: $invalidReason',
+                                            ),
+                                            backgroundColor:
+                                                Colors.orangeAccent,
+                                          ),
+                                        );
                                       }
-                                      final openStr = _formatTimeOfBooking(
-                                        v.openingTime,
+                                    } else if (selectedDate != null) {
+                                      final invalidReason = v.getInvalidReason(
+                                        selectedDate!,
+                                        const TimeOfDay(hour: 12, minute: 0),
                                       );
-                                      final closeStr = _formatTimeOfBooking(
-                                        v.closingTime,
-                                      );
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            'Cleared time selection because it is outside ${v.name}\'s working hours ($openStr - $closeStr).',
+                                      if (invalidReason != null &&
+                                          (invalidReason.contains('closed') ||
+                                              invalidReason.contains('not open'))) {
+                                        selectedDate = null;
+                                        dateCtrl.clear();
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Cleared date selection: $invalidReason',
+                                            ),
+                                            backgroundColor:
+                                                Colors.orangeAccent,
                                           ),
-                                          backgroundColor: Colors.orangeAccent,
-                                        ),
-                                      );
+                                        );
+                                      }
                                     }
                                   });
                                 },
@@ -4497,7 +4410,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                   venueId: selectedVenue!.id,
                                   subject: subjectCtrl.text.trim(),
                                   tagline: taglineCtrl.text.trim(),
-                                  eventDateTime: dt.toUtc().toIso8601String(),
+                                  eventDateTime: _formatToISTString(selectedDate!, selectedTime!),
                                   numberOfPersons: numberOfPersons,
                                   chargesPerHead: 0.0,
                                   mobileNumber: mobileCtrl.text.trim(),

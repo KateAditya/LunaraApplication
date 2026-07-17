@@ -47,7 +47,11 @@ class _SafetyCheckScreenState extends State<SafetyCheckScreen> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(28),
               ),
-              child: Padding(
+              insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+              child: Container(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height - MediaQuery.of(context).viewInsets.bottom - 48,
+                ),
                 padding: const EdgeInsets.all(24),
                 child: SingleChildScrollView(
                   child: Column(

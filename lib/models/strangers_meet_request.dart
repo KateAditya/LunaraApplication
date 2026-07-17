@@ -78,7 +78,7 @@ class StrangersMeetRequest {
     this.joiners,
   });
 
-  factory StrangersMeetRequest.fromJson(Map<String, dynamic> json) {
+  factory StrangersMeetRequest.fromJson(Map<dynamic, dynamic> json) {
     final eventDateRaw = json['eventDateTime'] ?? json['event_date_time'];
     final numPersonsRaw = json['numberOfPersons'] ?? json['number_of_persons'];
     final chargesPerHeadRaw =

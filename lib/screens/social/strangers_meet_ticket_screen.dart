@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -7,18 +9,76 @@ import '../../models/strangers_meet_request.dart';
 import '../../widgets/lunara_profile_image.dart';
 import '../../services/api_service.dart';
 
-class StrangersMeetTicketScreen extends StatelessWidget {
+class StrangersMeetTicketScreen extends StatefulWidget {
   final StrangersMeetRequest request;
 
   const StrangersMeetTicketScreen({super.key, required this.request});
 
-  void _shareTicket(BuildContext context) {
-    final venueName = request.venue?['name'] ?? 'Unknown Venue';
-    final dateStr = DateFormat('MMM dd, yyyy').format(request.eventDateTime);
-    final timeStr = DateFormat('hh:mm a').format(request.eventDateTime);
-    final ticketId = request.ticketId ?? 'TICKET';
+  @override
+  State<StrangersMeetTicketScreen> createState() => _StrangersMeetTicketScreenState();
+}
 
-    final hostUser = request.user ?? {};
+class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
+  Position? _currentPosition;
+  StreamSubscription<Position>? _positionStreamSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _initLocation();
+  }
+
+  @override
+  void dispose() {
+    _positionStreamSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _initLocation() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return;
+      }
+      if (permission == LocationPermission.deniedForever) return;
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      );
+      if (mounted) {
+        setState(() {
+          _currentPosition = position;
+        });
+      }
+
+      _positionStreamSubscription = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 10,
+        ),
+      ).listen((Position pos) {
+        if (mounted) {
+          setState(() {
+            _currentPosition = pos;
+          });
+        }
+      });
+    } catch (e) {
+      debugPrint("Error in StrangersMeetTicketScreen location initialization: $e");
+    }
+  }
+
+  void _shareTicket(BuildContext context) {
+    final venueName = widget.request.venue?['name'] ?? 'Unknown Venue';
+    final dateStr = DateFormat('MMM dd, yyyy').format(widget.request.eventDateTime);
+    final timeStr = DateFormat('hh:mm a').format(widget.request.eventDateTime);
+    final ticketId = widget.request.ticketId ?? 'TICKET';
+
+    final hostUser = widget.request.user ?? {};
     final hostName = '${hostUser['firstName'] ?? ''} ${hostUser['lastName'] ?? ''}'.trim();
     final cleanHostName = hostName.isNotEmpty ? hostName : 'Host';
 
@@ -27,8 +87,8 @@ class StrangersMeetTicketScreen extends StatelessWidget {
     final cleanJoinerName = joinerName.isNotEmpty ? joinerName : 'Joiner';
 
     final shareText = 'My Strangers Meet Booking on Lunara is Confirmed! 🥳\n\n'
-        'Event: ${request.subject}\n'
-        'Tagline: ${request.tagline}\n'
+        'Event: ${widget.request.subject}\n'
+        'Tagline: ${widget.request.tagline}\n'
         'Venue: $venueName\n'
         'Date: $dateStr • $timeStr\n'
         'Host: $cleanHostName\n'
@@ -48,11 +108,11 @@ class StrangersMeetTicketScreen extends StatelessWidget {
 
   Map<String, dynamic> _resolveJoinerUser() {
     Map<String, dynamic> joinerUser = {};
-    if (request.joiners != null && request.joiners!.isNotEmpty) {
+    if (widget.request.joiners != null && widget.request.joiners!.isNotEmpty) {
       final currentUid = ApiService.currentUserId;
-      final match = request.joiners!.firstWhere(
+      final match = widget.request.joiners!.firstWhere(
         (j) => (j['user']?['id'] ?? j['user']?['_id'] ?? '') == currentUid || (j['id'] ?? j['_id'] ?? '') == currentUid,
-        orElse: () => request.joiners![0],
+        orElse: () => widget.request.joiners![0],
       );
       if (match is Map) {
         joinerUser = Map<String, dynamic>.from(match['user'] ?? match);
@@ -73,15 +133,15 @@ class StrangersMeetTicketScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final venueName = request.venue?['name'] ?? 'Unknown Venue';
-    final venueCity = request.venue?['city'] ?? 'Unknown City';
-    final venueArea = request.venue?['area'] ?? '';
-    final venueAddress = request.venue?['address'] ?? '${venueArea.isNotEmpty ? "$venueArea, " : ""}$venueCity';
-    final images = request.venue?['images'];
-    final String venueImageUrl = request.venue?['imageUrl'] ?? (images is List && images.isNotEmpty ? (images.first?['filePath']?.toString() ?? '') : '') ?? '';
+    final venueName = widget.request.venue?['name'] ?? 'Unknown Venue';
+    final venueCity = widget.request.venue?['city'] ?? 'Unknown City';
+    final venueArea = widget.request.venue?['area'] ?? '';
+    final venueAddress = widget.request.venue?['address'] ?? '${venueArea.isNotEmpty ? "$venueArea, " : ""}$venueCity';
+    final images = widget.request.venue?['images'];
+    final String venueImageUrl = widget.request.venue?['imageUrl'] ?? (images is List && images.isNotEmpty ? (images.first?['filePath']?.toString() ?? '') : '') ?? '';
     final cleanVenueImageUrl = venueImageUrl.startsWith('/') ? '${ApiService.baseUrl}$venueImageUrl' : venueImageUrl;
 
-    final hostUser = request.user ?? {};
+    final hostUser = widget.request.user ?? {};
     final hostName = '${hostUser['firstName'] ?? ''} ${hostUser['lastName'] ?? ''}'.trim();
     final cleanHostName = hostName.isNotEmpty ? hostName : 'Host';
     final hostUsername = '@${hostUser['username'] ?? hostUser['firstName']?.toString().toLowerCase() ?? 'host'}';
@@ -91,8 +151,34 @@ class StrangersMeetTicketScreen extends StatelessWidget {
     final cleanJoinerName = joinerName.isNotEmpty ? joinerName : 'Joiner';
     final joinerUsername = '@${joinerUser['username'] ?? joinerUser['firstName']?.toString().toLowerCase() ?? 'joiner'}';
 
-    final ticketId = request.ticketId ?? 'TICKET';
-    final amountPaid = request.paymentAmount ?? request.chargesPerHead;
+    final ticketId = widget.request.ticketId ?? 'TICKET';
+    final amountPaid = widget.request.paymentAmount ?? widget.request.chargesPerHead;
+
+    final latVal = widget.request.venue?['latitude'];
+    final lngVal = widget.request.venue?['longitude'];
+    double? lat;
+    double? lng;
+    if (latVal != null) {
+      lat = double.tryParse(latVal.toString());
+    }
+    if (lngVal != null) {
+      lng = double.tryParse(lngVal.toString());
+    }
+
+    String distanceText = '';
+    if (_currentPosition != null && lat != null && lng != null && lat != 0.0 && lng != 0.0) {
+      double distanceInMeters = Geolocator.distanceBetween(
+        _currentPosition!.latitude,
+        _currentPosition!.longitude,
+        lat,
+        lng,
+      );
+      if (distanceInMeters < 1000) {
+        distanceText = '${distanceInMeters.toStringAsFixed(0)} m';
+      } else {
+        distanceText = '${(distanceInMeters / 1000).toStringAsFixed(1)} km';
+      }
+    }
 
     return Scaffold(
       backgroundColor: LunaraTheme.midnightBlack,
@@ -152,7 +238,7 @@ class StrangersMeetTicketScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: [
                     BoxShadow(
-                      color: LunaraTheme.electricViolet.withValues(alpha: 0.4),
+                      color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
                       blurRadius: 20,
                       offset: const Offset(0, 10),
                     ),
@@ -175,34 +261,53 @@ class StrangersMeetTicketScreen extends StatelessWidget {
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: const Text(
-                                  'LUNARA MEET',
-                                  style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1),
+                                  'STRANGERS MEET',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 1,
+                                  ),
                                 ),
                               ),
                               Text(
-                                ticketId,
-                                style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
+                                ticketId.length > 12 ? ticketId.substring(0, 12) : ticketId,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  fontFamily: 'monospace',
+                                ),
                               ),
                             ],
                           ),
+                          const SizedBox(height: 20),
+                          Text(
+                            widget.request.subject.toUpperCase(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w900,
+                              height: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            widget.request.tagline,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.8),
+                              fontSize: 13,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
                           const SizedBox(height: 24),
-                          Text(
-                            request.subject,
-                            style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900, height: 1.2),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            request.tagline,
-                            style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 14),
-                          ),
-                          const SizedBox(height: 32),
                           Row(
                             children: [
                               Expanded(
-                                child: _buildTicketDetail('DATE', DateFormat('MMM dd, yyyy').format(request.eventDateTime)),
+                                child: _buildTicketDetail('DATE', DateFormat('MMM dd, yyyy').format(widget.request.eventDateTime)),
                               ),
                               Expanded(
-                                child: _buildTicketDetail('TIME', DateFormat('hh:mm a').format(request.eventDateTime)),
+                                child: _buildTicketDetail('TIME', DateFormat('hh:mm a').format(widget.request.eventDateTime)),
                               ),
                             ],
                           ),
@@ -210,7 +315,7 @@ class StrangersMeetTicketScreen extends StatelessWidget {
                           Row(
                             children: [
                               Expanded(
-                                child: _buildTicketDetail('PERSONS', '${request.numberOfPersons} pax'),
+                                child: _buildTicketDetail('PERSONS', '${widget.request.numberOfPersons} pax'),
                               ),
                               const Spacer(),
                             ],
@@ -350,7 +455,45 @@ class StrangersMeetTicketScreen extends StatelessWidget {
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          Text(venueName.toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900)),
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  venueName.toUpperCase(),
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.w900,
+                                                  ),
+                                                ),
+                                              ),
+                                              if (distanceText.isNotEmpty) ...[
+                                                const SizedBox(width: 8),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 2,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: LunaraTheme.cyberCyan.withValues(alpha: 0.2),
+                                                    borderRadius: BorderRadius.circular(8),
+                                                    border: Border.all(
+                                                      color: LunaraTheme.cyberCyan.withValues(alpha: 0.4),
+                                                      width: 0.5,
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    distanceText,
+                                                    style: const TextStyle(
+                                                      color: LunaraTheme.cyberCyan,
+                                                      fontSize: 9,
+                                                      fontWeight: FontWeight.w900,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
                                           const SizedBox(height: 2),
                                           Text(venueAddress, style: const TextStyle(color: Colors.white70, fontSize: 10), maxLines: 2, overflow: TextOverflow.ellipsis),
                                         ],

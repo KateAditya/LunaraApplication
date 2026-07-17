@@ -418,6 +418,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                             table: table,
                             guests: (booking['numberOfGuests'] ?? 1).toString(),
                             package: table,
+                            totalPrice: booking['totalAmount']?.toString() ?? booking['paymentAmount']?.toString(),
                             ticketId: booking['ticketCode'] ?? booking['id']?.toString().substring(0, 8),
                           ),
                         ),

@@ -36,7 +36,7 @@ class VenueAmenities {
     this.hasOutdoorSeating = false,
   });
 
-  factory VenueAmenities.fromJson(Map<String, dynamic> json) {
+  factory VenueAmenities.fromJson(Map<dynamic, dynamic> json) {
     return VenueAmenities(
       hasAC: json['hasAC'] ?? false,
       hasDJ: json['hasDJ'] ?? false,
@@ -136,7 +136,7 @@ class Venue {
     this.capacity,
   });
 
-  factory Venue.fromJson(Map<String, dynamic> json) {
+  factory Venue.fromJson(Map<dynamic, dynamic> json) {
     String normalizeUrl(dynamic path) {
       if (path == null) return '';
       final pathStr = path.toString().trim();
@@ -153,7 +153,7 @@ class Venue {
 
     String? img;
     String? video;
-    List<Map<String, dynamic>> imageList = [];
+    List<Map<dynamic, dynamic>> imageList = [];
 
     void addImage(String url, String type) {
       if (url.isEmpty) return;

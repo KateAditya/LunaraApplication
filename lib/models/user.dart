@@ -114,14 +114,14 @@ class User {
     }
   }
 
-  factory User.fromJson(Map<String, dynamic> json) {
+  factory User.fromJson(Map<dynamic, dynamic> json) {
     // Traverse nested structures to find user fields
-    Map<String, dynamic> data = json;
-    if (json.containsKey('data') && json['data'] is Map<String, dynamic>) {
-      data = json['data'];
+    Map<dynamic, dynamic> data = json;
+    if (json.containsKey('data') && json['data'] is Map) {
+      data = json['data'] as Map;
     }
-    if (data.containsKey('user') && data['user'] is Map<String, dynamic>) {
-      data = data['user'];
+    if (data.containsKey('user') && data['user'] is Map) {
+      data = data['user'] as Map;
     }
 
     final profile = data['profile'] ?? {};

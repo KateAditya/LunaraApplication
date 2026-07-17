@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -6,9 +8,9 @@ import '../../core/theme.dart';
 import '../../widgets/lunara_profile_image.dart';
 import '../../services/api_service.dart';
 
-class PartyPlanTicketScreen extends StatelessWidget {
-  final Map<String, dynamic> request;
-  final Map<String, dynamic> plan;
+class PartyPlanTicketScreen extends StatefulWidget {
+  final Map<dynamic, dynamic> request;
+  final Map<dynamic, dynamic> plan;
   final bool isHost;
 
   const PartyPlanTicketScreen({
@@ -18,22 +20,80 @@ class PartyPlanTicketScreen extends StatelessWidget {
     required this.isHost,
   });
 
+  @override
+  State<PartyPlanTicketScreen> createState() => _PartyPlanTicketScreenState();
+}
+
+class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
+  Position? _currentPosition;
+  StreamSubscription<Position>? _positionStreamSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _initLocation();
+  }
+
+  @override
+  void dispose() {
+    _positionStreamSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _initLocation() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return;
+      }
+      if (permission == LocationPermission.deniedForever) return;
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      );
+      if (mounted) {
+        setState(() {
+          _currentPosition = position;
+        });
+      }
+
+      _positionStreamSubscription = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 10,
+        ),
+      ).listen((Position pos) {
+        if (mounted) {
+          setState(() {
+            _currentPosition = pos;
+          });
+        }
+      });
+    } catch (e) {
+      debugPrint("Error in PartyPlanTicketScreen location initialization: $e");
+    }
+  }
+
   void _shareTicket(BuildContext context) {
-    final venue = plan['venue'] ?? {};
+    final venue = widget.plan['venue'] ?? {};
     final venueName = venue['name'] ?? 'Unknown Venue';
-    final planDateTime = plan['planDateTime'] != null
-        ? DateTime.tryParse(plan['planDateTime'].toString())?.toLocal() ?? DateTime.now()
+    final planDateTime = widget.plan['planDateTime'] != null
+        ? DateTime.tryParse(widget.plan['planDateTime'].toString())?.toLocal() ?? DateTime.now()
         : DateTime.now();
     final dateStr = DateFormat('MMM dd, yyyy').format(planDateTime);
     final timeStr = DateFormat('hh:mm a').format(planDateTime);
-    final description = plan['message'] ?? plan['description'] ?? 'Party Plan Vibe';
-    final ticketId = (request['id']?.toString() ?? 'TICKET').toUpperCase();
+    final description = widget.plan['message'] ?? widget.plan['description'] ?? 'Party Plan Vibe';
+    final ticketId = (widget.request['id']?.toString() ?? 'TICKET').toUpperCase();
 
-    final hostUser = plan['user'] ?? plan['host'] ?? {};
+    final hostUser = widget.plan['user'] ?? widget.plan['host'] ?? {};
     final hostName = '${hostUser['firstName'] ?? ''} ${hostUser['lastName'] ?? ''}'.trim();
     final cleanHostName = hostName.isNotEmpty ? hostName : 'Host';
 
-    final joinerUser = request['requester'] ?? {};
+    final joinerUser = widget.request['requester'] ?? {};
     final joinerName = '${joinerUser['firstName'] ?? ''} ${joinerUser['lastName'] ?? ''}'.trim();
     final cleanJoinerName = joinerName.isNotEmpty ? joinerName : 'Joiner';
 
@@ -58,7 +118,7 @@ class PartyPlanTicketScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final venue = plan['venue'] ?? {};
+    final venue = widget.plan['venue'] ?? {};
     final venueName = venue['name'] ?? 'Unknown Venue';
     final venueCity = venue['city'] ?? 'Unknown City';
     final venueArea = venue['area'] ?? '';
@@ -66,30 +126,56 @@ class PartyPlanTicketScreen extends StatelessWidget {
     final venueImageUrl = venue['imageUrl'] ?? (venue['images'] != null && (venue['images'] as List).isNotEmpty ? venue['images'][0]['filePath'] : null) ?? '';
     final cleanVenueImageUrl = venueImageUrl.startsWith('/') ? '${ApiService.baseUrl}$venueImageUrl' : venueImageUrl;
 
-    final planDateTime = plan['planDateTime'] != null
-        ? DateTime.tryParse(plan['planDateTime'].toString())?.toLocal() ??
+    final planDateTime = widget.plan['planDateTime'] != null
+        ? DateTime.tryParse(widget.plan['planDateTime'].toString())?.toLocal() ??
               DateTime.now()
         : DateTime.now();
 
-    final hostUser = plan['user'] ?? plan['host'] ?? {};
+    final hostUser = widget.plan['user'] ?? widget.plan['host'] ?? {};
     final hostName =
         '${hostUser['firstName'] ?? ''} ${hostUser['lastName'] ?? ''}'.trim();
     final cleanHostName = hostName.isNotEmpty ? hostName : 'Host';
     final hostUsername = '@${hostUser['username'] ?? hostUser['firstName']?.toString().toLowerCase() ?? 'host'}';
 
-    final joinerUser = request['requester'] ?? {};
+    final joinerUser = widget.request['requester'] ?? {};
     final joinerName =
         '${joinerUser['firstName'] ?? ''} ${joinerUser['lastName'] ?? ''}'
             .trim();
     final cleanJoinerName = joinerName.isNotEmpty ? joinerName : 'Joiner';
     final joinerUsername = '@${joinerUser['username'] ?? joinerUser['firstName']?.toString().toLowerCase() ?? 'joiner'}';
 
-    final ticketId = (request['id']?.toString() ?? 'TICKET').toUpperCase();
+    final ticketId = (widget.request['id']?.toString() ?? 'TICKET').toUpperCase();
     final description =
-        plan['message'] ?? plan['description'] ?? 'Party Plan Vibe';
+        widget.plan['message'] ?? widget.plan['description'] ?? 'Party Plan Vibe';
 
-    final rawAmount = request['paymentAmount'] ?? plan['depositAmount'] ?? request['amountPaid'] ?? plan['amountPaid'] ?? (plan['paymentType'] == 'self_pay' ? 198.0 : 99.0);
+    final rawAmount = widget.request['paymentAmount'] ?? widget.plan['depositAmount'] ?? widget.request['amountPaid'] ?? widget.plan['amountPaid'] ?? (widget.plan['paymentType'] == 'self_pay' ? 198.0 : 99.0);
     final double amountPaid = double.tryParse(rawAmount.toString()) ?? 99.0;
+
+    final latVal = venue['latitude'];
+    final lngVal = venue['longitude'];
+    double? lat;
+    double? lng;
+    if (latVal != null) {
+      lat = double.tryParse(latVal.toString());
+    }
+    if (lngVal != null) {
+      lng = double.tryParse(lngVal.toString());
+    }
+
+    String distanceText = '';
+    if (_currentPosition != null && lat != null && lng != null && lat != 0.0 && lng != 0.0) {
+      double distanceInMeters = Geolocator.distanceBetween(
+        _currentPosition!.latitude,
+        _currentPosition!.longitude,
+        lat,
+        lng,
+      );
+      if (distanceInMeters < 1000) {
+        distanceText = '${distanceInMeters.toStringAsFixed(0)} m';
+      } else {
+        distanceText = '${(distanceInMeters / 1000).toStringAsFixed(1)} km';
+      }
+    }
 
     return Scaffold(
       backgroundColor: LunaraTheme.midnightBlack,
@@ -557,13 +643,44 @@ class PartyPlanTicketScreen extends StatelessWidget {
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          Text(
-                                            venueName.toUpperCase(),
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w900,
-                                            ),
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  venueName.toUpperCase(),
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.w900,
+                                                  ),
+                                                ),
+                                              ),
+                                              if (distanceText.isNotEmpty) ...[
+                                                const SizedBox(width: 8),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 2,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: LunaraTheme.cyberCyan.withValues(alpha: 0.2),
+                                                    borderRadius: BorderRadius.circular(8),
+                                                    border: Border.all(
+                                                      color: LunaraTheme.cyberCyan.withValues(alpha: 0.4),
+                                                      width: 0.5,
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    distanceText,
+                                                    style: const TextStyle(
+                                                      color: LunaraTheme.cyberCyan,
+                                                      fontSize: 9,
+                                                      fontWeight: FontWeight.w900,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
                                           ),
                                           const SizedBox(height: 2),
                                           Text(
@@ -626,43 +743,7 @@ class PartyPlanTicketScreen extends StatelessWidget {
                 ),
               ),
 
-              const SizedBox(height: 32),
-
-              // Screenshot Protection Notice
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
-                  ),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.security,
-                      color: LunaraTheme.electricViolet,
-                      size: 16,
-                    ),
-                    SizedBox(width: 8),
-                    Text(
-                      'SCREENSHOT SECURITY ACTIVE',
-                      style: TextStyle(
-                        color: LunaraTheme.electricViolet,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 32),
+              const SizedBox(height: 40),
 
               // Action Buttons
               SizedBox(
@@ -736,4 +817,3 @@ class PartyPlanTicketScreen extends StatelessWidget {
     );
   }
 }
-
