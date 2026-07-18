@@ -59,14 +59,18 @@ class Conversation
 
     /** Returns the unread count for a given userId */
     public getUnreadFor(userId: string): number {
-        if (userId === this.participantOne) return this.unreadOne;
-        if (userId === this.participantTwo) return this.unreadTwo;
+        if (!userId) return 0;
+        const target = userId.toLowerCase();
+        if (target === this.participantOne.toLowerCase()) return this.unreadOne;
+        if (target === this.participantTwo.toLowerCase()) return this.unreadTwo;
         return 0;
     }
 
     /** Returns the other participant's userId */
     public getOtherParticipant(userId: string): string {
-        return userId === this.participantOne ? this.participantTwo : this.participantOne;
+        if (!userId) return this.participantTwo;
+        const target = userId.toLowerCase();
+        return target === this.participantOne.toLowerCase() ? this.participantTwo : this.participantOne;
     }
 }
 

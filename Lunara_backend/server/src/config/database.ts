@@ -52,6 +52,7 @@ export const connectDatabase = async (): Promise<void> => {
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS account_holder_name VARCHAR(100);`);
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS ifsc_code VARCHAR(20);`);
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS upi_id VARCHAR(100);`);
+            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS upi_number VARCHAR(20);`);
             // Platform per-seat charge (set by admin on approval, auto-calculated from paymentAmount/numberOfPersons)
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS platform_charge_per_seat DECIMAL(10,2) DEFAULT 0;`);
             

@@ -16,6 +16,7 @@ import Conversation from '../models/Conversation';
 import ChatSubscription, { ChatSubscriptionStatus, ChatSubscriptionType } from '../models/ChatSubscription';
 import { getChatSettings } from './chatSubscriptionController';
 import { validateVenueTimingAndHolidays } from '../utils/venueValidator';
+import { checkExistingBookingForDate } from '../utils/bookingLimitValidator';
 import Booking, { BookingStatus, GoingMode, PaymentStatus as BookingPaymentStatus } from '../models/Booking';
 import Payment, { PaymentMethod, PaymentStatus } from '../models/Payment';
 
@@ -365,26 +366,10 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             return;
         }
 
-        // ── Check for 1 plan per day limit ────────────────────────────────────
-        const targetStart = new Date(partyDate);
-        targetStart.setHours(0, 0, 0, 0);
-        const targetEnd = new Date(partyDate);
-        targetEnd.setHours(23, 59, 59, 999);
-
-        const existingPlanForDate = await PartyPlan.findOne({
-            where: {
-                userId,
-                planDateTime: {
-                    [Op.between]: [targetStart, targetEnd],
-                },
-                status: {
-                    [Op.ne]: PartyPlanStatus.CANCELLED
-                }
-            }
-        });
-
-        if (existingPlanForDate) {
-            res.status(400).json({ success: false, message: 'You already have a party plan scheduled for this date.' });
+        // ── Check for 1 plan per day limit (Stranger Meet / Party Plan / Group Party) ──
+        const bookingConflictMsg = await checkExistingBookingForDate(userId, partyDate);
+        if (bookingConflictMsg) {
+            res.status(400).json({ success: false, message: 'You already have a plan scheduled on this day.' });
             return;
         }
 

@@ -16,6 +16,7 @@ import { logger } from '../config/logger';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import { validateVenueTimingAndHolidays } from '../utils/venueValidator';
+import { checkExistingBookingForDate } from '../utils/bookingLimitValidator';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -144,6 +145,7 @@ function formatRequest(r: StrangersMeetRequest) {
         accountHolderName: r.accountHolderName ?? null,
         ifscCode: r.ifscCode ?? null,
         upiId: r.upiId ?? null,
+        upiNumber: r.upiNumber ?? null,
         platformChargePerSeat: r.platformChargePerSeat ? Number(r.platformChargePerSeat) : null,
         settlementTransactionId: r.settlementTransactionId ?? null,
         settlementAmount: r.settlementAmount ? Number(r.settlementAmount) : null,
@@ -211,7 +213,7 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
             userId, venueId, subject, tagline, eventDateTime, numberOfPersons,
             mobileNumber, alternateMobileNumber,
             // v2: Structured bank/UPI payment details collected up-front
-            bankName, accountNumber, accountHolderName, ifscCode, upiId,
+            bankName, accountNumber, accountHolderName, ifscCode, upiId, upiNumber,
             foodPreference, drinkPreference,
         } = req.body;
 
@@ -226,6 +228,32 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
             errors.numberOfPersons = 'numberOfPersons is required';
         else if (numberOfPersons < 21 || numberOfPersons > 50)
             errors.numberOfPersons = 'numberOfPersons must be between 21 and 50';
+
+        // Validate compulsory payment details (must provide at least one valid payment option)
+        const hasUpiId = !!upiId?.trim();
+        const hasUpiNumber = !!upiNumber?.trim();
+        const hasBankDetails = !!(bankName?.trim() && accountNumber?.trim() && accountHolderName?.trim() && ifscCode?.trim());
+
+        if (!hasUpiId && !hasUpiNumber && !hasBankDetails) {
+            errors.paymentDetails = 'Payment details are compulsory. Please fill at least one option: UPI ID, 10-digit UPI Number, or complete Bank Details.';
+        }
+
+        if (hasUpiNumber) {
+            const cleanUpiNumber = upiNumber.trim();
+            const phoneRegex = /^[0-9]{10}$/;
+            if (!phoneRegex.test(cleanUpiNumber)) {
+                errors.upiNumber = 'UPI Number must be a valid 10-digit mobile number';
+            }
+        }
+
+        const bankFields = [bankName, accountNumber, accountHolderName, ifscCode];
+        const anyBankFilled = bankFields.some(f => !!f?.trim());
+        if (anyBankFilled && !hasBankDetails) {
+            if (!bankName?.trim()) errors.bankName = 'Bank name is required';
+            if (!accountNumber?.trim()) errors.accountNumber = 'Account number is required';
+            if (!accountHolderName?.trim()) errors.accountHolderName = 'Account holder name is required';
+            if (!ifscCode?.trim()) errors.ifscCode = 'IFSC code is required';
+        }
 
         if (Object.keys(errors).length > 0) {
             res.status(400).json({ success: false, message: 'Validation failed', errors });
@@ -267,6 +295,13 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
             return;
         }
 
+        // Check for 1 plan per day limit (Stranger Meet / Party Plan / Group Party)
+        const bookingConflictMsg = await checkExistingBookingForDate(userId, eventDate);
+        if (bookingConflictMsg) {
+            res.status(400).json({ success: false, message: 'You already have a plan scheduled on this day.' });
+            return;
+        }
+
         const request = await StrangersMeetRequest.create({
             userId,
             venueId,
@@ -283,6 +318,7 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
             accountHolderName: accountHolderName?.trim() || null,
             ifscCode: ifscCode?.trim() || null,
             upiId: upiId?.trim() || null,
+            upiNumber: upiNumber?.trim() || null,
             foodPreference: foodPreference?.trim() || null,
             drinkPreference: drinkPreference?.trim() || null,
         });
@@ -492,13 +528,7 @@ export const confirmPayment = async (req: Request, res: Response): Promise<void>
             setImmediate(async () => {
                 try {
                     const host = await User.findByPk(request.userId);
-                    const hostName = host ? `${host.firstName} ${host.lastName}`.trim() : 'A host';
-                    const { default: Venue } = require('../models/Venue');
-                    const venue = await Venue.findByPk(request.venueId);
-                    const venueCity = venue?.city || '';
-                    const venueName = venue?.name || 'Club';
-
-                    const { sendPushNotification, sendMulticastPushNotification, getEligibleUsersForEventNotification } = require('../services/fcmService');
+                    const { sendPushNotification } = require('../services/fcmService');
 
                     // 1. Notify the host
                     if (host?.fcmToken) {
@@ -512,7 +542,8 @@ export const confirmPayment = async (req: Request, res: Response): Promise<void>
                         });
                     }
 
-                    // 2. Notify other users in the same city
+                    // 2. Notify other users in the same city (Disabled: only notify host when strangers meet is posted/published)
+                    /*
                     if (venueCity) {
                         const tokens = await getEligibleUsersForEventNotification(request.userId, venueCity);
                         if (tokens.length > 0) {
@@ -528,6 +559,7 @@ export const confirmPayment = async (req: Request, res: Response): Promise<void>
                             });
                         }
                     }
+                    */
                 } catch (notifErr: any) {
                     logger.warn('Failed to send published notification: ' + notifErr.message);
                 }
@@ -701,6 +733,26 @@ export const approveRequest = async (req: Request, res: Response): Promise<void>
             logger.warn('Failed to send stranger meet approval notification: ' + notifErr.message);
         }
 
+        // Emit socket notification to host
+        try {
+            const { io } = require('../server');
+            const venue = await Venue.findByPk(request.venueId);
+            const venueName = venue?.name || 'Venue';
+            io.to(`user_${request.userId}`).emit('notification_created', {
+                id: `sm_host_approved_${request.id}`,
+                title: 'Stranger Meet Approved',
+                body: `Your meet request "${request.subject}" at ${venueName} has been approved. Please pay the deposit to make it live.`,
+                createdAt: new Date().toISOString(),
+                read: false,
+                data: {
+                    type: 'strangers_meet_approved',
+                    requestId: request.id,
+                }
+            });
+        } catch (socketErr: any) {
+            logger.warn('Failed to emit approve request socket notification: ' + socketErr.message);
+        }
+
         res.json({
             success: true,
             message: 'Request approved successfully',
@@ -741,6 +793,42 @@ export const rejectRequest = async (req: Request, res: Response): Promise<void> 
             status: StrangersMeetStatus.REJECTED,
             adminNotes: adminNotes?.trim() || null,
         });
+
+        // Send push notification to host
+        try {
+            const host = await User.findByPk(request.userId);
+            if (host?.fcmToken) {
+                const { sendPushNotification } = require('../services/fcmService');
+                await sendPushNotification(host.fcmToken, {
+                    title: '❌ Stranger Meet Rejected',
+                    body: `Your Stranger Meet request "${request.subject}" was rejected by admin. Reason: ${adminNotes || 'N/A'}`,
+                    data: {
+                        type: 'strangers_meet_rejected',
+                        requestId: request.id,
+                    }
+                });
+            }
+        } catch (notifErr: any) {
+            logger.warn('Failed to send stranger meet rejection push notification: ' + notifErr.message);
+        }
+
+        // Socket emission to host
+        try {
+            const { io } = require('../server');
+            io.to(`user_${request.userId}`).emit('notification_created', {
+                id: `sm_host_rejected_${request.id}`,
+                title: 'Stranger Meet Rejected',
+                body: `Your Stranger Meet request "${request.subject}" was rejected by admin. Reason: ${adminNotes || 'N/A'}`,
+                createdAt: new Date().toISOString(),
+                read: false,
+                data: {
+                    type: 'strangers_meet_rejected',
+                    requestId: request.id,
+                }
+            });
+        } catch (socketErr: any) {
+            logger.warn('Failed to emit reject request socket notification: ' + socketErr.message);
+        }
 
         res.json({
             success: true,
@@ -921,26 +1009,68 @@ export const confirmJoinPayment = async (req: Request, res: Response): Promise<v
         await request.increment('slotsFilled', { by: 1 });
         await request.reload();
 
-        // Send notifications
+        // Send notifications via push and socket
         try {
             const host = await User.findByPk(request.userId);
             const participant = await User.findByPk(joiner.userId);
-            if (participant?.fcmToken) {
-                const { sendPushNotification } = require('../services/fcmService');
-                await sendPushNotification(participant.fcmToken, {
-                    title: '💳 Payment Successful',
-                    body: `Your payment of ₹${request.chargesPerHead} for "${request.subject}" was successful!`,
+            const venue = await Venue.findByPk(request.venueId);
+            const venueName = venue?.name || 'Venue';
+
+            if (participant) {
+                if (participant.fcmToken) {
+                    const { sendPushNotification } = require('../services/fcmService');
+                    await sendPushNotification(participant.fcmToken, {
+                        title: '💳 Payment Successful',
+                        body: `Your payment of ₹${request.chargesPerHead} for "${request.subject}" was successful!`,
+                        data: {
+                            type: 'strangers_meet_payment_success',
+                            requestId: request.id,
+                        }
+                    });
+                }
+
+                // Emit socket event to participant
+                const { io } = require('../server');
+                io.to(`user_${joiner.userId}`).emit('notification_created', {
+                    id: `sm_payment_success_${joiner.id}`,
+                    title: 'Booking Confirmed',
+                    body: `Your payment for "${request.subject}" at ${venueName} was successful. Spot confirmed!`,
+                    createdAt: new Date().toISOString(),
+                    read: false,
                     data: {
                         type: 'strangers_meet_payment_success',
                         requestId: request.id,
                     }
                 });
             }
-            if (host?.fcmToken && participant) {
-                const { sendPushNotification } = require('../services/fcmService');
-                await sendPushNotification(host.fcmToken, {
-                    title: '👥 New Participant Joined',
-                    body: `${participant.firstName} paid and joined your "${request.subject}" meet.`,
+
+            if (host && participant) {
+                if (host.fcmToken) {
+                    const { sendPushNotification } = require('../services/fcmService');
+                    await sendPushNotification(host.fcmToken, {
+                        title: '👥 New Participant Joined',
+                        body: `${participant.firstName} paid and joined your "${request.subject}" meet.`,
+                        data: {
+                            type: 'strangers_meet_participant_joined',
+                            requestId: request.id,
+                        }
+                    });
+                }
+
+                // Emit socket event to host
+                const { io } = require('../server');
+                io.to(`user_${request.userId}`).emit('notification_created', {
+                    id: `sm_incoming_${joiner.id}`,
+                    title: 'Participant Joined',
+                    body: `${participant.firstName} ${participant.lastName} paid and joined your "${request.subject}" meet.`,
+                    createdAt: new Date().toISOString(),
+                    read: false,
+                    sender: {
+                        id: participant.id,
+                        firstName: participant.firstName,
+                        lastName: participant.lastName,
+                        profileImageUrl: participant.profileImageUrl,
+                    },
                     data: {
                         type: 'strangers_meet_participant_joined',
                         requestId: request.id,
@@ -952,11 +1082,27 @@ export const confirmJoinPayment = async (req: Request, res: Response): Promise<v
             const paidCount = await StrangersMeetJoiner.count({
                 where: { strangersMeetRequestId: request.id, paymentStatus: 'paid' }
             });
-            if (paidCount >= request.numberOfPersons && host?.fcmToken) {
-                const { sendPushNotification } = require('../services/fcmService');
-                await sendPushNotification(host.fcmToken, {
-                    title: '🔥 Stranger Meet Full!',
+            if (paidCount >= request.numberOfPersons && host) {
+                if (host.fcmToken) {
+                    const { sendPushNotification } = require('../services/fcmService');
+                    await sendPushNotification(host.fcmToken, {
+                        title: '🔥 Stranger Meet Full!',
+                        body: `Your Stranger Meet "${request.subject}" has reached full capacity of ${request.numberOfPersons} persons!`,
+                        data: {
+                            type: 'strangers_meet_full',
+                            requestId: request.id,
+                        }
+                    });
+                }
+
+                // Emit socket event for meet full
+                const { io } = require('../server');
+                io.to(`user_${request.userId}`).emit('notification_created', {
+                    id: `sm_full_${request.id}`,
+                    title: 'Stranger Meet Full!',
                     body: `Your Stranger Meet "${request.subject}" has reached full capacity of ${request.numberOfPersons} persons!`,
+                    createdAt: new Date().toISOString(),
+                    read: false,
                     data: {
                         type: 'strangers_meet_full',
                         requestId: request.id,
@@ -1185,24 +1331,46 @@ export const sendJoinRequest = async (req: Request, res: Response): Promise<void
             });
         }
 
-        // Notify host
+        // Notify host via push and socket
         try {
             const host = await User.findByPk(request.userId);
             const requester = await User.findByPk(userId);
-            if (host?.fcmToken && requester) {
-                const { sendPushNotification } = require('../services/fcmService');
-                await sendPushNotification(host.fcmToken, {
-                    title: '✨ Join Request Received',
-                    body: `${requester.firstName} wants to join your "${request.subject}" meet.`,
+            if (requester) {
+                if (host?.fcmToken) {
+                    const { sendPushNotification } = require('../services/fcmService');
+                    await sendPushNotification(host.fcmToken, {
+                        title: '✨ Join Request Received',
+                        body: `${requester.firstName} wants to join your "${request.subject}" meet.`,
+                        data: {
+                            type: 'strangers_meet_join_request',
+                            requestId: request.id,
+                            joinerId: joiner.id,
+                        }
+                    });
+                }
+
+                // Emit socket event notification_created
+                const { io } = require('../server');
+                io.to(`user_${request.userId}`).emit('notification_created', {
+                    id: `sm_incoming_${joiner.id}`,
+                    title: 'New Join Request',
+                    body: `${requester.firstName} ${requester.lastName} requested to join your "${request.subject}" meet.`,
+                    createdAt: new Date().toISOString(),
+                    read: false,
+                    sender: {
+                        id: requester.id,
+                        firstName: requester.firstName,
+                        lastName: requester.lastName,
+                        profileImageUrl: requester.profileImageUrl,
+                    },
                     data: {
                         type: 'strangers_meet_join_request',
                         requestId: request.id,
-                        joinerId: joiner.id,
                     }
                 });
             }
         } catch (notifErr: any) {
-            logger.warn('Failed to send join request notification: ' + notifErr.message);
+            logger.warn('Failed to send join request notifications: ' + notifErr.message);
         }
 
         res.status(201).json({
@@ -1267,8 +1435,22 @@ export const handleJoinRequest = async (req: Request, res: Response): Promise<vo
                         }
                     });
                 }
+
+                // Emit socket event notification_created
+                const { io } = require('../server');
+                io.to(`user_${joiner.userId}`).emit('notification_created', {
+                    id: `sm_req_accepted_${joiner.id}`,
+                    title: 'Request Accepted',
+                    body: `Your request to join "${request.subject}" was accepted by the host.`,
+                    createdAt: new Date().toISOString(),
+                    read: false,
+                    data: {
+                        type: 'strangers_meet_request_accepted',
+                        requestId: request.id,
+                    }
+                });
             } catch (notifErr: any) {
-                logger.warn('Failed to send join request accepted notification: ' + notifErr.message);
+                logger.warn('Failed to send join request accepted notifications: ' + notifErr.message);
             }
 
             // Emit socket event for real-time slots updates
@@ -1291,6 +1473,38 @@ export const handleJoinRequest = async (req: Request, res: Response): Promise<vo
             res.json({ success: true, message: 'Join request accepted!', data: joiner });
         } else {
             await joiner.update({ status: 'rejected' as any });
+
+            // Notify participant of rejection
+            try {
+                const participant = await User.findByPk(joiner.userId);
+                if (participant?.fcmToken) {
+                    const { sendPushNotification } = require('../services/fcmService');
+                    await sendPushNotification(participant.fcmToken, {
+                        title: 'Declined Request',
+                        body: `Your request to join "${request.subject}" was declined by the host.`,
+                        data: {
+                            type: 'strangers_meet_request_rejected',
+                            requestId: request.id,
+                        }
+                    });
+                }
+
+                // Emit socket event notification_created
+                const { io } = require('../server');
+                io.to(`user_${joiner.userId}`).emit('notification_created', {
+                    id: `sm_req_rejected_${joiner.id}`,
+                    title: 'Request Declined',
+                    body: `Your request to join "${request.subject}" was declined by the host.`,
+                    createdAt: new Date().toISOString(),
+                    read: false,
+                    data: {
+                        type: 'strangers_meet_request_rejected',
+                        requestId: request.id,
+                    }
+                });
+            } catch (notifErr: any) {
+                logger.warn('Failed to send join request rejected notifications: ' + notifErr.message);
+            }
 
             // Emit socket event for real-time slots updates
             try {

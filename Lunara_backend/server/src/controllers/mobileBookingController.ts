@@ -12,6 +12,7 @@ import VenueImage from '../models/VenueImage';
 import { logger } from '../config/logger';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
+import { checkExistingBookingForDate } from '../utils/bookingLimitValidator';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -126,6 +127,14 @@ export const createBooking = async (req: Request, res: Response) => {
         // Validate goingMode
         if (![GoingMode.SOLO, GoingMode.PARTY_REQUEST].includes(goingMode as GoingMode)) {
             return res.status(400).json({ success: false, message: 'Only "solo" or "party_request" goingMode is supported in this version' });
+        }
+
+        // Check for 1 plan per day limit (Stranger Meet / Party Plan / Group Party)
+        if (goingMode === GoingMode.PARTY_REQUEST) {
+            const bookingConflictMsg = await checkExistingBookingForDate(userId, bookingDate);
+            if (bookingConflictMsg) {
+                return res.status(400).json({ success: false, message: 'You already have a plan scheduled on this day.' });
+            }
         }
 
         // Fetch package price (auto-seed if needed)

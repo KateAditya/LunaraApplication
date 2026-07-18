@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/gestures.dart';
 import '../../core/theme.dart';
 import '../../widgets/action_button.dart';
 import '../../widgets/top_error_banner.dart';
@@ -8,6 +7,28 @@ import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import 'otp_screen.dart';
 import 'terms_screen.dart';
+
+/// Formats a raw 12-digit string as XXXX XXXX XXXX
+class _AadhaarFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final digits = newValue.text.replaceAll(' ', '');
+    if (digits.length > 12) return oldValue;
+    final buffer = StringBuffer();
+    for (int i = 0; i < digits.length; i++) {
+      if (i == 4 || i == 8) buffer.write(' ');
+      buffer.write(digits[i]);
+    }
+    final formatted = buffer.toString();
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
 
 class RegisterBasicScreen extends StatefulWidget {
   const RegisterBasicScreen({super.key});
@@ -19,6 +40,7 @@ class RegisterBasicScreen extends StatefulWidget {
 class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
   bool _isLoading = false;
   bool _acceptedTerms = false;
+  String? _aadhaarError;
   final _firstNameController = TextEditingController();
   final _lastNameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -228,58 +250,24 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
               _buildInputLabel('AADHAAR NUMBER (OPTIONAL)', false),
               _buildLightInput(
                 controller: _aadhaarController,
-                hint: '12-digit number',
+                hint: 'XXXX XXXX XXXX',
                 icon: Icons.badge_outlined,
                 keyboardType: TextInputType.number,
-                maxLength: 12,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                maxLength: 14, // 12 digits + 2 spaces
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly, _AadhaarFormatter()],
               ),
+              if (_aadhaarError != null) ...[  
+                const SizedBox(height: 6),
+                Padding(
+                  padding: const EdgeInsets.only(left: 16),
+                  child: Text(
+                    _aadhaarError!,
+                    style: const TextStyle(color: Colors.red, fontSize: 12),
+                  ),
+                ),
+              ],
               const SizedBox(height: 32),
-              Row(
-                children: [
-                  Checkbox(
-                    value: _acceptedTerms,
-                    onChanged: (value) {
-                      setState(() {
-                        _acceptedTerms = value ?? false;
-                      });
-                    },
-                    activeColor: LunaraTheme.primaryRich,
-                  ),
-                  Expanded(
-                    child: RichText(
-                      text: TextSpan(
-                        text: 'I accept the ',
-                        style: TextStyle(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurface.withValues(alpha: 0.8),
-                          fontSize: 14,
-                        ),
-                        children: [
-                          TextSpan(
-                            text: 'Terms and Conditions',
-                            style: const TextStyle(
-                              color: LunaraTheme.primaryRich,
-                              fontWeight: FontWeight.bold,
-                              decoration: TextDecoration.underline,
-                            ),
-                            recognizer: TapGestureRecognizer()
-                              ..onTap = () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => const TermsScreen(),
-                                  ),
-                                );
-                              },
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+              _buildTermsAcceptance(),
               const SizedBox(height: 40),
               _isLoading
                   ? const Center(
@@ -317,8 +305,19 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                         } else if (_selectedCity.isEmpty) {
                           errorMessage = 'Please select your city';
                         } else if (!_acceptedTerms) {
-                          errorMessage = 'Please accept the Terms and Conditions';
+                          errorMessage = 'Please read and accept the Terms and Conditions';
                         } else {
+                          // Validate Aadhaar if entered
+                          final aadhaarRaw = _aadhaarController.text.replaceAll(' ', '');
+                          if (aadhaarRaw.isNotEmpty) {
+                            if (aadhaarRaw.length != 12 || !RegExp(r'^[2-9][0-9]{11}$').hasMatch(aadhaarRaw)) {
+                              setState(() => _aadhaarError = 'Enter a valid 12-digit Aadhaar number (starting 2–9)');
+                              TopErrorBanner.show(context, 'Please enter a valid Aadhaar number');
+                              return;
+                            } else {
+                              setState(() => _aadhaarError = null);
+                            }
+                          }
                           // Validate age (must be >= 18)
                           final birthDate = _selectedDob!;
                           final today = DateTime.now();
@@ -367,7 +366,7 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                           'email': _emailController.text.trim(),
                           'phone': _phoneController.text.trim(),
                           'dob': _selectedDob?.toIso8601String(),
-                          'aadhaarNo': _aadhaarController.text.trim(),
+                          'aadhaarNo': _aadhaarController.text.replaceAll(' ', '').trim(),
                           'profile': {
                             'displayName':
                                 '${_firstNameController.text.trim()} ${_lastNameController.text.trim()}',
@@ -390,6 +389,106 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                     ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Opens Terms & Conditions in a scroll-to-accept bottom sheet.
+  void _showTermsBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _TermsScrollBottomSheet(
+        onAccepted: () {
+          setState(() => _acceptedTerms = true);
+          Navigator.pop(ctx);
+        },
+      ),
+    );
+  }
+
+  Widget _buildTermsAcceptance() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return GestureDetector(
+      onTap: _acceptedTerms ? null : _showTermsBottomSheet,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: _acceptedTerms
+              ? LunaraTheme.primaryRich.withValues(alpha: isDark ? 0.15 : 0.06)
+              : Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: _acceptedTerms
+                ? LunaraTheme.primaryRich.withValues(alpha: 0.6)
+                : LunaraTheme.lightBorder,
+            width: _acceptedTerms ? 1.5 : 1.0,
+          ),
+          boxShadow: LunaraTheme.premiumShadow,
+        ),
+        child: Row(
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _acceptedTerms
+                    ? LunaraTheme.primaryRich
+                    : Colors.transparent,
+                border: Border.all(
+                  color: _acceptedTerms
+                      ? LunaraTheme.primaryRich
+                      : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+                  width: 2,
+                ),
+              ),
+              child: _acceptedTerms
+                  ? const Icon(Icons.check, color: Colors.white, size: 16)
+                  : const Icon(Icons.article_outlined, size: 14,
+                      color: Colors.transparent),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _acceptedTerms
+                        ? 'Terms & Conditions Accepted'
+                        : 'Read & Accept Terms',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: _acceptedTerms
+                          ? LunaraTheme.primaryRich
+                          : Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  if (!_acceptedTerms)
+                    Text(
+                      'Tap to read and accept our Privacy Policy',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.54),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (!_acceptedTerms)
+              Icon(
+                Icons.chevron_right_rounded,
+                color: LunaraTheme.primaryRich,
+              ),
+          ],
         ),
       ),
     );
@@ -619,6 +718,200 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// A scroll-to-accept bottom sheet for Terms & Conditions.
+/// The "I Agree" button is locked until the user scrolls to the bottom.
+class _TermsScrollBottomSheet extends StatefulWidget {
+  final VoidCallback onAccepted;
+  const _TermsScrollBottomSheet({required this.onAccepted});
+
+  @override
+  State<_TermsScrollBottomSheet> createState() => _TermsScrollBottomSheetState();
+}
+
+class _TermsScrollBottomSheetState extends State<_TermsScrollBottomSheet> {
+  final ScrollController _scrollController = ScrollController();
+  bool _canAccept = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    // Allow accept if content is shorter than viewport
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onScroll());
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    final atBottom = pos.pixels >= pos.maxScrollExtent - 40;
+    if (atBottom && !_canAccept) setState(() => _canAccept = true);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? const Color(0xFF1A1A2E) : Colors.white;
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.92,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      builder: (_, sheetScrollController) {
+        return Container(
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.2),
+                blurRadius: 20,
+                offset: const Offset(0, -4),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              // Handle + Header
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
+                child: Column(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        const Icon(Icons.article_outlined,
+                            color: LunaraTheme.primaryRich),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Terms & Conditions',
+                          style: LunaraTheme.headingStyle.copyWith(
+                            fontSize: 18,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Scroll to the bottom to accept',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.5),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Divider(color: Colors.grey.withValues(alpha: 0.2)),
+                  ],
+                ),
+              ),
+              // Scrollable terms content
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+                  child: const TermsContent(),
+                ),
+              ),
+              // Accept button
+              SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+                  child: Column(
+                    children: [
+                      if (!_canAccept)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.keyboard_arrow_down_rounded,
+                                  color: LunaraTheme.primaryRich, size: 18),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Scroll down to enable acceptance',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: LunaraTheme.primaryRich,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      AnimatedOpacity(
+                        opacity: _canAccept ? 1.0 : 0.4,
+                        duration: const Duration(milliseconds: 300),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: _canAccept ? widget.onAccepted : null,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: LunaraTheme.primaryRich,
+                              disabledBackgroundColor:
+                                  LunaraTheme.primaryRich.withValues(alpha: 0.4),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            child: const Text(
+                              'I AGREE & ACCEPT',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Reusable widget exposing the Terms text content.
+class TermsContent extends StatelessWidget {
+  const TermsContent({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      TermsScreen.termsText,
+      style: TextStyle(
+        fontSize: 13.5,
+        height: 1.6,
+        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.82),
       ),
     );
   }

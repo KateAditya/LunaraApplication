@@ -77,6 +77,21 @@ export const approveLargePartyRequest = async (req: Request, res: Response) => {
                     bookingId: groupParty.id,
                     status: groupParty.status
                 });
+
+                // Emit notification_created
+                io.to(`user_${groupParty.userId}`).emit('notification_created', {
+                    id: `group_party_${groupParty.id}_${status}`,
+                    title: status === 'approved' ? 'Group Party Approved! 🎉' : 'Group Party Rejected ❌',
+                    body: status === 'approved'
+                        ? `Your group party request at ${venueName} has been approved! Complete payment to confirm.`
+                        : `Your group party request at ${venueName} was rejected by the admin.`,
+                    createdAt: new Date().toISOString(),
+                    read: false,
+                    data: {
+                        type: status === 'approved' ? 'group_party_approved' : 'group_party_rejected',
+                        partyId: groupParty.id,
+                    }
+                });
             } catch (pushErr) {
                 logger.warn('Failed to send push/socket for group party admin approval: ' + pushErr);
             }
@@ -120,6 +135,21 @@ export const approveLargePartyRequest = async (req: Request, res: Response) => {
             io.to(`user_${booking.userId}`).emit('large_party_status_update', {
                 bookingId: booking.id,
                 status: booking.adminApprovalStatus
+            });
+
+            // Emit notification_created
+            io.to(`user_${booking.userId}`).emit('notification_created', {
+                id: `large_party_${booking.id}_${status}`,
+                title: status === 'approved' ? 'Large Party Approved! 🎉' : 'Large Party Rejected ❌',
+                body: status === 'approved'
+                    ? `Your large party request at ${venueName} has been approved! Complete payment to confirm.`
+                    : `Your large party request at ${venueName} was rejected by the admin.`,
+                createdAt: new Date().toISOString(),
+                read: false,
+                data: {
+                    type: status === 'approved' ? 'large_party_approved' : 'large_party_rejected',
+                    bookingId: booking.id,
+                }
             });
         } catch (pushErr) {
             logger.warn('Failed to send push/socket for admin approval: ' + pushErr);
@@ -180,6 +210,19 @@ export const sendPaymentLink = async (req: Request, res: Response) => {
                 bookingId: booking.id,
                 status: booking.adminApprovalStatus
             });
+
+            // Emit notification_created
+            io.to(`user_${booking.userId}`).emit('notification_created', {
+                id: `large_party_${booking.id}_payment_sent`,
+                title: 'Large Party Payment Link Received 💳',
+                body: `Admin sent a payment link of ₹${paymentAmount} for your party at ${venueName}. Complete payment.`,
+                createdAt: new Date().toISOString(),
+                read: false,
+                data: {
+                    type: 'large_party_payment_link',
+                    bookingId: booking.id,
+                }
+            });
         } catch (pushErr) {
             logger.warn('Failed to send push/socket for sendPaymentLink: ' + pushErr);
         }
@@ -236,6 +279,19 @@ export const markPaymentDone = async (req: Request, res: Response) => {
                 const { io } = require('../server');
                 io.to(`user_${groupParty.userId}`).emit('group_party_payment_success', { partyId: groupParty.id });
                 io.to(`user_${groupParty.userId}`).emit('large_party_payment_success', { bookingId: groupParty.id });
+
+                // Emit notification_created
+                io.to(`user_${groupParty.userId}`).emit('notification_created', {
+                    id: `group_party_${groupParty.id}_confirmed`,
+                    title: 'Group Party Confirmed! 🎉',
+                    body: `Your group party of ${groupParty.numberOfFriends} friends at ${venueName} is confirmed!`,
+                    createdAt: new Date().toISOString(),
+                    read: false,
+                    data: {
+                        type: 'group_party_confirmed',
+                        partyId: groupParty.id,
+                    }
+                });
             } catch (pushErr) {
                 logger.warn('Failed to send push/socket for markPaymentDone: ' + pushErr);
             }
@@ -264,6 +320,19 @@ export const markPaymentDone = async (req: Request, res: Response) => {
             }
             const { io } = require('../server');
             io.to(`user_${booking.userId}`).emit('large_party_payment_success', { bookingId: booking.id });
+
+            // Emit notification_created
+            io.to(`user_${booking.userId}`).emit('notification_created', {
+                id: `large_party_${booking.id}_payment_done`,
+                title: 'Large Party Confirmed! 🎉',
+                body: `Your party of ${booking.numberOfGuests} guests at ${venueName} is fully confirmed. Enjoy your night!`,
+                createdAt: new Date().toISOString(),
+                read: false,
+                data: {
+                    type: 'large_party_confirmed',
+                    bookingId: booking.id,
+                }
+            });
         } catch (pushErr) {
             logger.warn('Failed to send push/socket for markPaymentDone: ' + pushErr);
         }

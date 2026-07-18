@@ -41,7 +41,13 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _loadGoogleRating();
+    if (venue['googleRating'] != null) {
+      _googleRating = double.tryParse(venue['googleRating'].toString());
+      _googleRatingCount = int.tryParse(venue['googleRatingCount']?.toString() ?? '');
+      _isLoadingRating = false;
+    } else {
+      _loadGoogleRating();
+    }
     _loadVenueEvents();
     _checkLocationAndForce(requestIfNeeded: false);
     if (!kIsWeb) {
@@ -136,6 +142,17 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
   }
 
   Future<void> _loadGoogleRating() async {
+    if (venue['googleRating'] != null) {
+      if (mounted) {
+        setState(() {
+          _googleRating = double.tryParse(venue['googleRating'].toString());
+          _googleRatingCount = int.tryParse(venue['googleRatingCount']?.toString() ?? '');
+          _isLoadingRating = false;
+        });
+      }
+      return;
+    }
+
     final name = venue['name'] as String? ?? '';
     final city = venue['city'] as String? ?? '';
     if (name.isNotEmpty) {
@@ -830,13 +847,20 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
                                             child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                                           )
                                         else ...[
-                                          Text(
-                                            '${_googleRating ?? venue['averageRating'] ?? '4.5'}',
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 13,
-                                            ),
+                                          Builder(
+                                            builder: (context) {
+                                              final double avg = double.tryParse(venue['averageRating']?.toString() ?? '') ?? 0.0;
+                                              final double rating = (_googleRating != null && _googleRating! > 0.0) ? _googleRating! : avg;
+                                              final String ratingStr = rating > 0.0 ? rating.toStringAsFixed(1) : '4.5';
+                                              return Text(
+                                                ratingStr,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 13,
+                                                ),
+                                              );
+                                            }
                                           ),
                                           if (_googleRatingCount != null) ...[
                                             const SizedBox(width: 4),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme.dart';
 import '../../widgets/action_button.dart';
 import '../../widgets/top_error_banner.dart';
@@ -16,6 +17,7 @@ class PasswordSetupScreen extends StatefulWidget {
 
 class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
   bool _useBiometrics = false;
+  bool _biometricsAvailable = false;
   bool _obscurePassword = true;
   bool _isLoading = false;
 
@@ -43,6 +45,12 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
     super.initState();
     _passwordController.addListener(_validatePasswords);
     _confirmController.addListener(_validatePasswords);
+    _checkBiometrics();
+  }
+
+  Future<void> _checkBiometrics() async {
+    final available = await BiometricService.isBiometricsAvailable();
+    if (mounted) setState(() => _biometricsAvailable = available);
   }
 
   Future<void> _handleCompleteSetup() async {
@@ -56,6 +64,10 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
     }
 
     setState(() => _isLoading = true);
+
+    // Persist biometric preference
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('biometric_enabled', _useBiometrics);
 
     final error = await AuthService.registerUser(
       widget.collectedData ?? {},
@@ -295,25 +307,43 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
   }
 
   Widget _buildBiometricToggle() {
-    return Container(
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: LunaraTheme.lightBorder),
-        boxShadow: LunaraTheme.premiumShadow,
+        border: Border.all(
+          color: _useBiometrics
+              ? LunaraTheme.primaryRich.withValues(alpha: 0.6)
+              : LunaraTheme.lightBorder,
+          width: _useBiometrics ? 1.5 : 1.0,
+        ),
+        boxShadow: _useBiometrics
+            ? [
+                BoxShadow(
+                  color: LunaraTheme.primaryRich.withValues(alpha: isDark ? 0.2 : 0.08),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ]
+            : LunaraTheme.premiumShadow,
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: LunaraTheme.primaryRich.withValues(alpha: 0.1),
+              color: LunaraTheme.primaryRich.withValues(
+                alpha: _useBiometrics ? 0.2 : 0.1,
+              ),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
+            child: Icon(
               Icons.face_unlock_outlined,
               color: LunaraTheme.primaryRich,
+              size: 22,
             ),
           ),
           const SizedBox(width: 16),
@@ -330,7 +360,9 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Secure access with FaceID or TouchID',
+                  _biometricsAvailable
+                      ? 'Secure access with Face ID or fingerprint'
+                      : 'Not available on this device',
                   style: TextStyle(
                     fontSize: 11,
                     color: Theme.of(
@@ -344,28 +376,33 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
           Switch.adaptive(
             value: _useBiometrics,
             activeTrackColor: LunaraTheme.primaryRich,
-            onChanged: (value) async {
-              if (value) {
-                final success = await BiometricService.authenticate(
-                  reason: 'Verify your identity to enable biometrics',
-                );
-                if (success) {
-                  setState(() => _useBiometrics = true);
-                } else {
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Biometric authentication failed. Cannot enable.',
-                      ),
-                    ),
-                  );
-                  setState(() => _useBiometrics = false);
-                }
-              } else {
-                setState(() => _useBiometrics = false);
-              }
-            },
+            onChanged: _biometricsAvailable
+                ? (value) async {
+                    if (value) {
+                      // Try to authenticate before enabling
+                      final success = await BiometricService.authenticate(
+                        reason: 'Verify your identity to enable biometrics',
+                      );
+                      if (!mounted) return;
+                      if (success) {
+                        setState(() => _useBiometrics = true);
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: const Text(
+                              'Biometric verification failed. Please try again.',
+                            ),
+                            backgroundColor: Colors.red.shade700,
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                        setState(() => _useBiometrics = false);
+                      }
+                    } else {
+                      setState(() => _useBiometrics = false);
+                    }
+                  }
+                : null,
           ),
         ],
       ),

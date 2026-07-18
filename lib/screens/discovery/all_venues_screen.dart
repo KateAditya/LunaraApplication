@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../core/theme.dart';
 import '../../models/venue.dart';
 import 'venue_detail_screen.dart';
@@ -21,11 +22,12 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
   String _searchQuery = '';
   late List<Venue> _filteredVenues;
   bool _isMapView = false;
+  Position? _currentPosition;
 
   // Filter criteria
-  Set<String> _selectedVibes = {'TEST'};
-  double _priceLevel = 2.0;
-  double _radius = 5.0;
+  Set<String> _selectedVibes = {};
+  double _priceLevel = 4.0;
+  double _radius = 50.0;
   String? _selectedCrowdDensity;
   String _selectedCategory = 'ALL';
   late List<String> _categories;
@@ -42,7 +44,7 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
             (v) =>
                 v.city.toLowerCase() ==
                     ApiService.selectedCity!.toLowerCase() &&
-                v.status == "live",
+                (v.status?.toLowerCase() == "live"),
           )
           .toList();
     }
@@ -52,6 +54,31 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
         .toSet()
         .toList();
     _categories = ['ALL', ...types];
+    _determinePosition();
+  }
+
+  Future<void> _determinePosition() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      );
+      if (mounted) {
+        setState(() {
+          _currentPosition = position;
+        });
+        _applyFilters();
+      }
+    } catch (e) {
+      debugPrint("Error getting location in AllVenuesScreen: $e");
+    }
   }
 
   @override
@@ -67,15 +94,59 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
             (_searchQuery.isEmpty ||
                 v.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
                 v.city.toLowerCase().contains(_searchQuery.toLowerCase())) &&
-            v.status == 'live';
+            (v.status?.toLowerCase() == 'live');
+
         final venueType = (v.type ?? '').toUpperCase();
         final matchesVibe =
             _selectedVibes.isEmpty || _selectedVibes.contains(venueType);
+
         final matchesCity =
             ApiService.selectedCity == null ||
             v.city.toLowerCase() == ApiService.selectedCity!.toLowerCase();
-        // Additional filters can be added here (priceLevel, radius, crowdDensity)
-        return matchesSearch && matchesVibe && matchesCity;
+
+        // Price level matching
+        final venuePrice = v.tableBookingCharges ?? 0.0;
+        int venuePriceLevel = 0;
+        if (venuePrice <= 500) {
+          venuePriceLevel = 0;
+        } else if (venuePrice <= 1500) {
+          venuePriceLevel = 1;
+        } else if (venuePrice <= 3000) {
+          venuePriceLevel = 2;
+        } else if (venuePrice <= 5000) {
+          venuePriceLevel = 3;
+        } else {
+          venuePriceLevel = 4;
+        }
+        final matchesPrice = venuePriceLevel <= _priceLevel;
+
+        // Radius matching
+        bool matchesRadius = true;
+        if (_currentPosition != null && v.latitude != null && v.longitude != null) {
+          final distance = Geolocator.distanceBetween(
+            _currentPosition!.latitude,
+            _currentPosition!.longitude,
+            v.latitude!,
+            v.longitude!,
+          );
+          final distanceKm = distance / 1000.0;
+          matchesRadius = distanceKm <= _radius;
+        }
+
+        // Crowd density matching
+        bool matchesCrowd = true;
+        if (_selectedCrowdDensity != null) {
+          final cap = v.capacity ?? 100;
+          if (_selectedCrowdDensity == 'CHILL') {
+            matchesCrowd = cap <= 150;
+          } else if (_selectedCrowdDensity == 'LIVELY') {
+            matchesCrowd = cap > 150 && cap <= 350;
+          } else if (_selectedCrowdDensity == 'PACKED') {
+            matchesCrowd = cap > 350;
+          }
+        }
+
+        return matchesSearch && matchesVibe && matchesCity && matchesPrice && matchesRadius && matchesCrowd;
       }).toList();
     });
   }

@@ -41,6 +41,7 @@ export interface StrangersMeetRequestAttributes {
     accountHolderName?: string;
     ifscCode?: string;
     upiId?: string;
+    upiNumber?: string;
     platformChargePerSeat?: number; // Auto-calc'd by admin: paymentAmount / numberOfPersons
     settlementTransactionId?: string;
     settlementAmount?: number;
@@ -73,6 +74,7 @@ export interface StrangersMeetRequestCreationAttributes
         | 'accountHolderName'
         | 'ifscCode'
         | 'upiId'
+        | 'upiNumber'
         | 'platformChargePerSeat'
         | 'settlementTransactionId'
         | 'settlementAmount'
@@ -113,6 +115,7 @@ class StrangersMeetRequest
     public accountHolderName?: string;
     public ifscCode?: string;
     public upiId?: string;
+    public upiNumber?: string;
     public platformChargePerSeat?: number;
     public settlementTransactionId?: string;
     public settlementAmount?: number;
@@ -274,6 +277,11 @@ StrangersMeetRequest.init(
             type: DataTypes.STRING(100),
             allowNull: true,
             field: 'upi_id',
+        },
+        upiNumber: {
+            type: DataTypes.STRING(20),
+            allowNull: true,
+            field: 'upi_number',
         },
         platformChargePerSeat: {
             type: DataTypes.DECIMAL(10, 2),

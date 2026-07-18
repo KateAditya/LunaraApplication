@@ -230,7 +230,7 @@ io.on('connection', (socket) => {
                     }
                 );
                 for (const conv of convs) {
-                    const otherUser = conv.participantOne === userId ? conv.participantTwo : conv.participantOne;
+                    const otherUser = (conv.participantOne && userId && conv.participantOne.toLowerCase() === userId.toLowerCase()) ? conv.participantTwo : conv.participantOne;
                     io.to(`user_${otherUser}`).emit('messages_delivered', { conversationId: conv.id });
                 }
             }

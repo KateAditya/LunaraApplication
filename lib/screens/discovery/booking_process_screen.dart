@@ -1032,6 +1032,67 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                             ],
 
                             if (isLargeParty) ...[
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 20),
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      LunaraTheme.electricViolet.withValues(alpha: 0.08),
+                                      LunaraTheme.electricViolet.withValues(alpha: 0.03),
+                                    ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
+                                    width: 1.5,
+                                  ),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.verified_user_rounded,
+                                        color: LunaraTheme.electricViolet,
+                                        size: 20,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Text(
+                                            'LARGE GROUP BOOKING (21+)',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: 12,
+                                              color: LunaraTheme.electricViolet,
+                                              letterSpacing: 1,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 6),
+                                          const Text(
+                                            'Please fill out the details below. Our team will review and confirm your booking request within 1-5 hours.',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: Colors.black87,
+                                              height: 1.4,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                               const Text(
                                 'LARGE PARTY DETAILS',
                                 style: TextStyle(
@@ -1285,7 +1346,7 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                     builder: (ctx2) => AlertDialog(
                                       title: const Text('Request Submitted'),
                                       content: const Text(
-                                        'Your large party request has been submitted to the admin for approval. You will see it in your Live Feed once approved.',
+                                        'Your large party request has been successfully submitted. Our team will review and confirm your booking within 1-5 hours.',
                                       ),
                                       actions: [
                                         TextButton(

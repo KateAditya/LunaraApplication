@@ -47,6 +47,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   final Map<String, Map<String, dynamic>> _googleRatings = {};
   int _currentAdIndex = 0;
   List<Map<String, dynamic>> _upcomingNights = [];
+  bool _sortByDistance = false;
 
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
@@ -398,11 +399,33 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     }
 
     if (_searchQuery.isNotEmpty) {
-      return liveVenues.where((v) {
+      liveVenues = liveVenues.where((v) {
         return v.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
             v.city.toLowerCase().contains(_searchQuery.toLowerCase());
       }).toList();
     }
+
+    // Sort by distance if enabled and position is available
+    if (_sortByDistance && _currentPosition != null) {
+      liveVenues.sort((a, b) {
+        if (a.latitude == null || a.longitude == null) return 1;
+        if (b.latitude == null || b.longitude == null) return -1;
+        double distA = Geolocator.distanceBetween(
+          _currentPosition!.latitude,
+          _currentPosition!.longitude,
+          a.latitude!,
+          a.longitude!,
+        );
+        double distB = Geolocator.distanceBetween(
+          _currentPosition!.latitude,
+          _currentPosition!.longitude,
+          b.latitude!,
+          b.longitude!,
+        );
+        return distA.compareTo(distB);
+      });
+    }
+
     return liveVenues;
   }
 
@@ -520,41 +543,70 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                 fontSize: 15,
                               ),
                             ),
-                            if (_currentPosition == null) ...[
-                              const SizedBox(width: 8),
-                              GestureDetector(
-                                onTap: () => _determinePosition(requestIfNeeded: true, showLoader: true),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
-                                    ),
-                                  ),
-                                  child: const Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.my_location_rounded,
-                                        color: LunaraTheme.electricViolet,
-                                        size: 12,
-                                      ),
-                                      SizedBox(width: 4),
-                                      Text(
-                                        'NEAR ME',
-                                        style: TextStyle(
-                                          color: LunaraTheme.electricViolet,
-                                          fontSize: 9,
-                                          fontWeight: FontWeight.bold,
+                            const SizedBox(width: 8),
+                            GestureDetector(
+                              onTap: () async {
+                                if (_currentPosition == null) {
+                                  await _determinePosition(
+                                    requestIfNeeded: true,
+                                    showLoader: true,
+                                  );
+                                  if (_currentPosition != null) {
+                                    setState(() {
+                                      _sortByDistance = true;
+                                    });
+                                  }
+                                } else {
+                                  setState(() {
+                                    _sortByDistance = !_sortByDistance;
+                                  });
+                                }
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _sortByDistance
+                                      ? LunaraTheme.electricViolet
+                                      : LunaraTheme.electricViolet.withValues(
+                                          alpha: 0.1,
                                         ),
-                                      ),
-                                    ],
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: _sortByDistance
+                                        ? LunaraTheme.electricViolet
+                                        : LunaraTheme.electricViolet.withValues(
+                                            alpha: 0.2,
+                                          ),
                                   ),
                                 ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.my_location_rounded,
+                                      color: _sortByDistance
+                                          ? Colors.white
+                                          : LunaraTheme.electricViolet,
+                                      size: 12,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'NEAR ME',
+                                      style: TextStyle(
+                                        color: _sortByDistance
+                                            ? Colors.white
+                                            : LunaraTheme.electricViolet,
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ],
+                            ),
                           ],
                         ),
                         GestureDetector(
@@ -999,11 +1051,16 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     matchingVenue = null;
                   }
                   if (matchingVenue != null) {
+                    final venueMap = matchingVenue.toMap();
+                    if (_googleRatings.containsKey(matchingVenue.id)) {
+                      venueMap['googleRating'] = _googleRatings[matchingVenue.id]?['rating'];
+                      venueMap['googleRatingCount'] = _googleRatings[matchingVenue.id]?['user_ratings_total'];
+                    }
                     Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (_) =>
-                            VenueDetailScreen(venue: matchingVenue!.toMap()),
+                            VenueDetailScreen(venue: venueMap),
                       ),
                     );
                   } else if (ad['venue'] != null) {
@@ -1021,6 +1078,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                       'images': [imageUrl],
                       'tagline': ad['venue']['tagline'] ?? '',
                     };
+                    final venueId = ad['venueId'] ?? ad['venue']['id'] ?? '';
+                    if (_googleRatings.containsKey(venueId)) {
+                      minimalVenue['googleRating'] = _googleRatings[venueId]?['rating'];
+                      minimalVenue['googleRatingCount'] = _googleRatings[venueId]?['user_ratings_total'];
+                    }
                     Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -1437,12 +1499,19 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                 ),
               ),
               child: InkWell(
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => VenueDetailScreen(venue: venue.toMap()),
-                  ),
-                ),
+                onTap: () {
+                  final venueMap = venue.toMap();
+                  if (_googleRatings.containsKey(venue.id)) {
+                    venueMap['googleRating'] = _googleRatings[venue.id]?['rating'];
+                    venueMap['googleRatingCount'] = _googleRatings[venue.id]?['user_ratings_total'];
+                  }
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => VenueDetailScreen(venue: venueMap),
+                    ),
+                  );
+                },
                 borderRadius: BorderRadius.circular(24),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1605,8 +1674,18 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                   ),
                                 ),
                               ] else ...[
-                                InkWell(
-                                  onTap: () => _determinePosition(requestIfNeeded: true, showLoader: true),
+                                 InkWell(
+                                  onTap: () async {
+                                    await _determinePosition(
+                                      requestIfNeeded: true,
+                                      showLoader: true,
+                                    );
+                                    if (_currentPosition != null) {
+                                      setState(() {
+                                        _sortByDistance = true;
+                                      });
+                                    }
+                                  },
                                   borderRadius: BorderRadius.circular(8),
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

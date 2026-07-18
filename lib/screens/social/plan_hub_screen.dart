@@ -16,6 +16,7 @@ import 'package:lunara_app/screens/social/live_feed_screen.dart';
 import '../profile/profile_screen.dart';
 import '../../widgets/venue_timing_error_dialog.dart';
 import '../discovery/upcoming_party_screen.dart';
+import '../../services/google_places_service.dart';
 
 class PlanHubScreen extends StatefulWidget {
   final bool autoShowCreatePlan;
@@ -39,6 +40,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
   List<Venue> _allVenues = [];
   bool _isLoadingVenues = true;
   User? _currentUser;
+  StateSetter? _activeSheetSetState;
+  final Map<String, Map<String, dynamic>> _googleRatings = {};
 
   List<Map<String, dynamic>> _customerList = [];
   List<Map<String, dynamic>> _partyPlans = [];
@@ -172,6 +175,25 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     }
   }
 
+  void _fetchGoogleRatingsForVenues(List<Venue> venues) {
+    for (final venue in venues) {
+      if (venue.name.isNotEmpty && !_googleRatings.containsKey(venue.id)) {
+        GooglePlacesService.fetchGoogleRating(venue.name, venue.city).then((result) {
+          if (result != null && mounted) {
+            setState(() {
+              _googleRatings[venue.id] = result;
+            });
+            if (_activeSheetSetState != null) {
+              try {
+                _activeSheetSetState!(() {});
+              } catch (_) {}
+            }
+          }
+        });
+      }
+    }
+  }
+
   Future<void> _loadVenues() async {
     try {
       final venues = await ApiService.fetchVenues();
@@ -182,6 +204,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
               .toList();
           _isLoadingVenues = false;
         });
+        _fetchGoogleRatingsForVenues(_allVenues);
       }
     } catch (e) {
       debugPrint('Error loading venues: $e');
@@ -1297,6 +1320,15 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     final chargesCtrl = TextEditingController(text: '0'); // default to 0
     final mobileCtrl = TextEditingController();
     final altMobileCtrl = TextEditingController();
+    // Payment details controllers
+    final upiCtrl = TextEditingController();
+    final upiNumberCtrl = TextEditingController();
+    final bankNameCtrl = TextEditingController();
+    final accountHolderCtrl = TextEditingController();
+    final accountNumberCtrl = TextEditingController();
+    final ifscCtrl = TextEditingController();
+    String selectedPaymentOption = 'upi_id'; // 'upi_id', 'upi_number', 'bank'
+
     Venue? selectedVenue;
     String searchQuery = '';
     DateTime? selectedDate;
@@ -1320,6 +1352,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
         });
         return StatefulBuilder(
           builder: (context, setSheetState) {
+            _activeSheetSetState = setSheetState;
             final now = DateTime.now();
             final today = DateTime(now.year, now.month, now.day);
             final tomorrow = today.add(const Duration(days: 1));
@@ -1687,7 +1720,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
             }
 
             final List<Venue> displayedVenues = searchQuery.isEmpty
-                ? _allVenues.take(5).toList()
+                ? _allVenues
                 : _allVenues
                       .where(
                         (v) =>
@@ -1771,6 +1804,11 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             itemBuilder: (context, index) {
                               final v = displayedVenues[index];
                               final isSelected = selectedVenue?.id == v.id;
+                              final ratingMap = _googleRatings[v.id];
+                              final double rating = (ratingMap != null && ratingMap['rating'] != null)
+                                  ? (ratingMap['rating'] as num).toDouble()
+                                  : (v.averageRating > 0.0 ? v.averageRating : 4.5);
+
                               return GestureDetector(
                                 onTap: () {
                                   setSheetState(() {
@@ -1850,19 +1888,56 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         : null,
                                     color: Colors.grey[100],
                                   ),
-                                  child: Center(
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(8.0),
-                                      child: Text(
-                                        v.name.toUpperCase(),
-                                        textAlign: TextAlign.center,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.bold,
+                                  child: Stack(
+                                    children: [
+                                      Center(
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(8.0),
+                                          child: Text(
+                                            v.name.toUpperCase(),
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
                                         ),
                                       ),
-                                    ),
+                                      Positioned(
+                                        top: 8,
+                                        right: 8,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.black.withValues(alpha: 0.6),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(
+                                                Icons.star_rounded,
+                                                color: Colors.amber,
+                                                size: 10,
+                                              ),
+                                              const SizedBox(width: 2),
+                                              Text(
+                                                rating.toStringAsFixed(1),
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 8,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               );
@@ -2685,6 +2760,157 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             LengthLimitingTextInputFormatter(10),
                           ],
                         ),
+                        const SizedBox(height: 20),
+                        const Text(
+                          'PAYMENT DETAILS *',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.5,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Add your payment details so admin can settle your earnings after the meet.',
+                          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: () => setSheetState(() => selectedPaymentOption = 'upi_id'),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: selectedPaymentOption == 'upi_id'
+                                        ? const Color(0xFF7C3AED)
+                                        : Colors.grey[100],
+                                    borderRadius: const BorderRadius.only(
+                                      topLeft: Radius.circular(10),
+                                      bottomLeft: Radius.circular(10),
+                                    ),
+                                    border: Border.all(color: Colors.grey[200]!),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      'UPI ID',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: selectedPaymentOption == 'upi_id'
+                                            ? Colors.white
+                                            : Colors.black54,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: () => setSheetState(() => selectedPaymentOption = 'upi_number'),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: selectedPaymentOption == 'upi_number'
+                                        ? const Color(0xFF7C3AED)
+                                        : Colors.grey[100],
+                                    border: Border.all(color: Colors.grey[200]!),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      'UPI Number',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: selectedPaymentOption == 'upi_number'
+                                            ? Colors.white
+                                            : Colors.black54,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: () => setSheetState(() => selectedPaymentOption = 'bank'),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: selectedPaymentOption == 'bank'
+                                        ? const Color(0xFF7C3AED)
+                                        : Colors.grey[100],
+                                    borderRadius: const BorderRadius.only(
+                                      topRight: Radius.circular(10),
+                                      bottomRight: Radius.circular(10),
+                                    ),
+                                    border: Border.all(color: Colors.grey[200]!),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      'Bank Account',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: selectedPaymentOption == 'bank'
+                                            ? Colors.white
+                                            : Colors.black54,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        if (selectedPaymentOption == 'upi_id') ...[
+                          _sheetField(
+                            controller: upiCtrl,
+                            hint: 'Enter UPI ID (e.g. name@upi) *',
+                            icon: Icons.qr_code_rounded,
+                            keyboardType: TextInputType.emailAddress,
+                          ),
+                        ] else if (selectedPaymentOption == 'upi_number') ...[
+                          _sheetField(
+                            controller: upiNumberCtrl,
+                            hint: 'Enter UPI Number (10-digit mobile number) *',
+                            icon: Icons.phone_android_rounded,
+                            keyboardType: TextInputType.phone,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                              LengthLimitingTextInputFormatter(10),
+                            ],
+                          ),
+                        ] else ...[
+                          _sheetField(
+                            controller: bankNameCtrl,
+                            hint: 'Bank Name *',
+                            icon: Icons.account_balance_rounded,
+                          ),
+                          const SizedBox(height: 10),
+                          _sheetField(
+                            controller: accountHolderCtrl,
+                            hint: 'Account Holder Name *',
+                            icon: Icons.person_rounded,
+                          ),
+                          const SizedBox(height: 10),
+                          _sheetField(
+                            controller: accountNumberCtrl,
+                            hint: 'Account Number *',
+                            icon: Icons.credit_card_rounded,
+                            keyboardType: TextInputType.number,
+                          ),
+                          const SizedBox(height: 10),
+                          _sheetField(
+                            controller: ifscCtrl,
+                            hint: 'IFSC Code *',
+                            icon: Icons.code_rounded,
+                          ),
+                        ],
                       ],
 
                       const SizedBox(height: 16),
@@ -2853,6 +3079,33 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                       );
                                       return;
                                     }
+
+                                    // Validate payment details
+                                    String? paymentError;
+                                    if (selectedPaymentOption == 'upi_id') {
+                                      if (upiCtrl.text.trim().isEmpty) {
+                                        paymentError = 'Please enter a UPI ID';
+                                      }
+                                    } else if (selectedPaymentOption == 'upi_number') {
+                                      final numStr = upiNumberCtrl.text.trim();
+                                      if (numStr.isEmpty) {
+                                        paymentError = 'Please enter a UPI Number';
+                                      } else if (!mobileRegExp.hasMatch(numStr)) {
+                                        paymentError = 'UPI Number must be a valid 10-digit mobile number';
+                                      }
+                                    } else if (selectedPaymentOption == 'bank') {
+                                      if (bankNameCtrl.text.trim().isEmpty ||
+                                          accountHolderCtrl.text.trim().isEmpty ||
+                                          accountNumberCtrl.text.trim().isEmpty ||
+                                          ifscCtrl.text.trim().isEmpty) {
+                                        paymentError = 'All bank account details are required.';
+                                      }
+                                    }
+
+                                    if (paymentError != null) {
+                                      setSheetState(() => sheetErrorMsg = paymentError);
+                                      return;
+                                    }
                                   }
                                   setSheetState(() => isPosting = true);
 
@@ -2872,6 +3125,20 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                             alternateMobileNumber: altMobileCtrl
                                                 .text
                                                 .trim(),
+                                            upiId: selectedPaymentOption == 'upi_id' ? upiCtrl.text.trim() : null,
+                                            upiNumber: selectedPaymentOption == 'upi_number' ? upiNumberCtrl.text.trim() : null,
+                                            bankName: selectedPaymentOption == 'bank'
+                                                ? bankNameCtrl.text.trim()
+                                                : null,
+                                            accountNumber: selectedPaymentOption == 'bank'
+                                                ? accountNumberCtrl.text.trim()
+                                                : null,
+                                            accountHolderName: selectedPaymentOption == 'bank'
+                                                ? accountHolderCtrl.text.trim()
+                                                : null,
+                                            ifscCode: selectedPaymentOption == 'bank'
+                                                ? ifscCtrl.text.trim()
+                                                : null,
                                             foodPreference: selectedFoodPref,
                                             drinkPreference: selectedDrinkPref,
                                           );
@@ -3038,7 +3305,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
           },
         );
       },
-    );
+    ).whenComplete(() => _activeSheetSetState = null);
   }
 
   void _showArrangeStrangersMeetSheet(BuildContext context) {
@@ -3047,7 +3314,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     DateTime? selectedDate;
     TimeOfDay? selectedTime;
     int numberOfPersons = 21;
-    bool useUPI = true; // Toggle between UPI and bank account
+    String selectedPaymentOption = 'upi_id'; // 'upi_id', 'upi_number', 'bank'
     String foodPreference = 'Both';
     String drinkPreference = 'Both';
     String? sheetErrorMsg;
@@ -3060,6 +3327,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     final chargesCtrl = TextEditingController(text: '0');
     // Bank / UPI fields
     final upiCtrl = TextEditingController();
+    final upiNumberCtrl = TextEditingController();
     final bankNameCtrl = TextEditingController();
     final accountNumberCtrl = TextEditingController();
     final accountHolderCtrl = TextEditingController();
@@ -3075,6 +3343,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
         });
         return StatefulBuilder(
           builder: (context, setSheetState) {
+            _activeSheetSetState = setSheetState;
             final now = DateTime.now();
             final today = DateTime(now.year, now.month, now.day);
             final tomorrow = today.add(const Duration(days: 1));
@@ -3424,7 +3693,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
             }
 
             final List<Venue> displayedVenues = searchQuery.isEmpty
-                ? _allVenues.take(5).toList()
+                ? _allVenues
                 : _allVenues
                       .where(
                         (v) =>
@@ -3508,6 +3777,11 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             itemBuilder: (context, index) {
                               final v = displayedVenues[index];
                               final isSelected = selectedVenue?.id == v.id;
+                              final ratingMap = _googleRatings[v.id];
+                              final double rating = (ratingMap != null && ratingMap['rating'] != null)
+                                  ? (ratingMap['rating'] as num).toDouble()
+                                  : (v.averageRating > 0.0 ? v.averageRating : 4.5);
+
                               return GestureDetector(
                                 onTap: () {
                                   setSheetState(() {
@@ -3585,19 +3859,56 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         : null,
                                     color: Colors.grey[100],
                                   ),
-                                  child: Center(
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(8.0),
-                                      child: Text(
-                                        v.name.toUpperCase(),
-                                        textAlign: TextAlign.center,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.bold,
+                                  child: Stack(
+                                    children: [
+                                      Center(
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(8.0),
+                                          child: Text(
+                                            v.name.toUpperCase(),
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
                                         ),
                                       ),
-                                    ),
+                                      Positioned(
+                                        top: 8,
+                                        right: 8,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.black.withValues(alpha: 0.6),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(
+                                                Icons.star_rounded,
+                                                color: Colors.amber,
+                                                size: 10,
+                                              ),
+                                              const SizedBox(width: 2),
+                                              Text(
+                                                rating.toStringAsFixed(1),
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 8,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               );
@@ -4104,18 +4415,15 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       ),
                       const SizedBox(height: 12),
 
-                      // UPI / Bank toggle
                       Row(
                         children: [
                           Expanded(
                             child: GestureDetector(
-                              onTap: () => setSheetState(() => useUPI = true),
+                              onTap: () => setSheetState(() => selectedPaymentOption = 'upi_id'),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 10,
-                                ),
+                                padding: const EdgeInsets.symmetric(vertical: 10),
                                 decoration: BoxDecoration(
-                                  color: useUPI
+                                  color: selectedPaymentOption == 'upi_id'
                                       ? const Color(0xFF7C3AED)
                                       : Colors.grey[100],
                                   borderRadius: const BorderRadius.only(
@@ -4128,9 +4436,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                   child: Text(
                                     'UPI ID',
                                     style: TextStyle(
-                                      fontSize: 12,
+                                      fontSize: 11,
                                       fontWeight: FontWeight.bold,
-                                      color: useUPI
+                                      color: selectedPaymentOption == 'upi_id'
                                           ? Colors.white
                                           : Colors.black54,
                                     ),
@@ -4141,13 +4449,37 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                           ),
                           Expanded(
                             child: GestureDetector(
-                              onTap: () => setSheetState(() => useUPI = false),
+                              onTap: () => setSheetState(() => selectedPaymentOption = 'upi_number'),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 10,
-                                ),
+                                padding: const EdgeInsets.symmetric(vertical: 10),
                                 decoration: BoxDecoration(
-                                  color: !useUPI
+                                  color: selectedPaymentOption == 'upi_number'
+                                      ? const Color(0xFF7C3AED)
+                                      : Colors.grey[100],
+                                  border: Border.all(color: Colors.grey[200]!),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    'UPI Number',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: selectedPaymentOption == 'upi_number'
+                                          ? Colors.white
+                                          : Colors.black54,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => setSheetState(() => selectedPaymentOption = 'bank'),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: selectedPaymentOption == 'bank'
                                       ? const Color(0xFF7C3AED)
                                       : Colors.grey[100],
                                   borderRadius: const BorderRadius.only(
@@ -4160,9 +4492,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                   child: Text(
                                     'Bank Account',
                                     style: TextStyle(
-                                      fontSize: 12,
+                                      fontSize: 11,
                                       fontWeight: FontWeight.bold,
-                                      color: !useUPI
+                                      color: selectedPaymentOption == 'bank'
                                           ? Colors.white
                                           : Colors.black54,
                                     ),
@@ -4175,36 +4507,47 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       ),
                       const SizedBox(height: 12),
 
-                      if (useUPI) ...[
+                      if (selectedPaymentOption == 'upi_id') ...[
                         _sheetField(
                           controller: upiCtrl,
-                          hint: 'Enter UPI ID (e.g. name@upi)',
+                          hint: 'Enter UPI ID (e.g. name@upi) *',
                           icon: Icons.qr_code_rounded,
                           keyboardType: TextInputType.emailAddress,
+                        ),
+                      ] else if (selectedPaymentOption == 'upi_number') ...[
+                        _sheetField(
+                          controller: upiNumberCtrl,
+                          hint: 'Enter UPI Number (10-digit mobile number) *',
+                          icon: Icons.phone_android_rounded,
+                          keyboardType: TextInputType.phone,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(10),
+                          ],
                         ),
                       ] else ...[
                         _sheetField(
                           controller: bankNameCtrl,
-                          hint: 'Bank Name',
+                          hint: 'Bank Name *',
                           icon: Icons.account_balance_rounded,
                         ),
                         const SizedBox(height: 10),
                         _sheetField(
                           controller: accountHolderCtrl,
-                          hint: 'Account Holder Name',
+                          hint: 'Account Holder Name *',
                           icon: Icons.person_rounded,
                         ),
                         const SizedBox(height: 10),
                         _sheetField(
                           controller: accountNumberCtrl,
-                          hint: 'Account Number',
+                          hint: 'Account Number *',
                           icon: Icons.credit_card_rounded,
                           keyboardType: TextInputType.number,
                         ),
                         const SizedBox(height: 10),
                         _sheetField(
                           controller: ifscCtrl,
-                          hint: 'IFSC Code',
+                          hint: 'IFSC Code *',
                           icon: Icons.code_rounded,
                         ),
                       ],
@@ -4425,6 +4768,33 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               return;
                             }
 
+                            // Validate payment details
+                            String? paymentError;
+                            if (selectedPaymentOption == 'upi_id') {
+                              if (upiCtrl.text.trim().isEmpty) {
+                                paymentError = 'Please enter a UPI ID';
+                              }
+                            } else if (selectedPaymentOption == 'upi_number') {
+                              final numStr = upiNumberCtrl.text.trim();
+                              if (numStr.isEmpty) {
+                                paymentError = 'Please enter a UPI Number';
+                              } else if (!mobileRegExp.hasMatch(numStr)) {
+                                paymentError = 'UPI Number must be a valid 10-digit mobile number';
+                              }
+                            } else if (selectedPaymentOption == 'bank') {
+                              if (bankNameCtrl.text.trim().isEmpty ||
+                                  accountHolderCtrl.text.trim().isEmpty ||
+                                  accountNumberCtrl.text.trim().isEmpty ||
+                                  ifscCtrl.text.trim().isEmpty) {
+                                paymentError = 'All bank account details are required.';
+                              }
+                            }
+
+                            if (paymentError != null) {
+                              setSheetState(() => sheetErrorMsg = paymentError);
+                              return;
+                            }
+
                             final userId = ApiService.currentUserId;
                             if (userId == null) {
                               setSheetState(
@@ -4470,18 +4840,19 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                   mobileNumber: mobileCtrl.text.trim(),
                                   alternateMobileNumber: altMobileCtrl.text
                                       .trim(),
-                                  // Bank/UPI details
-                                  upiId: useUPI ? upiCtrl.text.trim() : null,
-                                  bankName: !useUPI
+                                  // Bank/UPI/UPI Number details
+                                  upiId: selectedPaymentOption == 'upi_id' ? upiCtrl.text.trim() : null,
+                                  upiNumber: selectedPaymentOption == 'upi_number' ? upiNumberCtrl.text.trim() : null,
+                                  bankName: selectedPaymentOption == 'bank'
                                       ? bankNameCtrl.text.trim()
                                       : null,
-                                  accountNumber: !useUPI
+                                  accountNumber: selectedPaymentOption == 'bank'
                                       ? accountNumberCtrl.text.trim()
                                       : null,
-                                  accountHolderName: !useUPI
+                                  accountHolderName: selectedPaymentOption == 'bank'
                                       ? accountHolderCtrl.text.trim()
                                       : null,
-                                  ifscCode: !useUPI
+                                  ifscCode: selectedPaymentOption == 'bank'
                                       ? ifscCtrl.text.trim()
                                       : null,
                                   foodPreference: foodPreference,
@@ -4523,7 +4894,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
           },
         );
       },
-    );
+    ).whenComplete(() => _activeSheetSetState = null);
   }
 
   Widget _sheetField({
