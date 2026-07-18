@@ -1055,4 +1055,34 @@ router.post('/safety-check', async (req, res) => {
     }
 });
 
+/**
+ * POST /api/mobile/user/delete-account
+ *
+ * Permanently deletes the user's account (soft-delete):
+ *   - Requires `userId` and `password` in body for security re-authentication
+ *   - Optionally accepts `reason` (string) explaining why they're leaving
+ *   - Archives a full snapshot into deleted_accounts table
+ *   - Sets isDeleted=true, isActive=false on the user record
+ *
+ * Body: { userId: string, password: string, reason?: string }
+ *
+ * Responses:
+ *   200  { success, code: 'ACCOUNT_DELETED', message }
+ *   400  { success, code: 'PASSWORD_REQUIRED', message }
+ *   401  { success, code: 'INVALID_PASSWORD', message }
+ *   404  { success, message: 'User not found' }
+ *   409  { success, code: 'ALREADY_DELETED', message }
+ *   500  { success, code: 'SERVER_ERROR', message }
+ */
+router.post(
+    '/delete-account',
+    [
+        body('userId').optional().isUUID().withMessage('userId must be a valid UUID'),
+        body('password').notEmpty().withMessage('password is required to confirm account deletion'),
+        body('reason').optional().isString().isLength({ max: 500 }),
+        validate,
+    ],
+    mobileUserController.deleteAccount
+);
+
 export default router;

@@ -2,8 +2,20 @@ import { Router } from 'express';
 import { param, body } from 'express-validator';
 import { validate } from '../middleware/validate';
 import * as ctrl from '../controllers/adminBookingController';
+import { authenticate, authorize } from '../middleware/auth';
+import { UserRole } from '../models/User';
 
 const router = Router();
+
+// Apply auth middleware to all admin bookings routes
+router.use(authenticate);
+router.use(authorize(UserRole.ADMIN, UserRole.VENUE_OWNER));
+
+// GET /api/admin/bookings
+router.get('/', ctrl.getBookings);
+
+// GET /api/admin/bookings/stats
+router.get('/stats', ctrl.getBookingStats);
 
 // GET /api/admin/bookings/large-party-requests
 router.get('/large-party-requests', ctrl.getLargePartyRequests);

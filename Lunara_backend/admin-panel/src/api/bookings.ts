@@ -18,6 +18,33 @@ export interface Booking {
     specialRequests?: string;
     isGroupBooking: boolean;
     createdAt: string;
+    customer?: {
+        id: string;
+        firstName: string;
+        lastName: string;
+        email: string;
+        phone: string;
+        profileImageUrl?: string;
+    };
+    venue?: {
+        id: string;
+        name: string;
+        city: string;
+        category: string;
+    };
+    goingMode?: string;
+    ticketCode?: string;
+    startTime?: string;
+    numberOfGuests?: number;
+    depositAmount?: number;
+    commissionAmount?: number;
+    paymentMode?: string;
+    mobileNumber?: string;
+    tablePackage?: string;
+    isLargePartyRequest?: boolean;
+    adminApprovalStatus?: string;
+    adminPaymentLink?: string;
+    adminPaymentAmount?: number;
 }
 
 export interface GetBookingsParams {
@@ -31,6 +58,10 @@ export interface GetBookingsParams {
     endDate?: string;
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
+    goingMode?: string;
+    date?: string;
+    isGroupBooking?: boolean;
+    isLargePartyRequest?: boolean;
 }
 
 export interface GetBookingsResponse {

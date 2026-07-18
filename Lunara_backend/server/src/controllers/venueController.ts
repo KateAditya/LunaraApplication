@@ -503,35 +503,34 @@ export const updateVenue = async (req: Request, res: Response) => {
         const keepCoverImage = data.keepCoverImage === 'true' || data.keepCoverImage === true;
 
         // ── Helper: clean up database/disk images that are no longer kept ────
+        const getNormalizedPath = (pathOrUrl: string): string => {
+            if (!pathOrUrl) return '';
+            let relPath = pathOrUrl.replace(/\\/g, '/');
+            try {
+                if (relPath.startsWith('http://') || relPath.startsWith('https://')) {
+                    relPath = new URL(relPath).pathname;
+                }
+            } catch (e) {
+                // Fallback if URL parsing fails
+            }
+            if (relPath.startsWith('/')) {
+                relPath = relPath.substring(1);
+            }
+            return relPath.toLowerCase();
+        };
+
         const cleanOldImages = async (imageType: VenueImageType, keepUrls: string[]) => {
             try {
                 const existingImages = await VenueImage.findAll({
                     where: { venueId: venue.id, imageType }
                 });
 
-                const norm = (p: string) => p.replace(/\\/g, '/').toLowerCase();
-
                 const normalizedKeepPaths = new Set(
-                    keepUrls
-                        .map(url => {
-                            let relPath = url;
-                            try {
-                                if (url.startsWith('http://') || url.startsWith('https://')) {
-                                    relPath = new URL(url).pathname;
-                                }
-                            } catch (e) {
-                                // Fallback if URL parsing fails
-                            }
-                            if (relPath.startsWith('/')) {
-                                relPath = relPath.substring(1);
-                            }
-                            return norm(relPath);
-                        })
-                        .filter(Boolean)
+                    keepUrls.map(url => getNormalizedPath(url)).filter(Boolean)
                 );
 
                 for (const img of existingImages) {
-                    const normalizedFilePath = norm(img.filePath);
+                    const normalizedFilePath = getNormalizedPath(img.filePath);
                     if (!normalizedKeepPaths.has(normalizedFilePath)) {
                         await img.destroy();
                         console.log(`[updateVenue] Deleted image not in keep list: ${img.filePath}`);

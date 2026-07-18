@@ -6,14 +6,16 @@ import sharp from 'sharp';
 import { UserProfile, UserPreference, UserPhoto, UserMatch, PartyPlan, Booking } from '../models';
 import User, { UserRole } from '../models/User';
 import sequelize from '../config/database';
+import DeletedAccount from '../models/DeletedAccount';
+import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription';
+import SubscriptionPackage from '../models/SubscriptionPackage';
+import bcrypt from 'bcryptjs';
 
 import { logger } from '../config/logger';
 import { Op } from 'sequelize';
 import { getUserGalleryDir } from '../middleware/upload';
 import SocialConnection, { ConnectionStatus } from '../models/SocialConnection';
 import UserPenalty from '../models/UserPenalty';
-import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription';
-import SubscriptionPackage from '../models/SubscriptionPackage';
 
 // ─── Image compression constants ──────────────────────────────────────────────
 const PHOTO_MAX_WIDTH = 1080;   // px
@@ -1456,6 +1458,129 @@ export const backtrackSwipe = async (req: Request, res: Response): Promise<Respo
     }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/user/delete-account
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const deleteAccount = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const userId = req.body.userId || req.user?.id;
+        const { password, reason } = req.body;
+
+        if (!userId) {
+            return res.status(401).json({ success: false, message: 'Authentication required' });
+        }
+
+        if (!password) {
+            return res.status(400).json({
+                success: false,
+                code: 'PASSWORD_REQUIRED',
+                message: 'Please confirm your password to delete your account',
+            });
+        }
+
+        // ── 1. Fetch the user ──────────────────────────────────────────────────
+        const user = await User.findByPk(userId, {
+            attributes: [
+                'id', 'email', 'phone', 'firstName', 'lastName', 'dateOfBirth', 'role',
+                'isVerified', 'blockCount', 'isAutoblocked', 'autoblockedReason',
+                'noShowCount', 'lastLoginAt', 'createdAt', 'profileImageUrl', 'passwordHash',
+                'isDeleted', 'fcmToken',
+            ]
+        });
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        // ── 2. Check if already deleted ────────────────────────────────────────
+        if ((user as any).isDeleted) {
+            return res.status(409).json({
+                success: false,
+                code: 'ALREADY_DELETED',
+                message: 'This account has already been deleted',
+            });
+        }
+
+        // ── 3. Password re-authentication gate ─────────────────────────────────
+        const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+        if (!isPasswordValid) {
+            return res.status(401).json({
+                success: false,
+                code: 'INVALID_PASSWORD',
+                message: 'Incorrect password. Please try again.',
+            });
+        }
+
+        // ── 4. Gather snapshot counts ──────────────────────────────────────────
+        const [bookingsCount, subscriptionsCount, photosCount, profileData] = await Promise.all([
+            Booking.count({ where: { userId } }),
+            UserSubscription.count({ where: { userId } }),
+            UserPhoto.count({ where: { userId } }),
+            UserProfile.findOne({ where: { userId }, attributes: ['gender', 'city', 'bio', 'occupation', 'education'] }),
+        ]);
+
+        // ── 5. Archive a full snapshot into deleted_accounts ───────────────────
+        const ipAddress = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
+            || req.socket?.remoteAddress
+            || 'unknown';
+
+        await DeletedAccount.create({
+            originalUserId: userId,
+            email: user.email,
+            phone: user.phone,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            dateOfBirth: user.dateOfBirth,
+            role: user.role,
+            gender: (profileData as any)?.gender ?? null,
+            city: (profileData as any)?.city ?? null,
+            bio: (profileData as any)?.bio ?? null,
+            profileImageUrl: user.profileImageUrl ?? null,
+            occupation: (profileData as any)?.occupation ?? null,
+            education: (profileData as any)?.education ?? null,
+            isVerified: user.isVerified,
+            blockCount: user.blockCount,
+            isAutoblocked: user.isAutoblocked,
+            autoblockedReason: user.autoblockedReason ?? null,
+            noShowCount: user.noShowCount,
+            lastLoginAt: (user as any).lastLoginAt ?? null,
+            registeredAt: (user as any).createdAt ?? null,
+            deletionReason: reason?.trim() ?? null,
+            deletedByUser: true,
+            ipAddress,
+            bookingsCount,
+            subscriptionsCount,
+            photosCount,
+        });
+
+        // ── 6. Soft-delete: mark as deleted, deactivate, clear sensitive tokens ─
+        await user.update({
+            isDeleted: true,
+            isActive: false,
+            deletedAt: new Date(),
+            deletionReason: reason?.trim() ?? null,
+            fcmToken: null,   // Stop all push notifications immediately
+        } as any);
+
+        logger.info(`[DeleteAccount] User ${userId} (${user.email}) self-deleted their account. Reason: ${reason ?? 'N/A'}`);
+
+        return res.status(200).json({
+            success: true,
+            code: 'ACCOUNT_DELETED',
+            message: 'Your account has been permanently deleted. We are sorry to see you go.',
+        });
+
+    } catch (error: any) {
+        logger.error('[DeleteAccount] Error:', error);
+        return res.status(500).json({
+            success: false,
+            code: 'SERVER_ERROR',
+            message: 'Failed to delete account. Please try again or contact support.',
+        });
+    }
+};
+
 export default {
     uploadPhotos,
     completeProfileSetup,
@@ -1472,4 +1597,17 @@ export default {
     getMyLikesAndMatches,
     getSwipeStatus,
     backtrackSwipe,
+    deleteAccount,
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/user/delete-account
+// Permanently soft-deletes the user's account:
+//   1. Validates password (security re-auth gate)
+//   2. Snapshots all user data into deleted_accounts archive
+//   3. Soft-deletes the user: sets isDeleted=true, isActive=false
+//   4. Clears FCM token so no more push notifications
+//   5. Returns ACCOUNT_DELETED so client clears local state
+// ─────────────────────────────────────────────────────────────────────────────
+// NOTE: This function is defined outside the default export to keep the file
+// structure clean. It is referenced in the export above.

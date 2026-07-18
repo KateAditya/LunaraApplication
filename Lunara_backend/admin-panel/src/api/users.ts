@@ -37,7 +37,17 @@ export interface UpdateUserData {
     preferences?: Partial<User['preferences']>;
 }
 
+export interface GetDeletedAccountsParams {
+    page?: number;
+    limit?: number;
+    search?: string;
+    from?: string;
+    to?: string;
+}
+
 export const usersApi = {
+    // ── Active Users ────────────────────────────────────────────────────────
+
     getUsers: (params: GetUsersParams): Promise<GetUsersResponse> => {
         return apiClient.get('/api/users', { params });
     },
@@ -59,7 +69,7 @@ export const usersApi = {
     },
 
     activateUser: (id: string): Promise<{ success: boolean; data: User }> => {
-        return apiClient.post(`/api/users/${id}/activate`); // Assuming custom endpoint or handled by update
+        return apiClient.post(`/api/users/${id}/activate`);
     },
 
     deactivateUser: (id: string): Promise<{ success: boolean; data: User }> => {
@@ -76,6 +86,24 @@ export const usersApi = {
 
     unblockUser: (id: string): Promise<{ success: boolean; message: string; user?: any }> => {
         return apiClient.post(`/api/users/${id}/unblock`);
+    },
+
+    // ── Deleted Accounts Admin API ──────────────────────────────────────────
+
+    getDeletedAccounts: (params?: GetDeletedAccountsParams): Promise<any> => {
+        return apiClient.get('/api/users/deleted-accounts', { params });
+    },
+
+    getDeletedAccountById: (id: string): Promise<any> => {
+        return apiClient.get(`/api/users/deleted-accounts/${id}`);
+    },
+
+    updateDeletedAccountNotes: (id: string, adminNotes: string): Promise<any> => {
+        return apiClient.patch(`/api/users/deleted-accounts/${id}/notes`, { adminNotes });
+    },
+
+    restoreDeletedAccount: (id: string, adminNotes?: string): Promise<any> => {
+        return apiClient.post(`/api/users/deleted-accounts/${id}/restore`, { adminNotes });
     },
 };
 

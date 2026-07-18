@@ -35,11 +35,15 @@ export interface UserAttributes {
     blockCount: number;
     isAutoblocked: boolean;
     autoblockedReason?: string | null;
+    // Soft-deletion
+    isDeleted: boolean;
+    deletedAt?: Date | null;
+    deletionReason?: string | null;
 }
 
 // Creation attributes (optional fields)
 export interface UserCreationAttributes
-    extends Optional<UserAttributes, 'id' | 'isVerified' | 'isActive' | 'isOnline' | 'mfaEnabled' | 'mfaSecret' | 'profileImageUrl' | 'createdAt' | 'updatedAt' | 'lastLoginAt' | 'lastActiveAt' | 'noShowCount' | 'fcmToken' | 'clearedNotificationsAt' | 'blockCount' | 'isAutoblocked' | 'autoblockedReason'> { }
+    extends Optional<UserAttributes, 'id' | 'isVerified' | 'isActive' | 'isOnline' | 'mfaEnabled' | 'mfaSecret' | 'profileImageUrl' | 'createdAt' | 'updatedAt' | 'lastLoginAt' | 'lastActiveAt' | 'noShowCount' | 'fcmToken' | 'clearedNotificationsAt' | 'blockCount' | 'isAutoblocked' | 'autoblockedReason' | 'isDeleted' | 'deletedAt' | 'deletionReason'> { }
 
 // User model class
 class User extends Model<UserAttributes, UserCreationAttributes> implements UserAttributes {
@@ -67,6 +71,9 @@ class User extends Model<UserAttributes, UserCreationAttributes> implements User
     public blockCount!: number;
     public isAutoblocked!: boolean;
     public autoblockedReason?: string | null;
+    public isDeleted!: boolean;
+    public deletedAt?: Date | null;
+    public deletionReason?: string | null;
 
     // Instance methods
     public async comparePassword(password: string): Promise<boolean> {
@@ -242,6 +249,21 @@ User.init(
             type: DataTypes.TEXT,
             allowNull: true,
             field: 'autoblocked_reason',
+        },
+        isDeleted: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            field: 'is_deleted',
+        },
+        deletedAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'deleted_at',
+        },
+        deletionReason: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+            field: 'deletion_reason',
         },
     },
     {

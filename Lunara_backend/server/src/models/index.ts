@@ -35,6 +35,7 @@ import ChatSubscription from './ChatSubscription';
 import SubscriptionPackage from './SubscriptionPackage';
 import UserSubscription from './UserSubscription';
 import SafetyCheck from './SafetyCheck';
+import DeletedAccount from './DeletedAccount';
 
 // ============================================================================
 // User Associations
@@ -488,6 +489,7 @@ export {
     SubscriptionPackage,
     UserSubscription,
     SafetyCheck,
+    DeletedAccount,
 };
 
 // Export sync function
@@ -531,6 +533,7 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
         await SubscriptionPackage.sync(options);
         await UserSubscription.sync(options);
         await SafetyCheck.sync(options);
+        await DeletedAccount.sync(options);
 
         console.log('✅ All models synchronized successfully');
     } catch (error) {

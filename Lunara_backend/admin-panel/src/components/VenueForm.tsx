@@ -145,8 +145,8 @@ const getDefaultForm = (venue?: Venue | null): Record<string, any> => ({
     altCpEmail: venue?.altContactPerson?.email || '',
 
     // Operations
-    openingTime: venue?.operations?.openingTime || '',
-    closingTime: venue?.operations?.closingTime || '',
+    openingTime: venue?.operations?.openingTime || '19:00',
+    closingTime: venue?.operations?.closingTime || '01:30',
     daysOpen: venue?.operations?.daysOpen || [...DAYS],
     closedDates: venue?.operations?.closedDates?.join(', ') || '',
     seatingCapacity: venue?.operations?.seatingCapacity?.toString() || '',
@@ -266,6 +266,76 @@ const INDIAN_CITIES = [
     "Ujjain", "Ulhasnagar", "Uluberia", "Vadodara", "Varanasi", "Vasai-Virar", "Vijayawada", "Vijayanagaram", 
     "Visakhapatnam", "Warangal"
 ];
+
+const parse24To12 = (time24: string) => {
+    if (!time24 || !time24.includes(':')) {
+        return { hour: '07', minute: '00', period: 'PM' };
+    }
+    const [hStr, mStr] = time24.split(':');
+    let h = parseInt(hStr, 10);
+    const m = mStr.substring(0, 2);
+    let period = 'AM';
+    if (h >= 12) {
+        period = 'PM';
+        if (h > 12) h -= 12;
+    }
+    if (h === 0) {
+        h = 12;
+    }
+    const hour = h.toString().padStart(2, '0');
+    return { hour, minute: m, period };
+};
+
+const format12To24 = (hour: string, minute: string, period: string) => {
+    let h = parseInt(hour, 10);
+    if (period === 'PM' && h < 12) {
+        h += 12;
+    } else if (period === 'AM' && h === 12) {
+        h = 0;
+    }
+    return `${h.toString().padStart(2, '0')}:${minute}`;
+};
+
+const TimePicker12: React.FC<{
+    value: string;
+    onChange: (val: string) => void;
+}> = ({ value, onChange }) => {
+    const { hour, minute, period } = parse24To12(value);
+
+    const hours = Array.from({ length: 12 }, (_, i) => (i + 1).toString().padStart(2, '0'));
+    const minutes = Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0'));
+
+    return (
+        <div style={{ display: 'flex', gap: '0.375rem' }}>
+            <select
+                className="vz-form-control"
+                value={hour}
+                onChange={e => onChange(format12To24(e.target.value, minute, period))}
+                style={{ flex: 1, minWidth: '60px', padding: '0.375rem 0.5rem', textAlign: 'center' }}
+            >
+                {hours.map(h => <option key={h} value={h}>{h}</option>)}
+            </select>
+            <span style={{ alignSelf: 'center', fontWeight: 'bold', color: 'var(--vz-text-muted)' }}>:</span>
+            <select
+                className="vz-form-control"
+                value={minute}
+                onChange={e => onChange(format12To24(hour, e.target.value, period))}
+                style={{ flex: 1, minWidth: '60px', padding: '0.375rem 0.5rem', textAlign: 'center' }}
+            >
+                {minutes.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+            <select
+                className="vz-form-control"
+                value={period}
+                onChange={e => onChange(format12To24(hour, minute, e.target.value))}
+                style={{ flex: 1, minWidth: '65px', padding: '0.375rem 0.5rem', fontWeight: 600, color: 'var(--vz-primary)', background: 'rgba(var(--vz-primary-rgb), 0.05)', textAlign: 'center' }}
+            >
+                <option value="AM">AM</option>
+                <option value="PM">PM</option>
+            </select>
+        </div>
+    );
+};
 
 export const VenueForm: React.FC<VenueFormProps> = ({ venue, onClose, onSave }) => {
     const [activeTab, setActiveTab] = useState(0);
@@ -984,11 +1054,11 @@ export const VenueForm: React.FC<VenueFormProps> = ({ venue, onClose, onSave }) 
             <div style={gridTwo}>
                 <div style={field}>
                     <label style={labelStyle}>Opening Time *</label>
-                    <input className="vz-form-control" type="time" value={form.openingTime} onChange={e => set('openingTime', e.target.value)} />
+                    <TimePicker12 value={form.openingTime} onChange={val => set('openingTime', val)} />
                 </div>
                 <div style={field}>
                     <label style={labelStyle}>Closing Time *</label>
-                    <input className="vz-form-control" type="time" value={form.closingTime} onChange={e => set('closingTime', e.target.value)} />
+                    <TimePicker12 value={form.closingTime} onChange={val => set('closingTime', val)} />
                 </div>
             </div>
             <div style={field}>
