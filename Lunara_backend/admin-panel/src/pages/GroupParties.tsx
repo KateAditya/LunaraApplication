@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from '../api/client';
+import bookingsApi from '../api/bookings';
+import toast from 'react-hot-toast';
 
 interface GroupParty {
   id: string;
@@ -9,7 +11,7 @@ interface GroupParty {
   tableBookingCharge: number;
   discountAmount: number;
   totalAmount: number;
-  status: 'pending' | 'confirmed' | 'cancelled';
+  status: 'pending' | 'approved' | 'rejected' | 'confirmed' | 'cancelled';
   paymentStatus: 'pending' | 'paid' | 'failed';
   paymentId?: string;
   partyDate: string;
@@ -34,17 +36,21 @@ interface GroupParty {
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   pending: { bg: 'rgba(245, 158, 11, 0.12)', text: '#d97706', border: 'rgba(245,158,11,0.3)' },
+  approved: { bg: 'rgba(59, 130, 246, 0.12)', text: '#2563eb', border: 'rgba(59,130,246,0.3)' },
   confirmed: { bg: 'rgba(16, 185, 129, 0.12)', text: '#059669', border: 'rgba(16,185,129,0.3)' },
+  rejected: { bg: 'rgba(239, 68, 68, 0.12)', text: '#dc2626', border: 'rgba(239,68,68,0.3)' },
   cancelled: { bg: 'rgba(239, 68, 68, 0.12)', text: '#dc2626', border: 'rgba(239,68,68,0.3)' },
 };
 
 export const GroupParties: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'pending' | 'confirmed' | 'cancelled' | 'all'>('all');
+  const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'confirmed' | 'rejected' | 'cancelled' | 'all'>('all');
   const [parties, setParties] = useState<GroupParty[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
   const [selected, setSelected] = useState<GroupParty | null>(null);
+  const [showApproveModal, setShowApproveModal] = useState<GroupParty | null>(null);
+  const [approveAmount, setApproveAmount] = useState<string>('');
 
   const fetchParties = useCallback(async () => {
     setLoading(true);
@@ -82,10 +88,71 @@ export const GroupParties: React.FC = () => {
   const fmt = (dt: string) =>
     new Date(dt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
+  const handleApprove = async () => {
+    if (!showApproveModal || !approveAmount || isNaN(Number(approveAmount))) {
+      toast.error('Please enter a valid amount');
+      return;
+    }
+    try {
+      const res: any = await bookingsApi.approveLargePartyRequest(showApproveModal.id, 'approved', Number(approveAmount));
+      if (res.success) {
+        toast.success('Group Party approved successfully!');
+        setShowApproveModal(null);
+        setApproveAmount('');
+        if (selected?.id === showApproveModal.id) {
+          setSelected(null);
+        }
+        fetchParties();
+      } else {
+        toast.error(res.message || 'Failed to approve');
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error approving group party');
+    }
+  };
+
+  const handleReject = async (id: string) => {
+    if (!window.confirm('Are you sure you want to reject this request?')) return;
+    try {
+      const res: any = await bookingsApi.approveLargePartyRequest(id, 'rejected');
+      if (res.success) {
+        toast.success('Group Party request rejected');
+        if (selected?.id === id) {
+          setSelected(null);
+        }
+        fetchParties();
+      } else {
+        toast.error(res.message || 'Failed to reject');
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error rejecting group party');
+    }
+  };
+
+  const handleMarkPaymentDone = async (id: string) => {
+    if (!window.confirm('Mark this party as PAID manually?')) return;
+    try {
+      const res: any = await bookingsApi.markPaymentDone(id);
+      if (res.success) {
+        toast.success('Payment marked as completed');
+        if (selected?.id === id) {
+          setSelected(null);
+        }
+        fetchParties();
+      } else {
+        toast.error(res.message || 'Failed to mark payment done');
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error updating payment status');
+    }
+  };
+
   const tabs = [
     { key: 'all', label: 'All' },
     { key: 'pending', label: 'Pending' },
-    { key: 'confirmed', label: 'Confirmed' },
+    { key: 'approved', label: 'Approved (Awaiting Pay)' },
+    { key: 'confirmed', label: 'Confirmed (Paid)' },
+    { key: 'rejected', label: 'Rejected' },
     { key: 'cancelled', label: 'Cancelled' },
   ] as const;
 
@@ -106,7 +173,7 @@ export const GroupParties: React.FC = () => {
         </button>
       </div>
 
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', borderBottom: '2px solid var(--vz-border-color)', paddingBottom: '0' }}>
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', borderBottom: '2px solid var(--vz-border-color)', paddingBottom: '0', flexWrap: 'wrap' }}>
         {tabs.map(t => (
           <button
             key={t.key}
@@ -172,6 +239,33 @@ export const GroupParties: React.FC = () => {
                   <button onClick={() => openModal(party)} style={{ padding: '0.45rem 1rem', borderRadius: 8, border: '1px solid var(--vz-border-color)', background: 'transparent', cursor: 'pointer', fontSize: '0.8rem', color: 'var(--vz-text-primary)' }}>
                     View Details
                   </button>
+                  {party.status === 'pending' && (
+                    <>
+                      <button
+                        onClick={() => {
+                          setShowApproveModal(party);
+                          setApproveAmount(String(party.totalAmount));
+                        }}
+                        style={{ padding: '0.45rem 1rem', borderRadius: 8, border: 'none', background: '#10b981', color: '#fff', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
+                      >
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => handleReject(party.id)}
+                        style={{ padding: '0.45rem 1rem', borderRadius: 8, border: 'none', background: '#ef4444', color: '#fff', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
+                      >
+                        Reject
+                      </button>
+                    </>
+                  )}
+                  {party.status === 'approved' && (
+                    <button
+                      onClick={() => handleMarkPaymentDone(party.id)}
+                      style={{ padding: '0.45rem 1rem', borderRadius: 8, border: 'none', background: '#f59e0b', color: '#fff', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
+                    >
+                      Mark Paid
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -202,9 +296,62 @@ export const GroupParties: React.FC = () => {
                 {selected.drinkPreference && <span>🍹 Drink Pref: {selected.drinkPreference}</span>}
               </div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+              {selected.status === 'pending' && (
+                <>
+                  <button
+                    onClick={() => {
+                      setShowApproveModal(selected);
+                      setApproveAmount(String(selected.totalAmount));
+                    }}
+                    style={{ padding: '0.6rem 1.25rem', borderRadius: 8, border: 'none', background: '#10b981', color: '#fff', cursor: 'pointer', fontWeight: 600 }}
+                  >
+                    Approve
+                  </button>
+                  <button
+                    onClick={() => handleReject(selected.id)}
+                    style={{ padding: '0.6rem 1.25rem', borderRadius: 8, border: 'none', background: '#ef4444', color: '#fff', cursor: 'pointer', fontWeight: 600 }}
+                  >
+                    Reject
+                  </button>
+                </>
+              )}
+              {selected.status === 'approved' && (
+                <button
+                  onClick={() => handleMarkPaymentDone(selected.id)}
+                  style={{ padding: '0.6rem 1.25rem', borderRadius: 8, border: 'none', background: '#f59e0b', color: '#fff', cursor: 'pointer', fontWeight: 600 }}
+                >
+                  Mark Paid
+                </button>
+              )}
               <button onClick={closeModal} style={{ padding: '0.6rem 1.25rem', borderRadius: 8, border: '1px solid var(--vz-border-color)', background: 'transparent', cursor: 'pointer', color: 'var(--vz-text-primary)' }}>
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showApproveModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }} onClick={() => setShowApproveModal(null)}>
+          <div style={{ background: 'var(--vz-card-bg)', borderRadius: 16, padding: '2rem', width: '100%', maxWidth: 440, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 1.25rem', fontSize: '1.1rem' }}>Approve Group Party Request</h3>
+            <div style={{ marginBottom: '1.25rem' }}>
+              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', fontWeight: 600 }}>Set Total Payment Amount (₹)</label>
+              <input
+                type="number"
+                style={{ width: '100%', padding: '0.6rem', borderRadius: 8, border: '1px solid var(--vz-border-color)', background: 'var(--vz-input-bg)', color: 'var(--vz-input-text)' }}
+                placeholder="Enter amount"
+                value={approveAmount}
+                onChange={e => setApproveAmount(e.target.value)}
+              />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+              <button onClick={() => setShowApproveModal(null)} style={{ padding: '0.6rem 1.25rem', borderRadius: 8, border: '1px solid var(--vz-border-color)', background: 'transparent', cursor: 'pointer', color: 'var(--vz-text-primary)' }}>
+                Cancel
+              </button>
+              <button onClick={handleApprove} style={{ padding: '0.6rem 1.25rem', borderRadius: 8, border: 'none', background: '#7c3aed', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>
+                Confirm & Approve
               </button>
             </div>
           </div>

@@ -3,6 +3,8 @@ import sequelize from '../config/database';
 
 export enum GroupPartyStatus {
     PENDING = 'pending',
+    APPROVED = 'approved',
+    REJECTED = 'rejected',
     CONFIRMED = 'confirmed',
     CANCELLED = 'cancelled',
 }

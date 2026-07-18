@@ -597,7 +597,7 @@ export const initiateLargePartyPayment = async (req: Request, res: Response) => 
             if (!groupParty) {
                 return res.status(404).json({ success: false, message: 'Booking or Group Party not found' });
             }
-            if (groupParty.status !== GroupPartyStatus.PENDING) {
+            if (groupParty.status !== GroupPartyStatus.PENDING && groupParty.status !== GroupPartyStatus.APPROVED) {
                 return res.status(400).json({ success: false, message: 'Group party is already confirmed/cancelled' });
             }
             const amount = Number(groupParty.totalAmount);

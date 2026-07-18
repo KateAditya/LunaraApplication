@@ -765,6 +765,16 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
                 body = `Please complete the payment for your group party at ${venueName} to confirm.`;
                 showNotification = true;
                 type = 'group_party_initiated';
+            } else if (gp.status === 'approved') {
+                title = 'Group Party Approved! 🎉';
+                body = `Your group party request at ${venueName} has been approved! Complete payment to confirm.`;
+                showNotification = true;
+                type = 'group_party_approved';
+            } else if (gp.status === 'rejected') {
+                title = 'Group Party Rejected ❌';
+                body = `Your group party request at ${venueName} was rejected by the admin.`;
+                showNotification = true;
+                type = 'group_party_rejected';
             } else if (gp.status === 'confirmed') {
                 title = 'Group Party Confirmed! 🎉';
                 body = `Your group party of ${gp.numberOfFriends} friends at ${venueName} is confirmed!`;

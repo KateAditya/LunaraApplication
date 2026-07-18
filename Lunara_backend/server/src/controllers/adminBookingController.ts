@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import Booking, { AdminApprovalStatus } from '../models/Booking';
 import User from '../models/User';
 import Venue from '../models/Venue';
+import GroupParty, { GroupPartyStatus, GroupPartyPaymentStatus } from '../models/GroupParty';
 import { logger } from '../config/logger';
 
 export const getLargePartyRequests = async (_req: Request, res: Response) => {
@@ -33,8 +34,55 @@ export const approveLargePartyRequest = async (req: Request, res: Response) => {
 
         const booking = await Booking.findByPk(id);
         if (!booking) {
-            return res.status(404).json({ success: false, message: 'Booking not found' });
+            // Fallback to GroupParty
+            const groupParty = await GroupParty.findByPk(id);
+            if (!groupParty) {
+                return res.status(404).json({ success: false, message: 'Booking or Group Party not found' });
+            }
+
+            if (status === 'approved') {
+                if (totalAmount === undefined || isNaN(Number(totalAmount))) {
+                    return res.status(400).json({ success: false, message: 'Valid totalAmount is required when approving' });
+                }
+                await groupParty.update({
+                    status: GroupPartyStatus.APPROVED,
+                    totalAmount: Number(totalAmount)
+                });
+            } else if (status === 'rejected') {
+                await groupParty.update({
+                    status: GroupPartyStatus.REJECTED
+                });
+            }
+
+            try {
+                const host = await User.findByPk(groupParty.userId, { attributes: ['id', 'fcmToken'] });
+                const venue = await Venue.findByPk(groupParty.venueId, { attributes: ['id', 'name'] });
+                const venueName = venue?.name || 'Venue';
+                if (host && host.fcmToken) {
+                    const { sendPushNotification } = require('../services/fcmService');
+                    await sendPushNotification(host.fcmToken, {
+                        title: status === 'approved' ? 'Group Party Approved! 🎉' : 'Group Party Rejected ❌',
+                        body: status === 'approved'
+                            ? `Your group party request at ${venueName} has been approved! Complete payment to confirm.`
+                            : `Your group party request at ${venueName} was rejected by the admin.`,
+                        data: {
+                            type: status === 'approved' ? 'group_party_approved' : 'group_party_rejected',
+                            partyId: groupParty.id,
+                        }
+                    });
+                }
+                const { io } = require('../server');
+                io.to(`user_${groupParty.userId}`).emit('large_party_status_update', {
+                    bookingId: groupParty.id,
+                    status: groupParty.status
+                });
+            } catch (pushErr) {
+                logger.warn('Failed to send push/socket for group party admin approval: ' + pushErr);
+            }
+
+            return res.json({ success: true, message: `Group Party request ${status} successfully`, data: groupParty });
         }
+
         if (!booking.isLargePartyRequest) {
             return res.status(400).json({ success: false, message: 'Not a large party request' });
         }
@@ -159,7 +207,39 @@ export const markPaymentDone = async (req: Request, res: Response) => {
 
         const booking = await Booking.findByPk(id);
         if (!booking) {
-            return res.status(404).json({ success: false, message: 'Booking not found' });
+            const groupParty = await GroupParty.findByPk(id);
+            if (!groupParty) {
+                return res.status(404).json({ success: false, message: 'Booking/Group Party not found' });
+            }
+
+            await groupParty.update({
+                status: GroupPartyStatus.CONFIRMED,
+                paymentStatus: GroupPartyPaymentStatus.PAID
+            });
+
+            try {
+                const host = await User.findByPk(groupParty.userId, { attributes: ['id', 'fcmToken'] });
+                const venue = await Venue.findByPk(groupParty.venueId, { attributes: ['id', 'name'] });
+                const venueName = venue?.name || 'Venue';
+                if (host && host.fcmToken) {
+                    const { sendPushNotification } = require('../services/fcmService');
+                    await sendPushNotification(host.fcmToken, {
+                        title: 'Group Party Confirmed! 🎉',
+                        body: `Your payment of ₹${groupParty.totalAmount} for your party at ${venueName} is verified. Booking confirmed!`,
+                        data: {
+                            type: 'group_party_confirmed',
+                            partyId: groupParty.id,
+                        }
+                    });
+                }
+                const { io } = require('../server');
+                io.to(`user_${groupParty.userId}`).emit('group_party_payment_success', { partyId: groupParty.id });
+                io.to(`user_${groupParty.userId}`).emit('large_party_payment_success', { bookingId: groupParty.id });
+            } catch (pushErr) {
+                logger.warn('Failed to send push/socket for markPaymentDone: ' + pushErr);
+            }
+
+            return res.json({ success: true, message: 'Group Party payment marked as done', data: groupParty });
         }
 
         await (booking as any).update({
