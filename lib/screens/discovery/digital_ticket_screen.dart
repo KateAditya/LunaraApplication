@@ -39,15 +39,33 @@ class DigitalTicketScreen extends StatefulWidget {
 class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
   Position? _currentPosition;
   StreamSubscription<Position>? _positionStreamSubscription;
+  Timer? _countdownTimer;
+  Duration _timeRemaining = const Duration(hours: 4, minutes: 30, seconds: 0);
 
   @override
   void initState() {
     super.initState();
     _initLocation();
+    _startCountdown();
+  }
+
+  void _startCountdown() {
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          if (_timeRemaining.inSeconds > 0) {
+            _timeRemaining = _timeRemaining - const Duration(seconds: 1);
+          } else {
+            timer.cancel();
+          }
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
+    _countdownTimer?.cancel();
     _positionStreamSubscription?.cancel();
     super.dispose();
   }
@@ -252,53 +270,74 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
       ),
       child: Column(
         children: [
-          // Event Banner Section
+          // Event Banner Section with Venue Image Background
           Container(
             height: 180,
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(32),
+              ),
+            ),
+            child: ClipRRect(
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(32),
               ),
-              image: DecorationImage(
-                image: NetworkImage(cleanVenueImage),
-                fit: BoxFit.cover,
-              ),
-            ),
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(32),
-                ),
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    Colors.black.withValues(alpha: 0.8),
-                  ],
-                ),
-              ),
-              padding: const EdgeInsets.all(24),
-              alignment: Alignment.bottomLeft,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Stack(
                 children: [
-                  Text(
-                    venueName.toUpperCase(),
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.white,
-                      letterSpacing: 1,
+                  Positioned.fill(
+                    child: Image.network(
+                      cleanVenueImage,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        decoration: const BoxDecoration(
+                          gradient: LunaraTheme.deepPurpleGradient,
+                        ),
+                        child: const Center(
+                          child: Icon(Icons.location_city, color: Colors.white38, size: 56),
+                        ),
+                      ),
                     ),
                   ),
-                  Text(
-                    displayDateTime.toUpperCase(),
-                    style: const TextStyle(
-                      color: LunaraTheme.cyberCyan,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w900,
+                  Positioned.fill(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black.withValues(alpha: 0.3),
+                            Colors.black.withValues(alpha: 0.85),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 20,
+                    left: 24,
+                    right: 24,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          venueName.toUpperCase(),
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          displayDateTime.toUpperCase(),
+                          style: const TextStyle(
+                            color: LunaraTheme.cyberCyan,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -360,151 +399,111 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
             child: Column(
               children: [
-                // Dual Profile Section
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    // Host Column
-                    Expanded(
-                      child: Column(
-                        children: [
-                          if (hostUser != null)
-                            LunaraProfileImage(
-                              user: hostUser,
-                              radius: 32,
-                              showGradientBorder: true,
-                              isInteractive: true,
-                            )
-                          else
-                            CircleAvatar(
-                              radius: 32,
-                              backgroundColor: Colors.white.withValues(alpha: 0.1),
-                              child: const Icon(Icons.person, color: Colors.white70, size: 28),
-                            ),
-                          const SizedBox(height: 8),
-                          Text(
-                            cleanHostName,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.center,
-                          ),
-                          Text(
-                            hostUsername,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.6),
-                              fontSize: 10,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.5), width: 1),
-                            ),
-                            child: const Text(
-                              'TICKET HOLDER',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 8,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ),
-                        ],
+                // Live Countdown Banner
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: LunaraTheme.electricViolet.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.4)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.timer_outlined, color: LunaraTheme.cyberCyan, size: 20),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'EXPIRATION COUNTDOWN: ',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                          letterSpacing: 1,
+                        ),
                       ),
-                    ),
-                    // Link Icon
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.08),
-                        shape: BoxShape.circle,
+                      Text(
+                        '${_timeRemaining.inHours.toString().padLeft(2, '0')}:${(_timeRemaining.inMinutes % 60).toString().padLeft(2, '0')}:${(_timeRemaining.inSeconds % 60).toString().padLeft(2, '0')}',
+                        style: const TextStyle(
+                          color: LunaraTheme.cyberCyan,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 15,
+                          letterSpacing: 2,
+                        ),
                       ),
-                      child: const Icon(
-                        Icons.link_rounded,
-                        color: LunaraTheme.cyberCyan,
-                        size: 18,
-                      ),
-                    ),
-                    // Add Joiner / Share Column
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => _shareTicket(context),
+                    ],
+                  ),
+                ),
+
+                // Ticket Holder Profile Section (No Invite Partner)
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                  ),
+                  child: Row(
+                    children: [
+                      if (hostUser != null)
+                        LunaraProfileImage(
+                          user: hostUser,
+                          radius: 30,
+                          showGradientBorder: true,
+                          isInteractive: true,
+                        )
+                      else
+                        const CircleAvatar(
+                          radius: 30,
+                          backgroundColor: Colors.white10,
+                          child: Icon(Icons.person, color: Colors.white70, size: 28),
+                        ),
+                      const SizedBox(width: 16),
+                      Expanded(
                         child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Container(
-                              width: 68,
-                              height: 68,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                gradient: LunaraTheme.primaryGradient,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
-                                    blurRadius: 8,
-                                  ),
-                                ],
-                              ),
-                              child: const Center(
-                                child: Icon(
-                                  Icons.person_add_rounded,
-                                  color: Colors.white,
-                                  size: 24,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            const Text(
-                              'Invite Partner',
-                              style: TextStyle(
-                                color: LunaraTheme.cyberCyan,
+                            Text(
+                              cleanHostName,
+                              style: const TextStyle(
+                                color: Colors.white,
                                 fontWeight: FontWeight.bold,
-                                fontSize: 13,
+                                fontSize: 16,
                               ),
-                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            const Text(
-                              'Tap to share',
+                            Text(
+                              hostUsername,
                               style: TextStyle(
-                                color: Colors.white30,
-                                fontSize: 10,
+                                color: Colors.white.withValues(alpha: 0.6),
+                                fontSize: 12,
                               ),
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: LunaraTheme.cyberCyan.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: LunaraTheme.cyberCyan.withValues(alpha: 0.4), width: 1),
-                              ),
-                              child: const Text(
-                                'TAP TO SHARE',
-                                style: TextStyle(
-                                  color: LunaraTheme.cyberCyan,
-                                  fontSize: 8,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ],
                         ),
                       ),
-                    ),
-                  ],
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.5), width: 1),
+                        ),
+                        child: const Text(
+                          'TICKET HOLDER',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 20),
 

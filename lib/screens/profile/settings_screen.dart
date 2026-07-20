@@ -9,6 +9,8 @@ import '../../models/legal_document.dart';
 import '../../services/biometric_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'edit_profile_screen.dart';
+import 'vip_membership_screen.dart';
+import '../../widgets/subscription_limit_dialog.dart';
 import '../../models/user.dart';
 import '../../services/onboarding_service.dart';
 import '../onboarding/welcome_carousel.dart';
@@ -148,44 +150,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           ),
                         )
-                      : _buildSwitchTile('Hide Profile', _hideProfile, (
-                          v,
-                        ) async {
-                          final prevValue = _hideProfile;
-                          setState(() => _hideProfile = v);
-
-                          // ApiService expects showMeInMatching
-                          final success =
-                              await ApiService.updateUserPreferences(
-                                showMeInMatching:
-                                    !v, // Not hidden means show me
-                              );
-
-                          if (!success && mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Failed to update profile visibility.',
-                                ),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                            setState(
-                              () => _hideProfile = prevValue,
-                            ); // revert on fail
-                          } else if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  v
-                                      ? 'Profile is now hidden.'
-                                      : 'Profile is now visible.',
-                                ),
-                                backgroundColor: LunaraTheme.electricViolet,
-                              ),
-                            );
-                          }
-                        }),
+                      : _buildHideProfileTile(),
                   _buildSettingsTile(
                     'Blocked Contacts',
                     Icons.block_flipped,
@@ -345,6 +310,127 @@ class _SettingsScreenState extends State<SettingsScreen> {
               activeColor: LunaraTheme.electricViolet,
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHideProfileTile() {
+    final isProUser = _currentUser?.isPro ?? false;
+
+    if (isProUser) {
+      return _buildSwitchTile('Hide Profile', _hideProfile, (v) async {
+        final prevValue = _hideProfile;
+        setState(() => _hideProfile = v);
+
+        final success = await ApiService.updateUserPreferences(
+          showMeInMatching: !v,
+        );
+
+        if (!success && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to update profile visibility.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          setState(() => _hideProfile = prevValue);
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                v ? 'Profile is now hidden.' : 'Profile is now visible.',
+              ),
+              backgroundColor: LunaraTheme.electricViolet,
+            ),
+          );
+        }
+      });
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: GestureDetector(
+        onTap: () {
+          showSubscriptionLimitDialog(
+            context,
+            feature: SubLimitFeature.hideProfile,
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: LunaraTheme.cardGradient,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: LunaraTheme.premiumCardShadow,
+            border: Border.all(
+              color: LunaraTheme.electricViolet.withValues(alpha: 0.15),
+            ),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.visibility_off_outlined, color: Colors.black, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Row(
+                  children: [
+                    Text(
+                      'Hide Profile',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(width: 6),
+                    Container(
+                      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF7F00FF), Color(0xFFE100FF)],
+                        ),
+                        borderRadius: BorderRadius.all(Radius.circular(6)),
+                      ),
+                      child: Text(
+                        'VIP',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: () {
+                  showSubscriptionLimitDialog(
+                    context,
+                    feature: SubLimitFeature.hideProfile,
+                  );
+                },
+                icon: const Icon(Icons.lock, size: 12, color: Colors.white),
+                label: const Text(
+                  'UPGRADE TO HIDE',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: LunaraTheme.electricViolet,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

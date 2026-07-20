@@ -601,10 +601,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
 
       final currentUserId = ApiService.currentUserId;
       List<Map<String, dynamic>> combined = [
-        ...List<Map<String, dynamic>>.from(data['feed'] ?? []).where((item) {
-          final hostId = (item['host']?['id'] ?? item['userId'] ?? '').toString();
-          return hostId != currentUserId;
-        }),
+        ...List<Map<String, dynamic>>.from(data['feed'] ?? []),
         ...List<Map<String, dynamic>>.from(data['myRequests'] ?? []),
         ...List<Map<String, dynamic>>.from(data['incomingRequests'] ?? []),
       ];
@@ -1768,6 +1765,28 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                         ),
                       ),
                     ),
+                    if (isMyPost) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.withValues(alpha: 0.25),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.amber.withValues(alpha: 0.5)),
+                        ),
+                        child: const Text(
+                          'HOSTED BY YOU',
+                          style: TextStyle(
+                            color: Colors.amberAccent,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
                     if (plan['paymentType'] == 'self_pay') ...[
                       const SizedBox(width: 8),
                       Container(

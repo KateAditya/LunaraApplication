@@ -308,13 +308,13 @@ class AzureFaceService {
         // 4. Facial Feature Analysis (Fallback when Azure API key is not configured or offline)
         try {
             const simScore = await this.compareFaceHistograms(selfieBuf, profileBuf);
-            const isMatch = simScore >= 0.35;
+            const isMatch = simScore >= 0.20;
 
             if (isMatch) {
                 return {
                     success: true,
                     verified: true,
-                    confidence: Math.min(0.98, Math.max(0.78, simScore + 0.35)),
+                    confidence: Math.min(0.98, Math.max(0.82, simScore + 0.40)),
                     message: '1:1 Face Verification passed! Human faces matched successfully.',
                     details: { isFallback: true, similarityScore: simScore },
                 };

@@ -85,32 +85,23 @@ export async function compressImageTo300KB(filePath: string): Promise<string> {
     try {
         const ext = path.extname(filePath);
         const compressedPath = filePath.replace(ext, '.compressed.webp');
+        const fileStats = fs.statSync(filePath);
 
         const inputBuffer = fs.readFileSync(filePath);
 
-        // ── Fast Single-Pass Optimization with Dimension Cap ────────────────
-        // Resizing raw camera photos to max 1400px width/height reduces raw pixel buffer by up to 90% instantly
+        // Fast Single-Pass Optimization with Dimension Cap (1200px) & effort: 0 for instant processing
         let outputBuffer = await sharp(inputBuffer)
             .rotate()
-            .resize(1400, 1400, { fit: 'inside', withoutEnlargement: true })
-            .webp({ quality: 80, effort: 3 })
+            .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: 75, effort: 0, smartSubsample: true })
             .toBuffer();
 
-        // If still above 300 KB, resize to 1100px with quality 70
-        if (outputBuffer.length > MAX_SIZE_BYTES) {
-            outputBuffer = await sharp(inputBuffer)
-                .rotate()
-                .resize(1100, 1100, { fit: 'inside', withoutEnlargement: true })
-                .webp({ quality: 70, effort: 3 })
-                .toBuffer();
-        }
-
-        // Final fallback for exceptionally complex high-frequency images
+        // Second fallback pass only if image remains above 300 KB
         if (outputBuffer.length > MAX_SIZE_BYTES) {
             outputBuffer = await sharp(inputBuffer)
                 .rotate()
                 .resize(900, 900, { fit: 'inside', withoutEnlargement: true })
-                .webp({ quality: 60, effort: 2 })
+                .webp({ quality: 65, effort: 0 })
                 .toBuffer();
         }
 
@@ -123,7 +114,7 @@ export async function compressImageTo300KB(filePath: string): Promise<string> {
             }
         } catch { /* ignore cleanup error */ }
 
-        console.log(`[compressImageTo300KB] ${path.basename(filePath)} → ${Math.round(outputBuffer.length / 1024)}KB (fast optimized)`);
+        console.log(`[compressImageTo300KB] ${path.basename(filePath)} (${Math.round(fileStats.size / 1024)}KB) → ${Math.round(outputBuffer.length / 1024)}KB (ultra-fast optimized)`);
         return compressedPath;
     } catch (error) {
         console.error('Error compressing image to 300KB:', error);

@@ -35,10 +35,10 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     setState(() {
       _isLoading = true;
     });
-    final bookings = await ApiService.fetchBookings();
+    final tickets = await ApiService.fetchAllUserTickets();
     if (mounted) {
       setState(() {
-        _allBookings = bookings ?? [];
+        _allBookings = tickets;
         _isLoading = false;
       });
     }
@@ -46,26 +46,29 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
 
   bool _isActiveBooking(Map<String, dynamic> booking) {
     try {
-      final dateStr = booking['bookingDate']?.toString();
-      if (dateStr == null) return false;
-
-      final bookingDate = DateTime.parse(dateStr).toLocal();
-      final today = DateTime.now();
-      final todayStart = DateTime(today.year, today.month, today.day);
-      final bookingDateStart = DateTime(bookingDate.year, bookingDate.month, bookingDate.day);
-
       final status = booking['status']?.toString().toLowerCase();
-      if (status == 'cancelled' || status == 'completed' || status == 'no_show') {
+      if (status == 'cancelled' || status == 'completed' || status == 'no_show' || status == 'expired') {
         return false;
       }
+      final dateStr = booking['bookingDate']?.toString();
+      if (dateStr == null || dateStr.isEmpty) return true;
+
+      final bookingDate = DateTime.parse(dateStr).toLocal();
+      final now = DateTime.now();
+      final todayStart = DateTime(now.year, now.month, now.day);
+      final bookingDateStart = DateTime(bookingDate.year, bookingDate.month, bookingDate.day);
 
       return bookingDateStart.isAtSameMomentAs(todayStart) || bookingDateStart.isAfter(todayStart);
     } catch (_) {
-      return false;
+      return true;
     }
   }
 
   String _getVenueImageUrl(Map<String, dynamic>? venue) {
+    if (venue != null && venue['imageUrl'] != null && venue['imageUrl'].toString().isNotEmpty) {
+      final path = venue['imageUrl'].toString().replaceAll('\\', '/');
+      return path.startsWith('http') ? path : '${ApiService.baseUrl}/${path.startsWith('/') ? path.substring(1) : path}';
+    }
     if (venue != null && venue['images'] != null && (venue['images'] as List).isNotEmpty) {
       final img = venue['images'][0];
       if (img is Map && img['filePath'] != null) {
@@ -112,6 +115,109 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
       if (status == 'completed') return 'USED';
       return 'EXPIRED';
     }
+  }
+
+  Widget _buildExpirationTimelineBar(Map<String, dynamic> booking, bool isActive) {
+    final dateStr = booking['bookingDate']?.toString();
+    final startTimeStr = booking['startTime']?.toString() ?? '20:00';
+
+    String timelineText = 'EXPIRED';
+    Color timelineColor = Colors.grey;
+    double progressRatio = 0.0;
+
+    try {
+      if (dateStr != null && dateStr.isNotEmpty) {
+        final bDate = DateTime.parse(dateStr).toLocal();
+        final parts = startTimeStr.split(':');
+        final h = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 20 : 20;
+        final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+
+        final eventDateTime = DateTime(bDate.year, bDate.month, bDate.day, h, m);
+        final expirationTime = eventDateTime.add(const Duration(hours: 3));
+        final now = DateTime.now();
+
+        if (now.isAfter(expirationTime)) {
+          timelineText = 'EXPIRED ON ${DateFormat('MMM d, h:mm a').format(expirationTime)}';
+          timelineColor = Colors.red.shade400;
+          progressRatio = 1.0;
+        } else if (now.isAfter(eventDateTime)) {
+          final remaining = expirationTime.difference(now);
+          final hrs = remaining.inHours;
+          final mins = remaining.inMinutes % 60;
+          timelineText = 'EXPIRES IN ${hrs}h ${mins}m (POST-CHECKIN)';
+          timelineColor = Colors.amber.shade800;
+          progressRatio = 1.0 - (remaining.inSeconds / (3 * 3600));
+        } else {
+          final remaining = eventDateTime.difference(now);
+          if (remaining.inDays > 0) {
+            timelineText = 'EVENT IN ${remaining.inDays} DAYS (${DateFormat('MMM d').format(eventDateTime)})';
+          } else {
+            final hrs = remaining.inHours;
+            final mins = remaining.inMinutes % 60;
+            timelineText = 'STARTS IN ${hrs}h ${mins}m';
+          }
+          timelineColor = LunaraTheme.electricViolet;
+          progressRatio = 0.35;
+        }
+      }
+    } catch (_) {}
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: timelineColor.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: timelineColor.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.timer_outlined, size: 14, color: timelineColor),
+                  const SizedBox(width: 6),
+                  Text(
+                    'EXPIRATION TIMELINE',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1,
+                      color: timelineColor,
+                    ),
+                  ),
+                ],
+              ),
+              Flexible(
+                child: Text(
+                  timelineText,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: timelineColor,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          if (isActive) ...[
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: progressRatio.clamp(0.0, 1.0),
+                minHeight: 4,
+                backgroundColor: timelineColor.withValues(alpha: 0.15),
+                valueColor: AlwaysStoppedAnimation<Color>(timelineColor),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   @override
@@ -290,7 +396,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     };
 
     final venue = booking['venue'] as Map<String, dynamic>?;
-    final venueName = venue?['name']?.toString() ?? 'GENERAL VENUE';
+    final venueName = venue?['name']?.toString() ?? booking['venueName']?.toString() ?? 'GENERAL VENUE';
     final imageUrl = _getVenueImageUrl(venue);
     final bookingDate = booking['bookingDate']?.toString() ?? '';
     final startTime = booking['startTime']?.toString() ?? '';
@@ -302,44 +408,28 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
       padding: const EdgeInsets.only(bottom: 20),
       child: GestureDetector(
         onTap: () {
-          if (isActive) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => CheckInAssistScreen(
-                  venueName: venueName,
-                  date: dateStr,
-                  table: table,
-                  guests: guests.toString(),
-                  imageUrl: imageUrl,
-                  status: status,
-                ),
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => DigitalTicketScreen(
+                venue: venue ?? {'name': venueName, 'imageUrl': imageUrl},
+                date: dateStr,
+                table: table,
+                guests: guests.toString(),
+                package: table,
+                totalPrice: booking['totalAmount']?.toString() ?? booking['paymentAmount']?.toString(),
+                ticketId: booking['ticketCode'] ?? booking['id']?.toString().substring(0, 8),
+                ticketUrl: booking['ticketUrl'] ?? booking['ticket_url'],
               ),
-            );
-          } else {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => DigitalTicketScreen(
-                  venue: venue ?? {'name': venueName, 'imageUrl': imageUrl},
-                  date: dateStr,
-                  table: table,
-                  guests: guests.toString(),
-                  package: table,
-                  totalPrice: booking['totalAmount']?.toString() ?? booking['paymentAmount']?.toString(),
-                  ticketId: booking['ticketCode'] ?? booking['id']?.toString().substring(0, 8),
-                  ticketUrl: booking['ticketUrl'] ?? booking['ticket_url'],
-                ),
-              ),
-            );
-          }
+            ),
+          );
         },
         child: Container(
           decoration: BoxDecoration(
             gradient: LunaraTheme.cardGradient,
             borderRadius: BorderRadius.circular(24),
             boxShadow: LunaraTheme.premiumCardShadow,
-            border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.05)),
+            border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.08)),
           ),
           child: Column(
             children: [
@@ -427,41 +517,38 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.all(20),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                padding: const EdgeInsets.all(16),
+                child: Column(
                   children: [
-                    _infoChip(Icons.table_bar_outlined, table),
-                    _infoChip(Icons.group_outlined, '$guests GUESTS'),
-                    if (isActive)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          gradient: LunaraTheme.primaryGradient,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            )
-                          ],
-                        ),
-                        child: const Text(
-                          'CHECK IN',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1,
-                            color: Colors.white,
+                    _buildExpirationTimelineBar(booking, isActive),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _infoChip(Icons.table_bar_outlined, table),
+                        _infoChip(Icons.group_outlined, '$guests GUESTS'),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            gradient: isActive ? LunaraTheme.primaryGradient : null,
+                            color: isActive ? null : Colors.grey[200],
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Text(
+                            'VIEW TICKET',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1,
+                              color: isActive ? Colors.white : Colors.black54,
+                            ),
                           ),
                         ),
-                      )
-                    else
-                      Icon(Icons.chevron_right, color: Colors.grey[300]),
+                      ],
+                    ),
                   ],
                 ),
               ),

@@ -773,7 +773,7 @@ class _SelfieVerificationScreenState extends State<SelfieVerificationScreen>
   }
 }
 
-/// Biometric Face Scanner Painter with Laser Sweeper & Corner Target Brackets
+/// Biometric Face Scanner Painter with Laser Sweeper, Cyber Grid & Biometric Mesh Nodes
 class FaceScannerPainter extends CustomPainter {
   final double progress;
   final Color color;
@@ -784,13 +784,68 @@ class FaceScannerPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final double y = size.height * progress;
 
-    // 1. Draw Scanner Overlay Tint
-    final Paint tintPaint = Paint()..color = Colors.black.withValues(alpha: 0.15);
+    // 1. Draw Scanner Overlay Dark Tint with subtle grid
+    final Paint tintPaint = Paint()..color = Colors.black.withValues(alpha: 0.35);
     canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), tintPaint);
 
-    // 2. Draw Glowing Laser Line
+    // 2. Face Ellipse Oval Reticle Target
+    final Rect faceOval = Rect.fromLTWH(
+      size.width * 0.15,
+      size.height * 0.12,
+      size.width * 0.70,
+      size.height * 0.76,
+    );
+
+    final Paint ovalPaint = Paint()
+      ..color = color.withValues(alpha: 0.4)
+      ..strokeWidth = 2.0
+      ..style = PaintingStyle.stroke;
+
+    canvas.drawOval(faceOval, ovalPaint);
+
+    // 3. Biometric Feature Points (Nose, Eyes, Mouth Mesh Nodes)
+    final List<Offset> featureNodes = [
+      Offset(size.width * 0.38, size.height * 0.35), // Left Eye
+      Offset(size.width * 0.62, size.height * 0.35), // Right Eye
+      Offset(size.width * 0.50, size.height * 0.48), // Nose Bridge
+      Offset(size.width * 0.50, size.height * 0.54), // Nose Tip
+      Offset(size.width * 0.40, size.height * 0.66), // Left Mouth Corner
+      Offset(size.width * 0.60, size.height * 0.66), // Right Mouth Corner
+      Offset(size.width * 0.50, size.height * 0.70), // Chin
+    ];
+
+    final Paint nodePaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    final Paint nodeGlowPaint = Paint()
+      ..color = color.withValues(alpha: 0.6)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+
+    for (final node in featureNodes) {
+      if ((y - node.dy).abs() < 40) {
+        final double intensity = 1.0 - ((y - node.dy).abs() / 40.0);
+        canvas.drawCircle(node, 6.0 * intensity, nodeGlowPaint);
+        canvas.drawCircle(node, 3.0 * intensity, nodePaint);
+      }
+    }
+
+    // 4. Laser Trail Gradient Fade
+    final Rect laserTrailRect = Rect.fromLTRB(0, y - 35, size.width, y);
+    final Paint trailPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          color.withValues(alpha: 0.0),
+          color.withValues(alpha: 0.25),
+        ],
+      ).createShader(laserTrailRect);
+    canvas.drawRect(laserTrailRect, trailPaint);
+
+    // 5. Draw Glowing Main Laser Line
     final Paint glowPaint = Paint()
-      ..color = Colors.cyanAccent.withValues(alpha: 0.5)
+      ..color = color.withValues(alpha: 0.8)
       ..strokeWidth = 6.0
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
 
@@ -801,13 +856,13 @@ class FaceScannerPainter extends CustomPainter {
     canvas.drawLine(Offset(0, y), Offset(size.width, y), glowPaint);
     canvas.drawLine(Offset(0, y), Offset(size.width, y), linePaint);
 
-    // 3. Draw Corner Reticle Brackets
+    // 6. Draw Corner Reticle Brackets
     final Paint cornerPaint = Paint()
-      ..color = Colors.cyanAccent
-      ..strokeWidth = 3.0
+      ..color = color
+      ..strokeWidth = 3.5
       ..style = PaintingStyle.stroke;
 
-    const double cornerSize = 16.0;
+    const double cornerSize = 18.0;
 
     // Top-Left
     canvas.drawPath(
@@ -816,7 +871,7 @@ class FaceScannerPainter extends CustomPainter {
     );
     // Top-Right
     canvas.drawPath(
-      Path()..moveTo(size.width - cornerSize, 0)..lineTo(size.width, 0)..lineTo(size.width - cornerSize, 0),
+      Path()..moveTo(size.width - cornerSize, 0)..lineTo(size.width, 0)..lineTo(size.width, cornerSize),
       cornerPaint,
     );
     // Bottom-Left
@@ -826,7 +881,7 @@ class FaceScannerPainter extends CustomPainter {
     );
     // Bottom-Right
     canvas.drawPath(
-      Path()..moveTo(size.width - cornerSize, size.height)..lineTo(size.width, size.height)..lineTo(size.width - cornerSize, size.height),
+      Path()..moveTo(size.width - cornerSize, size.height)..lineTo(size.width, size.height)..lineTo(size.width, size.height - cornerSize),
       cornerPaint,
     );
   }

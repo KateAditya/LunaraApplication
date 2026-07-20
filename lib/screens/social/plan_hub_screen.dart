@@ -1312,6 +1312,307 @@ class _PlanHubScreenState extends State<PlanHubScreen>
 
   // Bottom Sheets
 
+  void _showAllProfilesSelectionModal({
+    required BuildContext parentContext,
+    required List<Map<String, dynamic>> customerList,
+    required List<String> selectedUserIds,
+    required Function(List<String>) onSelectionChanged,
+  }) {
+    showModalBottomSheet(
+      context: parentContext,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (modalCtx) {
+        String searchVal = '';
+        final List<String> tempSelected = List.from(selectedUserIds);
+
+        return StatefulBuilder(
+          builder: (builderCtx, setModalState) {
+            final eligibleUsers = customerList.where((u) {
+              final isNotMe = u['id']?.toString() != ApiService.currentUserId;
+              final name = (u['name'] ?? u['firstName'] ?? u['first_name'] ?? '').toString().toLowerCase();
+              return isNotMe && name.contains(searchVal.toLowerCase());
+            }).toList();
+
+            return Container(
+              height: MediaQuery.of(parentContext).size.height * 0.85,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    margin: const EdgeInsets.only(top: 12, bottom: 8),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'SELECT PROFILES TO INVITE',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1,
+                                color: Colors.black,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${tempSelected.length} Profiles Selected (Max 50)',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: LunaraTheme.electricViolet,
+                              ),
+                            ),
+                          ],
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(modalCtx),
+                          icon: const Icon(Icons.close, color: Colors.black),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                    child: TextField(
+                      onChanged: (v) {
+                        setModalState(() {
+                          searchVal = v;
+                        });
+                      },
+                      decoration: InputDecoration(
+                        hintText: 'Search by name...',
+                        prefixIcon: const Icon(Icons.search, color: LunaraTheme.electricViolet),
+                        filled: true,
+                        fillColor: Colors.grey[100],
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'PROFILES (${eligibleUsers.length})',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1,
+                            color: Colors.black54,
+                          ),
+                        ),
+                        Row(
+                          children: [
+                            TextButton(
+                              onPressed: () {
+                                setModalState(() {
+                                  for (var u in eligibleUsers) {
+                                    final uid = u['id']?.toString();
+                                    if (uid != null && !tempSelected.contains(uid)) {
+                                      if (tempSelected.length < 50) {
+                                        tempSelected.add(uid);
+                                      }
+                                    }
+                                  }
+                                });
+                              },
+                              child: const Text(
+                                'SELECT ALL',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: LunaraTheme.electricViolet,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                setModalState(() {
+                                  tempSelected.clear();
+                                });
+                              },
+                              child: const Text(
+                                'CLEAR',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.redAccent,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: eligibleUsers.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'No matching profiles found',
+                              style: TextStyle(color: Colors.grey, fontSize: 13),
+                            ),
+                          )
+                        : GridView.builder(
+                            padding: const EdgeInsets.all(16),
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 3,
+                              childAspectRatio: 0.82,
+                              crossAxisSpacing: 12,
+                              mainAxisSpacing: 12,
+                            ),
+                            itemCount: eligibleUsers.length,
+                            itemBuilder: (context, index) {
+                              final user = eligibleUsers[index];
+                              final uId = user['id']?.toString() ?? '';
+                              final uName = user['name'] ?? user['firstName'] ?? user['first_name'] ?? 'User';
+                              final isSel = tempSelected.contains(uId);
+
+                              return GestureDetector(
+                                onTap: () {
+                                  setModalState(() {
+                                    if (isSel) {
+                                      tempSelected.remove(uId);
+                                    } else {
+                                      if (tempSelected.length >= 50) {
+                                        ScaffoldMessenger.of(parentContext).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Maximum 50 invites allowed.'),
+                                            backgroundColor: Colors.redAccent,
+                                          ),
+                                        );
+                                        return;
+                                      }
+                                      tempSelected.add(uId);
+                                    }
+                                  });
+                                },
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 150),
+                                  decoration: BoxDecoration(
+                                    color: isSel ? LunaraTheme.electricViolet.withValues(alpha: 0.08) : Colors.grey[50],
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: isSel ? LunaraTheme.electricViolet : Colors.grey[200]!,
+                                      width: isSel ? 2 : 1,
+                                    ),
+                                  ),
+                                  padding: const EdgeInsets.all(8),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Stack(
+                                        children: [
+                                          LunaraProfileImage(
+                                            userData: user,
+                                            radius: 26,
+                                            showGradientBorder: isSel,
+                                            isInteractive: false,
+                                          ),
+                                          Positioned(
+                                            right: 0,
+                                            bottom: 0,
+                                            child: Container(
+                                              padding: const EdgeInsets.all(2),
+                                              decoration: BoxDecoration(
+                                                color: isSel ? Colors.green : Colors.grey[300],
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: Icon(
+                                                isSel ? Icons.check : Icons.add,
+                                                color: Colors.white,
+                                                size: 12,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        uName,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: isSel ? LunaraTheme.electricViolet : Colors.black87,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                  SafeArea(
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, -4),
+                          ),
+                        ],
+                      ),
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: LunaraTheme.electricViolet,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          ),
+                          onPressed: () {
+                            onSelectionChanged(tempSelected);
+                            Navigator.pop(modalCtx);
+                          },
+                          child: Text(
+                            'CONFIRM INVITES (${tempSelected.length})',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
+                              letterSpacing: 1,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   void _showCreatePlanSheet(BuildContext context) {
     final descriptionCtrl = TextEditingController();
     final dateCtrl = TextEditingController();
@@ -2537,7 +2838,63 @@ class _PlanHubScreenState extends State<PlanHubScreen>
 
                       if (selectedPrivacy == 'Private' ||
                           selectedPrivacy == 'Both') ...[
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'INVITE PROFILES (${selectedUserIds.length})',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            InkWell(
+                              onTap: () {
+                                _showAllProfilesSelectionModal(
+                                  parentContext: context,
+                                  customerList: _customerList,
+                                  selectedUserIds: selectedUserIds,
+                                  onSelectionChanged: (newSel) {
+                                    setSheetState(() {
+                                      selectedUserIds.clear();
+                                      selectedUserIds.addAll(newSel);
+                                    });
+                                  },
+                                );
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    Text(
+                                      'VIEW ALL',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w900,
+                                        color: LunaraTheme.electricViolet,
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                    SizedBox(width: 4),
+                                    Icon(
+                                      Icons.grid_view_rounded,
+                                      size: 14,
+                                      color: LunaraTheme.electricViolet,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
                         _sheetField(
                           hint: 'Search profiles to invite...',
                           icon: Icons.person_search_rounded,
@@ -2549,7 +2906,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                         ),
                         const SizedBox(height: 8),
                         SizedBox(
-                          height: 90,
+                          height: 95,
                           child: _customerList.isEmpty
                               ? const Center(
                                   child: Text(
@@ -2576,7 +2933,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         u['id']?.toString() !=
                                         ApiService.currentUserId;
                                     return name.contains(searchVal) && isNotMe;
-                                  }).length,
+                                  }).length + 1, // +1 for the View All tile
                                   itemBuilder: (ctx, idx) {
                                     final filteredList = _customerList.where((
                                       u,
@@ -2596,6 +2953,59 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                       return name.contains(searchVal) &&
                                           isNotMe;
                                     }).toList();
+
+                                    // Trailing 'VIEW ALL' card
+                                    if (idx == filteredList.length) {
+                                      return GestureDetector(
+                                        onTap: () {
+                                          _showAllProfilesSelectionModal(
+                                            parentContext: context,
+                                            customerList: _customerList,
+                                            selectedUserIds: selectedUserIds,
+                                            onSelectionChanged: (newSel) {
+                                              setSheetState(() {
+                                                selectedUserIds.clear();
+                                                selectedUserIds.addAll(newSel);
+                                              });
+                                            },
+                                          );
+                                        },
+                                        child: Padding(
+                                          padding: const EdgeInsets.only(right: 14),
+                                          child: Column(
+                                            children: [
+                                              Container(
+                                                width: 48,
+                                                height: 48,
+                                                decoration: BoxDecoration(
+                                                  color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                                                  shape: BoxShape.circle,
+                                                  border: Border.all(
+                                                    color: LunaraTheme.electricViolet,
+                                                    width: 1.5,
+                                                  ),
+                                                ),
+                                                child: const Icon(
+                                                  Icons.grid_view_rounded,
+                                                  color: LunaraTheme.electricViolet,
+                                                  size: 20,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 6),
+                                              const Text(
+                                                'View All',
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: LunaraTheme.electricViolet,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    }
+
                                     final p = filteredList[idx];
                                     final pId = p['id']?.toString() ?? '';
                                     final pName =

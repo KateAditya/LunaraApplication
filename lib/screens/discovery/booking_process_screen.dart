@@ -1366,14 +1366,29 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                   return;
                                 }
 
-                                String chargesStr = totalPrice.toStringAsFixed(
-                                  0,
-                                );
+                                String chargesStr = totalPrice.toStringAsFixed(0);
                                 Navigator.pop(bottomSheetCtx); // close popup
+
+                                // Create booking in database
+                                String? createdBookingId;
+                                final bookingRes = await ApiService.createBooking(
+                                  venueId: widget.venue['id']?.toString() ?? '',
+                                  bookingDate: '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
+                                  startTime: _selectedTime ?? '22:00',
+                                  tablePackage: 'Confirmation Charges',
+                                  goingMode: 'solo',
+                                  numberOfGuests: isSolo ? 1 : guests,
+                                );
+                                if (bookingRes != null && bookingRes['bookingId'] != null) {
+                                  createdBookingId = bookingRes['bookingId'].toString();
+                                }
+
+                                if (!outerContext.mounted) return;
                                 Navigator.push(
                                   outerContext,
                                   MaterialPageRoute(
                                     builder: (_) => PaymentConfirmationScreen(
+                                      bookingId: createdBookingId,
                                       venue: widget.venue,
                                       date:
                                           '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',

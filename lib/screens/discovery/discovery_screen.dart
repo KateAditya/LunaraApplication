@@ -468,6 +468,155 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     return users;
   }
 
+  int _calculateProfileCompletion() {
+    if (_currentUser == null) return 0;
+    int points = 0;
+    if ((_currentUser?.firstName ?? '').isNotEmpty) points += 20;
+    if ((_currentUser?.bio ?? '').isNotEmpty) points += 20;
+    if ((_currentUser?.gender ?? '').isNotEmpty) points += 20;
+    if (_currentUser?.profilePhoto != null && _currentUser!.profilePhoto!.isNotEmpty) points += 20;
+    if (_currentUser?.isVerified == true || (_currentUser?.photos ?? []).isNotEmpty) points += 20;
+    return points;
+  }
+
+  Widget _buildProfileCompletionCard() {
+    if (_isProfileCardDismissed || _currentUser == null) {
+      return const SizedBox.shrink();
+    }
+
+    final int percentage = _calculateProfileCompletion();
+
+    // If 100% complete, auto-disappear
+    if (percentage >= 100) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            LunaraTheme.electricViolet.withValues(alpha: 0.12),
+            LunaraTheme.cyberCyan.withValues(alpha: 0.08),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.person_outline_rounded,
+                      color: LunaraTheme.electricViolet,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Profile Completion',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
+                      ),
+                      Text(
+                        '$percentage% Completed',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: LunaraTheme.electricViolet,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 18, color: Colors.grey),
+                onPressed: () {
+                  setState(() {
+                    _isProfileCardDismissed = true;
+                  });
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: percentage / 100.0,
+              minHeight: 8,
+              backgroundColor: Colors.grey.shade200,
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                LunaraTheme.electricViolet,
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            height: 40,
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ProfileScreen(),
+                  ),
+                ).then((_) => _loadVenues());
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: LunaraTheme.electricViolet,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 0,
+              ),
+              child: const Text(
+                'COMPLETE PROFILE',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final double statusBarHeight = MediaQuery.of(context).padding.top;
@@ -2603,202 +2752,5 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           );
         },
       ),
-    );
-  }
-
-  int _calculateProfileCompletion(User? user) {
-    if (user == null) return 0;
-    int completed = 0;
-    int total = 8;
-
-    if (user.firstName.trim().isNotEmpty) completed++;
-    if (user.lastName.trim().isNotEmpty) completed++;
-    if (user.email.trim().isNotEmpty) completed++;
-    if (user.phone.trim().isNotEmpty) completed++;
-    if (user.profilePhoto != null && user.profilePhoto!.isNotEmpty) completed++;
-    if (user.bio != null && user.bio!.trim().isNotEmpty) completed++;
-    if (user.city != null && user.city!.trim().isNotEmpty) completed++;
-    if (user.gender != null && user.gender!.trim().isNotEmpty) completed++;
-
-    return ((completed / total) * 100).clamp(0, 100).round();
-  }
-
-  Widget _buildProfileCompletionCard() {
-    if (_currentUser == null || _isProfileCardDismissed) {
-      return const SizedBox.shrink();
-    }
-
-    final int completion = _calculateProfileCompletion(_currentUser);
-    final bool isComplete = completion >= 100;
-
-    // Auto disappear when profile is 100% completed
-    if (isComplete) {
-      return const SizedBox.shrink();
-    }
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [
-            Color(0xFF2E0854),
-            Color(0xFF1A0B2E),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: LunaraTheme.electricViolet.withValues(alpha: 0.25),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-        border: Border.all(
-          color: LunaraTheme.electricViolet.withValues(alpha: 0.4),
-          width: 1.5,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.person_outline_rounded,
-                        color: Colors.cyanAccent,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'COMPLETE YOUR PROFILE',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.8,
-                            ),
-                          ),
-                          SizedBox(height: 2),
-                          Text(
-                            'Complete your info to get 3x more matches',
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: Colors.cyanAccent.withValues(alpha: 0.5),
-                      ),
-                    ),
-                    child: Text(
-                      '$completion%',
-                      style: const TextStyle(
-                        color: Colors.cyanAccent,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _isProfileCardDismissed = true;
-                      });
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.12),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.close_rounded,
-                        color: Colors.white70,
-                        size: 16,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: LinearProgressIndicator(
-              value: completion / 100.0,
-              minHeight: 7,
-              backgroundColor: Colors.white.withValues(alpha: 0.1),
-              valueColor: const AlwaysStoppedAnimation<Color>(
-                LunaraTheme.electricViolet,
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            height: 42,
-            child: ElevatedButton.icon(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const ProfileScreen()),
-                ).then((_) => _loadVenues());
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: LunaraTheme.electricViolet,
-                foregroundColor: Colors.white,
-                elevation: 4,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              icon: const Icon(Icons.edit_rounded, size: 16),
-              label: const Text(
-                'COMPLETE PROFILE NOW',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                  letterSpacing: 1.0,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }

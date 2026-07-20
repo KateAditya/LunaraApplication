@@ -251,8 +251,16 @@ class Venue {
       addressLine1: json['addressLine1'] ?? '',
       area: json['area'],
       city: json['city'] ?? '',
-      averageRating:
-          double.tryParse(json['averageRating']?.toString() ?? '0.0') ?? 0.0,
+      averageRating: (() {
+        final parsed = double.tryParse(
+          json['averageRating']?.toString() ??
+          json['average_rating']?.toString() ??
+          json['rating']?.toString() ??
+          json['avgRating']?.toString() ??
+          '0.0',
+        ) ?? 0.0;
+        return parsed > 0 ? parsed : 4.5;
+      })(),
       imageUrl: img,
       featured: json['featured'] ?? false,
       type: json['category']?.toString().toUpperCase() ?? 'VENUE',

@@ -3,10 +3,12 @@ import '../../core/theme.dart';
 import '../../widgets/action_button.dart';
 import 'split_payment_screen.dart';
 import 'digital_ticket_screen.dart';
+import '../../services/api_service.dart';
 
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 class PaymentConfirmationScreen extends StatefulWidget {
+  final String? bookingId;
   final Map<dynamic, dynamic> venue;
   final String date;
   final String package;
@@ -26,6 +28,7 @@ class PaymentConfirmationScreen extends StatefulWidget {
 
   const PaymentConfirmationScreen({
     super.key,
+    this.bookingId,
     required this.venue,
     required this.date,
     required this.package,
@@ -69,6 +72,10 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
   void _handlePaymentSuccess(PaymentSuccessResponse response) async {
     Navigator.pop(context); // Close dialog if open
 
+    if (widget.bookingId != null && widget.bookingId!.isNotEmpty) {
+      await ApiService.payNowBooking(widget.bookingId!);
+    }
+
     if (widget.onRazorpayPaymentSuccess != null) {
       await widget.onRazorpayPaymentSuccess!(
         response.paymentId ?? 'rzp_test_T1rwVokR7tFger',
@@ -93,7 +100,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
             table: widget.table,
             guests: widget.guests,
             totalPrice: widget.totalPrice,
-            ticketId: widget.razorpayOrderId ?? 'TICKET',
+            ticketId: widget.bookingId ?? widget.razorpayOrderId ?? 'TICKET',
           ),
         ),
       );
@@ -477,6 +484,10 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
       Future.delayed(const Duration(seconds: 2), () async {
         if (!context.mounted) return;
 
+        if (widget.bookingId != null && widget.bookingId!.isNotEmpty) {
+          await ApiService.payNowBooking(widget.bookingId!);
+        }
+
         if (widget.onRazorpayPaymentSuccess != null) {
           await widget.onRazorpayPaymentSuccess!(
             'mock_payment',
@@ -502,7 +513,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
                 table: widget.table,
                 guests: widget.guests,
                 totalPrice: widget.totalPrice,
-                ticketId: widget.razorpayOrderId ?? 'TICKET',
+                ticketId: widget.bookingId ?? widget.razorpayOrderId ?? 'TICKET',
               ),
             ),
           );

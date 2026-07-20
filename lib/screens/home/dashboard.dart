@@ -315,9 +315,9 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
             label: 'Messages',
           ),
           BottomNavigationBarItem(
-            icon: _buildProfileIcon(false, key: AppTourService.profileTabKey),
-            activeIcon: _buildProfileIcon(true),
-            label: 'Profile',
+            icon: Icon(Icons.settings_outlined, key: AppTourService.profileTabKey),
+            activeIcon: const Icon(Icons.settings),
+            label: 'Settings',
           ),
         ],
       ),

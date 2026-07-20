@@ -9,6 +9,7 @@ enum SubLimitFeature {
   backtrack,
   strangerMeet,
   partyCreation,
+  hideProfile,
   generic,
 }
 
@@ -101,6 +102,20 @@ const _configs = <SubLimitFeature, _FeatureConfig>{
       "🎟️ Available from Core plan",
     ],
     gradientColors: [Color(0xFFFFB703), Color(0xFFFF4B7D)],
+  ),
+  SubLimitFeature.hideProfile: _FeatureConfig(
+    emoji: '🙈',
+    title: "Hide Profile is a\nVIP Feature",
+    subtitle: "Go ghost mode! Control your visibility and browse anonymously with Lunara VIP.",
+    benefitHeader: "Hide Profile Benefits:",
+    benefits: [
+      "🙈 Browse profiles without being seen",
+      "🕵️ Exclusive Ghost Mode toggle",
+      "✨ Control who sees your activity",
+      "👑 Full VIP membership perks",
+      "🚀 Priority matching when unhidden",
+    ],
+    gradientColors: [Color(0xFF7F00FF), Color(0xFFE100FF)],
   ),
   SubLimitFeature.generic: _FeatureConfig(
     emoji: '👑',

@@ -529,6 +529,111 @@ class ApiService {
     }
   }
 
+  /// Fetches ALL tickets for current user across standard bookings, group parties (<= 20), and confirmed party plans.
+  static Future<List<Map<String, dynamic>>> fetchAllUserTickets() async {
+    final userId = currentUserId;
+    if (userId == null) return [];
+
+    final Map<String, Map<String, dynamic>> ticketMap = {};
+
+    // 1. Fetch standard bookings
+    try {
+      final rawBookings = await fetchBookings();
+      if (rawBookings != null) {
+        for (final item in rawBookings) {
+          if (item is Map) {
+            final mapItem = Map<String, dynamic>.from(item);
+            final key = mapItem['id']?.toString() ?? UniqueKey().toString();
+            ticketMap[key] = mapItem;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('fetchAllUserTickets standard bookings error: $e');
+    }
+
+    // 2. Fetch group parties (<= 20 members as well as all sizes)
+    try {
+      final response = await get(
+        '/api/mobile/group-parties',
+        queryParameters: {'userId': userId},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          final List rawList = data['data'];
+          for (final gp in rawList) {
+            if (gp is Map) {
+              final key = 'gp_${gp['id']}';
+              ticketMap[key] = {
+                'id': gp['id'],
+                'bookingId': gp['id'],
+                'ticketCode': gp['ticketCode'] ?? 'GP-${gp['id'].toString().substring(0, 8)}',
+                'venue': gp['venue'],
+                'venueName': gp['venue']?['name'] ?? 'Group Party Venue',
+                'status': gp['status']?.toString().toLowerCase() ?? 'pending',
+                'bookingStatus': gp['status']?.toString().toLowerCase() ?? 'pending',
+                'numberOfGuests': gp['numberOfFriends'] ?? 1,
+                'tablePackage': 'GROUP PARTY (${gp['numberOfFriends'] ?? 1} FRIENDS)',
+                'bookingDate': gp['partyDate'],
+                'startTime': gp['startTime'] ?? '08:00 PM',
+                'totalAmount': gp['totalAmount'] ?? gp['tableBookingCharge'],
+                'createdAt': gp['createdAt'],
+                'mobileNumber': gp['mobileNumber'],
+                'optionalMobileNumber': gp['optionalMobileNumber'],
+                'foodPreference': gp['foodPreference'],
+                'drinkPreference': gp['drinkPreference'],
+                'isGroupParty': true,
+              };
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('fetchAllUserTickets group parties error: $e');
+    }
+
+    // 3. Fetch user party plans (confirmed / matched)
+    try {
+      final myPlans = await fetchMyPartyPlans();
+      for (final plan in myPlans) {
+        final status = plan['status']?.toString().toLowerCase();
+        if (status == 'confirmed' || status == 'active' || status == 'booked') {
+          final key = 'plan_${plan['id']}';
+          ticketMap[key] = {
+            'id': plan['id'],
+            'bookingId': plan['id'],
+            'ticketCode': plan['ticketCode'] ?? 'PP-${plan['id'].toString().substring(0, 8)}',
+            'venue': plan['venue'],
+            'venueName': plan['venue']?['name'] ?? plan['venueName'] ?? 'Party Venue',
+            'status': status,
+            'bookingStatus': status,
+            'numberOfGuests': (plan['selectedUserIds'] is List ? (plan['selectedUserIds'] as List).length : 2),
+            'tablePackage': 'PARTY PLAN MATCH',
+            'bookingDate': plan['eventDate'] ?? plan['date'],
+            'startTime': plan['eventTime'] ?? plan['time'] ?? '08:00 PM',
+            'totalAmount': plan['depositAmount'] ?? 198,
+            'createdAt': plan['createdAt'],
+            'isPartyPlan': true,
+          };
+        }
+      }
+    } catch (e) {
+      debugPrint('fetchAllUserTickets party plans error: $e');
+    }
+
+    final List<Map<String, dynamic>> results = ticketMap.values.toList();
+    results.sort((a, b) {
+      final da = DateTime.tryParse(a['createdAt']?.toString() ?? a['bookingDate']?.toString() ?? '') ?? DateTime(0);
+      final db = DateTime.tryParse(b['createdAt']?.toString() ?? b['bookingDate']?.toString() ?? '') ?? DateTime(0);
+      return db.compareTo(da);
+    });
+
+    return results;
+  }
+
+
+
   static Future<Map<String, dynamic>?> swipeUser({
     required String targetUserId,
     required String action,
@@ -2348,6 +2453,71 @@ class ApiService {
     }
     return false;
   }
+
+  static Future<Map<String, dynamic>?> createBooking({
+    required String venueId,
+    required String bookingDate,
+    required String startTime,
+    required String tablePackage,
+    String goingMode = 'solo',
+    int numberOfGuests = 1,
+    String? partySubject,
+    String? partyRequirement,
+    String? partyDescription,
+    String? mobileNumber,
+    String? optionalMobileNumber,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) return null;
+    try {
+      final response = await post(
+        '/api/mobile/bookings',
+        body: {
+          'userId': userId,
+          'venueId': venueId,
+          'bookingDate': bookingDate,
+          'startTime': startTime,
+          'tablePackage': tablePackage,
+          'goingMode': goingMode,
+          'numberOfGuests': numberOfGuests,
+          'partySubject': partySubject,
+          'partyRequirement': partyRequirement,
+          'partyDescription': partyDescription,
+          'mobileNumber': mobileNumber,
+          'optionalMobileNumber': optionalMobileNumber,
+        },
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return Map<String, dynamic>.from(data['data']);
+        }
+      }
+    } catch (e) {
+      debugPrint('createBooking error: $e');
+    }
+    return null;
+  }
+
+  static Future<Map<String, dynamic>?> payNowBooking(String bookingId) async {
+    final userId = currentUserId;
+    try {
+      final response = await post(
+        '/api/mobile/bookings/$bookingId/pay-now',
+        body: {'userId': userId},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return Map<String, dynamic>.from(data['data']);
+        }
+      }
+    } catch (e) {
+      debugPrint('payNowBooking error: $e');
+    }
+    return null;
+  }
+
 
   // ── Swipe Status & Subscription Limits ────────────────────────────────────
 

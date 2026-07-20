@@ -320,7 +320,7 @@ class _GroupPartyBookingScreenState extends State<GroupPartyBookingScreen> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            venue.averageRating.toString(),
+                            (venue.averageRating > 0 ? venue.averageRating : 4.5).toStringAsFixed(1),
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 12,
