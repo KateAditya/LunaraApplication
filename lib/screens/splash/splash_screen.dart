@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import '../../services/api_service.dart';
 import '../../services/push_notification_service.dart';
+import '../../services/onboarding_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../onboarding/permissions_screen.dart';
 import '../onboarding/welcome_carousel.dart';
@@ -50,12 +51,10 @@ class _SplashScreenState extends State<SplashScreen> {
         }
       }).catchError((error) {
         debugPrint('Error initializing splash video: $error');
-        // Let the fallback timer handle navigation, or force it now
         _checkAndNavigate(force: true);
       }),
       ApiService.initAuthToken().then((_) {
         _isApiInitDone = true;
-        // Initialize push notifications after auth token is available
         if (ApiService.currentUserId != null) {
           PushNotificationService.initialize();
         }
@@ -108,27 +107,61 @@ class _SplashScreenState extends State<SplashScreen> {
       return;
     }
 
-    if (ApiService.currentUserId != null) {
+    // Check 1: Resume from saved onboarding step if user disconnected or closed app
+    final savedOnboarding = await OnboardingService.getSavedProgress();
+    if (!mounted) return;
+
+    if (savedOnboarding != null) {
+      final step = savedOnboarding['step'] as String;
+      final data = savedOnboarding['data'] as Map<String, dynamic>;
+      final resumeScreen = OnboardingService.getResumeScreen(step, data);
+
       Navigator.pushReplacement(
         context,
         PageRouteBuilder(
-          pageBuilder: (_, _, _) => const Dashboard(),
-          transitionsBuilder: (_, a, _, child) =>
-              FadeTransition(opacity: a, child: child),
+          pageBuilder: (_, _, _) => resumeScreen,
+          transitionsBuilder: (_, a, _, child) => FadeTransition(opacity: a, child: child),
           transitionDuration: const Duration(milliseconds: 400),
         ),
       );
-    } else {
-      Navigator.pushReplacement(
-        context,
-        PageRouteBuilder(
-          pageBuilder: (_, _, _) => const WelcomeCarousel(),
-          transitionsBuilder: (_, a, _, child) =>
-              FadeTransition(opacity: a, child: child),
-          transitionDuration: const Duration(milliseconds: 400),
-        ),
-      );
+      return;
     }
+
+    // Check 2: Strictly gate access - only allow Dashboard if user is authenticated & fully registered
+    if (ApiService.currentUserId != null) {
+      try {
+        final user = await ApiService.fetchProfile();
+        final isRegistrationComplete = user != null &&
+            (user.displayName != null || user.firstName.isNotEmpty);
+
+        if (!mounted) return;
+
+        if (isRegistrationComplete) {
+          Navigator.pushReplacement(
+            context,
+            PageRouteBuilder(
+              pageBuilder: (_, _, _) => const Dashboard(),
+              transitionsBuilder: (_, a, _, child) => FadeTransition(opacity: a, child: child),
+              transitionDuration: const Duration(milliseconds: 400),
+            ),
+          );
+          return;
+        }
+      } catch (e) {
+        debugPrint('Error fetching profile in splash: $e');
+      }
+    }
+
+    // Fallback: If not logged in or registration incomplete, redirect to Welcome / Registration
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (_, _, _) => const WelcomeCarousel(),
+        transitionsBuilder: (_, a, _, child) => FadeTransition(opacity: a, child: child),
+        transitionDuration: const Duration(milliseconds: 400),
+      ),
+    );
   }
 
   @override

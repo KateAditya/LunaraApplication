@@ -5,7 +5,8 @@ import '../../widgets/action_button.dart';
 import '../../widgets/top_error_banner.dart';
 import '../../services/auth_service.dart';
 import '../../services/biometric_service.dart';
-import '../profile_setup/profile_photos_screen.dart';
+import '../../services/onboarding_service.dart';
+import '../profile_setup/selfie_verification_screen.dart';
 
 class PasswordSetupScreen extends StatefulWidget {
   final Map<String, dynamic>? collectedData;
@@ -78,11 +79,20 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
     if (mounted) {
       setState(() => _isLoading = false);
       if (error == null) {
+        final data = widget.collectedData != null
+            ? Map<String, dynamic>.from(widget.collectedData!)
+            : <String, dynamic>{};
+        data['password'] = _passwordController.text;
+
+        await OnboardingService.saveProgress('selfie_verification', data);
+
+        if (!mounted) return;
+
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) =>
-                ProfilePhotosScreen(collectedData: widget.collectedData),
+                SelfieVerificationScreen(collectedData: data),
           ),
         );
       } else {

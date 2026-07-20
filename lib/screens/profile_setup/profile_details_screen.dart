@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../widgets/glass_card.dart';
 import '../../widgets/action_button.dart';
+import '../../services/onboarding_service.dart';
 import 'profile_vibe_screen.dart';
 
 class ProfileDetailsScreen extends StatefulWidget {
@@ -147,7 +148,7 @@ class _ProfileDetailsScreenState extends State<ProfileDetailsScreen> {
 
                 LunaraActionButton(
                   text: 'CONTINUE',
-                  onPressed: () {
+                  onPressed: () async {
                     final data = widget.collectedData != null
                         ? Map<String, dynamic>.from(widget.collectedData!)
                         : <String, dynamic>{};
@@ -158,6 +159,10 @@ class _ProfileDetailsScreenState extends State<ProfileDetailsScreen> {
                     data['lookingFor'] = _selectedLookingFor.isNotEmpty
                         ? _selectedLookingFor.toList()
                         : <String>[];
+
+                    await OnboardingService.saveProgress('profile_details', data);
+
+                    if (!mounted) return;
 
                     Navigator.push(
                       context,

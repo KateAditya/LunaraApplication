@@ -1,5 +1,6 @@
 import 'dart:io' show Platform, File;
 import 'dart:convert';
+import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:flutter/foundation.dart'; // For debugPrint
@@ -2731,19 +2732,16 @@ class ApiService {
     required String profilePhotoPath,
   }) async {
     try {
-      final File selfieFile = File(selfiePath);
-      final File profileFile = File(profilePhotoPath);
+      final Uint8List selfieBytes = await XFile(selfiePath).readAsBytes();
+      final Uint8List profileBytes = await XFile(profilePhotoPath).readAsBytes();
 
-      if (!await selfieFile.exists() || !await profileFile.exists()) {
+      if (selfieBytes.isEmpty || profileBytes.isEmpty) {
         return {
           'success': false,
           'verified': false,
-          'message': 'Image files could not be read from device.',
+          'message': 'Image files could not be read.',
         };
       }
-
-      final List<int> selfieBytes = await selfieFile.readAsBytes();
-      final List<int> profileBytes = await profileFile.readAsBytes();
 
       final String selfieBase64 = base64Encode(selfieBytes);
       final String profileBase64 = base64Encode(profileBytes);

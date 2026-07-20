@@ -3,6 +3,7 @@ import '../../core/theme.dart';
 import '../../widgets/action_button.dart';
 import '../../widgets/top_error_banner.dart';
 import '../../services/auth_service.dart';
+import '../../services/onboarding_service.dart';
 import 'password_setup_screen.dart';
 import 'reset_password_screen.dart';
 
@@ -143,11 +144,20 @@ class _OtpScreenState extends State<OtpScreen>
                                   }
 
                                   if (widget.isRegistration) {
+                                    final data = widget.collectedData != null
+                                        ? Map<String, dynamic>.from(widget.collectedData!)
+                                        : <String, dynamic>{};
+                                    data['isPhoneVerified'] = true;
+
+                                    await OnboardingService.saveProgress('password_setup', data);
+
+                                    if (!mounted) return;
+
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(
                                         builder: (context) => PasswordSetupScreen(
-                                          collectedData: widget.collectedData,
+                                          collectedData: data,
                                         ),
                                       ),
                                     );

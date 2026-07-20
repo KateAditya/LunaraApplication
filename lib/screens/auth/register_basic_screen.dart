@@ -5,6 +5,7 @@ import '../../widgets/action_button.dart';
 import '../../widgets/top_error_banner.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
+import '../../services/onboarding_service.dart';
 import 'otp_screen.dart';
 import 'terms_screen.dart';
 
@@ -375,6 +376,10 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                           },
                           'preferences': {'minAgePreference': age},
                         };
+
+                        await OnboardingService.saveProgress('otp_verification', data);
+
+                        if (!mounted) return;
 
                         Navigator.push(
                           context,

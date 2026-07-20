@@ -1,4 +1,5 @@
 import '../../services/auth_service.dart';
+import '../../services/onboarding_service.dart';
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../widgets/action_button.dart';
@@ -128,6 +129,7 @@ class _ProfileFinalReviewScreenState extends State<ProfileFinalReviewScreen>
     setState(() => _isLoading = false);
 
     if (success && mounted) {
+      await OnboardingService.clearProgress();
       await AppTourService.markUserAsNew();
       if (!mounted) return;
       Navigator.pushAndRemoveUntil(
