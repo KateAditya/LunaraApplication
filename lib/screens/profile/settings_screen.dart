@@ -10,6 +10,8 @@ import '../../services/biometric_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'edit_profile_screen.dart';
 import '../../models/user.dart';
+import '../../services/onboarding_service.dart';
+import '../onboarding/welcome_carousel.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -1073,80 +1075,371 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showDeleteAccountDialog() {
-    showDialog(
+    final passwordController = TextEditingController();
+    String selectedReason = 'Taking a break';
+    String? passwordError;
+    String? apiErrorMessage;
+    bool isDeleting = false;
+    bool obscurePassword = true;
+
+    final reasons = [
+      'Taking a break',
+      'Privacy concerns',
+      'Created another account',
+      'Trouble getting started',
+      'Too many notifications',
+      'Something else',
+    ];
+
+    showModalBottomSheet(
       context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+      ),
+      isScrollControlled: true,
       builder: (ctx) {
-        return AlertDialog(
-          backgroundColor: Colors.white,
-          surfaceTintColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(32),
-          ),
-          title: const Text(
-            'DELETE ACCOUNT',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-              color: Colors.redAccent,
-              letterSpacing: 2,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.warning_amber_rounded,
-                color: Colors.red[100],
-                size: 64,
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                24,
+                24,
+                24,
+                MediaQuery.of(context).viewInsets.bottom + 32,
               ),
-              const SizedBox(height: 20),
-              Text(
-                'Are you sure you want to delete your account? This action cannot be undone. All your data, bookings, and matches will be permanently removed.',
-                style: TextStyle(color: Colors.black, fontSize: 14),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(
-                'CANCEL',
-                style: TextStyle(
-                  color: Colors.black,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.redAccent,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              onPressed: () {
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Account deletion request submitted. You will be logged out shortly.',
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
                     ),
-                    backgroundColor: Colors.redAccent,
-                  ),
-                );
-              },
-              child: const Text(
-                'DELETE',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
+                    const SizedBox(height: 24),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.delete_forever_rounded,
+                            color: Colors.redAccent,
+                            size: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Text(
+                            'DELETE ACCOUNT',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 2,
+                              color: Colors.redAccent,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'We are sorry to see you leave. Please let us know why you are deleting your account:',
+                      style: TextStyle(
+                        color: Colors.grey[700],
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Reasons list
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: reasons.map((reason) {
+                        final isSelected = selectedReason == reason;
+                        return ChoiceChip(
+                          label: Text(
+                            reason,
+                            style: TextStyle(
+                              color: isSelected ? Colors.white : Colors.black87,
+                              fontSize: 12,
+                              fontWeight: isSelected ? FontWeight.w900 : FontWeight.bold,
+                            ),
+                          ),
+                          selected: isSelected,
+                          selectedColor: LunaraTheme.electricViolet,
+                          backgroundColor: Colors.grey[100],
+                          elevation: isSelected ? 2 : 0,
+                          onSelected: (selected) {
+                            if (selected) {
+                              setModalState(() {
+                                selectedReason = reason;
+                              });
+                            }
+                          },
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Red warning box
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.red.withValues(alpha: 0.2)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 18),
+                              SizedBox(width: 8),
+                              Text(
+                                'PERMANENT ACTION',
+                                style: TextStyle(
+                                  color: Colors.redAccent,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 11,
+                                  letterSpacing: 1,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Deleting your account will permanently purge your profile, photos, matches, chat history, tickets, and active subscriptions. This action cannot be undone.',
+                            style: TextStyle(
+                              color: Colors.red[900],
+                              fontSize: 12,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Password input field
+                    TextField(
+                      controller: passwordController,
+                      obscureText: obscurePassword,
+                      onChanged: (_) {
+                        if (passwordError != null || apiErrorMessage != null) {
+                          setModalState(() {
+                            passwordError = null;
+                            apiErrorMessage = null;
+                          });
+                        }
+                      },
+                      style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+                      decoration: InputDecoration(
+                        labelText: 'Confirm Password',
+                        labelStyle: const TextStyle(
+                          color: Colors.black,
+                          fontWeight: FontWeight.w900,
+                        ),
+                        hintText: 'Enter password to confirm',
+                        errorText: passwordError,
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide(color: Colors.grey[300]!),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: const BorderSide(color: Colors.redAccent, width: 2),
+                        ),
+                        errorBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: const BorderSide(color: Colors.redAccent),
+                        ),
+                        focusedErrorBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: const BorderSide(color: Colors.redAccent, width: 2),
+                        ),
+                        prefixIcon: const Icon(Icons.lock_outline, color: Colors.grey),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                            color: Colors.grey,
+                          ),
+                          onPressed: () {
+                            setModalState(() {
+                              obscurePassword = !obscurePassword;
+                            });
+                          },
+                        ),
+                        filled: true,
+                        fillColor: Colors.grey[50],
+                      ),
+                    ),
+
+                    if (apiErrorMessage != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.red[50],
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.error_outline, color: Colors.redAccent, size: 18),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                apiErrorMessage!,
+                                style: const TextStyle(
+                                  color: Colors.redAccent,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 24),
+
+                    // Action buttons
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              side: BorderSide(color: Colors.grey[300]!),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            onPressed: isDeleting ? null : () => Navigator.pop(ctx),
+                            child: const Text(
+                              'CANCEL',
+                              style: TextStyle(
+                                color: Colors.black,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.redAccent,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            onPressed: isDeleting
+                                ? null
+                                : () async {
+                                    final pwd = passwordController.text.trim();
+                                    if (pwd.isEmpty) {
+                                      setModalState(() {
+                                        passwordError = 'Password is required to confirm';
+                                      });
+                                      return;
+                                    }
+
+                                    setModalState(() {
+                                      isDeleting = true;
+                                      passwordError = null;
+                                      apiErrorMessage = null;
+                                    });
+
+                                    final result = await ApiService.deleteAccount(
+                                      password: pwd,
+                                      reason: selectedReason,
+                                    );
+
+                                    if (!mounted) return;
+
+                                    if (result['success'] == true) {
+                                      // Perform stateful immediate logout cleanup
+                                      await OnboardingService.clearProgress();
+                                      final prefs = await SharedPreferences.getInstance();
+                                      await prefs.clear();
+
+                                      if (mounted) {
+                                        Navigator.pop(ctx); // Close modal
+                                        Navigator.pushAndRemoveUntil(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => const WelcomeCarousel(),
+                                          ),
+                                          (route) => false,
+                                        );
+
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              'Your Lunara account has been permanently deleted.',
+                                            ),
+                                            backgroundColor: Colors.redAccent,
+                                            behavior: SnackBarBehavior.floating,
+                                          ),
+                                        );
+                                      }
+                                    } else {
+                                      setModalState(() {
+                                        isDeleting = false;
+                                        if (result['code'] == 'INVALID_PASSWORD' ||
+                                            result['code'] == 'PASSWORD_REQUIRED') {
+                                          passwordError = result['message'] ?? 'Incorrect password';
+                                        } else {
+                                          apiErrorMessage = result['message'] ?? 'Failed to delete account';
+                                        }
+                                      });
+                                    }
+                                  },
+                            child: isDeleting
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text(
+                                    'DELETE ACCOUNT',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 1,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ],
+            );
+          },
         );
       },
     );

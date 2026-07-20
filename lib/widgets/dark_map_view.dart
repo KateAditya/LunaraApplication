@@ -223,9 +223,9 @@ class _DarkMapViewState extends State<DarkMapView> {
             zoom: 13.0,
           ),
           markers: _markers,
-          style: _darkMapStyle,
-          cloudMapId: 'LUNARA_DARK_MAP_ID', // Required for Advanced Markers on Web
-          onMapCreated: (controller) {},
+          onMapCreated: (controller) {
+            controller.setMapStyle(_darkMapStyle);
+          },
           myLocationButtonEnabled: false,
           zoomControlsEnabled: false,
           mapToolbarEnabled: false,

@@ -1172,7 +1172,7 @@ router.post(
     '/delete-account',
     [
         body('userId').optional().isUUID().withMessage('userId must be a valid UUID'),
-        body('password').notEmpty().withMessage('password is required to confirm account deletion'),
+        body('password').optional().isString(),
         body('reason').optional().isString().isLength({ max: 500 }),
         validate,
     ],

@@ -15,14 +15,12 @@ subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
-subprojects {
-    project.evaluationDependsOn(":app")
-}
 
 subprojects {
-    val configureNamespace = {
+    afterEvaluate {
         val android = extensions.findByName("android") as? com.android.build.gradle.BaseExtension
         if (android != null) {
+            android.compileSdkVersion(36)
             if (android.namespace == null) {
                 android.namespace = "com.example.${name.replace(":", "").replace("-", "_")}"
             }
@@ -40,13 +38,10 @@ subprojects {
             }
         }
     }
-    if (state.executed) {
-        configureNamespace()
-    } else {
-        afterEvaluate {
-            configureNamespace()
-        }
-    }
+}
+
+subprojects {
+    project.evaluationDependsOn(":app")
 }
 
 

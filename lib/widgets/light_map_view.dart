@@ -175,7 +175,6 @@ class _LightMapViewState extends State<LightMapView> {
         }
         _animateCameraToFitFallback();
       },
-      cloudMapId: 'LUNARA_LIGHT_MAP_ID', // Required for Advanced Markers on Web
       markers: _markers,
       polylines: _polylines,
       myLocationEnabled: true,

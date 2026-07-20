@@ -2806,6 +2806,44 @@ class ApiService {
       };
     }
   }
+
+  /// Permanently soft-delete the user's account and perform full session cleanup
+  static Future<Map<String, dynamic>> deleteAccount({
+    required String password,
+    String? reason,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) {
+      return {'success': false, 'message': 'Authentication required. Please log in again.'};
+    }
+
+    try {
+      final response = await post(
+        '/api/mobile/user/delete-account',
+        body: {
+          'userId': userId,
+          'password': password,
+          'reason': reason ?? '',
+        },
+      );
+
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        await logout();
+        return {'success': true, 'message': data['message'] ?? 'Account deleted successfully'};
+      } else {
+        return {
+          'success': false,
+          'message': data['message'] ?? 'Failed to delete account',
+          'code': data['code'],
+        };
+      }
+    } catch (e) {
+      debugPrint('deleteAccount error: $e');
+      return {'success': false, 'message': 'Network error deleting account'};
+    }
+  }
 }
+
 
 

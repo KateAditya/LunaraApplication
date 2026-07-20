@@ -1508,14 +1508,6 @@ export const deleteAccount = async (req: Request, res: Response): Promise<Respon
             return res.status(401).json({ success: false, message: 'Authentication required' });
         }
 
-        if (!password) {
-            return res.status(400).json({
-                success: false,
-                code: 'PASSWORD_REQUIRED',
-                message: 'Please confirm your password to delete your account',
-            });
-        }
-
         // ── 1. Fetch the user ──────────────────────────────────────────────────
         const user = await User.findByPk(userId, {
             attributes: [
@@ -1540,13 +1532,22 @@ export const deleteAccount = async (req: Request, res: Response): Promise<Respon
         }
 
         // ── 3. Password re-authentication gate ─────────────────────────────────
-        const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
-        if (!isPasswordValid) {
-            return res.status(401).json({
-                success: false,
-                code: 'INVALID_PASSWORD',
-                message: 'Incorrect password. Please try again.',
-            });
+        if (user.passwordHash) {
+            if (!password) {
+                return res.status(400).json({
+                    success: false,
+                    code: 'PASSWORD_REQUIRED',
+                    message: 'Please confirm your password to delete your account',
+                });
+            }
+            const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+            if (!isPasswordValid) {
+                return res.status(401).json({
+                    success: false,
+                    code: 'INVALID_PASSWORD',
+                    message: 'Incorrect password. Please try again.',
+                });
+            }
         }
 
         // ── 4. Gather snapshot counts ──────────────────────────────────────────

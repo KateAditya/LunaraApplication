@@ -88,52 +88,42 @@ export async function compressImageTo300KB(filePath: string): Promise<string> {
 
         const inputBuffer = fs.readFileSync(filePath);
 
-        // Check if image is already within limit
-        if (inputBuffer.length <= MAX_SIZE_BYTES) {
-            // Still convert to WebP for consistency
-            await sharp(inputBuffer).rotate().webp({ quality: 85 }).toFile(compressedPath);
-            try { fs.unlinkSync(filePath); } catch { /* ignore */ }
-            return compressedPath;
-        }
+        // ── Fast Single-Pass Optimization with Dimension Cap ────────────────
+        // Resizing raw camera photos to max 1400px width/height reduces raw pixel buffer by up to 90% instantly
+        let outputBuffer = await sharp(inputBuffer)
+            .rotate()
+            .resize(1400, 1400, { fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: 80, effort: 3 })
+            .toBuffer();
 
-        // Iteratively reduce quality until size is within 300KB
-        let quality = 85;
-        let outputBuffer: Buffer | null = null;
-
-        while (quality >= 10) {
+        // If still above 300 KB, resize to 1100px with quality 70
+        if (outputBuffer.length > MAX_SIZE_BYTES) {
             outputBuffer = await sharp(inputBuffer)
                 .rotate()
-                .webp({ quality })
+                .resize(1100, 1100, { fit: 'inside', withoutEnlargement: true })
+                .webp({ quality: 70, effort: 3 })
                 .toBuffer();
+        }
 
-            if (outputBuffer.length <= MAX_SIZE_BYTES) {
-                break;
+        // Final fallback for exceptionally complex high-frequency images
+        if (outputBuffer.length > MAX_SIZE_BYTES) {
+            outputBuffer = await sharp(inputBuffer)
+                .rotate()
+                .resize(900, 900, { fit: 'inside', withoutEnlargement: true })
+                .webp({ quality: 60, effort: 2 })
+                .toBuffer();
+        }
+
+        fs.writeFileSync(compressedPath, outputBuffer);
+
+        // Delete original raw upload file
+        try {
+            if (fs.existsSync(filePath) && filePath !== compressedPath) {
+                fs.unlinkSync(filePath);
             }
-            quality -= 10;
-        }
+        } catch { /* ignore cleanup error */ }
 
-        // If still too large, resize dimensions by 80% and try again
-        if (outputBuffer && outputBuffer.length > MAX_SIZE_BYTES) {
-            const metadata = await sharp(inputBuffer).metadata();
-            const newWidth = Math.floor((metadata.width || 1200) * 0.8);
-            outputBuffer = await sharp(inputBuffer)
-                .rotate()
-                .resize(newWidth, undefined, { fit: 'inside', withoutEnlargement: true })
-                .webp({ quality: 70 })
-                .toBuffer();
-        }
-
-        if (outputBuffer) {
-            fs.writeFileSync(compressedPath, outputBuffer);
-        } else {
-            // Fallback: just write at quality 60
-            await sharp(inputBuffer).rotate().webp({ quality: 60 }).toFile(compressedPath);
-        }
-
-        // Delete original
-        try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch { /* ignore */ }
-
-        console.log(`[compressImageTo300KB] ${path.basename(filePath)} → ${Math.round((outputBuffer?.length || 0) / 1024)}KB (quality: ${quality})`);
+        console.log(`[compressImageTo300KB] ${path.basename(filePath)} → ${Math.round(outputBuffer.length / 1024)}KB (fast optimized)`);
         return compressedPath;
     } catch (error) {
         console.error('Error compressing image to 300KB:', error);

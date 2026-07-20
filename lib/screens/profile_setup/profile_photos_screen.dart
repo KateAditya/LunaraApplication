@@ -28,9 +28,12 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
   @override
   void initState() {
     super.initState();
-    // Auto-populate Slot 0 with verified selfie path from step 4
-    if (widget.collectedData != null && widget.collectedData!['selfie'] != null) {
-      _photos[0] = widget.collectedData!['selfie'];
+    // Restore saved profile photos if available
+    if (widget.collectedData != null && widget.collectedData!['photos'] != null) {
+      final savedPhotos = List<String>.from(widget.collectedData!['photos']);
+      for (int i = 0; i < savedPhotos.length && i < 6; i++) {
+        _photos[i] = savedPhotos[i];
+      }
     }
   }
 
@@ -102,17 +105,6 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
   }
 
   void _showImageSourceDialog(int index) {
-    if (index == 0) {
-      // Slot 0 is the verified selfie
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Slot 1 is your Azure AI Verified Selfie.'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-
     showModalBottomSheet(
       context: context,
       backgroundColor: Theme.of(context).cardColor,
@@ -146,10 +138,9 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
   }
 
   Future<void> _handleContinue() async {
-    // Ensure user has at least 1 profile picture in addition to selfie (or total >= 2)
     final validPhotos = _photos.whereType<String>().toList();
-    if (validPhotos.length < 2 && _photos[1] == null) {
-      TopErrorBanner.show(context, 'Please upload at least 1 profile picture in Slot 2');
+    if (validPhotos.isEmpty) {
+      TopErrorBanner.show(context, 'Please upload at least 1 profile picture (Main Photo)');
       return;
     }
 
@@ -318,16 +309,16 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
   Widget _buildPhotoGrid() {
     return Column(
       children: [
-        // Main Slot 1 (Selfie) & Slot 2 (Main Profile Photo)
+        // Primary Slot 0 (Main Profile Photo) & Slot 1
         Row(
           children: [
-            Expanded(child: _buildPhotoTile(0, isSelfie: true)),
+            Expanded(child: _buildPhotoTile(0, isMain: true)),
             const SizedBox(width: 16),
-            Expanded(child: _buildPhotoTile(1, isMain: true)),
+            Expanded(child: _buildPhotoTile(1)),
           ],
         ),
         const SizedBox(width: 16, height: 16),
-        // Secondary Slots 3, 4, 5, 6
+        // Secondary Slots 2, 3, 4, 5
         Row(
           children: [
             Expanded(child: _buildPhotoTile(2)),
@@ -350,12 +341,12 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
     return Image.file(File(path), fit: BoxFit.cover);
   }
 
-  Widget _buildPhotoTile(int index, {bool isSelfie = false, bool isMain = false}) {
+  Widget _buildPhotoTile(int index, {bool isMain = false}) {
     final photoPath = _photos[index];
     final hasPhoto = photoPath != null;
 
     return AspectRatio(
-      aspectRatio: isSelfie || isMain ? 0.85 : 0.85,
+      aspectRatio: 0.85,
       child: GestureDetector(
         onTap: () => _showImageSourceDialog(index),
         child: GlassCard(
@@ -365,12 +356,10 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: isSelfie
-                    ? Colors.green.withValues(alpha: 0.8)
-                    : isMain
+                color: isMain
                     ? LunaraTheme.primaryRich
                     : LunaraTheme.lightBorder,
-                width: isSelfie || isMain ? 2 : 1,
+                width: isMain ? 2 : 1,
               ),
             ),
             child: Stack(
@@ -388,31 +377,31 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
                       Icon(
                         Icons.add_a_photo_outlined,
                         color: LunaraTheme.primaryRich.withValues(alpha: 0.6),
-                        size: isSelfie || isMain ? 28 : 20,
+                        size: isMain ? 28 : 20,
                       ),
                       const SizedBox(height: 6),
                       Text(
                         isMain ? 'MAIN PHOTO' : 'ADD PHOTO',
                         style: TextStyle(
-                          fontSize: isSelfie || isMain ? 11 : 9,
+                          fontSize: isMain ? 11 : 9,
                           fontWeight: FontWeight.bold,
                           color: LunaraTheme.primaryRich,
                         ),
                       ),
                     ],
                   ),
-                if (isSelfie)
+                if (isMain && hasPhoto)
                   Positioned(
                     top: 6,
                     left: 6,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                       decoration: BoxDecoration(
-                        color: Colors.green,
+                        color: LunaraTheme.primaryRich,
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: const Text(
-                        'VERIFIED SELFIE',
+                        'MAIN PHOTO',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 8,
@@ -421,7 +410,7 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
                       ),
                     ),
                   ),
-                if (hasPhoto && !isSelfie)
+                if (hasPhoto)
                   Positioned(
                     top: 6,
                     right: 6,
