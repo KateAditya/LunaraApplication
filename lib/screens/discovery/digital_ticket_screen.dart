@@ -17,6 +17,7 @@ class DigitalTicketScreen extends StatefulWidget {
   final String? guests;
   final String? totalPrice;
   final String? ticketId;
+  final String? ticketUrl;
 
   const DigitalTicketScreen({
     super.key,
@@ -28,6 +29,7 @@ class DigitalTicketScreen extends StatefulWidget {
     this.guests,
     this.totalPrice,
     this.ticketId,
+    this.ticketUrl,
   });
 
   @override
@@ -790,12 +792,34 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
   }
 
   Widget _buildFooter(BuildContext context) {
+    final hasPdf = widget.ticketUrl != null && widget.ticketUrl!.isNotEmpty;
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-      child: LunaraActionButton(
-        text: 'GO TO DASHBOARD',
-        onPressed: () =>
-            Navigator.of(context).popUntil((route) => route.isFirst),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (hasPdf) ...[
+            LunaraActionButton(
+              text: 'DOWNLOAD PDF TICKET',
+              onPressed: () async {
+                final pdfUri = Uri.parse(widget.ticketUrl!);
+                if (await canLaunchUrl(pdfUri)) {
+                  await launchUrl(pdfUri, mode: LaunchMode.externalApplication);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Could not open the PDF URL.')),
+                  );
+                }
+              },
+            ),
+            const SizedBox(height: 12),
+          ],
+          LunaraActionButton(
+            text: 'GO TO DASHBOARD',
+            onPressed: () =>
+                Navigator.of(context).popUntil((route) => route.isFirst),
+          ),
+        ],
       ),
     );
   }

@@ -6,6 +6,7 @@ import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import { logger } from '../config/logger';
 import { validateVenueTimingAndHolidays } from '../utils/venueValidator';
+import { checkExistingBookingForDate } from '../utils/bookingLimitValidator';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -75,6 +76,13 @@ export const createGroupParty = async (req: Request, res: Response): Promise<voi
         const timingValidation = validateVenueTimingAndHolidays(venue, partyDate);
         if (!timingValidation.isValid) {
             res.status(400).json({ success: false, message: timingValidation.reason });
+            return;
+        }
+
+        // Check for 1 plan per day limit (Stranger Meet / Party Plan / Group Party)
+        const bookingConflictMsg = await checkExistingBookingForDate(userId, partyDate);
+        if (bookingConflictMsg) {
+            res.status(400).json({ success: false, message: 'You already have a plan scheduled on this day.' });
             return;
         }
 

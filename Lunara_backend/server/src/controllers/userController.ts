@@ -1,7 +1,9 @@
 import { Request, Response } from 'express';
 import { User, UserProfile, UserPreference, UserRole, SocialConnection } from '../models';
 import { ConnectionStatus } from '../models/SocialConnection';
+import DeletedAccount from '../models/DeletedAccount';
 import bcrypt from 'bcryptjs';
+import { Op } from 'sequelize';
 
 /**
  * @desc    Get all users (Admin only)
@@ -156,8 +158,6 @@ export const updateUser = async (req: Request, res: Response): Promise<void | Re
 
         await user.update(updates);
 
-        // Map frontend "social" or "identity" back to the correct models if they exist in the payload
-        // The frontend will send a 'profile' object and a 'preferences' object instead.
         if (req.body.profile) {
              let userProfile = await UserProfile.findOne({ where: { userId: user.id } });
              if (userProfile) {
@@ -176,7 +176,6 @@ export const updateUser = async (req: Request, res: Response): Promise<void | Re
              }
         }
 
-        // Fetch the fully updated user to return to the admin panel
         const updatedUser = await User.findByPk(user.id, {
             attributes: { exclude: ['passwordHash', 'mfaSecret'] },
             include: [
@@ -285,14 +284,12 @@ export const unblockUserByAdmin = async (req: Request, res: Response): Promise<v
             });
         }
 
-        // Reset auto block fields and activate user
         user.isAutoblocked = false;
         user.autoblockedReason = null;
         user.blockCount = 0;
         user.isActive = true;
         await user.save();
 
-        // Clear all incoming blocks for this user so they don't start with previous blocks count
         await SocialConnection.destroy({
             where: {
                 receiverId: user.id,
@@ -320,3 +317,178 @@ export const unblockUserByAdmin = async (req: Request, res: Response): Promise<v
     }
 };
 
+// ============================================================================
+// DELETED ACCOUNTS — Admin Management
+// ============================================================================
+
+/**
+ * @desc    Get all permanently deleted accounts
+ * @route   GET /api/users/deleted-accounts
+ * @access  Private/Admin
+ * Query: page, limit, search, from (ISO date), to (ISO date)
+ */
+export const getDeletedAccounts = async (req: Request, res: Response): Promise<void | Response> => {
+    try {
+        const page = Math.max(1, parseInt(req.query.page as string) || 1);
+        const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
+        const offset = (page - 1) * limit;
+        const search = (req.query.search as string)?.trim();
+        const from = req.query.from as string;
+        const to = req.query.to as string;
+
+        const where: any = {};
+
+        if (search) {
+            where[Op.or] = [
+                { firstName: { [Op.iLike]: `%${search}%` } },
+                { lastName: { [Op.iLike]: `%${search}%` } },
+                { email: { [Op.iLike]: `%${search}%` } },
+                { phone: { [Op.iLike]: `%${search}%` } },
+            ];
+        }
+
+        if (from || to) {
+            where.createdAt = {};
+            if (from) where.createdAt[Op.gte] = new Date(from);
+            if (to) {
+                const toDate = new Date(to);
+                toDate.setHours(23, 59, 59, 999);
+                where.createdAt[Op.lte] = toDate;
+            }
+        }
+
+        const { count, rows } = await DeletedAccount.findAndCountAll({
+            where,
+            order: [['createdAt', 'DESC']],
+            limit,
+            offset,
+        });
+
+        res.status(200).json({
+            success: true,
+            count,
+            totalPages: Math.ceil(count / limit),
+            currentPage: page,
+            deletedAccounts: rows,
+        });
+    } catch (error) {
+        console.error('Error fetching deleted accounts:', error);
+        res.status(500).json({ success: false, message: 'Server Error fetching deleted accounts' });
+    }
+};
+
+/**
+ * @desc    Get a single deleted account's full details
+ * @route   GET /api/users/deleted-accounts/:id
+ * @access  Private/Admin
+ */
+export const getDeletedAccountById = async (req: Request, res: Response): Promise<void | Response> => {
+    try {
+        const { id } = req.params;
+        const record = await DeletedAccount.findByPk(id);
+
+        if (!record) {
+            return res.status(404).json({ success: false, message: 'Deleted account record not found' });
+        }
+
+        // Cross-reference the soft-deleted user record (may still exist in users table)
+        const liveUser = await User.findOne({
+            where: { id: record.originalUserId },
+            attributes: { exclude: ['passwordHash', 'mfaSecret'] },
+        }).catch(() => null);
+
+        res.status(200).json({
+            success: true,
+            deletedAccount: record,
+            liveUserRecord: liveUser ?? null,
+        });
+    } catch (error) {
+        console.error('Error fetching deleted account:', error);
+        res.status(500).json({ success: false, message: 'Server Error fetching deleted account' });
+    }
+};
+
+/**
+ * @desc    Update admin notes on a deleted account archive record
+ * @route   PATCH /api/users/deleted-accounts/:id/notes
+ * @access  Private/Admin
+ */
+export const updateDeletedAccountNotes = async (req: Request, res: Response): Promise<void | Response> => {
+    try {
+        const { id } = req.params;
+        const { adminNotes } = req.body;
+
+        const record = await DeletedAccount.findByPk(id);
+        if (!record) {
+            return res.status(404).json({ success: false, message: 'Deleted account record not found' });
+        }
+
+        record.adminNotes = adminNotes ?? record.adminNotes;
+        await record.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Admin notes updated successfully',
+            deletedAccount: record,
+        });
+    } catch (error) {
+        console.error('Error updating admin notes:', error);
+        res.status(500).json({ success: false, message: 'Server Error updating notes' });
+    }
+};
+
+/**
+ * @desc    Restore (un-delete) a soft-deleted account
+ *          Archive record is kept for audit trail.
+ * @route   POST /api/users/deleted-accounts/:id/restore
+ * @access  Private/Admin
+ */
+export const restoreDeletedAccount = async (req: Request, res: Response): Promise<void | Response> => {
+    try {
+        const { id } = req.params;
+        const { adminNotes } = req.body;
+
+        const record = await DeletedAccount.findByPk(id);
+        if (!record) {
+            return res.status(404).json({ success: false, message: 'Deleted account archive record not found' });
+        }
+
+        const user = await User.findByPk(record.originalUserId);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'Original user record not found. The user may have been hard-deleted.',
+            });
+        }
+
+        await user.update({
+            isDeleted: false,
+            isActive: true,
+            deletedAt: null,
+            deletionReason: null,
+        } as any);
+
+        if (adminNotes) {
+            record.adminNotes = adminNotes;
+            await record.save();
+        }
+
+        console.log(`[Admin] Restored deleted account: ${user.email} (originalUserId: ${record.originalUserId})`);
+
+        res.status(200).json({
+            success: true,
+            message: `Account for ${user.firstName} ${user.lastName} (${user.email}) has been successfully restored.`,
+            user: {
+                id: user.id,
+                email: user.email,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                isActive: user.isActive,
+                isDeleted: (user as any).isDeleted,
+            },
+        });
+    } catch (error) {
+        console.error('Error restoring deleted account:', error);
+        res.status(500).json({ success: false, message: 'Server Error restoring account' });
+    }
+};

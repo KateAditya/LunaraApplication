@@ -52,6 +52,7 @@ export const connectDatabase = async (): Promise<void> => {
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS account_holder_name VARCHAR(100);`);
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS ifsc_code VARCHAR(20);`);
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS upi_id VARCHAR(100);`);
+            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS upi_number VARCHAR(20);`);
             // Platform per-seat charge (set by admin on approval, auto-calculated from paymentAmount/numberOfPersons)
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS platform_charge_per_seat DECIMAL(10,2) DEFAULT 0;`);
             
@@ -63,6 +64,25 @@ export const connectDatabase = async (): Promise<void> => {
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS drink_preference VARCHAR(100);`);
             await sequelize.query(`ALTER TABLE strangers_meet_joiners ADD COLUMN IF NOT EXISTS food_preference VARCHAR(100);`);
             await sequelize.query(`ALTER TABLE strangers_meet_joiners ADD COLUMN IF NOT EXISTS drink_preference VARCHAR(100);`);
+
+            // ── Users table: soft-delete & moderation columns ──────────────
+            // These are referenced by the Sequelize User model but may be missing
+            // on older production databases. ADD COLUMN IF NOT EXISTS is idempotent.
+            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE;`);
+            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE;`);
+            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS deletion_reason TEXT;`);
+            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS block_count INTEGER NOT NULL DEFAULT 0;`);
+            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_autoblocked BOOLEAN NOT NULL DEFAULT FALSE;`);
+            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS autoblocked_reason TEXT;`);
+            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS cleared_notifications_at TIMESTAMP WITH TIME ZONE;`);
+            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS no_show_count INTEGER NOT NULL DEFAULT 0;`);
+            await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS ticket_url VARCHAR(500);`);
+            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS ticket_url VARCHAR(500);`);
+            await sequelize.query(`ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS ticket_url VARCHAR(500);`);
+            await sequelize.query(`ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS ticket_code VARCHAR(100);`);
+            logger.info('users table columns verified/migrated successfully.');
+
+
 
 
             // Additive Subscription tables

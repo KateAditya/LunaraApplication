@@ -3,6 +3,8 @@ import sequelize from '../config/database';
 
 export enum GroupPartyStatus {
     PENDING = 'pending',
+    APPROVED = 'approved',
+    REJECTED = 'rejected',
     CONFIRMED = 'confirmed',
     CANCELLED = 'cancelled',
 }
@@ -24,6 +26,8 @@ export interface GroupPartyAttributes {
     status: GroupPartyStatus;
     paymentStatus: GroupPartyPaymentStatus;
     paymentId?: string;
+    ticketCode?: string;
+    ticketUrl?: string;
     partyDate: Date;
     mobileNumber: string;
     optionalMobileNumber?: string;
@@ -36,7 +40,7 @@ export interface GroupPartyAttributes {
 export interface GroupPartyCreationAttributes
     extends Optional<
         GroupPartyAttributes,
-        'id' | 'status' | 'paymentStatus' | 'paymentId' | 'createdAt' | 'updatedAt' | 'optionalMobileNumber' | 'foodPreference' | 'drinkPreference'
+        'id' | 'status' | 'paymentStatus' | 'paymentId' | 'ticketCode' | 'ticketUrl' | 'createdAt' | 'updatedAt' | 'optionalMobileNumber' | 'foodPreference' | 'drinkPreference'
     > { }
 
 class GroupParty
@@ -52,6 +56,8 @@ class GroupParty
     public status!: GroupPartyStatus;
     public paymentStatus!: GroupPartyPaymentStatus;
     public paymentId?: string;
+    public ticketCode?: string;
+    public ticketUrl?: string;
     public partyDate!: Date;
     public mobileNumber!: string;
     public optionalMobileNumber?: string;
@@ -121,6 +127,16 @@ GroupParty.init(
             type: DataTypes.STRING(100),
             allowNull: true,
             field: 'payment_id',
+        },
+        ticketCode: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'ticket_code',
+        },
+        ticketUrl: {
+            type: DataTypes.STRING(500),
+            allowNull: true,
+            field: 'ticket_url',
         },
         partyDate: {
             type: DataTypes.DATEONLY,

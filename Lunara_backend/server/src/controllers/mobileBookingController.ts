@@ -12,6 +12,8 @@ import VenueImage from '../models/VenueImage';
 import { logger } from '../config/logger';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
+import { checkExistingBookingForDate } from '../utils/bookingLimitValidator';
+import { generateTicketForBookingHelper, generateTicketForGroupPartyHelper } from '../services/ticketService';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -31,6 +33,7 @@ function buildTicket(booking: Booking, venue: Venue | null, ticketCode: string) 
         bookingId: booking.id,
         bookingNumber: booking.bookingNumber,
         ticketCode,
+        ticketUrl: (booking as any).ticketUrl || null,
         venue: venue
             ? { id: (venue as any).id, name: (venue as any).name, address: (venue as any).address }
             : null,
@@ -126,6 +129,14 @@ export const createBooking = async (req: Request, res: Response) => {
         // Validate goingMode
         if (![GoingMode.SOLO, GoingMode.PARTY_REQUEST].includes(goingMode as GoingMode)) {
             return res.status(400).json({ success: false, message: 'Only "solo" or "party_request" goingMode is supported in this version' });
+        }
+
+        // Check for 1 plan per day limit (Stranger Meet / Party Plan / Group Party)
+        if (goingMode === GoingMode.PARTY_REQUEST) {
+            const bookingConflictMsg = await checkExistingBookingForDate(userId, bookingDate);
+            if (bookingConflictMsg) {
+                return res.status(400).json({ success: false, message: 'You already have a plan scheduled on this day.' });
+            }
         }
 
         // Fetch package price (auto-seed if needed)
@@ -285,6 +296,15 @@ export const payNow = async (req: Request, res: Response) => {
             paymentMode: BookingPaymentMode.PAY_NOW,
             status: BookingStatus.CONFIRMED,
             ticketCode,
+        });
+
+        // Generate digital ticket in background
+        setImmediate(async () => {
+            try {
+                await generateTicketForBookingHelper(booking.id);
+            } catch (ticketErr) {
+                logger.error(`Background ticket generation failed for booking ${booking.id}:`, ticketErr);
+            }
         });
 
         const venue = await Venue.findByPk(booking.venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
@@ -465,6 +485,15 @@ export const secureReservation = async (req: Request, res: Response) => {
             ticketCode,
         });
 
+        // Generate digital ticket in background
+        setImmediate(async () => {
+            try {
+                await generateTicketForBookingHelper(booking.id);
+            } catch (ticketErr) {
+                logger.error(`Background ticket generation failed for booking ${booking.id}:`, ticketErr);
+            }
+        });
+
         const venue = await Venue.findByPk(booking.venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
         return res.json({
             success: true,
@@ -597,7 +626,7 @@ export const initiateLargePartyPayment = async (req: Request, res: Response) => 
             if (!groupParty) {
                 return res.status(404).json({ success: false, message: 'Booking or Group Party not found' });
             }
-            if (groupParty.status !== GroupPartyStatus.PENDING) {
+            if (groupParty.status !== GroupPartyStatus.PENDING && groupParty.status !== GroupPartyStatus.APPROVED) {
                 return res.status(400).json({ success: false, message: 'Group party is already confirmed/cancelled' });
             }
             const amount = Number(groupParty.totalAmount);
@@ -698,6 +727,15 @@ export const verifyLargePartyPayment = async (req: Request, res: Response) => {
                     status: GroupPartyStatus.CONFIRMED
                 });
 
+                // Generate digital ticket in background
+                setImmediate(async () => {
+                    try {
+                        await generateTicketForGroupPartyHelper(groupParty.id);
+                    } catch (ticketErr) {
+                        logger.error(`Background ticket generation failed for GroupParty ${groupParty.id}:`, ticketErr);
+                    }
+                });
+
                 const venue = await Venue.findByPk(groupParty.venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
 
                 try {
@@ -762,6 +800,15 @@ export const verifyLargePartyPayment = async (req: Request, res: Response) => {
                 status: BookingStatus.CONFIRMED,
                 adminApprovalStatus: 'payment_done',
                 ticketCode,
+            });
+
+            // Generate digital ticket in background
+            setImmediate(async () => {
+                try {
+                    await generateTicketForBookingHelper(booking.id);
+                } catch (ticketErr) {
+                    logger.error(`Background ticket generation failed for booking ${booking.id}:`, ticketErr);
+                }
             });
 
             // Create Payment record

@@ -30,6 +30,7 @@ export interface StrangersMeetRequestAttributes {
     alternateMobileNumber?: string;
     adminNotes?: string;
     ticketId?: string;               // Generated on payment
+    ticketUrl?: string;              // Generated PDF url
     razorpayOrderId?: string;
     razorpayPaymentId?: string;
     razorpaySignature?: string;
@@ -41,6 +42,7 @@ export interface StrangersMeetRequestAttributes {
     accountHolderName?: string;
     ifscCode?: string;
     upiId?: string;
+    upiNumber?: string;
     platformChargePerSeat?: number; // Auto-calc'd by admin: paymentAmount / numberOfPersons
     settlementTransactionId?: string;
     settlementAmount?: number;
@@ -63,6 +65,7 @@ export interface StrangersMeetRequestCreationAttributes
         | 'alternateMobileNumber'
         | 'adminNotes'
         | 'ticketId'
+        | 'ticketUrl'
         | 'razorpayOrderId'
         | 'razorpayPaymentId'
         | 'razorpaySignature'
@@ -73,6 +76,7 @@ export interface StrangersMeetRequestCreationAttributes
         | 'accountHolderName'
         | 'ifscCode'
         | 'upiId'
+        | 'upiNumber'
         | 'platformChargePerSeat'
         | 'settlementTransactionId'
         | 'settlementAmount'
@@ -103,6 +107,7 @@ class StrangersMeetRequest
     public alternateMobileNumber?: string;
     public adminNotes?: string;
     public ticketId?: string;
+    public ticketUrl?: string;
     public razorpayOrderId?: string;
     public razorpayPaymentId?: string;
     public razorpaySignature?: string;
@@ -113,6 +118,7 @@ class StrangersMeetRequest
     public accountHolderName?: string;
     public ifscCode?: string;
     public upiId?: string;
+    public upiNumber?: string;
     public platformChargePerSeat?: number;
     public settlementTransactionId?: string;
     public settlementAmount?: number;
@@ -224,6 +230,11 @@ StrangersMeetRequest.init(
             unique: true,
             field: 'ticket_id',
         },
+        ticketUrl: {
+            type: DataTypes.STRING(500),
+            allowNull: true,
+            field: 'ticket_url',
+        },
         razorpayOrderId: {
             type: DataTypes.STRING(100),
             allowNull: true,
@@ -274,6 +285,11 @@ StrangersMeetRequest.init(
             type: DataTypes.STRING(100),
             allowNull: true,
             field: 'upi_id',
+        },
+        upiNumber: {
+            type: DataTypes.STRING(20),
+            allowNull: true,
+            field: 'upi_number',
         },
         platformChargePerSeat: {
             type: DataTypes.DECIMAL(10, 2),

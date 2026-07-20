@@ -13,10 +13,6 @@ class ProfilePrivacyScreen extends StatefulWidget {
 }
 
 class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
-  bool _invisibleMode = false;
-  bool _matchingRadius = true;
-  bool _bookingPermissions = true;
-
   final Set<String> _preferredGenders = {'ALL'};
   RangeValues _ageRange = const RangeValues(21, 35);
 
@@ -64,29 +60,6 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 48),
-                _buildInputLabel('ACCOUNT PRIVACY'),
-                const SizedBox(height: 12),
-                _buildToggleCard(
-                  'INVISIBLE MODE',
-                  'Hide your profile from public discovery.',
-                  _invisibleMode,
-                  (v) => setState(() => _invisibleMode = v),
-                ),
-                const SizedBox(height: 16),
-                _buildToggleCard(
-                  'MATCHING RADIUS',
-                  'Only show profiles within 10km of your location.',
-                  _matchingRadius,
-                  (v) => setState(() => _matchingRadius = v),
-                ),
-                const SizedBox(height: 16),
-                _buildToggleCard(
-                  'BOOKING ALERTS',
-                  'Notify friends when you reserve a table.',
-                  _bookingPermissions,
-                  (v) => setState(() => _bookingPermissions = v),
-                ),
                 const SizedBox(height: 60),
                 LunaraActionButton(
                   text: 'FINAL REVIEW',
@@ -96,11 +69,9 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
                         : <String, dynamic>{};
 
                     data['preferredGenders'] = _preferredGenders.toList();
-                    // We only have minAge in RegisterBasic, but user refining here:
                     data['minAgePreference'] = _ageRange.start.round();
                     data['maxAgePreference'] = _ageRange.end.round();
-                    data['showMeInMatching'] = !_invisibleMode;
-                    data['matchDistanceKm'] = _matchingRadius ? 10 : 100;
+                    data['showMeInMatching'] = true;
 
                     Navigator.push(
                       context,
@@ -143,9 +114,7 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
               boxShadow: current
                   ? [
                       BoxShadow(
-                        color: LunaraTheme.primaryRich.withValues(
-                          alpha: 0.5,
-                        ),
+                        color: LunaraTheme.primaryRich.withValues(alpha: 0.5),
                         blurRadius: 8,
                       ),
                     ]
@@ -154,43 +123,6 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
           ),
         );
       }),
-    );
-  }
-
-  Widget _buildToggleCard(
-    String title,
-    String desc,
-    bool value,
-    Function(bool) onChanged,
-  ) {
-    return GlassCard(
-      padding: const EdgeInsets.all(20),
-      borderRadius: BorderRadius.circular(20),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: LunaraTheme.headingStyle.copyWith(fontSize: 14),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  desc,
-                  style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
-                ),
-              ],
-            ),
-          ),
-          Switch.adaptive(
-            value: value,
-            activeTrackColor: LunaraTheme.accentVivid,
-            onChanged: onChanged,
-          ),
-        ],
-      ),
     );
   }
 
@@ -256,9 +188,7 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
         inactiveTrackColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1),
         thumbColor: Theme.of(context).colorScheme.onSurface,
         overlayColor: LunaraTheme.accentVivid.withValues(alpha: 0.2),
-        rangeThumbShape: const RoundRangeSliderThumbShape(
-          enabledThumbRadius: 10,
-        ),
+        rangeThumbShape: const RoundRangeSliderThumbShape(enabledThumbRadius: 10),
         rangeTrackShape: const RoundedRectRangeSliderTrackShape(),
       ),
       child: RangeSlider(

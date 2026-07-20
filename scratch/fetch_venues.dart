@@ -8,6 +8,6 @@ void main() async {
   final body = await res.transform(utf8.decoder).join();
   final data = jsonDecode(body);
   for (var v in data['venues']) {
-    print('Venue: ${v['name']} - Lat: ${v['latitude']} - Lng: ${v['longitude']}');
+    print('Venue: ${v['name']} - averageRating: ${v['averageRating']} - status: ${v['status']}');
   }
 }

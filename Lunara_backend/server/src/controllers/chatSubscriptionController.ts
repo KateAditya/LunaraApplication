@@ -116,8 +116,11 @@ export const getSessionStatus = async (req: Request, res: Response): Promise<Res
         if (!conv) {
             return res.status(404).json({ success: false, message: 'Conversation not found' });
         }
-        if (userId && conv.participantOne !== userId && conv.participantTwo !== userId) {
-            return res.status(403).json({ success: false, message: 'Access denied' });
+        if (userId) {
+            const uId = userId.toLowerCase();
+            if (conv.participantOne.toLowerCase() !== uId && conv.participantTwo.toLowerCase() !== uId) {
+                return res.status(403).json({ success: false, message: 'Access denied' });
+            }
         }
 
         const status = await getChatSessionStatus(conversationId, userId);

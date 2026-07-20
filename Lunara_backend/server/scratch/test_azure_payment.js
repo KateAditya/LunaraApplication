@@ -8,7 +8,7 @@ const token = jwt.sign({ id: USER_ID }, JWT_SECRET, { expiresIn: '100y' });
 
 const options = {
     hostname: 'lunara-api-server-a8gfdvg0hjdec6gx.centralindia-01.azurewebsites.net',
-    path: '/api/mobile/bookings/78cc2e0b-5694-4029-ab23-0c0504cc4656/initiate-large-party-payment',
+    path: '/api/mobile/bookings/5711237f-078b-4348-ab2d-22950e1cc0a4/initiate-large-party-payment',
     method: 'POST',
     headers: {
         'Content-Type': 'application/json',

@@ -84,7 +84,7 @@ export const getConversations = async (req: Request, res: Response) => {
 
         const list = conversations.map(conv => {
             const otherUserId = conv.getOtherParticipant(userId);
-            const otherUser = otherUserId === conv.participantOne
+            const otherUser = (otherUserId && conv.participantOne && otherUserId.toLowerCase() === conv.participantOne.toLowerCase())
                 ? (conv as any).userOne
                 : (conv as any).userTwo;
 
@@ -174,7 +174,8 @@ export const getMessages = async (req: Request, res: Response) => {
         // Verify user is participant
         const conv = await Conversation.findByPk(id);
         if (!conv) return res.status(404).json({ success: false, message: 'Conversation not found' });
-        if (conv.participantOne !== userId && conv.participantTwo !== userId) {
+        const uId = userId.toLowerCase();
+        if (conv.participantOne.toLowerCase() !== uId && conv.participantTwo.toLowerCase() !== uId) {
             return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
@@ -213,7 +214,7 @@ export const getMessages = async (req: Request, res: Response) => {
                 { where: { id: { [Op.in]: unreadIds } } }
             );
             // Reset caller's unread count
-            const resetField = conv.participantOne === userId ? { unreadOne: 0 } : { unreadTwo: 0 };
+            const resetField = (conv.participantOne && userId && conv.participantOne.toLowerCase() === userId.toLowerCase()) ? { unreadOne: 0 } : { unreadTwo: 0 };
             await (conv as any).update(resetField);
             
             // Emit read receipt to the sender
@@ -260,7 +261,8 @@ export const sendMessage = async (req: Request, res: Response) => {
 
         const conv = await Conversation.findByPk(id);
         if (!conv) return res.status(404).json({ success: false, message: 'Conversation not found' });
-        if (conv.participantOne !== senderId && conv.participantTwo !== senderId) {
+        const sId = senderId.toLowerCase();
+        if (conv.participantOne.toLowerCase() !== sId && conv.participantTwo.toLowerCase() !== sId) {
             return res.status(403).json({ success: false, message: 'You are not part of this conversation' });
         }
         if (conv.status === ConversationStatus.BLOCKED) {
@@ -311,7 +313,7 @@ export const sendMessage = async (req: Request, res: Response) => {
         const preview = message.getPreview();
 
         // Increment unread for the OTHER participant
-        const isOne = conv.participantOne === senderId;
+        const isOne = (conv.participantOne && senderId && conv.participantOne.toLowerCase() === senderId.toLowerCase());
         const unreadUpdate = isOne
             ? { unreadTwo: conv.unreadTwo + 1 }
             : { unreadOne: conv.unreadOne + 1 };
@@ -457,7 +459,7 @@ export const markConversationRead = async (req: Request, res: Response) => {
             { where: { conversationId: id, senderId: { [Op.ne]: userId }, status: { [Op.ne]: MessageStatus.READ } } }
         );
 
-        const resetField = conv.participantOne === userId ? { unreadOne: 0 } : { unreadTwo: 0 };
+        const resetField = (conv.participantOne && userId && conv.participantOne.toLowerCase() === userId.toLowerCase()) ? { unreadOne: 0 } : { unreadTwo: 0 };
         await (conv as any).update(resetField);
 
         try {

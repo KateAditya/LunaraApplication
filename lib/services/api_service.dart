@@ -413,11 +413,20 @@ class ApiService {
       if (response.statusCode == 201) {
         final data = jsonDecode(response.body);
         return data['success'] == true;
+      } else {
+        try {
+          final data = jsonDecode(response.body);
+          final msg = data['message'] ?? data['error'] ?? 'Failed to submit request';
+          throw Exception(msg);
+        } catch (e) {
+          if (e is Exception) rethrow;
+          throw Exception('Failed to submit request');
+        }
       }
     } catch (e) {
       debugPrint('submitLargePartyRequest error: $e');
+      rethrow;
     }
-    return false;
   }
 
   static Future<List<dynamic>?> fetchBookings() async {
@@ -541,6 +550,15 @@ class ApiService {
         if (data['success'] == true) {
           return Map<String, dynamic>.from(data);
         }
+      } else if (response.statusCode == 403) {
+        // Subscription limit reached or feature not available
+        final data = jsonDecode(response.body);
+        return {
+          'limitReached': true,
+          'code': data['code'] ?? 'LIMIT_REACHED',
+          'message': data['message'] ?? 'Upgrade to Lunara VIP to continue.',
+          'action': action,
+        };
       }
       return null;
     } catch (e) {
@@ -881,6 +899,7 @@ class ApiService {
     String? accountHolderName,
     String? ifscCode,
     String? upiId,
+    String? upiNumber,
     String? foodPreference,
     String? drinkPreference,
   }) async {
@@ -906,6 +925,7 @@ class ApiService {
           if (accountHolderName != null && accountHolderName.isNotEmpty) 'accountHolderName': accountHolderName,
           if (ifscCode != null && ifscCode.isNotEmpty) 'ifscCode': ifscCode,
           if (upiId != null && upiId.isNotEmpty) 'upiId': upiId,
+          if (upiNumber != null && upiNumber.isNotEmpty) 'upiNumber': upiNumber,
           if (foodPreference != null && foodPreference.isNotEmpty) 'foodPreference': foodPreference,
           if (drinkPreference != null && drinkPreference.isNotEmpty) 'drinkPreference': drinkPreference,
         },
@@ -913,11 +933,20 @@ class ApiService {
       if (response.statusCode == 201) {
         final data = jsonDecode(response.body);
         return data['success'] == true;
+      } else {
+        try {
+          final data = jsonDecode(response.body);
+          final msg = data['message'] ?? data['error'] ?? 'Failed to submit request';
+          throw Exception(msg);
+        } catch (e) {
+          if (e is Exception) rethrow;
+          throw Exception('Failed to submit request');
+        }
       }
     } catch (e) {
       debugPrint('submitStrangersMeetRequest error: $e');
+      rethrow;
     }
-    return false;
   }
 
   static Future<List<StrangersMeetRequest>> fetchMyStrangersMeetRequests({

@@ -62,6 +62,46 @@ router.post(
             safetyCheck.adminFeedback = adminFeedback;
             safetyCheck.status = 'resolved';
             await safetyCheck.save();
+
+            // Send push notification and emit socket event to user
+            try {
+                const host = await User.findByPk(safetyCheck.userId, { attributes: ['id', 'fcmToken'] });
+                const partner = await User.findByPk(safetyCheck.partnerId, { attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] });
+                const partnerName = partner ? `${partner.firstName} ${partner.lastName}` : 'your partner';
+
+                if (host && host.fcmToken) {
+                    const { sendPushNotification } = require('../services/fcmService');
+                    await sendPushNotification(host.fcmToken, {
+                        title: 'Safety Check Feedback',
+                        body: `Regarding your safety check with ${partnerName}: ${adminFeedback}`,
+                        data: {
+                            type: 'safety_check_feedback',
+                            safetyCheckId: safetyCheck.id,
+                        }
+                    });
+                }
+
+                const { io } = require('../server');
+                io.to(`user_${safetyCheck.userId}`).emit('notification_created', {
+                    id: `safety_feedback_${safetyCheck.id}`,
+                    title: 'Safety Check Feedback',
+                    body: `Regarding your safety check with ${partnerName}: ${adminFeedback}`,
+                    createdAt: new Date().toISOString(),
+                    read: false,
+                    sender: partner ? {
+                        id: safetyCheck.partnerId,
+                        firstName: partner.firstName,
+                        lastName: partner.lastName,
+                        profileImageUrl: partner.profileImageUrl,
+                    } : null,
+                    data: {
+                        type: 'safety_check_feedback',
+                        safetyCheckId: safetyCheck.id,
+                    }
+                });
+            } catch (pushErr) {
+                console.error('Failed to send push/socket for safety check feedback:', pushErr);
+            }
             
             const json = safetyCheck.toJSON() as any;
             const formatted = {

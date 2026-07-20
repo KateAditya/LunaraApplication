@@ -115,3 +115,4 @@ flutter:
 
 dependency_overrides:
   package_info_plus: ^9.0.0
+  path_provider_android: 2.2.1

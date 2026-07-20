@@ -478,8 +478,8 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
       if (toMark.isNotEmpty) {
         widget.onCountChanged?.call();
       }
-    } else if (index == 2) {
-      // Mark all other notifications as read
+    } else if (index == 3) {
+      // Mark all other notifications as read (Tab 3 = "Other")
       _markAllNotificationsAsRead();
     }
   }
@@ -3762,33 +3762,83 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     final timeAgo = _formatTimeAgo(notif['createdAt']);
     final isRead = notif['isRead'] == true || notif['read'] == true;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final eventDetails = notif['eventDetails'] as Map<String, dynamic>?;
+    final grouped = notif['grouped'] == true;
+    final groupCount = notif['groupCount'] as int? ?? 1;
 
     IconData icon = Icons.notifications_rounded;
     Color color = LunaraTheme.electricViolet;
-    if (title.toLowerCase().contains('super')) {
+    final lowerTitle = title.toLowerCase();
+    
+    if (lowerTitle.contains('super')) {
       icon = Icons.star_rounded;
-      color = const Color(0xFFFFB800); // Gold/Amber for Super Like
-    } else if (title.toLowerCase().contains('like')) {
+      color = const Color(0xFFFFB800);
+    } else if (lowerTitle.contains('like')) {
       icon = Icons.favorite_rounded;
-      color = LunaraTheme.hotPink; // Hot Pink for Like
-    } else if (title.toLowerCase().contains('payment')) {
+      color = LunaraTheme.hotPink;
+    } else if (lowerTitle.contains('booking confirmed') ||
+               lowerTitle.contains('spot confirmed') ||
+               lowerTitle.contains('payment successful') || 
+               lowerTitle.contains('payment confirmed')) {
+      icon = Icons.check_circle_rounded;
+      color = const Color(0xFF00E676);
+    } else if (lowerTitle.contains('awaiting payment')) {
+      icon = Icons.hourglass_top_rounded;
+      color = const Color(0xFFFFA000);
+    } else if (lowerTitle.contains('payment link')) {
+      icon = Icons.link_rounded;
+      color = const Color(0xFFFFA000);
+    } else if (lowerTitle.contains('payment')) {
       icon = Icons.payment_rounded;
-      color = const Color(0xFF00E676); // Beautiful emerald green
-    } else if (title.toLowerCase().contains('visit') ||
-        title.toLowerCase().contains('view')) {
+      color = const Color(0xFF00E676);
+    } else if (lowerTitle.contains('visit') || lowerTitle.contains('view')) {
       icon = Icons.visibility_rounded;
-      color = LunaraTheme.electricViolet; // Purple matching theme color instead of blue
+      color = LunaraTheme.electricViolet;
+    } else if (lowerTitle.contains('invite accepted') || 
+               lowerTitle.contains('accepted') || 
+               lowerTitle.contains('approved')) {
+      icon = Icons.verified_rounded;
+      color = const Color(0xFF00E676);
+    } else if (lowerTitle.contains('declined') || 
+               lowerTitle.contains('rejected') || 
+               lowerTitle.contains('cancelled') ||
+               lowerTitle.contains('failed')) {
+      icon = Icons.cancel_outlined;
+      color = const Color(0xFFFF5252);
+    } else if (lowerTitle.contains('invite')) {
+      icon = Icons.mail_outline_rounded;
+      color = const Color(0xFFE040FB);
+    } else if (lowerTitle.contains('new join request') || 
+               lowerTitle.contains('join requests') ||
+               lowerTitle.contains('requested to join')) {
+      icon = Icons.person_add_alt_1_rounded;
+      color = const Color(0xFF00B0FF);
+    } else if (lowerTitle.contains('participant joined') || lowerTitle.contains('joined')) {
+      icon = Icons.group_add_rounded;
+      color = const Color(0xFF00E676);
+    } else if (lowerTitle.contains('safety check') || lowerTitle.contains('safety')) {
+      icon = Icons.security_rounded;
+      color = const Color(0xFF2979FF);
+    } else if (lowerTitle.contains('large party') || lowerTitle.contains('group party')) {
+      icon = Icons.celebration_rounded;
+      color = const Color(0xFFFF6D00);
+    } else if (lowerTitle.contains('submitted') || lowerTitle.contains('initiated')) {
+      icon = Icons.hourglass_empty_rounded;
+      color = const Color(0xFFFFB300);
+    } else if (lowerTitle.contains('stranger meet') || lowerTitle.contains('meet')) {
+      icon = Icons.people_alt_rounded;
+      color = LunaraTheme.electricViolet;
     }
 
     final sender = notif['sender'];
     final hasSender = sender != null && sender['id'] != null;
 
     final cardBg = isDark
-        ? (isRead ? const Color(0xFF16161E) : const Color(0xFF221A30))
-        : (isRead ? Colors.white : const Color(0xFFF9F5FF));
+        ? (isRead ? const Color(0xFF16161E) : const Color(0xFF1D1430))
+        : (isRead ? Colors.white : const Color(0xFFF8F4FF));
     final borderCol = isRead
         ? (isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05))
-        : LunaraTheme.electricViolet.withValues(alpha: 0.3);
+        : color.withValues(alpha: 0.35);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -3798,7 +3848,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: cardBg,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(18),
             border: Border.all(
               color: borderCol,
               width: isRead ? 1.0 : 1.5,
@@ -3807,189 +3857,281 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                 ? null 
                 : [
                     BoxShadow(
-                      color: LunaraTheme.electricViolet.withValues(alpha: isDark ? 0.15 : 0.04),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
+                      color: color.withValues(alpha: isDark ? 0.18 : 0.07),
+                      blurRadius: 14,
+                      offset: const Offset(0, 5),
                     ),
                   ],
           ),
-          child: Row(
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Left Section: Avatar or Icon Badge
-              if (hasSender)
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    LunaraProfileImage(
-                      userData: sender,
-                      radius: 20,
-                      showGradientBorder: !isRead,
-                      isInteractive: true,
-                    ),
-                    Positioned(
-                      bottom: -2,
-                      right: -2,
-                      child: Container(
-                        padding: const EdgeInsets.all(3),
-                        decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF16161E) : Colors.white,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: isDark ? const Color(0xFF16161E) : Colors.white,
-                            width: 1,
-                          ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Avatar + icon badge
+                  if (hasSender)
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        LunaraProfileImage(
+                          userData: sender,
+                          radius: 22,
+                          showGradientBorder: !isRead,
+                          isInteractive: true,
                         ),
-                        child: Icon(
-                          icon,
-                          color: isRead ? color.withValues(alpha: 0.6) : color,
-                          size: 10,
-                        ),
-                      ),
-                    ),
-                  ],
-                )
-              else
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        color.withValues(alpha: 0.15),
-                        color.withValues(alpha: 0.05),
-                      ],
-                    ),
-                    border: Border.all(
-                      color: color.withValues(alpha: 0.25),
-                      width: 1,
-                    ),
-                  ),
-                  child: Center(
-                    child: Icon(
-                      icon,
-                      color: isRead ? color.withValues(alpha: 0.6) : color,
-                      size: 20,
-                    ),
-                  ),
-                ),
-              const SizedBox(width: 14),
-
-              // Middle Section: Content
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                        color: isDark 
-                            ? (isRead ? Colors.white70 : Colors.white)
-                            : (isRead ? Colors.black87 : Colors.black87),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      body,
-                      style: TextStyle(
-                        color: isDark 
-                            ? (isRead ? Colors.white54 : Colors.white70)
-                            : (isRead ? Colors.black54 : Colors.black87),
-                        fontSize: 12.5,
-                        height: 1.3,
-                      ),
-                    ),
-                    if (hasSender) ...[
-                      const SizedBox(height: 10),
-                      GestureDetector(
-                        onTap: () {
-                          try {
-                            final userObj = User.fromJson(Map<String, dynamic>.from(sender));
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => ProfileScreen(user: userObj),
+                        Positioned(
+                          bottom: -2,
+                          right: -2,
+                          child: Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF1D1430) : Colors.white,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: isDark ? const Color(0xFF1D1430) : Colors.white,
+                                width: 1.5,
                               ),
-                            );
-                          } catch (e) {
-                            debugPrint('Error navigating to profile: $e');
-                          }
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [LunaraTheme.electricViolet, LunaraTheme.hotPink],
                             ),
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(
-                                color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
-                              )
-                            ],
+                            child: Icon(icon, color: isRead ? color.withValues(alpha: 0.6) : color, size: 11),
                           ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.person_outline_rounded, size: 12, color: Colors.white),
-                              SizedBox(width: 4),
-                              Text(
-                                'View Profile',
+                        ),
+                        // Group count badge
+                        if (grouped && groupCount > 1)
+                          Positioned(
+                            top: -4,
+                            right: -4,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: color,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: isDark ? const Color(0xFF1D1430) : Colors.white, width: 1.5),
+                              ),
+                              child: Text(
+                                '+$groupCount',
+                                style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ),
+                      ],
+                    )
+                  else
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            color.withValues(alpha: 0.2),
+                            color.withValues(alpha: 0.08),
+                          ],
+                        ),
+                        border: Border.all(color: color.withValues(alpha: 0.3), width: 1.5),
+                      ),
+                      child: Center(
+                        child: Icon(icon, color: isRead ? color.withValues(alpha: 0.6) : color, size: 22),
+                      ),
+                    ),
+                  const SizedBox(width: 14),
+
+                  // Text content
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                title,
                                 style: TextStyle(
-                                  fontSize: 10,
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                  letterSpacing: 0.5,
+                                  fontSize: 13.5,
+                                  color: isDark 
+                                      ? (isRead ? Colors.white70 : Colors.white)
+                                      : Colors.black87,
                                 ),
                               ),
-                            ],
+                            ),
+                            const SizedBox(width: 6),
+                            if (!isRead)
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: color,
+                                  shape: BoxShape.circle,
+                                  boxShadow: [BoxShadow(color: color, blurRadius: 4, spreadRadius: 1)],
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          body,
+                          style: TextStyle(
+                            color: isDark 
+                                ? (isRead ? Colors.white54 : Colors.white70)
+                                : (isRead ? Colors.black54 : Colors.black87),
+                            fontSize: 12.5,
+                            height: 1.4,
                           ),
                         ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-
-              // Right Section: Unread indicator & Time
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  if (!isRead)
-                    Container(
-                      margin: const EdgeInsets.only(bottom: 6, top: 4),
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        color: LunaraTheme.hotPink,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: LunaraTheme.hotPink,
-                            blurRadius: 4,
-                            spreadRadius: 1,
-                          )
-                        ],
-                      ),
-                    ),
-                  Text(
-                    timeAgo,
-                    style: TextStyle(
-                      color: isDark ? Colors.white38 : Colors.black38,
-                      fontSize: 10,
-                      fontWeight: isRead ? FontWeight.normal : FontWeight.w500,
+                        const SizedBox(height: 6),
+                        Text(
+                          timeAgo,
+                          style: TextStyle(
+                            color: isDark ? Colors.white38 : Colors.black38,
+                            fontSize: 10.5,
+                            fontWeight: isRead ? FontWeight.normal : FontWeight.w500,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
+
+              // ── Event Detail Chips ─────────────────────────────────────────
+              if (eventDetails != null && eventDetails.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isDark 
+                        ? color.withValues(alpha: 0.07)
+                        : color.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: color.withValues(alpha: isDark ? 0.2 : 0.15),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Subject / Event name
+                      if (eventDetails['subject'] != null)
+                        Row(
+                          children: [
+                            Icon(Icons.event_note_rounded, size: 13, color: color.withValues(alpha: 0.8)),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                eventDetails['subject'].toString(),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      if (eventDetails['tagline'] != null && (eventDetails['tagline'] as String).isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 19),
+                          child: Text(
+                            eventDetails['tagline'].toString(),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? Colors.white54 : Colors.black54,
+                              fontStyle: FontStyle.italic,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      // Info chips row
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          if (eventDetails['eventDate'] != null)
+                            _notifChip(
+                              Icons.calendar_today_rounded,
+                              eventDetails['eventDate'].toString(),
+                              color, isDark,
+                            ),
+                          if (eventDetails['venue'] != null)
+                            _notifChip(
+                              Icons.location_on_rounded,
+                              eventDetails['venue'].toString(),
+                              color, isDark,
+                            ),
+                          if (eventDetails['chargesPerHead'] != null && 
+                              double.tryParse(eventDetails['chargesPerHead'].toString()) != null &&
+                              double.parse(eventDetails['chargesPerHead'].toString()) > 0)
+                            _notifChip(
+                              Icons.currency_rupee_rounded,
+                              '₹${double.parse(eventDetails['chargesPerHead'].toString()).toStringAsFixed(0)} / person',
+                              color, isDark,
+                            ),
+                          if (eventDetails['totalSeats'] != null)
+                            _notifChip(
+                              Icons.people_alt_rounded,
+                              '${eventDetails['totalSeats']} seats',
+                              color, isDark,
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              // ── View Profile button (if sender) ───────────────────────────
+              if (hasSender) ...[
+                const SizedBox(height: 10),
+                GestureDetector(
+                  onTap: () {
+                    try {
+                      final userObj = User.fromJson(Map<String, dynamic>.from(sender));
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => ProfileScreen(user: userObj)),
+                      );
+                    } catch (e) {
+                      debugPrint('Error navigating to profile: $e');
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [LunaraTheme.electricViolet, LunaraTheme.hotPink],
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: LunaraTheme.electricViolet.withValues(alpha: 0.22),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        )
+                      ],
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.person_outline_rounded, size: 12, color: Colors.white),
+                        SizedBox(width: 4),
+                        Text(
+                          'View Profile',
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 0.5),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -3997,6 +4139,31 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     );
   }
 
+  Widget _notifChip(IconData icon, String label, Color color, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: isDark ? color.withValues(alpha: 0.12) : color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: isDark ? 0.3 : 0.2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 10, color: color.withValues(alpha: isDark ? 0.9 : 0.8)),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: isDark ? Colors.white70 : Colors.black87,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
   Widget _actionButton({
     required IconData icon,
     required String label,

@@ -142,6 +142,9 @@ class _AdvancedFiltersScreenState extends State<AdvancedFiltersScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
       child: TextField(
         controller: _searchController,
+        onChanged: (val) {
+          setState(() {});
+        },
         decoration: InputDecoration(
           hintText: 'Search filters...',
           prefixIcon: const Icon(Icons.search),
@@ -170,10 +173,25 @@ class _AdvancedFiltersScreenState extends State<AdvancedFiltersScreen> {
   }
 
   Widget _buildVibeTags() {
+    final query = _searchController.text.trim().toUpperCase();
+    final filteredVibes = _vibes
+        .where((vibe) => vibe.toUpperCase().contains(query))
+        .toList();
+
+    if (filteredVibes.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8.0),
+        child: Text(
+          'No matching venue types.',
+          style: TextStyle(color: Colors.grey, fontSize: 13),
+        ),
+      );
+    }
+
     return Wrap(
       spacing: 12,
       runSpacing: 12,
-      children: _vibes.map((vibe) {
+      children: filteredVibes.map((vibe) {
         final isSelected = _selectedVibes.contains(vibe);
         return GestureDetector(
           onTap: () {

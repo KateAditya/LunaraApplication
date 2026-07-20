@@ -1617,27 +1617,39 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                             ),
                           );
 
-                          final success = await ApiService.submitLargePartyRequest(
-                            venueId: widget.venue.id,
-                            date: '${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}',
-                            time: _formatTimeOfBooking(
-                              '${_selectedTime!.hour.toString().padLeft(2, '0')}:${_selectedTime!.minute.toString().padLeft(2, '0')}',
-                            ),
-                            guests: parsed,
-                            subject: _partySubjectController.text,
-                            requirement: _partyRequirementController.text,
-                            description: _partyDescriptionController.text,
-                            mobileNumber: _mobileController.text.trim(),
-                            optionalMobileNumber: _optMobileController.text.trim().isEmpty
-                                ? null
-                                : _optMobileController.text.trim(),
-                          );
+                          bool success = false;
+                          String errorMsg = 'Failed to submit request. Please try again later.';
+                          try {
+                            success = await ApiService.submitLargePartyRequest(
+                              venueId: widget.venue.id,
+                              date: '${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}',
+                              time: _formatTimeOfBooking(
+                                '${_selectedTime!.hour.toString().padLeft(2, '0')}:${_selectedTime!.minute.toString().padLeft(2, '0')}',
+                              ),
+                              guests: parsed,
+                              subject: _partySubjectController.text,
+                              requirement: _partyRequirementController.text,
+                              description: _partyDescriptionController.text,
+                              mobileNumber: _mobileController.text.trim(),
+                              optionalMobileNumber: _optMobileController.text.trim().isEmpty
+                                  ? null
+                                  : _optMobileController.text.trim(),
+                            );
+                          } catch (e) {
+                            success = false;
+                            final eStr = e.toString();
+                            if (eStr.startsWith('Exception: ')) {
+                              errorMsg = eStr.substring(11);
+                            } else {
+                              errorMsg = eStr;
+                            }
+                          }
 
                           if (!context.mounted) return;
                           Navigator.pop(context); // Close loading dialog
 
                           if (!success) {
-                            _showValidationError('Failed to submit request. Please try again later.');
+                            _showValidationError(errorMsg);
                             return;
                           }
 

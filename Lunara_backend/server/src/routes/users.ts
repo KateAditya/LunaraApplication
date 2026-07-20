@@ -26,6 +26,10 @@ router.param('id', (_req, res, next, id) => {
 router.use(authenticate);
 router.use(authorize(UserRole.ADMIN));
 
+// ─────────────────────────────────────────────────────────────────────────────
+// User Management
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * @route   GET /api/users
  * @desc    Get all users with optional filtering
@@ -39,6 +43,44 @@ router.get('/', userController.getUsers);
  * @access  Private (Admin)
  */
 router.get('/autoblocked', userController.getAutoblockedUsers);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Deleted Accounts Archive — must be registered BEFORE /:id routes to avoid
+// the UUID param validator intercepting 'deleted-accounts' as an :id value.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @route   GET /api/users/deleted-accounts
+ * @desc    List all permanently deleted accounts (audit log)
+ * @access  Private (Admin)
+ * @query   page, limit, search, from (ISO date), to (ISO date)
+ */
+router.get('/deleted-accounts', userController.getDeletedAccounts);
+
+/**
+ * @route   GET /api/users/deleted-accounts/:id
+ * @desc    Get full details of a single deleted account archive record
+ * @access  Private (Admin)
+ */
+router.get('/deleted-accounts/:id', userController.getDeletedAccountById);
+
+/**
+ * @route   PATCH /api/users/deleted-accounts/:id/notes
+ * @desc    Update admin notes on a deleted account record
+ * @access  Private (Admin)
+ */
+router.patch('/deleted-accounts/:id/notes', userController.updateDeletedAccountNotes);
+
+/**
+ * @route   POST /api/users/deleted-accounts/:id/restore
+ * @desc    Restore (un-delete) a soft-deleted account
+ * @access  Private (Admin)
+ */
+router.post('/deleted-accounts/:id/restore', userController.restoreDeletedAccount);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Individual User CRUD
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * @route   POST /api/users/:id/unblock

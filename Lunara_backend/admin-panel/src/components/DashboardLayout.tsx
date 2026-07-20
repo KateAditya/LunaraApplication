@@ -23,6 +23,7 @@ import {
     BiChat,
     BiBlock,
     BiCrown,
+    BiTrashAlt,
 } from 'react-icons/bi';
 import { useAuthStore } from '../store/authStore';
 import { useThemeMode } from '../context/ThemeContext';
@@ -51,6 +52,7 @@ const navGroups: NavGroup[] = [
         items: [
             { text: 'Users', icon: <BiGroup />, path: '/users' },
             { text: 'Autoblocked Users', icon: <BiBlock />, path: '/autoblocked-users' },
+            { text: 'Deleted Accounts', icon: <BiTrashAlt />, path: '/deleted-accounts' },
             { text: 'Venues', icon: <BiStore />, path: '/venues' },
             { text: 'Ads Management', icon: <BiImage />, path: '/ads' },
             { text: 'Bookings', icon: <BiCalendarEvent />, path: '/bookings' },

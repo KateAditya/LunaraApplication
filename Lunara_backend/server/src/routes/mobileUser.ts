@@ -547,6 +547,7 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
         const meet = j.strangersMeetRequest;
         if (!meet) continue;
         const venueName = meet.venue?.name || 'Venue';
+        const eventDate = meet.eventDateTime ? new Date(meet.eventDateTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : null;
         const notificationId = `sm_join_${j.id}`;
         
         let title = '';
@@ -554,19 +555,19 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
         let showNotification = false;
         let type = '';
 
-        if (j.status === 'accepted') {
+        if (j.status === 'accepted' && j.paymentStatus !== 'paid') {
             title = 'Request Accepted';
-            body = `Your request to join "${meet.subject}" at ${venueName} was accepted! Please complete the payment to secure your spot.`;
+            body = `Your request to join "${meet.subject}" at ${venueName}${eventDate ? ' on ' + eventDate : ''} was accepted! Complete the payment to secure your spot.`;
             showNotification = true;
             type = 'strangers_meet_request_accepted';
         } else if (j.status === 'rejected') {
             title = 'Request Declined';
-            body = `Your request to join "${meet.subject}" at ${venueName} was declined by the host.`;
+            body = `Your request to join "${meet.subject}" at ${venueName}${eventDate ? ' on ' + eventDate : ''} was declined by the host.`;
             showNotification = true;
             type = 'strangers_meet_request_rejected';
         } else if (j.status === 'paid' || j.paymentStatus === 'paid') {
-            title = 'Booking Confirmed';
-            body = `Your payment for "${meet.subject}" at ${venueName} was successful. Spot confirmed!`;
+            title = 'Booking Confirmed ✓';
+            body = `Your payment for "${meet.subject}" at ${venueName}${eventDate ? ' on ' + eventDate : ''} was successful. Spot confirmed!`;
             showNotification = true;
             type = 'strangers_meet_payment_success';
         }
@@ -578,6 +579,14 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
                 body,
                 createdAt: j.updatedAt ? j.updatedAt.toISOString() : (j.createdAt ? j.createdAt.toISOString() : new Date().toISOString()),
                 read: activeReadNotificationIds.has(notificationId),
+                eventDetails: {
+                    subject: meet.subject,
+                    tagline: meet.tagline || null,
+                    eventDate: eventDate,
+                    venue: venueName,
+                    chargesPerHead: meet.chargesPerHead,
+                    totalSeats: meet.numberOfPersons,
+                },
                 data: {
                     type,
                     requestId: meet.id,
@@ -587,47 +596,132 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
     }
 
     // Add Strangers Meet Host Incoming Join Request Notifications
+    // Group joiners by meet so multiple requests are merged Instagram-style
+    const joinRequestsByMeet = new Map<string, any[]>();
     for (const ijr of incomingJoinRequests) {
         const ij = ijr as any;
-        const joinerUser = ij.user;
         const meet = ij.strangersMeetRequest;
-        if (!joinerUser || !meet) continue;
-        const joinerName = `${joinerUser.firstName} ${joinerUser.lastName}`;
-        const notificationId = `sm_incoming_${ij.id}`;
+        if (!meet) continue;
+        if (!joinRequestsByMeet.has(meet.id)) joinRequestsByMeet.set(meet.id, []);
+        joinRequestsByMeet.get(meet.id)!.push(ij);
+    }
 
-        let title = '';
-        let body = '';
-        let showNotification = false;
-        let type = '';
+    for (const [meetId, joiners] of joinRequestsByMeet) {
+        const firstJoiner = joiners[0];
+        const meet = firstJoiner.strangersMeetRequest;
+        const venueName = meet?.venue?.name || 'Venue';
+        const eventDate = meet?.eventDateTime ? new Date(meet.eventDateTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : null;
 
-        if (ij.status === 'pending') {
-            title = 'New Join Request';
-            body = `${joinerName} requested to join your "${meet.subject}" meet.`;
-            showNotification = true;
-            type = 'strangers_meet_join_request';
-        } else if (ij.status === 'paid' || ij.paymentStatus === 'paid') {
-            title = 'Participant Joined';
-            body = `${joinerName} paid and joined your "${meet.subject}" meet.`;
-            showNotification = true;
-            type = 'strangers_meet_participant_joined';
-        }
+        // Pending joiners (need host action)
+        const pendingJoiners = joiners.filter((ij: any) => ij.status === 'pending');
+        if (pendingJoiners.length > 0) {
+            const notificationId = `sm_incoming_grp_${meetId}`;
+            const firstUser = pendingJoiners[0].user;
+            const firstName = firstUser?.firstName || 'Someone';
+            const othersCount = pendingJoiners.length - 1;
+            const bodyText = othersCount > 0
+                ? `${firstName} and ${othersCount} other${othersCount > 1 ? 's' : ''} want to join your "${meet.subject}" meet${eventDate ? ' on ' + eventDate : ''}.`
+                : `${firstName} ${pendingJoiners[0].user?.lastName || ''} requested to join your "${meet.subject}" meet${eventDate ? ' on ' + eventDate : ''}.`;
 
-        if (showNotification) {
+            const isRead = pendingJoiners.every((ij: any) => activeReadNotificationIds.has(`sm_incoming_${ij.id}`));
             notifications.push({
                 id: notificationId,
-                title,
-                body,
-                createdAt: ij.updatedAt ? ij.updatedAt.toISOString() : (ij.createdAt ? ij.createdAt.toISOString() : new Date().toISOString()),
-                read: activeReadNotificationIds.has(notificationId),
-                sender: {
-                    id: joinerUser.id,
-                    firstName: joinerUser.firstName,
-                    lastName: joinerUser.lastName,
-                    profileImageUrl: joinerUser.profileImageUrl,
+                title: `New Join Request${pendingJoiners.length > 1 ? 's' : ''}`,
+                body: bodyText,
+                createdAt: pendingJoiners[0].updatedAt?.toISOString() || pendingJoiners[0].createdAt?.toISOString() || new Date().toISOString(),
+                read: isRead,
+                grouped: true,
+                groupCount: pendingJoiners.length,
+                eventDetails: {
+                    subject: meet.subject,
+                    tagline: meet?.tagline || null,
+                    eventDate: eventDate,
+                    venue: venueName,
+                    totalSeats: meet.numberOfPersons,
+                    chargesPerHead: meet.chargesPerHead,
                 },
+                sender: firstUser ? {
+                    id: firstUser.id,
+                    firstName: firstUser.firstName,
+                    lastName: firstUser.lastName,
+                    profileImageUrl: firstUser.profileImageUrl,
+                } : null,
                 data: {
-                    type,
-                    requestId: meet.id,
+                    type: 'strangers_meet_join_request',
+                    requestId: meetId,
+                    joinerIds: pendingJoiners.map((ij: any) => ij.id),
+                }
+            });
+        }
+
+        // Accepted joiners who haven't paid yet (not vanishing after host accepts)
+        const acceptedUnpaidJoiners = joiners.filter((ij: any) => ij.status === 'accepted' && ij.paymentStatus !== 'paid');
+        if (acceptedUnpaidJoiners.length > 0) {
+            const notificationId = `sm_incoming_accepted_${meetId}`;
+            const firstUser = acceptedUnpaidJoiners[0].user;
+            const othersCount = acceptedUnpaidJoiners.length - 1;
+            const bodyText = othersCount > 0
+                ? `${firstUser?.firstName || 'Someone'} and ${othersCount} other${othersCount > 1 ? 's' : ''} accepted, awaiting payment for "${meet.subject}"${eventDate ? ' on ' + eventDate : ''}.`
+                : `${firstUser?.firstName || 'Someone'} ${firstUser?.lastName || ''} was accepted. Awaiting payment for "${meet.subject}"${eventDate ? ' on ' + eventDate : ''}.`;
+            const isRead = acceptedUnpaidJoiners.every((ij: any) => activeReadNotificationIds.has(`sm_incoming_${ij.id}`));
+            notifications.push({
+                id: notificationId,
+                title: 'Awaiting Payment',
+                body: bodyText,
+                createdAt: acceptedUnpaidJoiners[0].updatedAt?.toISOString() || new Date().toISOString(),
+                read: isRead,
+                grouped: true,
+                groupCount: acceptedUnpaidJoiners.length,
+                eventDetails: {
+                    subject: meet.subject,
+                    eventDate: eventDate,
+                    venue: venueName,
+                },
+                sender: firstUser ? {
+                    id: firstUser.id,
+                    firstName: firstUser.firstName,
+                    lastName: firstUser.lastName,
+                    profileImageUrl: firstUser.profileImageUrl,
+                } : null,
+                data: {
+                    type: 'strangers_meet_awaiting_payment',
+                    requestId: meetId,
+                }
+            });
+        }
+
+        // Paid joiners (confirmation)
+        const paidJoiners = joiners.filter((ij: any) => ij.status === 'paid' || ij.paymentStatus === 'paid');
+        if (paidJoiners.length > 0) {
+            const notificationId = `sm_incoming_paid_${meetId}`;
+            const firstUser = paidJoiners[0].user;
+            const othersCount = paidJoiners.length - 1;
+            const bodyText = othersCount > 0
+                ? `${firstUser?.firstName || 'Someone'} and ${othersCount} other${othersCount > 1 ? 's' : ''} paid and joined your "${meet.subject}" meet${eventDate ? ' on ' + eventDate : ''}.`
+                : `${firstUser?.firstName || 'Someone'} ${firstUser?.lastName || ''} paid and joined your "${meet.subject}" meet${eventDate ? ' on ' + eventDate : ''}.`;
+            const isRead = paidJoiners.every((ij: any) => activeReadNotificationIds.has(`sm_incoming_${ij.id}`));
+            notifications.push({
+                id: notificationId,
+                title: 'Participant Joined',
+                body: bodyText,
+                createdAt: paidJoiners[0].updatedAt?.toISOString() || new Date().toISOString(),
+                read: isRead,
+                grouped: true,
+                groupCount: paidJoiners.length,
+                eventDetails: {
+                    subject: meet.subject,
+                    eventDate: eventDate,
+                    venue: venueName,
+                },
+                sender: firstUser ? {
+                    id: firstUser.id,
+                    firstName: firstUser.firstName,
+                    lastName: firstUser.lastName,
+                    profileImageUrl: firstUser.profileImageUrl,
+                } : null,
+                data: {
+                    type: 'strangers_meet_participant_joined',
+                    requestId: meetId,
                 }
             });
         }
@@ -765,6 +859,16 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
                 body = `Please complete the payment for your group party at ${venueName} to confirm.`;
                 showNotification = true;
                 type = 'group_party_initiated';
+            } else if (gp.status === 'approved') {
+                title = 'Group Party Approved! 🎉';
+                body = `Your group party request at ${venueName} has been approved! Complete payment to confirm.`;
+                showNotification = true;
+                type = 'group_party_approved';
+            } else if (gp.status === 'rejected') {
+                title = 'Group Party Rejected ❌';
+                body = `Your group party request at ${venueName} was rejected by the admin.`;
+                showNotification = true;
+                type = 'group_party_rejected';
             } else if (gp.status === 'confirmed') {
                 title = 'Group Party Confirmed! 🎉';
                 body = `Your group party of ${gp.numberOfFriends} friends at ${venueName} is confirmed!`;
@@ -1044,5 +1148,35 @@ router.post('/safety-check', async (req, res) => {
         return res.status(500).json({ success: false, message: 'Failed to submit safety check.' });
     }
 });
+
+/**
+ * POST /api/mobile/user/delete-account
+ *
+ * Permanently deletes the user's account (soft-delete):
+ *   - Requires `userId` and `password` in body for security re-authentication
+ *   - Optionally accepts `reason` (string) explaining why they're leaving
+ *   - Archives a full snapshot into deleted_accounts table
+ *   - Sets isDeleted=true, isActive=false on the user record
+ *
+ * Body: { userId: string, password: string, reason?: string }
+ *
+ * Responses:
+ *   200  { success, code: 'ACCOUNT_DELETED', message }
+ *   400  { success, code: 'PASSWORD_REQUIRED', message }
+ *   401  { success, code: 'INVALID_PASSWORD', message }
+ *   404  { success, message: 'User not found' }
+ *   409  { success, code: 'ALREADY_DELETED', message }
+ *   500  { success, code: 'SERVER_ERROR', message }
+ */
+router.post(
+    '/delete-account',
+    [
+        body('userId').optional().isUUID().withMessage('userId must be a valid UUID'),
+        body('password').notEmpty().withMessage('password is required to confirm account deletion'),
+        body('reason').optional().isString().isLength({ max: 500 }),
+        validate,
+    ],
+    mobileUserController.deleteAccount
+);
 
 export default router;

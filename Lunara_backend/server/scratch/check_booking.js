@@ -18,12 +18,17 @@ const sequelize = new Sequelize(
     }
 );
 
-async function checkBooking() {
+async function findBooking() {
     try {
-        const [results] = await sequelize.query(
-            "SELECT * FROM bookings WHERE id = '78cc2e0b-5694-4029-ab23-0c0504cc4656'"
+        const [bookings] = await sequelize.query(
+            "SELECT id, booking_number, status, admin_approval_status, admin_payment_amount, going_mode, total_amount, number_of_guests FROM bookings WHERE number_of_guests = 21 OR total_amount::numeric = 234567.00"
         );
-        console.log("Booking in DB:", JSON.stringify(results, null, 2));
+        console.log("Bookings found:", JSON.stringify(bookings, null, 2));
+
+        const [groupParties] = await sequelize.query(
+            "SELECT * FROM group_parties WHERE total_amount::numeric = 234567.00"
+        );
+        console.log("Group Parties found:", JSON.stringify(groupParties, null, 2));
     } catch (error) {
         console.error('Error:', error.message);
     } finally {
@@ -31,4 +36,4 @@ async function checkBooking() {
     }
 }
 
-checkBooking();
+findBooking();

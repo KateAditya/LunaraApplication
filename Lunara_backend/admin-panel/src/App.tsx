@@ -8,6 +8,7 @@ import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Users } from './pages/Users';
 import { AutoblockedUsers } from './pages/AutoblockedUsers';
+import { DeletedAccounts } from './pages/DeletedAccounts';
 import { Venues } from './pages/Venues';
 import Ads from './pages/Ads';
 import { Bookings } from './pages/Bookings';
@@ -78,6 +79,7 @@ function AppContent() {
             <Route index element={<Dashboard />} />
             <Route path="users" element={<Users />} />
             <Route path="autoblocked-users" element={<AutoblockedUsers />} />
+            <Route path="deleted-accounts" element={<DeletedAccounts />} />
             <Route path="venues" element={<Venues />} />
             <Route path="ads" element={<Ads />} />
             <Route path="bookings" element={<Bookings />} />

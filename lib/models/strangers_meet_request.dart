@@ -11,6 +11,7 @@ class StrangersMeetRequest {
   final String paymentStatus;
   final String? adminNotes;
   final String? ticketId;
+  final String? ticketUrl;
   final DateTime? createdAt;
   final String? mobileNumber;
   final String? alternateMobileNumber;
@@ -21,6 +22,7 @@ class StrangersMeetRequest {
   final String? accountHolderName;
   final String? ifscCode;
   final String? upiId;
+  final String? upiNumber;
 
   // Admin-calculated platform charge per seat (= paymentAmount / numberOfPersons)
   final double? platformChargePerSeat;
@@ -55,6 +57,7 @@ class StrangersMeetRequest {
     required this.paymentStatus,
     this.adminNotes,
     this.ticketId,
+    this.ticketUrl,
     this.createdAt,
     this.mobileNumber,
     this.alternateMobileNumber,
@@ -63,6 +66,7 @@ class StrangersMeetRequest {
     this.accountHolderName,
     this.ifscCode,
     this.upiId,
+    this.upiNumber,
     this.platformChargePerSeat,
     required this.settlementStatus,
     this.bankDetails,
@@ -112,6 +116,7 @@ class StrangersMeetRequest {
       paymentStatus: paymentStatusRaw ?? 'unpaid',
       adminNotes: json['adminNotes'] ?? json['admin_notes'],
       ticketId: json['ticketId'] ?? json['ticket_id'],
+      ticketUrl: json['ticketUrl'] ?? json['ticket_url'],
       createdAt: (json['createdAt'] ?? json['created_at']) != null
           ? DateTime.parse(json['createdAt'] ?? json['created_at']).toLocal()
           : null,
@@ -124,6 +129,7 @@ class StrangersMeetRequest {
           json['accountHolderName'] ?? json['account_holder_name'],
       ifscCode: json['ifscCode'] ?? json['ifsc_code'],
       upiId: json['upiId'] ?? json['upi_id'],
+      upiNumber: json['upiNumber'] ?? json['upi_number'],
       platformChargePerSeat: platformChargeRaw != null
           ? (platformChargeRaw is String
                 ? double.tryParse(platformChargeRaw)
@@ -158,15 +164,17 @@ class StrangersMeetRequest {
     );
   }
 
-  /// Whether the host provided bank details (either structured or legacy UPI)
+  /// Whether the host provided bank details (either structured or legacy UPI/UPI number)
   bool get hasBankDetails =>
       (bankName != null && bankName!.isNotEmpty) ||
       (upiId != null && upiId!.isNotEmpty) ||
+      (upiNumber != null && upiNumber!.isNotEmpty) ||
       (bankDetails != null && bankDetails!.isNotEmpty);
 
   /// Returns a display-friendly string of the bank/UPI info
   String get bankDetailsSummary {
-    if (upiId != null && upiId!.isNotEmpty) return 'UPI: $upiId';
+    if (upiId != null && upiId!.isNotEmpty) return 'UPI ID: $upiId';
+    if (upiNumber != null && upiNumber!.isNotEmpty) return 'UPI No: $upiNumber';
     if (bankName != null && bankName!.isNotEmpty) {
       return '$bankName · ${accountNumber ?? ''} · IFSC: ${ifscCode ?? ''}';
     }

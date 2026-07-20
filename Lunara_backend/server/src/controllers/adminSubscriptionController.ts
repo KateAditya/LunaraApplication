@@ -5,6 +5,7 @@ import SubscriptionFeature from '../models/SubscriptionFeature';
 import SubscriptionPlanFeature from '../models/SubscriptionPlanFeature';
 import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription';
 import SubscriptionTransaction from '../models/SubscriptionTransaction';
+import SubscriptionUsage from '../models/SubscriptionUsage';
 import User from '../models/User';
 import { logger } from '../config/logger';
 import { SubscriptionService } from '../services/subscriptionService';
@@ -771,3 +772,296 @@ export const extendUserSubscription = async (req: Request, res: Response): Promi
     }
 };
 
+// ─── Admin: Grant a free subscription to any user ────────────────────────────
+
+// @route POST /api/admin/subscriptions/users/:userId/grant
+// Body: { packageId, durationDays?, reason? }
+export const grantUserSubscription = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { userId } = req.params;
+        const { packageId, durationDays, reason } = req.body;
+        const adminId = (req as any).user?.id;
+
+        if (!packageId) {
+            res.status(400).json({ success: false, message: 'packageId is required' });
+            return;
+        }
+
+        const user = await User.findByPk(userId);
+        if (!user) {
+            res.status(404).json({ success: false, message: 'User not found' });
+            return;
+        }
+
+        const pkg = await SubscriptionPackage.findByPk(packageId);
+        if (!pkg) {
+            res.status(404).json({ success: false, message: 'Package not found' });
+            return;
+        }
+
+        // Expire any currently active subscriptions
+        await UserSubscription.update(
+            { status: SubscriptionStatus.EXPIRED, endDate: new Date() },
+            { where: { userId, status: SubscriptionStatus.ACTIVE } }
+        );
+
+        const days = durationDays || pkg.durationDays;
+        const startDate = new Date();
+        const endDate = new Date();
+        endDate.setDate(endDate.getDate() + days);
+
+        const newSub = await UserSubscription.create({
+            userId,
+            packageId,
+            status: SubscriptionStatus.ACTIVE,
+            startDate,
+            endDate,
+            superlikesRemaining: pkg.superlikesPerCycle,
+            boostsRemaining: pkg.boostsPerCycle,
+        });
+
+        await SubscriptionTransaction.create({
+            userId,
+            packageId,
+            type: 'purchase' as any,
+            amount: 0,
+            status: 'success' as any,
+            invoiceNumber: `ADMIN-GRANT-${Date.now().toString(36).toUpperCase()}`,
+            metadata: {
+                adminAction: 'grant',
+                adminId,
+                reason: reason || 'Admin granted complimentary subscription',
+                planName: pkg.name,
+                durationDays: days,
+            },
+        });
+
+        SubscriptionService.invalidateCache(userId);
+
+        if (user.fcmToken) {
+            await sendPushNotification(user.fcmToken, {
+                title: '🎉 VIP Subscription Activated!',
+                body: `You have been granted ${pkg.name} access for ${days} days. Enjoy all premium features!`,
+                data: { type: 'subscription_granted', packageName: pkg.name, endDate: endDate.toISOString() },
+            });
+        }
+
+        logger.info(`Admin ${adminId} granted ${pkg.name} to user ${userId} for ${days} days`);
+        res.status(201).json({
+            success: true,
+            message: `Granted ${pkg.name} to user for ${days} days`,
+            data: { subscription: newSub, endDate },
+        });
+    } catch (error: any) {
+        logger.error('Error granting subscription:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// ─── Admin: Adjust superlike / backtrack credits for a user ──────────────────
+
+// @route PATCH /api/admin/subscriptions/users/:userId/credits
+// Body: { superlikesRemaining?, boostsRemaining? }
+export const adjustUserCredits = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { userId } = req.params;
+        const { superlikesRemaining, boostsRemaining, reason: _reason } = req.body;
+        const adminId = (req as any).user?.id;
+
+        const sub = await UserSubscription.findOne({
+            where: { userId, status: SubscriptionStatus.ACTIVE },
+            include: [{ model: SubscriptionPackage, as: 'package' }],
+            order: [['createdAt', 'DESC']],
+        });
+
+        if (!sub) {
+            res.status(404).json({ success: false, message: 'No active subscription found for this user' });
+            return;
+        }
+
+        const updates: any = {};
+        if (superlikesRemaining !== undefined) updates.superlikesRemaining = Math.max(0, parseInt(superlikesRemaining));
+        if (boostsRemaining !== undefined) updates.boostsRemaining = Math.max(0, parseInt(boostsRemaining));
+
+        if (Object.keys(updates).length === 0) {
+            res.status(400).json({ success: false, message: 'Provide superlikesRemaining and/or boostsRemaining to update' });
+            return;
+        }
+
+        await sub.update(updates);
+        SubscriptionService.invalidateCache(userId);
+
+        const user = await User.findByPk(userId);
+        if (user?.fcmToken) {
+            await sendPushNotification(user.fcmToken, {
+                title: '✨ Credits Updated',
+                body: `Your VIP credits have been updated by support. Check your profile for the latest balance.`,
+                data: { type: 'credits_adjusted' },
+            });
+        }
+
+        logger.info(`Admin ${adminId} adjusted credits for user ${userId}: ${JSON.stringify(updates)}`);
+        res.status(200).json({
+            success: true,
+            message: 'User credits updated successfully',
+            data: { superlikesRemaining: sub.superlikesRemaining, boostsRemaining: sub.boostsRemaining },
+        });
+    } catch (error: any) {
+        logger.error('Error adjusting credits:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// ─── Admin: Reset a user's daily usage counters ──────────────────────────────
+
+// @route DELETE /api/admin/subscriptions/users/:userId/usage
+// Query: ?featureKey=daily_likes  (omit to reset all features)
+export const resetUserUsage = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { userId } = req.params;
+        const { featureKey } = req.query;
+        const adminId = (req as any).user?.id;
+
+        const user = await User.findByPk(userId);
+        if (!user) {
+            res.status(404).json({ success: false, message: 'User not found' });
+            return;
+        }
+
+        const where: any = { userId };
+        if (featureKey) where.featureKey = featureKey as string;
+
+        const deleted = await SubscriptionUsage.destroy({ where });
+        SubscriptionService.invalidateCache(userId);
+
+        logger.info(`Admin ${adminId} reset usage for user ${userId}${featureKey ? ` [${featureKey}]` : ' [ALL]'} — ${deleted} records cleared`);
+        res.status(200).json({
+            success: true,
+            message: `Usage reset for ${featureKey || 'all features'}. Cleared ${deleted} record(s).`,
+        });
+    } catch (error: any) {
+        logger.error('Error resetting usage:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// ─── Admin: View a user's live feature access & usage status ─────────────────
+
+// @route GET /api/admin/subscriptions/users/:userId/status
+export const getUserFeatureStatus = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { userId } = req.params;
+
+        const user = await User.findByPk(userId, { attributes: ['id', 'firstName', 'lastName', 'email'] });
+        if (!user) {
+            res.status(404).json({ success: false, message: 'User not found' });
+            return;
+        }
+
+        // Active subscription
+        const activeSub = await UserSubscription.findOne({
+            where: { userId, status: SubscriptionStatus.ACTIVE, endDate: { [Op.gt]: new Date() } },
+            include: [{ model: SubscriptionPackage, as: 'package' }],
+            order: [['createdAt', 'DESC']],
+        });
+
+        // Feature summary
+        const featureSummary = await SubscriptionService.getUserFeatureSummary(userId);
+
+        // Current usage records
+        const usageRecords = await SubscriptionUsage.findAll({
+            where: { userId },
+            order: [['updatedAt', 'DESC']],
+        });
+
+        res.status(200).json({
+            success: true,
+            data: {
+                user,
+                subscription: activeSub
+                    ? {
+                        id: activeSub.id,
+                        packageName: (activeSub as any).package?.name,
+                        tier: (activeSub as any).package?.tier,
+                        status: activeSub.status,
+                        startDate: activeSub.startDate,
+                        endDate: activeSub.endDate,
+                        superlikesRemaining: activeSub.superlikesRemaining,
+                        boostsRemaining: activeSub.boostsRemaining,
+                    }
+                    : null,
+                featureSummary,
+                usageRecords,
+            },
+        });
+    } catch (error: any) {
+        logger.error('Error fetching user feature status:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// ─── Admin: Bulk-configure feature flags per tier ────────────────────────────
+
+// @route PUT /api/admin/subscriptions/tiers/:tier/features
+// Body: { features: [{ featureKey, value, isEnabled }] }
+// This upserts SubscriptionPlanFeature rows for ALL packages of the given tier.
+export const bulkConfigureTierFeatures = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { tier } = req.params;
+        const { features } = req.body;
+        const adminId = (req as any).user?.id;
+
+        if (!Object.values(PackageTier).includes(tier as PackageTier)) {
+            res.status(400).json({
+                success: false,
+                message: `Invalid tier. Must be one of: ${Object.values(PackageTier).join(', ')}`,
+            });
+            return;
+        }
+
+        if (!Array.isArray(features) || features.length === 0) {
+            res.status(400).json({ success: false, message: 'features array is required and cannot be empty' });
+            return;
+        }
+
+        const packages = await SubscriptionPackage.findAll({ where: { tier: tier as PackageTier, isActive: true } });
+        if (packages.length === 0) {
+            res.status(404).json({ success: false, message: `No active packages found for tier: ${tier}` });
+            return;
+        }
+
+        let upsertCount = 0;
+        for (const pkg of packages) {
+            for (const f of features) {
+                // Lookup featureId by key if featureKey is provided instead of featureId
+                let featureId = f.featureId;
+                if (!featureId && f.featureKey) {
+                    const feat = await SubscriptionFeature.findOne({ where: { key: f.featureKey } });
+                    if (!feat) continue;
+                    featureId = feat.id;
+                }
+                if (!featureId) continue;
+
+                await SubscriptionPlanFeature.upsert({
+                    packageId: pkg.id,
+                    featureId,
+                    value: f.value || { enabled: !!f.isEnabled },
+                    isEnabled: f.isEnabled !== false,
+                });
+                upsertCount++;
+            }
+        }
+
+        SubscriptionService.invalidateCache();
+        logger.info(`Admin ${adminId} bulk-configured ${upsertCount} feature(s) for tier ${tier} across ${packages.length} package(s)`);
+
+        res.status(200).json({
+            success: true,
+            message: `Updated ${upsertCount} feature assignment(s) across ${packages.length} ${tier} package(s)`,
+            data: { tier, packagesAffected: packages.length, featuresUpserted: upsertCount },
+        });
+    } catch (error: any) {
+        logger.error('Error bulk-configuring tier features:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};

@@ -128,6 +128,63 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
       }
     }
     _selectedDate = initialDate;
+
+    // Auto-fetch the first valid time slot for this venue on the selected date
+    final venueObj = Venue.fromJson(Map<String, dynamic>.from(widget.venue));
+    
+    // We check the venue opening time first
+    String? defaultTime;
+    final openingStr = venueObj.openingTime; // e.g. "20:00"
+    if (openingStr != null && openingStr.contains(':')) {
+      final parts = openingStr.split(':');
+      final hour = int.tryParse(parts[0]) ?? 20;
+      final minute = int.tryParse(parts[1]) ?? 0;
+      final tod = TimeOfDay(hour: hour, minute: minute);
+      
+      final selectedDateTime = DateTime(
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+        tod.hour,
+        tod.minute,
+      );
+      final minAllowedDateTime = DateTime.now().add(const Duration(hours: 1));
+      if (_isTimeWithinVenueHours(tod, venueObj.openingTime, venueObj.closingTime) &&
+          !selectedDateTime.isBefore(minAllowedDateTime)) {
+        defaultTime = '${tod.hour.toString().padLeft(2, '0')}:${tod.minute.toString().padLeft(2, '0')}';
+      }
+    }
+
+    if (defaultTime == null) {
+      final predefinedTimes = [
+        const TimeOfDay(hour: 20, minute: 0), // 8 PM
+        const TimeOfDay(hour: 21, minute: 0), // 9 PM
+        const TimeOfDay(hour: 22, minute: 0), // 10 PM
+        const TimeOfDay(hour: 23, minute: 0), // 11 PM
+        const TimeOfDay(hour: 0, minute: 0),  // 12 AM
+        const TimeOfDay(hour: 19, minute: 0), // 7 PM
+      ];
+
+      for (final tod in predefinedTimes) {
+        final selectedDateTime = DateTime(
+          _selectedDate.year,
+          _selectedDate.month,
+          _selectedDate.day,
+          tod.hour,
+          tod.minute,
+        );
+        final minAllowedDateTime = DateTime.now().add(const Duration(hours: 1));
+        
+        if (_isTimeWithinVenueHours(tod, venueObj.openingTime, venueObj.closingTime) &&
+            !selectedDateTime.isBefore(minAllowedDateTime)) {
+          defaultTime = '${tod.hour.toString().padLeft(2, '0')}:${tod.minute.toString().padLeft(2, '0')}';
+          break;
+        }
+      }
+    }
+
+    // Default fallback to 9 PM if all checks fail
+    _selectedTime = defaultTime ?? '21:00';
   }
 
   @override
@@ -157,32 +214,10 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SizedBox(height: 16),
-                    const Text(
-                      '1. SELECT DATE',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.5,
-                        color: Colors.black54,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildDateSelection(),
+                    _buildUpcomingNightCard(),
                     const SizedBox(height: 32),
                     const Text(
-                      '2. SELECT TIME',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.5,
-                        color: Colors.black54,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildTimeSelection(),
-                    const SizedBox(height: 48),
-                    const Text(
-                      '3. CHOOSE MODE',
+                      'CHOOSE MODE',
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
@@ -236,6 +271,75 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  String _getFormattedSelectedDate() {
+    final List<String> months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    final List<String> weekdays = [
+      'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'
+    ];
+    final weekday = weekdays[_selectedDate.weekday - 1];
+    final month = months[_selectedDate.month - 1];
+    return '$weekday, ${_selectedDate.day} $month';
+  }
+
+  Widget _buildUpcomingNightCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: LunaraTheme.electricViolet.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+          width: 1.5,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.calendar_today_rounded,
+              color: LunaraTheme.electricViolet,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'UPCOMING NIGHT DETECTED',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    color: LunaraTheme.electricViolet,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${_getFormattedSelectedDate()} at ${_formatTimeOfBooking(_selectedTime)}',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.black,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -928,6 +1032,67 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                             ],
 
                             if (isLargeParty) ...[
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 20),
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      LunaraTheme.electricViolet.withValues(alpha: 0.08),
+                                      LunaraTheme.electricViolet.withValues(alpha: 0.03),
+                                    ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
+                                    width: 1.5,
+                                  ),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.verified_user_rounded,
+                                        color: LunaraTheme.electricViolet,
+                                        size: 20,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Text(
+                                            'LARGE GROUP BOOKING (21+)',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: 12,
+                                              color: LunaraTheme.electricViolet,
+                                              letterSpacing: 1,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 6),
+                                          const Text(
+                                            'Please fill out the details below. Our team will review and confirm your booking request within 1-5 hours.',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: Colors.black87,
+                                              height: 1.4,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                               const Text(
                                 'LARGE PARTY DETAILS',
                                 style: TextStyle(
@@ -1181,7 +1346,7 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                     builder: (ctx2) => AlertDialog(
                                       title: const Text('Request Submitted'),
                                       content: const Text(
-                                        'Your large party request has been submitted to the admin for approval. You will see it in your Live Feed once approved.',
+                                        'Your large party request has been successfully submitted. Our team will review and confirm your booking within 1-5 hours.',
                                       ),
                                       actions: [
                                         TextButton(

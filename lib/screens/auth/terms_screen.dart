@@ -4,6 +4,19 @@ import '../../core/theme.dart';
 class TermsScreen extends StatelessWidget {
   const TermsScreen({super.key});
 
+  static const String termsText = '''App Name: Powered by: SSKL WORLD.
+Jurisdiction: Pune, Maharashtra, India
+
+TERMS & CONDITIONS
+
+These Terms & Conditions ("Terms") constitute a legally binding agreement between You ("User", "You", "Your") and SSKL WORLD, the owner and operator of the digital platform known as LUNARA ("LUNARA", "Platform", "Company", "We", "Us", or "Our").
+
+These Terms govern Your access to and use of the LUNARA mobile application, website, software, platform services, social discovery features, matchmaking tools, venue discovery services, bookings, subscriptions, content, communications, events, promotional offers, and all associated services provided by LUNARA.
+
+By accessing, downloading, browsing, registering on, or using the Platform in any manner whatsoever, You acknowledge that You have read, understood, and agreed to be legally bound by these Terms, the Privacy Policy, Refund & Cancellation Policy, Community Guidelines, Venue Partner Policies, and all other policies issued by LUNARA from time to time.
+
+IF YOU DO NOT AGREE TO THESE TERMS, YOU MUST IMMEDIATELY STOP USING THE PLATFORM.''';
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(

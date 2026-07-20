@@ -196,6 +196,15 @@ export async function login(req: Request, res: Response) {
             });
         }
 
+        // Check if account is permanently deleted
+        if ((user as any).isDeleted) {
+            return res.status(403).json({
+                success: false,
+                code: 'ACCOUNT_DELETED',
+                message: 'This account has been permanently deleted. Please contact support if this was a mistake.',
+            });
+        }
+
         // Check if account is active or auto-blocked
         if (!user.isActive || user.isAutoblocked) {
             if (user.isAutoblocked) {
