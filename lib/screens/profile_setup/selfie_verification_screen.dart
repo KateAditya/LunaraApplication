@@ -43,10 +43,12 @@ class _SelfieVerificationScreenState extends State<SelfieVerificationScreen> {
   /// Step 1: Pick Reference Face Photo (Gallery or Camera)
   Future<void> _pickReferencePhoto(ImageSource source) async {
     try {
+      // Auto-compress reference face photo to ~150 KB
       final XFile? photo = await _picker.pickImage(
         source: source,
-        imageQuality: 85,
-        maxWidth: 1080,
+        maxWidth: 700,
+        maxHeight: 700,
+        imageQuality: 55,
       );
 
       if (photo == null) return;
@@ -119,12 +121,13 @@ class _SelfieVerificationScreenState extends State<SelfieVerificationScreen> {
   /// Step 2: Capture Live Selfie strictly using Front Camera ONLY (No Gallery Upload Allowed)
   Future<void> _captureLiveSelfie() async {
     try {
-      // Force front camera and DO NOT allow gallery upload as per strict requirement
+      // Force front camera and auto-compress live selfie to ~150 KB
       final XFile? selfie = await _picker.pickImage(
         source: ImageSource.camera,
         preferredCameraDevice: CameraDevice.front,
-        imageQuality: 85,
-        maxWidth: 1080,
+        maxWidth: 700,
+        maxHeight: 700,
+        imageQuality: 55,
       );
 
       if (selfie == null) return;

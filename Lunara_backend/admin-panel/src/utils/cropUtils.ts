@@ -68,24 +68,16 @@ export const calculateDefaultCropArea = (
 /**
  * Validate image file
  */
-export const validateImageFile = (file: File, maxSizeMB: number = 10): {
+export const validateImageFile = (file: File, _maxSizeMB: number = 100): {
     valid: boolean;
     error?: string;
 } => {
-    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
 
     if (!validTypes.includes(file.type)) {
         return {
             valid: false,
             error: 'Invalid file type. Please upload an image file (JPEG, PNG, GIF, or WebP).',
-        };
-    }
-
-    const fileSizeMB = file.size / (1024 * 1024);
-    if (fileSizeMB > maxSizeMB) {
-        return {
-            valid: false,
-            error: `File size exceeds ${maxSizeMB}MB. Please choose a smaller image.`,
         };
     }
 

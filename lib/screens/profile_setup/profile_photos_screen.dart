@@ -35,25 +35,16 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
 
   Future<void> _pickImage(int index, ImageSource source) async {
     try {
+      // Auto-compress photo to ~150 KB with 700x700 resolution and 55% quality
       final XFile? image = await _picker.pickImage(
         source: source,
-        maxWidth: 800,
-        maxHeight: 800,
-        imageQuality: 75,
+        maxWidth: 700,
+        maxHeight: 700,
+        imageQuality: 55,
       );
       if (image == null) return;
 
       setState(() => _isProcessing = true);
-
-      final sizeInBytes = await image.length();
-      if (sizeInBytes > 2 * 1024 * 1024) {
-        // Max 2MB per profile photo
-        setState(() => _isProcessing = false);
-        if (mounted) {
-          TopErrorBanner.show(context, 'Please choose a photo smaller than 2 MB.');
-        }
-        return;
-      }
 
       setState(() {
         _isProcessing = false;

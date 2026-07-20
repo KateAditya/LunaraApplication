@@ -102,18 +102,33 @@ export const compressImageIfNeeded = async (
         img.onload = () => {
             URL.revokeObjectURL(objectUrl);
 
+            // Scale down high-res images to max 1600px dimension
+            const maxDimension = 1600;
+            let width = img.naturalWidth;
+            let height = img.naturalHeight;
+
+            if (width > maxDimension || height > maxDimension) {
+                if (width > height) {
+                    height = Math.round((height * maxDimension) / width);
+                    width = maxDimension;
+                } else {
+                    width = Math.round((width * maxDimension) / height);
+                    height = maxDimension;
+                }
+            }
+
             const canvas = document.createElement('canvas');
-            canvas.width = img.naturalWidth;
-            canvas.height = img.naturalHeight;
+            canvas.width = width;
+            canvas.height = height;
             const ctx = canvas.getContext('2d');
             if (!ctx) {
                 resolve(file); // Can't compress — return original
                 return;
             }
-            ctx.drawImage(img, 0, 0);
+            ctx.drawImage(img, 0, 0, width, height);
 
-            // Try quality from 0.9 down to 0.1
-            let quality = 0.9;
+            // Try quality from 0.85 down to 0.1
+            let quality = 0.85;
             const tryCompress = () => {
                 canvas.toBlob(
                     (blob) => {
@@ -122,7 +137,7 @@ export const compressImageIfNeeded = async (
                             return;
                         }
 
-                        if (blob.size <= maxBytes || quality <= 0.1) {
+                        if (blob.size <= maxBytes || quality <= 0.15) {
                             // Done — wrap blob in File
                             const ext = outputMime === 'image/webp' ? '.webp' : '.jpg';
                             const baseName = file.name.replace(/\.[^.]+$/, '');

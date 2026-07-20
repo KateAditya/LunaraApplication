@@ -384,41 +384,41 @@ export const VenueForm: React.FC<VenueFormProps> = ({ venue, onClose, onSave }) 
         const file = e.target.files?.[0];
         if (!file) return;
 
-        // Validate file
-        const validation = validateImageFile(file, 10);
+        // Validate image format
+        const validation = validateImageFile(file);
         if (!validation.valid) {
             toast.error(validation.error || 'Invalid image file');
-            // Reset input
             e.target.value = '';
             return;
         }
 
         try {
-            // Convert file to data URL for cropper
-            const dataUrl = await fileToDataUrl(file);
+            // Auto-compress large image to 300KB
+            const compressed = await compressImageIfNeeded(file, 300);
+            const dataUrl = await fileToDataUrl(compressed);
             setCropImage(dataUrl);
             setShowCropModal(true);
-            // Reset input so same file can be selected again
             e.target.value = '';
         } catch (error) {
             toast.error('Failed to load image');
             console.error(error);
-            // Reset input
             e.target.value = '';
         }
     };
 
-    const handleCropComplete = (croppedFile: File) => {
+    const handleCropComplete = async (croppedFile: File) => {
         try {
-            const url = URL.createObjectURL(croppedFile);
+            // Compress cropped result to under 300KB
+            const finalFile = await compressImageIfNeeded(croppedFile, 300);
+            const url = URL.createObjectURL(finalFile);
             setForm(prev => ({
                 ...prev,
                 media: { ...prev.media, coverImage: url },
-                _coverFile: croppedFile // Store actual file for backend
+                _coverFile: finalFile // Store actual file for backend
             }));
             setShowCropModal(false);
             setCropImage('');
-            toast.success('Cover image updated successfully!');
+            toast.success('Cover image updated & compressed successfully!');
         } catch (error) {
             toast.error('Failed to process image');
             console.error(error);

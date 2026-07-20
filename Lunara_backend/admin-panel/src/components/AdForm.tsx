@@ -5,6 +5,8 @@ import { type Ad, adsApi, type SocialLink } from '../api/ads';
 import { venuesApi, type Venue } from '../api/venues';
 import { format } from 'date-fns';
 
+import { compressImageIfNeeded } from '../utils/mediaValidation';
+
 interface AdFormProps {
     ad: Ad | null;
     onClose: () => void;
@@ -72,7 +74,7 @@ export default function AdForm({ ad, onClose, onSuccess }: AdFormProps) {
         return `${baseUrl}/${normalizedPath}`;
     }
 
-    const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
@@ -83,8 +85,13 @@ export default function AdForm({ ad, onClose, onSuccess }: AdFormProps) {
             return;
         }
 
-        setImageFile(file);
-        setImagePreview(URL.createObjectURL(file));
+        try {
+            const compressed = await compressImageIfNeeded(file, 300);
+            setImageFile(compressed);
+            setImagePreview(URL.createObjectURL(compressed));
+        } catch (error) {
+            toast.error('Failed to process image');
+        }
     };
 
     const handleAddLink = () => {
@@ -326,7 +333,7 @@ export default function AdForm({ ad, onClose, onSuccess }: AdFormProps) {
                                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
                                                 <BiUpload style={{ fontSize: '2rem', color: 'var(--vz-text-muted)', marginBottom: '0.5rem' }} />
                                                 <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--vz-text-muted)' }}><span style={{ fontWeight: 600, color: 'var(--vz-primary)' }}>Click to upload</span> or drag and drop</p>
-                                                <p style={{ margin: '0.25rem 0 0', fontSize: '0.75rem', color: 'var(--vz-text-muted)' }}>JPG, PNG, WEBP, AVIF (Auto-compresses to 500KB)</p>
+                                                <p style={{ margin: '0.25rem 0 0', fontSize: '0.75rem', color: 'var(--vz-text-muted)' }}>JPG, PNG, WEBP, AVIF (Auto-compresses to 300KB)</p>
                                             </div>
                                             <input type="file" style={{ display: 'none' }} accept="image/jpeg,image/png,image/webp,image/avif" onChange={handleImageChange} />
                                         </label>
