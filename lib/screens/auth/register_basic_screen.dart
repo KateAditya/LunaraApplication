@@ -177,6 +177,9 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                 controller: _firstNameController,
                 hint: 'Enter your first name',
                 icon: Icons.person_outline,
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z\s]')),
+                ],
               ),
               const SizedBox(height: 24),
               _buildInputLabel('LAST NAME', true),
@@ -184,6 +187,9 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                 controller: _lastNameController,
                 hint: 'Enter your last name',
                 icon: Icons.person_outline,
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z\s]')),
+                ],
               ),
               const SizedBox(height: 24),
               _buildInputLabel('EMAIL ADDRESS', true),
@@ -285,12 +291,20 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                         final email = _emailController.text.trim();
                         final phone = _phoneController.text.trim();
 
+                        final nameRegex = RegExp(r'^[a-zA-Z\s]+$');
+
                         if (firstName.isEmpty) {
                           errorMessage = 'Please enter your first name';
                         } else if (firstName.length < 2) {
                           errorMessage = 'First name must be at least 2 characters';
+                        } else if (!nameRegex.hasMatch(firstName)) {
+                          errorMessage = 'First name can only contain letters (no symbols or numbers)';
                         } else if (lastName.isEmpty) {
                           errorMessage = 'Please enter your last name';
+                        } else if (lastName.length < 2) {
+                          errorMessage = 'Last name must be at least 2 characters';
+                        } else if (!nameRegex.hasMatch(lastName)) {
+                          errorMessage = 'Last name can only contain letters (no symbols or numbers)';
                         } else if (email.isEmpty) {
                           errorMessage = 'Please enter your email address';
                         } else if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {

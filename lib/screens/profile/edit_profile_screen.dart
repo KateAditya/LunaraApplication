@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:typed_data';
 import '../../core/theme.dart';
 import '../../models/user.dart';
 import '../../services/api_service.dart';
@@ -388,13 +388,22 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
-  Widget _buildTextField(String label, TextEditingController controller, {bool isNumber = false, int maxLines = 1}) {
+  Widget _buildTextField(
+    String label,
+    TextEditingController controller, {
+    bool isNumber = false,
+    int maxLines = 1,
+    List<TextInputFormatter>? inputFormatters,
+    String? Function(String?)? validator,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: TextFormField(
         controller: controller,
         keyboardType: isNumber ? TextInputType.number : TextInputType.text,
         maxLines: maxLines,
+        inputFormatters: inputFormatters,
+        validator: validator,
         decoration: InputDecoration(
           labelText: label,
           labelStyle: const TextStyle(fontWeight: FontWeight.bold),
@@ -637,8 +646,34 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 const SizedBox(height: 8),
 
                 _buildSection('BASIC INFO', [
-                  _buildTextField('First Name', _firstNameController),
-                  _buildTextField('Last Name', _lastNameController),
+                  _buildTextField(
+                    'First Name',
+                    _firstNameController,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z\s]')),
+                    ],
+                    validator: (val) {
+                      if (val == null || val.trim().isEmpty) return 'First name is required';
+                      if (!RegExp(r'^[a-zA-Z\s]+$').hasMatch(val.trim())) {
+                        return 'Only upper and lowercase letters allowed';
+                      }
+                      return null;
+                    },
+                  ),
+                  _buildTextField(
+                    'Last Name',
+                    _lastNameController,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z\s]')),
+                    ],
+                    validator: (val) {
+                      if (val == null || val.trim().isEmpty) return 'Last name is required';
+                      if (!RegExp(r'^[a-zA-Z\s]+$').hasMatch(val.trim())) {
+                        return 'Only upper and lowercase letters allowed';
+                      }
+                      return null;
+                    },
+                  ),
                   _buildTextField('Phone', _phoneController),
                   _buildTextField('Date of Birth (YYYY-MM-DD)', _dobController),
                   _buildGenderDropdown(),

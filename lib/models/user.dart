@@ -87,7 +87,7 @@ class User {
     this.pointsCount = 0,
   });
 
-  String get fullName => '$firstName $lastName';
+  String get fullName => '$firstName $lastName'.trim().toUpperCase();
 
   /// Returns true if the user has PRO or ELITE tier subscription
   bool get isPro {
