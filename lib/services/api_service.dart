@@ -2770,6 +2770,42 @@ class ApiService {
       };
     }
   }
+
+  /// Single Image Human Face Detection
+  static Future<Map<String, dynamic>> detectFace(String imagePath) async {
+    try {
+      final Uint8List imageBytes = await XFile(imagePath).readAsBytes();
+      if (imageBytes.isEmpty) {
+        return {
+          'success': false,
+          'hasFace': false,
+          'message': 'Image file could not be read.',
+        };
+      }
+
+      final String imageBase64 = base64Encode(imageBytes);
+
+      final response = await post(
+        '/api/mobile/auth/detect-face',
+        body: {'image': imageBase64},
+      );
+
+      final data = jsonDecode(response.body);
+      return {
+        'success': data['success'] == true,
+        'hasFace': data['hasFace'] == true,
+        'faceCount': data['faceCount'] ?? 0,
+        'message': data['message'] ?? 'Face detection completed',
+      };
+    } catch (e) {
+      debugPrint('detectFace error: $e');
+      return {
+        'success': false,
+        'hasFace': false,
+        'message': 'Network error connecting to Face Detection service: $e',
+      };
+    }
+  }
 }
 
 

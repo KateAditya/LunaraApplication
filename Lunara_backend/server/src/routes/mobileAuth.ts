@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { mobileRegister, mobileSendOTP, mobileVerifyOTP, mobileForgotPassword, mobileResetPassword, mobileLogout, mobileCheckEmail, mobileVerifyFace } from '../controllers/mobileAuthController';
+import { mobileRegister, mobileSendOTP, mobileVerifyOTP, mobileForgotPassword, mobileResetPassword, mobileLogout, mobileCheckEmail, mobileVerifyFace, mobileDetectFace } from '../controllers/mobileAuthController';
 
 const router = Router();
 
@@ -82,6 +82,12 @@ router.post('/register', authLimiter, mobileRegister);
  * Perform Azure AI Face verification (Selfie vs Profile Photo)
  */
 router.post('/verify-face', authLimiter, mobileVerifyFace);
+
+/**
+ * POST /api/mobile/auth/detect-face
+ * Single image human face detection
+ */
+router.post('/detect-face', authLimiter, mobileDetectFace);
 
 /**
  * POST /api/mobile/auth/logout

@@ -55,17 +55,14 @@ class _SelfieVerificationScreenState extends State<SelfieVerificationScreen> {
 
       setState(() => _isProcessing = true);
 
-      // Verify that the reference photo contains a readable, clear face
-      final res = await ApiService.verifyFace(
-        selfiePath: photo.path,
-        profilePhotoPath: photo.path,
-      );
+      // Verify that the reference photo contains a readable human face (blocks bottles, cars, objects)
+      final res = await ApiService.detectFace(photo.path);
 
       setState(() => _isProcessing = false);
 
       if (!mounted) return;
 
-      if (res['verified'] == true || res['success'] == true) {
+      if (res['hasFace'] == true) {
         setState(() {
           _referencePhotoPath = photo.path;
           _currentStep = 2; // Advance to live selfie camera step
@@ -79,7 +76,7 @@ class _SelfieVerificationScreenState extends State<SelfieVerificationScreen> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Clear face detected! Now take a live selfie with your front camera.'),
+            content: Text('Human face detected! Now take a live selfie with your front camera.'),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 3),
           ),
@@ -92,13 +89,13 @@ class _SelfieVerificationScreenState extends State<SelfieVerificationScreen> {
             backgroundColor: Theme.of(context).cardColor,
             title: const Row(
               children: [
-                Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
+                Icon(Icons.no_accounts_rounded, color: Colors.redAccent, size: 28),
                 SizedBox(width: 10),
-                Text('Unclear Face Photo', style: TextStyle(fontWeight: FontWeight.bold)),
+                Text('No Face Detected', style: TextStyle(fontWeight: FontWeight.bold)),
               ],
             ),
             content: Text(
-              res['message'] ?? 'Could not detect a clear face. Please upload a photo with good lighting and your full face visible.',
+              res['message'] ?? 'Could not detect a human face. Please upload a clear photo showing your face (photos of bottles, objects, or scenery are not allowed).',
               style: const TextStyle(fontSize: 14),
             ),
             actions: [

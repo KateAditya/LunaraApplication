@@ -8,6 +8,7 @@ import '../../widgets/glass_card.dart';
 import '../../widgets/action_button.dart';
 import '../../widgets/top_error_banner.dart';
 import '../../services/onboarding_service.dart';
+import '../../services/api_service.dart';
 import 'profile_details_screen.dart';
 
 class ProfilePhotosScreen extends StatefulWidget {
@@ -46,8 +47,42 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
 
       setState(() => _isProcessing = true);
 
+      // Validate that the photo contains a human face (blocks bottles, cars, objects)
+      final faceCheck = await ApiService.detectFace(image.path);
+
+      setState(() => _isProcessing = false);
+
+      if (!mounted) return;
+
+      if (faceCheck['hasFace'] != true) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            backgroundColor: Theme.of(context).cardColor,
+            title: const Row(
+              children: [
+                Icon(Icons.no_accounts_rounded, color: Colors.redAccent, size: 28),
+                SizedBox(width: 10),
+                Text('No Face Detected', style: TextStyle(fontWeight: FontWeight.bold)),
+              ],
+            ),
+            content: Text(
+              faceCheck['message'] ?? 'No human face detected in this photo. Please upload a clear photo of yourself (photos of bottles, objects, or scenery are not allowed).',
+              style: const TextStyle(fontSize: 14),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('CHOOSE ANOTHER PHOTO', style: TextStyle(color: LunaraTheme.primaryRich, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
       setState(() {
-        _isProcessing = false;
         _photos[index] = image.path;
       });
 

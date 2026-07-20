@@ -553,5 +553,50 @@ export const mobileVerifyFace = async (req: Request, res: Response): Promise<Res
     }
 };
 
-export default { mobileSendOTP, mobileVerifyOTP, mobileRegister, mobileForgotPassword, mobileResetPassword, mobileLogout, mobileCheckEmail, mobileVerifyFace };
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/auth/detect-face
+// Single image human face detection
+// ─────────────────────────────────────────────────────────────────────────────
+export const mobileDetectFace = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { image } = req.body;
+
+        if (!image) {
+            return res.status(400).json({
+                success: false,
+                hasFace: false,
+                message: 'No image provided for face detection',
+            });
+        }
+
+        logger.info('[MobileDetectFace] Detecting human face in photo...');
+        const imageBuf = azureFaceService.parseImageBuffer(image);
+        const result = await azureFaceService.detectFace(imageBuf);
+
+        if (!result.hasFace) {
+            return res.status(400).json({
+                success: false,
+                hasFace: false,
+                faceCount: result.faceCount,
+                message: result.message || 'No human face detected in photo. Please upload a clear photo of yourself.',
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            hasFace: true,
+            faceCount: result.faceCount,
+            message: result.message || 'Human face detected successfully',
+        });
+    } catch (error: any) {
+        logger.error('[MobileDetectFace] Error:', error);
+        return res.status(500).json({
+            success: false,
+            hasFace: false,
+            message: error.message || 'Face detection service error',
+        });
+    }
+};
+
+export default { mobileSendOTP, mobileVerifyOTP, mobileRegister, mobileForgotPassword, mobileResetPassword, mobileLogout, mobileCheckEmail, mobileVerifyFace, mobileDetectFace };
 
