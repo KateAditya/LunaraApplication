@@ -9,7 +9,7 @@ import { AMENITY_CONFIG, CATEGORY_CONFIG } from '../types/venue';
 import { toast } from 'react-hot-toast';
 import { ImageCropModal } from './ImageCropModal';
 import { fileToDataUrl, validateImageFile } from '../utils/cropUtils';
-import { processImageFiles, processVideoFiles } from '../utils/mediaValidation';
+import { compressImageIfNeeded, processImageFiles, processVideoFiles } from '../utils/mediaValidation';
 
 interface VenueFormProps {
     venue?: Venue | null;
