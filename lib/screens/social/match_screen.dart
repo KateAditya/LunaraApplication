@@ -6,6 +6,7 @@ import 'match_settings_screen.dart';
 import 'matched_profiles_screen.dart';
 import '../../models/user.dart';
 import '../../services/api_service.dart';
+import '../../widgets/subscription_limit_dialog.dart';
 
 class MatchScreen extends StatefulWidget {
   const MatchScreen({super.key});
@@ -236,6 +237,20 @@ class _MatchScreenState extends State<MatchScreen>
       res,
     ) {
       if (res != null) {
+        if (res['limitReached'] == true) {
+          if (mounted) {
+            setState(() {
+              _profiles.insert(0, swiped);
+            });
+            showSubscriptionLimitDialog(
+              context,
+              feature: action == 'superlike' ? SubLimitFeature.superLike : SubLimitFeature.dailyLikes,
+              customMessage: res['message'],
+            );
+          }
+          return;
+        }
+
         final bool matched = res['matched'] == true;
         if (matched) {
           if (mounted) {

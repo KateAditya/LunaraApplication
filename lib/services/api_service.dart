@@ -550,6 +550,15 @@ class ApiService {
         if (data['success'] == true) {
           return Map<String, dynamic>.from(data);
         }
+      } else if (response.statusCode == 403) {
+        // Subscription limit reached or feature not available
+        final data = jsonDecode(response.body);
+        return {
+          'limitReached': true,
+          'code': data['code'] ?? 'LIMIT_REACHED',
+          'message': data['message'] ?? 'Upgrade to Lunara VIP to continue.',
+          'action': action,
+        };
       }
       return null;
     } catch (e) {

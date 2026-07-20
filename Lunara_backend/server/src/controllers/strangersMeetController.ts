@@ -17,6 +17,7 @@ import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import { validateVenueTimingAndHolidays } from '../utils/venueValidator';
 import { checkExistingBookingForDate } from '../utils/bookingLimitValidator';
+import { generateTicketForStrangersMeetHelper } from '../services/ticketService';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -137,6 +138,7 @@ function formatRequest(r: StrangersMeetRequest) {
         alternateMobileNumber: r.alternateMobileNumber ?? null,
         adminNotes: r.adminNotes ?? null,
         ticketId: r.ticketId ?? null,
+        ticketUrl: r.ticketUrl ?? null,
         settlementStatus: r.settlementStatus || 'none',
         bankDetails: r.bankDetails ?? null,
         // v2 structured bank fields
@@ -273,6 +275,18 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
         // Verify user
         const user = await User.findByPk(userId, { attributes: USER_ATTRS });
         if (!user) { res.status(404).json({ success: false, message: 'User not found' }); return; }
+
+        // Check user subscription permissions
+        const SubscriptionService = require('../services/subscriptionService').default || require('../services/subscriptionService').SubscriptionService;
+        const hasAccess = await SubscriptionService.hasAccess(userId, 'stranger_meet');
+        if (!hasAccess) {
+            res.status(403).json({
+                success: false,
+                code: 'SUBSCRIPTION_REQUIRED',
+                message: 'Stranger Meet access is a premium feature. Please upgrade your subscription plan to request Stranger Meets!'
+            });
+            return;
+        }
 
         const finalMobileNumber = mobileNumber?.trim() || user.phone?.trim() || '';
         if (!finalMobileNumber) {
@@ -522,6 +536,15 @@ export const confirmPayment = async (req: Request, res: Response): Promise<void>
                 ticketId,
                 razorpayPaymentId: razorpay_payment_id,
                 razorpaySignature: razorpay_signature,
+            });
+
+            // Generate digital ticket in background
+            setImmediate(async () => {
+                try {
+                    await generateTicketForStrangersMeetHelper(request.id);
+                } catch (ticketErr) {
+                    logger.error(`Background ticket generation failed for StrangersMeetRequest ${request.id}:`, ticketErr);
+                }
             });
 
             // Send notification to host that the meet is now published and notify users in the same city

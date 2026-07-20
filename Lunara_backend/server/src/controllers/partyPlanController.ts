@@ -19,6 +19,7 @@ import { validateVenueTimingAndHolidays } from '../utils/venueValidator';
 import { checkExistingBookingForDate } from '../utils/bookingLimitValidator';
 import Booking, { BookingStatus, GoingMode, PaymentStatus as BookingPaymentStatus } from '../models/Booking';
 import Payment, { PaymentMethod, PaymentStatus } from '../models/Payment';
+import { generateTicketForBookingHelper } from '../services/ticketService';
 
 async function autoOpenChat(hostId: string, joinerId: string) {
     try {
@@ -152,6 +153,15 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
             goingMode: GoingMode.PARTY_REQUEST,
             ticketCode,
             specialRequests: ticketMetadata,
+        });
+
+        // Generate digital ticket in background
+        setImmediate(async () => {
+            try {
+                await generateTicketForBookingHelper(booking.id);
+            } catch (ticketErr) {
+                logger.error(`Background ticket generation failed for matched party booking ${booking.id}:`, ticketErr);
+            }
         });
 
         // Create Payment record for Host
@@ -339,6 +349,18 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
         });
         if (!user) {
             res.status(404).json({ success: false, message: 'User not found' });
+            return;
+        }
+
+        // Check user subscription permissions
+        const SubscriptionService = require('../services/subscriptionService').default || require('../services/subscriptionService').SubscriptionService;
+        const hasAccess = await SubscriptionService.hasAccess(userId, 'party_creation');
+        if (!hasAccess) {
+            res.status(403).json({
+                success: false,
+                code: 'SUBSCRIPTION_REQUIRED',
+                message: 'Party creation is a premium feature. Please upgrade your subscription plan to create party plans!'
+            });
             return;
         }
 

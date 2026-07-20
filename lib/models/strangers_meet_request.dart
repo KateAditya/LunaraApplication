@@ -11,6 +11,7 @@ class StrangersMeetRequest {
   final String paymentStatus;
   final String? adminNotes;
   final String? ticketId;
+  final String? ticketUrl;
   final DateTime? createdAt;
   final String? mobileNumber;
   final String? alternateMobileNumber;
@@ -56,6 +57,7 @@ class StrangersMeetRequest {
     required this.paymentStatus,
     this.adminNotes,
     this.ticketId,
+    this.ticketUrl,
     this.createdAt,
     this.mobileNumber,
     this.alternateMobileNumber,
@@ -114,6 +116,7 @@ class StrangersMeetRequest {
       paymentStatus: paymentStatusRaw ?? 'unpaid',
       adminNotes: json['adminNotes'] ?? json['admin_notes'],
       ticketId: json['ticketId'] ?? json['ticket_id'],
+      ticketUrl: json['ticketUrl'] ?? json['ticket_url'],
       createdAt: (json['createdAt'] ?? json['created_at']) != null
           ? DateTime.parse(json['createdAt'] ?? json['created_at']).toLocal()
           : null,

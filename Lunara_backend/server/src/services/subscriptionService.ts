@@ -127,6 +127,10 @@ export class SubscriptionService {
                         });
                     }
                 }
+                // Add fallback for stranger_meet and party_creation: enabled for all non-FREE plans!
+                const isPremium = plan.tier !== 'FREE';
+                features.set('stranger_meet', { enabled: isPremium });
+                features.set('party_creation', { enabled: isPremium });
             }
         } else {
             // Seed programmatical defaults for free/unsubscribed users

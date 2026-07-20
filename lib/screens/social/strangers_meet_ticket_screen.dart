@@ -483,6 +483,33 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
 
               const SizedBox(height: 40),
 
+              if (widget.request.ticketUrl != null && widget.request.ticketUrl!.isNotEmpty) ...[
+                SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      final pdfUri = Uri.parse(widget.request.ticketUrl!);
+                      if (await canLaunchUrl(pdfUri)) {
+                        await launchUrl(pdfUri, mode: LaunchMode.externalApplication);
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Could not open the PDF URL.')),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.download_rounded, color: Colors.white),
+                    label: const Text('DOWNLOAD PDF TICKET', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: LunaraTheme.electricViolet,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      elevation: 5,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
               SizedBox(
                 width: double.infinity,
                 height: 56,

@@ -61,6 +61,7 @@ export interface BookingAttributes {
     tablePackage?: string;
     paymentMode?: BookingPaymentMode;
     ticketCode?: string;
+    ticketUrl?: string;
     addedToWallet?: boolean;
     // Large party request fields
     partySubject?: string;
@@ -96,6 +97,7 @@ export interface BookingCreationAttributes
         | 'tablePackage'
         | 'paymentMode'
         | 'ticketCode'
+        | 'ticketUrl'
         | 'addedToWallet'
         | 'partySubject'
         | 'partyRequirement'
@@ -134,6 +136,7 @@ class Booking extends Model<BookingAttributes, BookingCreationAttributes> implem
     public tablePackage?: string;
     public paymentMode?: BookingPaymentMode;
     public ticketCode?: string;
+    public ticketUrl?: string;
     public addedToWallet?: boolean;
     // Large party request
     public partySubject?: string;
@@ -303,6 +306,11 @@ Booking.init(
             allowNull: true,
             unique: true,
             field: 'ticket_code',
+        },
+        ticketUrl: {
+            type: DataTypes.STRING(500),
+            allowNull: true,
+            field: 'ticket_url',
         },
         addedToWallet: {
             type: DataTypes.BOOLEAN,

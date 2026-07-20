@@ -5,6 +5,7 @@ import '../../services/api_service.dart';
 import '../../widgets/bumble_swipe_widget.dart';
 import 'profile_detail_view.dart';
 import 'vip_membership_screen.dart';
+import '../../widgets/subscription_limit_dialog.dart';
 
 class ProfileScreen extends StatefulWidget {
   final User? user;
@@ -457,52 +458,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _showLimitReachedSnack() {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 80),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        backgroundColor: Colors.red[700],
-        duration: const Duration(seconds: 3),
-        content: Row(
-          children: [
-            const Icon(Icons.lock, color: Colors.white, size: 18),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                "You've reached your daily like limit ($_dailyLikesLimit). Upgrade your plan for more likes!",
-                style: const TextStyle(color: Colors.white, fontSize: 13),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    showSubscriptionLimitDialog(context, feature: SubLimitFeature.dailyLikes);
   }
 
   void _showSuperLikeLimitSnack() {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 80),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        backgroundColor: Colors.purple[700],
-        duration: const Duration(seconds: 3),
-        content: const Row(
-          children: [
-            Icon(Icons.star_border, color: Colors.white, size: 18),
-            SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                "No Super Likes remaining. Upgrade your plan to get more!",
-                style: TextStyle(color: Colors.white, fontSize: 13),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    showSubscriptionLimitDialog(context, feature: SubLimitFeature.superLike);
   }
 
   void _showMatchDialog(User matchUser) {
@@ -602,108 +563,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _showBacktrackUpgradePrompt() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) => Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFF140C26),
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(30),
-            topRight: Radius.circular(30),
-          ),
-          border: Border(
-            top: BorderSide(color: Color(0xFF7F00FF), width: 1.5),
-          ),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 50,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 24),
-            const Icon(
-              Icons.history,
-              size: 70,
-              color: Color(0xFF7F00FF),
-            ),
-            const SizedBox(height: 24),
-            const Text(
-              "Out of Backtracks! ⚡",
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              "You've reached your daily backtrack limit of 3. Upgrade your subscription to VIP to get unlimited backtracks and see previous profiles!",
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white70,
-                fontSize: 14,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 32),
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF7F00FF),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  elevation: 8,
-                ),
-                onPressed: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const VIPMembershipScreen(),
-                    ),
-                  ).then((_) {
-                    _loadPlanLimits();
-                  });
-                },
-                child: const Text(
-                  "GET VIP MEMBERSHIP",
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text(
-                "Maybe Later",
-                style: TextStyle(
-                  color: Colors.white38,
-                  fontSize: 14,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    if (!mounted) return;
+    showSubscriptionLimitDialog(context, feature: SubLimitFeature.backtrack).then((_) {
+      _loadPlanLimits();
+    });
   }
 
   void _undoLastSwipe() {

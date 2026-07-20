@@ -1028,6 +1028,43 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
             }
         }
 
+        // 1.5 Enforce subscription limit checks for Like / Superlike
+        if (action === 'like') {
+            const SubscriptionService = require('../services/subscriptionService').default || require('../services/subscriptionService').SubscriptionService;
+            const consume = await SubscriptionService.consumeUsage(userId, 'daily_likes');
+            if (!consume.success) {
+                return res.status(403).json({
+                    success: false,
+                    code: 'LIMIT_REACHED',
+                    message: consume.message || 'You have reached your daily likes limit. Upgrade to Lunara VIP for unlimited likes!'
+                });
+            }
+        } else if (action === 'superlike') {
+            const activeSub = await UserSubscription.findOne({
+                where: {
+                    userId,
+                    status: 'active',
+                    endDate: { [Op.gt]: new Date() },
+                },
+                include: [{ model: SubscriptionPackage, as: 'package' }],
+                order: [['createdAt', 'DESC']],
+            });
+
+            if (!activeSub || activeSub.superlikesRemaining <= 0) {
+                return res.status(403).json({
+                    success: false,
+                    code: 'LIMIT_REACHED',
+                    message: 'You have no super likes remaining. Upgrade your plan or purchase more super likes!'
+                });
+            }
+
+            // Consume/decrement superlike credit if not unlimited (unlimited is >= 9999)
+            if (activeSub.superlikesRemaining < 9999) {
+                activeSub.superlikesRemaining = activeSub.superlikesRemaining - 1;
+                await activeSub.save();
+            }
+        }
+
         // 2. If action is nope (declining/ignoring)
         if (action === 'nope') {
             if (existingMySwipe) {
