@@ -284,8 +284,28 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
     }
     if (_currentUser.smokingPreference != null &&
         _currentUser.smokingPreference!.isNotEmpty) {
+      final smokeVal = _currentUser.smokingPreference!.toUpperCase();
+      final isNonSmoker = smokeVal.contains('NON') || smokeVal == 'NEVER' || smokeVal == 'NO';
+      final IconData smokeIcon = isNonSmoker
+          ? Icons.smoke_free_rounded
+          : Icons.smoking_rooms_rounded;
+
       prefRows.add(
-        _buildInfoRow(Icons.smoke_free_rounded, _currentUser.smokingPreference!),
+        _buildInfoRow(smokeIcon, _currentUser.smokingPreference!),
+      );
+    }
+    if (_currentUser.drinkPreference.isNotEmpty) {
+      final drinkVal = _currentUser.drinkPreference.join(', ').toUpperCase();
+      final isNonDrinker = drinkVal.contains('NEVER') || drinkVal == 'NO' || drinkVal.contains('NON');
+      final IconData drinkIcon = isNonDrinker
+          ? Icons.no_drinks_rounded
+          : Icons.local_bar_rounded;
+
+      prefRows.add(
+        _buildInfoRow(
+          drinkIcon,
+          'Drinking: ${_currentUser.drinkPreference.join(", ")}',
+        ),
       );
     }
     if (_currentUser.budgetRange != null &&

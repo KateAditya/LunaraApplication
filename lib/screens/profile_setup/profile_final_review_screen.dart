@@ -79,9 +79,9 @@ class _ProfileFinalReviewScreenState extends State<ProfileFinalReviewScreen>
     if ((d['smokingPreference'] as String?)?.isNotEmpty == true) pts += 5;
     if ((d['drinkPreference']) != null) pts += 5;
 
-    // Professional (10 pts)
+    // Professional & Location (10 pts)
     if ((d['occupation'] as String?)?.isNotEmpty == true) pts += 5;
-    if ((d['education'] as String?)?.isNotEmpty == true) pts += 5;
+    if ((d['city'] as String?)?.isNotEmpty == true || (d['education'] as String?)?.isNotEmpty == true) pts += 5;
 
     // Budget (5 pts)
     if ((d['budgetRange'] as String?)?.isNotEmpty == true) pts += 5;

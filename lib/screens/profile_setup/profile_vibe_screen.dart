@@ -32,14 +32,22 @@ class _ProfileVibeScreenState extends State<ProfileVibeScreen> {
 
   String _smokingHabit = 'NON-SMOKER';
   String _drinkingHabit = 'SOCIALLY';
-  final _educationController = TextEditingController();
+  final _cityController = TextEditingController();
   final _occupationController = TextEditingController();
 
   RangeValues _budgetRange = const RangeValues(2000, 10000);
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.collectedData != null && widget.collectedData!['city'] != null) {
+      _cityController.text = widget.collectedData!['city'].toString();
+    }
+  }
+
+  @override
   void dispose() {
-    _educationController.dispose();
+    _cityController.dispose();
     _occupationController.dispose();
     super.dispose();
   }
@@ -95,7 +103,9 @@ class _ProfileVibeScreenState extends State<ProfileVibeScreen> {
                   options: ['NON-SMOKER', 'SOCIALLY', 'REGULARLY'],
                   currentValue: _smokingHabit,
                   onSelect: (val) => setState(() => _smokingHabit = val),
-                  icon: Icons.smoking_rooms_outlined,
+                  icon: (_smokingHabit == 'SOCIALLY' || _smokingHabit == 'REGULARLY')
+                      ? Icons.smoking_rooms_rounded
+                      : (_smokingHabit == 'NON-SMOKER' ? Icons.smoke_free_rounded : Icons.smoking_rooms_outlined),
                 ),
                 const SizedBox(height: 16),
                 _buildLifestyleSelector(
@@ -103,22 +113,24 @@ class _ProfileVibeScreenState extends State<ProfileVibeScreen> {
                   options: ['NEVER', 'SOCIALLY', 'OFTEN'],
                   currentValue: _drinkingHabit,
                   onSelect: (val) => setState(() => _drinkingHabit = val),
-                  icon: Icons.local_bar_outlined,
+                  icon: (_drinkingHabit == 'SOCIALLY' || _drinkingHabit == 'OFTEN')
+                      ? Icons.local_bar_rounded
+                      : (_drinkingHabit == 'NEVER' ? Icons.no_drinks_rounded : Icons.local_bar_outlined),
                 ),
                 const SizedBox(height: 48),
 
-                // ── Professional Background ───────────────────────────────────
-                _buildInputLabel('PROFESSIONAL BACKGROUND (Optional)'),
+                // ── Professional Background & Location ───────────────────────
+                _buildInputLabel('LOCATION & OCCUPATION (Optional)'),
+                _buildGlassInput(
+                  controller: _cityController,
+                  hint: 'Current City (e.g., Mumbai)',
+                  icon: Icons.location_on_outlined,
+                ),
+                const SizedBox(height: 16),
                 _buildGlassInput(
                   controller: _occupationController,
                   hint: 'What do you do? (e.g., Designer)',
                   icon: Icons.work_outline,
-                ),
-                const SizedBox(height: 16),
-                _buildGlassInput(
-                  controller: _educationController,
-                  hint: 'Where did you study?',
-                  icon: Icons.school_outlined,
                 ),
                 const SizedBox(height: 48),
 
@@ -147,8 +159,8 @@ class _ProfileVibeScreenState extends State<ProfileVibeScreen> {
                     data['musicPreference'] = _selectedGenres.toList();
                     data['smokingPreference'] = _smokingHabit;
                     data['drinkPreference'] = [_drinkingHabit];
+                    data['city'] = _cityController.text.trim();
                     data['occupation'] = _occupationController.text.trim();
-                    data['education'] = _educationController.text.trim();
                     data['budgetRange'] =
                         '${_budgetRange.start.round()}-${_budgetRange.end.round()}';
 
