@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/theme.dart';
 import '../../widgets/glass_card.dart';
 import '../../widgets/action_button.dart';
+import '../../services/api_service.dart';
 import 'profile_details_screen.dart';
 
 class ProfilePhotosScreen extends StatefulWidget {
@@ -321,10 +322,19 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
                                 ),
                                 const SizedBox(height: 16),
                                 Text(
-                                  'Detecting face...',
+                                  'Verifying face with Azure AI...',
                                   style: TextStyle(
                                     color: Colors.white.withValues(alpha: 0.9),
                                     fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Matching selfie against profile photo',
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.7),
+                                    fontSize: 12,
                                   ),
                                 ),
                               ],
@@ -336,42 +346,15 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
                 ),
                 const SizedBox(height: 20),
                 LunaraActionButton(
-                  text: 'CONTINUE',
-                  onPressed: _photoCount >= 2
-                      ? () async {
-                          if (_photos[0] == null || _photos[1] == null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Please upload both a selfie (Slot 1) and a profile photo (Slot 2)',
-                                ),
-                              ),
-                            );
-                            return;
-                          }
-
-                          final data = widget.collectedData != null
-                              ? Map<String, dynamic>.from(widget.collectedData!)
-                              : <String, dynamic>{};
-
-                          data['photos'] = _photos.whereType<String>().toList();
-
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  ProfileDetailsScreen(collectedData: data),
-                            ),
-                          );
-                        }
-                      : null,
+                  text: 'VERIFY & CONTINUE',
+                  onPressed: _photoCount >= 2 ? _handleContinue : null,
                 ),
                 if (_photoCount < 2)
                   Padding(
                     padding: const EdgeInsets.only(top: 10),
                     child: Center(
                       child: Text(
-                        'Add a selfie (slot 1) and profile photo (slot 2) to continue',
+                        'Add a selfie (slot 1) and profile photo (slot 2) for Azure verification',
                         style: TextStyle(
                           color: Theme.of(
                             context,
@@ -388,6 +371,161 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
       ),
     );
   }
+
+  Future<void> _handleContinue() async {
+    if (_photos[0] == null || _photos[1] == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please upload both a selfie (Slot 1) and a profile photo (Slot 2)',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isProcessing = true);
+
+    try {
+      final res = await ApiService.verifyFace(
+        selfiePath: _photos[0]!,
+        profilePhotoPath: _photos[1]!,
+      );
+
+      setState(() => _isProcessing = false);
+
+      if (!mounted) return;
+
+      if (res['verified'] == true) {
+        final double confidencePct = ((res['confidence'] as double? ?? 0.95) * 100);
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            backgroundColor: Theme.of(context).cardColor,
+            title: const Row(
+              children: [
+                Icon(Icons.verified_user_rounded, color: Colors.green, size: 28),
+                SizedBox(width: 10),
+                Text(
+                  'Face Verified',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Azure AI Face Service successfully verified your identity!',
+                  style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.onSurface),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.check_circle_outline, color: Colors.green, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Match Confidence: ${confidencePct.toStringAsFixed(1)}%\nOne-Time Verification Passed ✓',
+                          style: const TextStyle(
+                            color: Colors.green,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  final data = widget.collectedData != null
+                      ? Map<String, dynamic>.from(widget.collectedData!)
+                      : <String, dynamic>{};
+                  data['photos'] = _photos.whereType<String>().toList();
+                  data['isFaceVerified'] = true;
+                  data['faceMatchConfidence'] = res['confidence'];
+
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ProfileDetailsScreen(collectedData: data),
+                    ),
+                  );
+                },
+                child: const Text(
+                  'CONTINUE',
+                  style: TextStyle(
+                    color: LunaraTheme.accentVivid,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      } else {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            backgroundColor: Theme.of(context).cardColor,
+            title: const Row(
+              children: [
+                Icon(Icons.face_unlock_outlined, color: Colors.redAccent, size: 28),
+                SizedBox(width: 10),
+                Text(
+                  'Verification Failed',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            content: Text(
+              res['message'] ?? 'Azure Face Verification failed. Please ensure your selfie matches your profile photo.',
+              style: const TextStyle(fontSize: 14),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text(
+                  'RETRY',
+                  style: TextStyle(
+                    color: LunaraTheme.accentVivid,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _isProcessing = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Verification error: $e'),
+            backgroundColor: LunaraTheme.primaryDeep,
+          ),
+        );
+      }
+    }
+  }
+
 
   Widget _buildHeader() {
     return Row(

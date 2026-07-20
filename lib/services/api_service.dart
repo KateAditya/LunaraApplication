@@ -1,4 +1,4 @@
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, File;
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
@@ -2724,5 +2724,54 @@ class ApiService {
     }
     return null;
   }
+
+  /// One-Time Face Verification via Azure AI Face Service
+  static Future<Map<String, dynamic>> verifyFace({
+    required String selfiePath,
+    required String profilePhotoPath,
+  }) async {
+    try {
+      final File selfieFile = File(selfiePath);
+      final File profileFile = File(profilePhotoPath);
+
+      if (!await selfieFile.exists() || !await profileFile.exists()) {
+        return {
+          'success': false,
+          'verified': false,
+          'message': 'Image files could not be read from device.',
+        };
+      }
+
+      final List<int> selfieBytes = await selfieFile.readAsBytes();
+      final List<int> profileBytes = await profileFile.readAsBytes();
+
+      final String selfieBase64 = base64Encode(selfieBytes);
+      final String profileBase64 = base64Encode(profileBytes);
+
+      final response = await post(
+        '/api/mobile/auth/verify-face',
+        body: {
+          'selfie': selfieBase64,
+          'profilePhoto': profileBase64,
+        },
+      );
+
+      final data = jsonDecode(response.body);
+      return {
+        'success': data['success'] == true,
+        'verified': data['verified'] == true,
+        'confidence': (data['confidence'] ?? 0.0).toDouble(),
+        'message': data['message'] ?? 'Face verification completed',
+      };
+    } catch (e) {
+      debugPrint('verifyFace error: $e');
+      return {
+        'success': false,
+        'verified': false,
+        'message': 'Network error connecting to Azure Face Verification: $e',
+      };
+    }
+  }
 }
+
 

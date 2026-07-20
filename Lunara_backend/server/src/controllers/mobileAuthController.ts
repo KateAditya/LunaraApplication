@@ -6,6 +6,7 @@ import { OTPPurpose } from '../models/OTPVerification';
 import { UserRole } from '../models/User';
 import { generateTokenPair } from '../utils/jwt';
 import { sendVerificationEmail } from '../services/emailService';
+import { azureFaceService } from '../services/azureFaceService';
 import { logger } from '../config/logger';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -507,4 +508,50 @@ export const mobileLogout = async (req: Request, res: Response): Promise<Respons
     }
 };
 
-export default { mobileSendOTP, mobileVerifyOTP, mobileRegister, mobileForgotPassword, mobileResetPassword, mobileLogout, mobileCheckEmail };
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/auth/verify-face
+// One-time face verification via Azure AI Face Service
+// ─────────────────────────────────────────────────────────────────────────────
+export const mobileVerifyFace = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { selfie, profilePhoto } = req.body;
+
+        if (!selfie || !profilePhoto) {
+            return res.status(400).json({
+                success: false,
+                code: 'MISSING_IMAGES',
+                message: 'Both selfie and profilePhoto are required for face verification',
+            });
+        }
+
+        logger.info('[MobileVerifyFace] Initiating Azure AI face verification...');
+        const result = await azureFaceService.performOneTimeVerification(selfie, profilePhoto);
+
+        if (!result.success || !result.verified) {
+            return res.status(400).json({
+                success: false,
+                verified: false,
+                confidence: result.confidence,
+                message: result.message,
+                details: result.details,
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            verified: true,
+            confidence: result.confidence,
+            message: result.message,
+            details: result.details,
+        });
+    } catch (error: any) {
+        logger.error('[MobileVerifyFace] Error during face verification:', error);
+        return res.status(500).json({
+            success: false,
+            message: error.message || 'Face verification service error',
+        });
+    }
+};
+
+export default { mobileSendOTP, mobileVerifyOTP, mobileRegister, mobileForgotPassword, mobileResetPassword, mobileLogout, mobileCheckEmail, mobileVerifyFace };
+

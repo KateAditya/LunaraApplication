@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { mobileRegister, mobileSendOTP, mobileVerifyOTP, mobileForgotPassword, mobileResetPassword, mobileLogout, mobileCheckEmail } from '../controllers/mobileAuthController';
+import { mobileRegister, mobileSendOTP, mobileVerifyOTP, mobileForgotPassword, mobileResetPassword, mobileLogout, mobileCheckEmail, mobileVerifyFace } from '../controllers/mobileAuthController';
 
 const router = Router();
 
@@ -76,6 +76,12 @@ router.post('/reset-password', authLimiter, mobileResetPassword);
  *   500  { success, code, message }              — server error
  */
 router.post('/register', authLimiter, mobileRegister);
+
+/**
+ * POST /api/mobile/auth/verify-face
+ * Perform Azure AI Face verification (Selfie vs Profile Photo)
+ */
+router.post('/verify-face', authLimiter, mobileVerifyFace);
 
 /**
  * POST /api/mobile/auth/logout
