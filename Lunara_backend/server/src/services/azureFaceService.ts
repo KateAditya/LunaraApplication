@@ -12,6 +12,7 @@ export interface FaceVerificationResult {
         profileFaceId?: string;
         isIdentical?: boolean;
         isFallback?: boolean;
+        similarityScore?: number;
     };
 }
 
