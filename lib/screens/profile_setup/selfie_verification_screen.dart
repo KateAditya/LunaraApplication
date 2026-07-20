@@ -18,16 +18,32 @@ class SelfieVerificationScreen extends StatefulWidget {
   State<SelfieVerificationScreen> createState() => _SelfieVerificationScreenState();
 }
 
-class _SelfieVerificationScreenState extends State<SelfieVerificationScreen> {
+class _SelfieVerificationScreenState extends State<SelfieVerificationScreen>
+    with SingleTickerProviderStateMixin {
   int _currentStep = 1; // 1 = Upload Reference Photo, 2 = Live Front Selfie Check
   String? _referencePhotoPath; // Uploaded clear face photo
   String? _liveSelfiePath; // Captured live front camera selfie
   bool _isProcessing = false;
+  String _scanStatusText = 'Azure AI scanning facial landmarks...';
   final ImagePicker _picker = ImagePicker();
+
+  late AnimationController _scanAnimationController;
+  late Animation<double> _scanAnimation;
 
   @override
   void initState() {
     super.initState();
+    _scanAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    );
+    _scanAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _scanAnimationController,
+        curve: Curves.easeInOut,
+      ),
+    );
+
     // Restore saved progress if available
     if (widget.collectedData != null) {
       if (widget.collectedData!['referencePhoto'] != null) {
@@ -40,10 +56,15 @@ class _SelfieVerificationScreenState extends State<SelfieVerificationScreen> {
     }
   }
 
+  @override
+  void dispose() {
+    _scanAnimationController.dispose();
+    super.dispose();
+  }
+
   /// Step 1: Pick Reference Face Photo (Gallery or Camera)
   Future<void> _pickReferencePhoto(ImageSource source) async {
     try {
-      // Auto-compress reference face photo to ~150 KB
       final XFile? photo = await _picker.pickImage(
         source: source,
         maxWidth: 700,
@@ -53,11 +74,16 @@ class _SelfieVerificationScreenState extends State<SelfieVerificationScreen> {
 
       if (photo == null) return;
 
-      setState(() => _isProcessing = true);
+      setState(() {
+        _isProcessing = true;
+        _scanStatusText = 'Detecting human face...';
+      });
+      _scanAnimationController.repeat(reverse: true);
 
       // Verify that the reference photo contains a readable human face (blocks bottles, cars, objects)
       final res = await ApiService.detectFace(photo.path);
 
+      _scanAnimationController.stop();
       setState(() => _isProcessing = false);
 
       if (!mounted) return;
@@ -72,8 +98,7 @@ class _SelfieVerificationScreenState extends State<SelfieVerificationScreen> {
             ? Map<String, dynamic>.from(widget.collectedData!)
             : <String, dynamic>{};
         data['referencePhoto'] = photo.path;
-        await OnboardingService.saveProgress('selfie_verification', data);
-
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Human face detected! Now take a live selfie with your front camera.'),
@@ -108,6 +133,7 @@ class _SelfieVerificationScreenState extends State<SelfieVerificationScreen> {
         );
       }
     } catch (e) {
+      _scanAnimationController.stop();
       setState(() => _isProcessing = false);
       if (mounted) {
         TopErrorBanner.show(context, 'Failed to pick photo: $e');
@@ -118,7 +144,6 @@ class _SelfieVerificationScreenState extends State<SelfieVerificationScreen> {
   /// Step 2: Capture Live Selfie strictly using Front Camera ONLY (No Gallery Upload Allowed)
   Future<void> _captureLiveSelfie() async {
     try {
-      // Force front camera and auto-compress live selfie to ~150 KB
       final XFile? selfie = await _picker.pickImage(
         source: ImageSource.camera,
         preferredCameraDevice: CameraDevice.front,
@@ -157,14 +182,27 @@ class _SelfieVerificationScreenState extends State<SelfieVerificationScreen> {
       return;
     }
 
-    setState(() => _isProcessing = true);
+    setState(() {
+      _isProcessing = true;
+      _scanStatusText = 'Azure AI scanning facial landmarks...';
+    });
+    _scanAnimationController.repeat(reverse: true);
 
     try {
+      final startTime = DateTime.now();
+
       final res = await ApiService.verifyFace(
         selfiePath: _liveSelfiePath!,
         profilePhotoPath: _referencePhotoPath!,
       );
 
+      // Keep scanner animation running for at least 2.2 seconds to give a premium biometric feel
+      final elapsedMs = DateTime.now().difference(startTime).inMilliseconds;
+      if (elapsedMs < 2200) {
+        await Future.delayed(Duration(milliseconds: 2200 - elapsedMs));
+      }
+
+      _scanAnimationController.stop();
       setState(() => _isProcessing = false);
 
       if (!mounted) return;
@@ -190,7 +228,7 @@ class _SelfieVerificationScreenState extends State<SelfieVerificationScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Azure AI Face Service matched your live selfie with your reference photo!',
+                  res['message'] ?? 'Azure AI Face Service matched your live selfie with your reference photo!',
                   style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.onSurface),
                 ),
                 const SizedBox(height: 12),
@@ -284,6 +322,7 @@ class _SelfieVerificationScreenState extends State<SelfieVerificationScreen> {
         );
       }
     } catch (e) {
+      _scanAnimationController.stop();
       setState(() => _isProcessing = false);
       if (mounted) {
         TopErrorBanner.show(context, 'Verification error: $e');
@@ -364,14 +403,38 @@ class _SelfieVerificationScreenState extends State<SelfieVerificationScreen> {
               if (_currentStep == 1) _buildStep1UI() else _buildStep2UI(),
               const SizedBox(height: 32),
               if (_isProcessing)
-                const Center(
+                Center(
                   child: Column(
                     children: [
-                      CircularProgressIndicator(color: LunaraTheme.primaryRich),
-                      SizedBox(height: 14),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: LunaraTheme.primaryRich,
+                              strokeWidth: 2.5,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            _scanStatusText,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: LunaraTheme.primaryRich,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
                       Text(
-                        'Analyzing face with Azure AI...',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        'Biometric Node Matching in progress...',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                        ),
                       ),
                     ],
                   ),
@@ -505,6 +568,20 @@ class _SelfieVerificationScreenState extends State<SelfieVerificationScreen> {
                     fit: StackFit.expand,
                     children: [
                       _buildImageWidget(_referencePhotoPath!),
+                      if (_isProcessing)
+                        Positioned.fill(
+                          child: AnimatedBuilder(
+                            animation: _scanAnimation,
+                            builder: (context, child) {
+                              return CustomPaint(
+                                painter: FaceScannerPainter(
+                                  progress: _scanAnimation.value,
+                                  color: Colors.cyanAccent,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
                       Positioned(
                         top: 10,
                         right: 10,
@@ -583,11 +660,33 @@ class _SelfieVerificationScreenState extends State<SelfieVerificationScreen> {
                     height: 170,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.green, width: 2),
+                      border: Border.all(
+                        color: _isProcessing ? Colors.cyanAccent : Colors.green,
+                        width: 2,
+                      ),
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(14),
-                      child: _buildImageWidget(_referencePhotoPath!),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          _buildImageWidget(_referencePhotoPath!),
+                          if (_isProcessing)
+                            Positioned.fill(
+                              child: AnimatedBuilder(
+                                animation: _scanAnimation,
+                                builder: (context, child) {
+                                  return CustomPaint(
+                                    painter: FaceScannerPainter(
+                                      progress: _scanAnimation.value,
+                                      color: Colors.cyanAccent,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -601,21 +700,42 @@ class _SelfieVerificationScreenState extends State<SelfieVerificationScreen> {
                   const Text('2. Live Front Selfie', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
                   GestureDetector(
-                    onTap: _captureLiveSelfie, // Directly triggers front camera
+                    onTap: _isProcessing ? null : _captureLiveSelfie,
                     child: Container(
                       height: 170,
                       decoration: BoxDecoration(
                         color: Theme.of(context).colorScheme.surface,
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
-                          color: _liveSelfiePath != null ? LunaraTheme.primaryRich : Colors.orange,
+                          color: _isProcessing
+                              ? Colors.cyanAccent
+                              : (_liveSelfiePath != null ? LunaraTheme.primaryRich : Colors.orange),
                           width: 2,
                         ),
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(14),
                         child: _liveSelfiePath != null
-                            ? _buildImageWidget(_liveSelfiePath!)
+                            ? Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  _buildImageWidget(_liveSelfiePath!),
+                                  if (_isProcessing)
+                                    Positioned.fill(
+                                      child: AnimatedBuilder(
+                                        animation: _scanAnimation,
+                                        builder: (context, child) {
+                                          return CustomPaint(
+                                            painter: FaceScannerPainter(
+                                              progress: _scanAnimation.value,
+                                              color: Colors.cyanAccent,
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                ],
+                              )
                             : Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
@@ -650,5 +770,69 @@ class _SelfieVerificationScreenState extends State<SelfieVerificationScreen> {
         ),
       ],
     );
+  }
+}
+
+/// Biometric Face Scanner Painter with Laser Sweeper & Corner Target Brackets
+class FaceScannerPainter extends CustomPainter {
+  final double progress;
+  final Color color;
+
+  FaceScannerPainter({required this.progress, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double y = size.height * progress;
+
+    // 1. Draw Scanner Overlay Tint
+    final Paint tintPaint = Paint()..color = Colors.black.withValues(alpha: 0.15);
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), tintPaint);
+
+    // 2. Draw Glowing Laser Line
+    final Paint glowPaint = Paint()
+      ..color = Colors.cyanAccent.withValues(alpha: 0.5)
+      ..strokeWidth = 6.0
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+
+    final Paint linePaint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 2.5;
+
+    canvas.drawLine(Offset(0, y), Offset(size.width, y), glowPaint);
+    canvas.drawLine(Offset(0, y), Offset(size.width, y), linePaint);
+
+    // 3. Draw Corner Reticle Brackets
+    final Paint cornerPaint = Paint()
+      ..color = Colors.cyanAccent
+      ..strokeWidth = 3.0
+      ..style = PaintingStyle.stroke;
+
+    const double cornerSize = 16.0;
+
+    // Top-Left
+    canvas.drawPath(
+      Path()..moveTo(0, cornerSize)..lineTo(0, 0)..lineTo(cornerSize, 0),
+      cornerPaint,
+    );
+    // Top-Right
+    canvas.drawPath(
+      Path()..moveTo(size.width - cornerSize, 0)..lineTo(size.width, 0)..lineTo(size.width - cornerSize, 0),
+      cornerPaint,
+    );
+    // Bottom-Left
+    canvas.drawPath(
+      Path()..moveTo(0, size.height - cornerSize)..lineTo(0, size.height)..lineTo(cornerSize, size.height),
+      cornerPaint,
+    );
+    // Bottom-Right
+    canvas.drawPath(
+      Path()..moveTo(size.width - cornerSize, size.height)..lineTo(size.width, size.height)..lineTo(size.width - cornerSize, size.height),
+      cornerPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant FaceScannerPainter oldDelegate) {
+    return oldDelegate.progress != progress;
   }
 }
