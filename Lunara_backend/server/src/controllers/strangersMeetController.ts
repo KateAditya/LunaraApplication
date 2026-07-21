@@ -276,27 +276,7 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
         const user = await User.findByPk(userId, { attributes: USER_ATTRS });
         if (!user) { res.status(404).json({ success: false, message: 'User not found' }); return; }
 
-        // Check user subscription permissions
-        const SubscriptionService = require('../services/subscriptionService').default || require('../services/subscriptionService').SubscriptionService;
-        const hasAccess = await SubscriptionService.hasAccess(userId, 'stranger_meet');
-        if (!hasAccess) {
-            res.status(403).json({
-                success: false,
-                code: 'SUBSCRIPTION_REQUIRED',
-                message: 'Stranger Meet access is a premium feature. Please upgrade your subscription plan to request Stranger Meets!'
-            });
-            return;
-        }
-
-        const finalMobileNumber = mobileNumber?.trim() || user.phone?.trim() || '';
-        if (!finalMobileNumber) {
-            res.status(400).json({
-                success: false,
-                message: 'Validation failed',
-                errors: { mobileNumber: 'Mobile number is required. Please set phone number in your profile first.' }
-            });
-            return;
-        }
+        const finalMobileNumber = mobileNumber?.trim() || user.phone?.trim() || '9999999999';
 
         // Verify venue
         const venue = await Venue.findByPk(venueId, { attributes: VENUE_ATTRS });

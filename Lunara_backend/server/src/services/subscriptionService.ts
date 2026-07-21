@@ -127,10 +127,9 @@ export class SubscriptionService {
                         });
                     }
                 }
-                // Add fallback for stranger_meet and party_creation: enabled for all non-FREE plans!
-                const isPremium = plan.tier !== 'FREE';
-                features.set('stranger_meet', { enabled: isPremium });
-                features.set('party_creation', { enabled: isPremium });
+                // Enable stranger_meet and party_creation for ALL users
+                features.set('stranger_meet', { enabled: true, value: 'unlimited' });
+                features.set('party_creation', { enabled: true, value: 'unlimited' });
             }
         } else {
             // Seed programmatical defaults for free/unsubscribed users
@@ -140,6 +139,8 @@ export class SubscriptionService {
             features.set('daily_backtracks', { enabled: true, value: 3 });
             features.set('super_likes', { enabled: false, value: 0 });
             features.set('boosts', { enabled: false, value: 0 });
+            features.set('stranger_meet', { enabled: true, value: 'unlimited' });
+            features.set('party_creation', { enabled: true, value: 'unlimited' });
         }
 
         const entry: CacheEntry = {
@@ -168,6 +169,9 @@ export class SubscriptionService {
      * Returns true even for unlimited-value numeric features.
      */
     static async hasAccess(userId: string, featureKey: string): Promise<boolean> {
+        if (featureKey === 'party_creation' || featureKey === 'stranger_meet') {
+            return true;
+        }
         try {
             const entry = (await this.getFromCache(userId)) || (await this.buildCache(userId));
             const featureValue = entry.features.get(featureKey);

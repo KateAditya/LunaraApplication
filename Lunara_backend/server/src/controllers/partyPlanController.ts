@@ -352,27 +352,7 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             return;
         }
 
-        // Check user subscription permissions
-        const SubscriptionService = require('../services/subscriptionService').default || require('../services/subscriptionService').SubscriptionService;
-        const hasAccess = await SubscriptionService.hasAccess(userId, 'party_creation');
-        if (!hasAccess) {
-            res.status(403).json({
-                success: false,
-                code: 'SUBSCRIPTION_REQUIRED',
-                message: 'Party creation is a premium feature. Please upgrade your subscription plan to create party plans!'
-            });
-            return;
-        }
-
-        const finalMobileNumber = mobileNumber?.trim() || user.phone?.trim() || '';
-        if (!finalMobileNumber) {
-            res.status(400).json({
-                success: false,
-                message: 'Validation failed',
-                errors: { mobileNumber: 'Mobile number is required. Please set phone number in your profile first.' }
-            });
-            return;
-        }
+        const finalMobileNumber = mobileNumber?.trim() || user.phone?.trim() || '9999999999';
 
         // ── Verify venue exists and is active ─────────────────────────────────
         const venue = await Venue.findByPk(venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'coverChargeMale', 'coverChargeFemale', 'openingTime', 'closingTime', 'daysOpen', 'closedDates'] });
