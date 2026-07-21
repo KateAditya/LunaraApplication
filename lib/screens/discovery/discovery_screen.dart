@@ -18,6 +18,7 @@ import 'all_users_screen.dart';
 import '../social/post_detail_screen.dart';
 import '../social/chat_screen.dart';
 import '../profile/profile_screen.dart';
+import '../profile/edit_profile_screen.dart';
 import '../profile/lunara_wallet_screen.dart';
 import '../../services/app_tour_service.dart';
 import '../../widgets/vip_upgrade_button.dart';
@@ -471,13 +472,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   int _calculateProfileCompletion() {
     if (_currentUser == null) return 0;
-    int points = 0;
-    if ((_currentUser?.firstName ?? '').isNotEmpty) points += 20;
-    if ((_currentUser?.bio ?? '').isNotEmpty) points += 20;
-    if ((_currentUser?.gender ?? '').isNotEmpty) points += 20;
-    if (_currentUser?.profilePhoto != null && _currentUser!.profilePhoto!.isNotEmpty) points += 20;
-    if (_currentUser?.isVerified == true || (_currentUser?.photos ?? []).isNotEmpty) points += 20;
-    return points;
+    return _currentUser!.profileCompletionPercentage;
   }
 
   Widget _buildProfileCompletionCard() {
@@ -491,6 +486,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     if (percentage >= 100) {
       return const SizedBox.shrink();
     }
+
+    final missingFields = _currentUser!.incompleteFields;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -582,18 +579,86 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               ),
             ),
           ),
+          if (missingFields.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Details to fill:',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Colors.black54,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: missingFields.map((field) {
+                return GestureDetector(
+                  onTap: () {
+                    if (_currentUser != null) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => EditProfileScreen(user: _currentUser!),
+                        ),
+                      ).then((_) => _loadVenues());
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.add_circle_outline_rounded,
+                          size: 13,
+                          color: LunaraTheme.electricViolet,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          field,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: LunaraTheme.electricViolet,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
           const SizedBox(height: 14),
           SizedBox(
             width: double.infinity,
             height: 40,
             child: ElevatedButton(
               onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const ProfileScreen(),
-                  ),
-                ).then((_) => _loadVenues());
+                if (_currentUser != null) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => EditProfileScreen(user: _currentUser!),
+                    ),
+                  ).then((_) => _loadVenues());
+                } else {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const ProfileScreen(),
+                    ),
+                  ).then((_) => _loadVenues());
+                }
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: LunaraTheme.electricViolet,

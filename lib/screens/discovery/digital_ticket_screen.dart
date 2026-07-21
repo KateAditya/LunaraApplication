@@ -328,13 +328,15 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
       cleanTimeStr = parts[1].trim();
     }
 
+    final ticketUrl = widget.ticketUrl;
     final shareText = 'My Digital Ticket on Lunara is Confirmed! 🥳\n\n'
         'Venue: $venueName\n'
         'Date: $cleanDateStr • $cleanTimeStr\n'
         'Table: $tableStr\n'
         'Guests: $guestsStr\n'
-        'Ticket ID: $ticketIdStr\n\n'
-        'Let\'s vibe together! 💜';
+        'Ticket ID: $ticketIdStr\n'
+        '${ticketUrl != null && ticketUrl.isNotEmpty ? "Official Ticket Pass: $ticketUrl\n" : ""}'
+        '\nLet\'s vibe together! 💜';
 
     final box = context.findRenderObject() as RenderBox?;
     Share.share(

@@ -42,19 +42,7 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
 
   int _calculateCompletion() {
     if (_currentUser == null) return 0;
-    int completed = 0;
-    int total = 8;
-    
-    if (_currentUser!.firstName.trim().isNotEmpty) completed++;
-    if (_currentUser!.lastName.trim().isNotEmpty) completed++;
-    if (_currentUser!.email.trim().isNotEmpty) completed++;
-    if (_currentUser!.phone.trim().isNotEmpty) completed++;
-    if (_currentUser!.profilePhoto != null && _currentUser!.profilePhoto!.isNotEmpty) completed++;
-    if (_currentUser!.bio != null && _currentUser!.bio!.isNotEmpty) completed++;
-    if (_currentUser!.city != null && _currentUser!.city!.isNotEmpty) completed++;
-    if (_currentUser!.gender != null && _currentUser!.gender!.isNotEmpty) completed++;
-    
-    return ((completed / total) * 100).round();
+    return _currentUser!.profileCompletionPercentage;
   }
 
   @override
@@ -170,6 +158,7 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
                   Builder(
                     builder: (context) {
                       final completion = _calculateCompletion();
+                      final missing = _currentUser?.incompleteFields ?? [];
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -205,6 +194,17 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
                               valueColor: const AlwaysStoppedAnimation<Color>(LunaraTheme.electricViolet),
                             ),
                           ),
+                          if (missing.isNotEmpty && completion < 100) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              'Missing: ${missing.take(3).join(", ")}${missing.length > 3 ? "..." : ""}',
+                              style: const TextStyle(
+                                color: Colors.deepOrangeAccent,
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ],
                       );
                     }

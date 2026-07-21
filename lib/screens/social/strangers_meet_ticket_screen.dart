@@ -87,6 +87,7 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
     final joinerName = '${joinerUser['firstName'] ?? ''} ${joinerUser['lastName'] ?? ''}'.trim();
     final cleanJoinerName = joinerName.isNotEmpty ? joinerName : 'Joiner';
 
+    final ticketUrl = widget.request.ticketUrl;
     final shareText = 'My Strangers Meet Booking on Lunara is Confirmed! 🥳\n\n'
         'Event: ${widget.request.subject}\n'
         'Tagline: ${widget.request.tagline}\n'
@@ -94,8 +95,9 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
         'Date: $dateStr • $timeStr\n'
         'Host: $cleanHostName\n'
         'Joiner: $cleanJoinerName\n'
-        'Ticket ID: $ticketId\n\n'
-        'See you there! 💜';
+        'Ticket ID: $ticketId\n'
+        '${ticketUrl != null && ticketUrl.isNotEmpty ? "Official Ticket Pass: $ticketUrl\n" : ""}'
+        '\nSee you there! 💜';
 
     final box = context.findRenderObject() as RenderBox?;
     Share.share(

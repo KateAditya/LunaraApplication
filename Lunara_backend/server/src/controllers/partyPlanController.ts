@@ -2300,7 +2300,7 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
         const booking = await Booking.findOne({
             where: { goingMode: GoingMode.PARTY_REQUEST, userId: plan.userId, venueId: plan.venueId },
             order: [['createdAt', 'DESC']],
-            attributes: ['id', 'ticketCode', 'specialRequests'],
+            attributes: ['id', 'ticketCode', 'ticketUrl', 'specialRequests'],
         });
 
         res.json({
@@ -2348,6 +2348,7 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
                 },
                 ticketCode: booking?.ticketCode ?? null,
                 bookingId: booking?.id ?? null,
+                ticketUrl: (booking as any)?.ticketUrl ?? null,
             },
         });
     } catch (err: any) {

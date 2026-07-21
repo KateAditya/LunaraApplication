@@ -98,6 +98,33 @@ class User {
   /// Returns true if the user has ELITE tier subscription
   bool get isElite => subscriptionTier.toUpperCase() == 'ELITE';
 
+  /// Returns list of missing or incomplete profile field labels for the user
+  List<String> get incompleteFields {
+    final List<String> list = [];
+    if (firstName.trim().isEmpty || lastName.trim().isEmpty) list.add('Full Name');
+    if (profilePhoto == null || profilePhoto!.trim().isEmpty) list.add('Profile Photo');
+    if (bio == null || bio!.trim().isEmpty) list.add('Bio & About');
+    if (gender == null || gender!.trim().isEmpty) list.add('Gender');
+    if (city == null || city!.trim().isEmpty) list.add('City / Location');
+    if (photos.isEmpty) list.add('Additional Photos');
+    if (occupation == null || occupation!.trim().isEmpty) list.add('Occupation');
+    if (interests.isEmpty) list.add('Interests');
+    return list;
+  }
+
+  /// Calculates overall profile completion percentage (0 to 100)
+  int get profileCompletionPercentage {
+    int score = 0;
+    if (firstName.trim().isNotEmpty && lastName.trim().isNotEmpty) score += 20;
+    if (profilePhoto != null && profilePhoto!.trim().isNotEmpty) score += 20;
+    if (bio != null && bio!.trim().isNotEmpty) score += 15;
+    if (gender != null && gender!.trim().isNotEmpty) score += 15;
+    if (city != null && city!.trim().isNotEmpty) score += 10;
+    if (photos.isNotEmpty) score += 10;
+    if (interests.isNotEmpty) score += 10;
+    return score.clamp(0, 100);
+  }
+
   /// Returns the tier colour for badge / ring rendering
   String get tierColor {
     switch (subscriptionTier.toUpperCase()) {

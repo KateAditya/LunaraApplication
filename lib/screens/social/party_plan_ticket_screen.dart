@@ -37,6 +37,7 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
   Map<String, dynamic>? _freshHostUser;
   Map<String, dynamic>? _freshJoinerUser;
   String? _canonicalTicketCode;
+  String? _ticketUrl;
   bool _isFetchingTicket = false;
 
   @override
@@ -92,6 +93,7 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
             _freshJoinerUser = Map<String, dynamic>.from(requestData['requester']);
           }
           _canonicalTicketCode = data['ticketCode']?.toString();
+          _ticketUrl = data['ticketUrl']?.toString();
         });
       }
     } catch (e) {
@@ -217,14 +219,16 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
     final joinerName = '${joinerUser['firstName'] ?? ''} ${joinerUser['lastName'] ?? ''}'.trim();
     final cleanJoinerName = joinerName.isNotEmpty ? joinerName : 'Joiner';
 
+    final ticketUrl = _ticketUrl ?? widget.request['ticketUrl'] ?? widget.request['ticket_url'];
     final shareText = 'My Party Plan Booking on Lunara is Confirmed! 🥳\n\n'
         'Event: $description\n'
         'Venue: $venueName\n'
         'Date: $dateStr • $timeStr\n'
         'Host: $cleanHostName\n'
         'Partner: $cleanJoinerName\n'
-        'Ticket ID: $ticketId\n\n'
-        'See you there! 💜';
+        'Ticket ID: $ticketId\n'
+        '${ticketUrl != null && ticketUrl.toString().isNotEmpty ? "Official Ticket Pass: $ticketUrl\n" : ""}'
+        '\nSee you there! 💜';
 
     final box = context.findRenderObject() as RenderBox?;
     Share.share(
@@ -801,6 +805,42 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
               const SizedBox(height: 40),
 
               // Action Buttons
+              if ((_ticketUrl ?? widget.request['ticketUrl']) != null && (_ticketUrl ?? widget.request['ticketUrl']).toString().isNotEmpty) ...[
+                SizedBox(
+                  width: double.infinity,
+                  height: 54,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      final url = (_ticketUrl ?? widget.request['ticketUrl']).toString();
+                      final pdfUri = Uri.parse(url);
+                      if (await canLaunchUrl(pdfUri)) {
+                        await launchUrl(pdfUri, mode: LaunchMode.externalApplication);
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Could not open the PDF URL.')),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.download_rounded, color: Colors.white),
+                    label: const Text(
+                      'DOWNLOAD PDF TICKET',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: LunaraTheme.electricViolet,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      elevation: 5,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
               SizedBox(
                 width: double.infinity,
                 height: 54,

@@ -7,6 +7,7 @@ import crypto from 'crypto';
 import { logger } from '../config/logger';
 import { validateVenueTimingAndHolidays } from '../utils/venueValidator';
 import { checkExistingBookingForDate } from '../utils/bookingLimitValidator';
+import { generateTicketForGroupPartyHelper } from '../services/ticketService';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -123,6 +124,13 @@ export const createGroupParty = async (req: Request, res: Response): Promise<voi
 
         try {
             const isPaid = totalAmount <= 0;
+            if (isPaid) {
+                try {
+                    await generateTicketForGroupPartyHelper(groupParty.id);
+                } catch (tErr) {
+                    logger.error('Group party ticket generation error:', tErr);
+                }
+            }
             const host = await User.findByPk(userId, { attributes: ['id', 'fcmToken'] });
             if (isPaid && host && host.fcmToken) {
                 const { sendPushNotification } = require('../services/fcmService');
@@ -178,6 +186,12 @@ export const verifyPayment = async (req: Request, res: Response): Promise<void> 
                 paymentStatus: GroupPartyPaymentStatus.PAID,
                 status: GroupPartyStatus.CONFIRMED
             });
+
+            try {
+                await generateTicketForGroupPartyHelper(groupParty.id);
+            } catch (tErr) {
+                logger.error('Group party ticket generation error on verify:', tErr);
+            }
 
             try {
                 const host = await User.findByPk(groupParty.userId, { attributes: ['id', 'fcmToken'] });
