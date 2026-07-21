@@ -42,6 +42,7 @@ export interface Booking {
     mobileNumber?: string;
     tablePackage?: string;
     isLargePartyRequest?: boolean;
+    isUpcomingNight?: boolean;
     adminApprovalStatus?: string;
     adminPaymentLink?: string;
     adminPaymentAmount?: number;
@@ -62,6 +63,7 @@ export interface GetBookingsParams {
     date?: string;
     isGroupBooking?: boolean;
     isLargePartyRequest?: boolean;
+    isUpcomingNight?: boolean;
 }
 
 export interface GetBookingsResponse {

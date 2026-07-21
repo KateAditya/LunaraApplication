@@ -324,7 +324,12 @@ class UpcomingPartyScreen extends StatelessWidget {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => BookingProcessScreen(venue: venueMap!),
+                            builder: (_) => BookingProcessScreen(
+                              venue: venueMap!,
+                              isUpcomingNight: true,
+                              upcomingNightDate: party['rawDate'] ?? party['date'],
+                              upcomingNightTime: '20:00',
+                            ),
                           ),
                         );
                       } else {

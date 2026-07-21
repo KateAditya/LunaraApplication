@@ -217,6 +217,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               return {
                 'title': ad['title'] ?? ad['description'] ?? 'Special Event',
                 'date': dateStr,
+                'rawDate': ad['toDate'] ?? ad['fromDate'],
                 'venue': venue['name'] ?? 'Unknown Venue',
                 'image': imageUrl,
                 'isAsset': false,
@@ -2752,5 +2753,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           );
         },
       ),
+    );
   }
 }

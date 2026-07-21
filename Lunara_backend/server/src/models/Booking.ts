@@ -68,6 +68,7 @@ export interface BookingAttributes {
     partyRequirement?: string;
     partyDescription?: string;
     isLargePartyRequest?: boolean;
+    isUpcomingNight?: boolean;
     adminApprovalStatus?: AdminApprovalStatus;
     // Contact details for large party
     mobileNumber?: string;
@@ -103,6 +104,7 @@ export interface BookingCreationAttributes
         | 'partyRequirement'
         | 'partyDescription'
         | 'isLargePartyRequest'
+        | 'isUpcomingNight'
         | 'adminApprovalStatus'
         | 'mobileNumber'
         | 'optionalMobileNumber'
@@ -143,6 +145,7 @@ class Booking extends Model<BookingAttributes, BookingCreationAttributes> implem
     public partyRequirement?: string;
     public partyDescription?: string;
     public isLargePartyRequest?: boolean;
+    public isUpcomingNight?: boolean;
     public adminApprovalStatus?: AdminApprovalStatus;
     public mobileNumber?: string;
     public optionalMobileNumber?: string;
@@ -337,6 +340,11 @@ Booking.init(
             type: DataTypes.BOOLEAN,
             defaultValue: false,
             field: 'is_large_party_request',
+        },
+        isUpcomingNight: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            field: 'is_upcoming_night',
         },
         adminApprovalStatus: {
             type: DataTypes.ENUM(...Object.values(AdminApprovalStatus)),

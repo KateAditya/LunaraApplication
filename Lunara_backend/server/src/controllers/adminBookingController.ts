@@ -357,6 +357,7 @@ export const getBookings = async (req: Request, res: Response) => {
             goingMode,
             isGroupBooking,
             isLargePartyRequest,
+            isUpcomingNight,
             date,
             search,
             page = '1',
@@ -391,6 +392,7 @@ export const getBookings = async (req: Request, res: Response) => {
         if (goingMode) where.goingMode = goingMode;
         if (isGroupBooking !== undefined) where.isGroupBooking = isGroupBooking === 'true';
         if (isLargePartyRequest !== undefined) where.isLargePartyRequest = isLargePartyRequest === 'true';
+        if (isUpcomingNight !== undefined) where.isUpcomingNight = isUpcomingNight === 'true';
 
         if (date === 'today') {
             const todayStr = new Date().toISOString().split('T')[0];

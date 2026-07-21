@@ -200,6 +200,7 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
           return {
             'title': ad['title'] ?? ad['description'] ?? 'Special Event',
             'date': dateStr,
+            'rawDate': ad['toDate'] ?? ad['fromDate'],
             'venue': venueMap['name'] ?? venue['name'] ?? 'Unknown Venue',
             'image': imageUrl,
             'isAsset': false,

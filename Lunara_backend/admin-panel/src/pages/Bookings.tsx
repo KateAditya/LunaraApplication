@@ -48,7 +48,7 @@ export const Bookings: React.FC = () => {
     const queryClient = useQueryClient();
     
     // Filter states
-    const [activeTab, setActiveTab] = useState<'all' | 'today' | 'solo' | 'plan' | 'party_request' | 'group' | 'large'>('all');
+    const [activeTab, setActiveTab] = useState<'all' | 'today' | 'solo' | 'plan' | 'party_request' | 'group' | 'large' | 'upcoming'>('all');
     const [venueIdFilter, setVenueIdFilter] = useState<string>('all');
     const [statusFilter, setStatusFilter] = useState<string>('all');
     const [searchInput, setSearchInput] = useState<string>('');
@@ -95,6 +95,8 @@ export const Bookings: React.FC = () => {
             params.isGroupBooking = true;
         } else if (activeTab === 'large') {
             params.isLargePartyRequest = true;
+        } else if (activeTab === 'upcoming') {
+            params.isUpcomingNight = true;
         }
 
         return params;
@@ -388,7 +390,8 @@ export const Bookings: React.FC = () => {
                     { key: 'plan', label: '⚡ Party Plans' },
                     { key: 'party_request', label: '🤝 Party Requests' },
                     { key: 'group', label: '👥 Group Bookings' },
-                    { key: 'large', label: '⭐ Large Parties' }
+                    { key: 'large', label: '⭐ Large Parties' },
+                    { key: 'upcoming', label: '🌙 Upcoming Nights' }
                 ].map(t => (
                     <button
                         key={t.key}
@@ -483,7 +486,9 @@ export const Bookings: React.FC = () => {
                                                 </div>
                                             </td>
                                             <td>
-                                                {booking.isLargePartyRequest ? (
+                                                {booking.isUpcomingNight ? (
+                                                    <span className="badge bg-warning-subtle text-warning" style={{ fontSize: '0.7rem' }}>🌙 Upcoming Night</span>
+                                                ) : booking.isLargePartyRequest ? (
                                                     <span className="badge bg-danger-subtle text-danger" style={{ fontSize: '0.7rem' }}>⭐ Large Party</span>
                                                 ) : booking.isGroupBooking ? (
                                                     <span className="badge bg-primary-subtle text-primary" style={{ fontSize: '0.7rem' }}>👥 Group</span>
@@ -579,6 +584,14 @@ export const Bookings: React.FC = () => {
                                     {selectedBooking.bookingNumber || selectedBooking.id.toUpperCase()}
                                 </span>
                             </div>
+                            {selectedBooking.isUpcomingNight && (
+                                <div>
+                                    <span style={{ fontSize: '0.72rem', color: 'var(--vz-text-muted)', display: 'block' }}>BOOKING TYPE</span>
+                                    <span className="badge bg-warning-subtle text-warning" style={{ fontSize: '0.75rem', fontWeight: 700, marginTop: '0.2rem' }}>
+                                        🌙 Upcoming Night
+                                    </span>
+                                </div>
+                            )}
                             {selectedBooking.ticketCode && (
                                 <div>
                                     <span style={{ fontSize: '0.72rem', color: 'var(--vz-text-muted)', display: 'block' }}>TICKET CODE</span>

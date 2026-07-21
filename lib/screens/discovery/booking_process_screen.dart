@@ -9,8 +9,17 @@ import '../../widgets/venue_timing_error_dialog.dart';
 
 class BookingProcessScreen extends StatefulWidget {
   final Map<dynamic, dynamic> venue;
+  final bool isUpcomingNight;
+  final String? upcomingNightDate;
+  final String? upcomingNightTime;
 
-  const BookingProcessScreen({super.key, required this.venue});
+  const BookingProcessScreen({
+    super.key,
+    required this.venue,
+    this.isUpcomingNight = false,
+    this.upcomingNightDate,
+    this.upcomingNightTime,
+  });
 
   @override
   State<BookingProcessScreen> createState() => _BookingProcessScreenState();
@@ -113,59 +122,109 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
     return true;
   }
 
+  DateTime? _parseDate(String? dateStr) {
+    if (dateStr == null || dateStr.isEmpty) return null;
+    try {
+      return DateTime.parse(dateStr);
+    } catch (_) {}
+    try {
+      final clean = dateStr.toUpperCase();
+      final monthsList = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+      int? foundMonth;
+      for (int i = 0; i < monthsList.length; i++) {
+        if (clean.contains(monthsList[i])) {
+          foundMonth = i + 1;
+          break;
+        }
+      }
+      if (foundMonth != null) {
+        final dayRegex = RegExp(r'\b(\d{1,2})\b');
+        final dayMatch = dayRegex.firstMatch(clean);
+        if (dayMatch != null) {
+          final day = int.parse(dayMatch.group(1)!);
+          final yearRegex = RegExp(r'\b(20\d{2})\b');
+          final yearMatch = yearRegex.firstMatch(clean);
+          final year = yearMatch != null ? int.parse(yearMatch.group(1)!) : DateTime.now().year;
+          return DateTime(year, foundMonth, day);
+        }
+      }
+    } catch (_) {}
+    try {
+      final clean = dateStr.replaceAll('/', '-');
+      final parts = clean.split('-');
+      if (parts.length == 3) {
+        if (parts[0].length == 4) {
+          return DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
+        } else {
+          return DateTime(int.parse(parts[2]), int.parse(parts[1]), int.parse(parts[0]));
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
   @override
   void initState() {
     super.initState();
     _guestsController.text = '1';
 
-    // Find the first open date in the next 7 days
-    DateTime initialDate = DateTime.now();
-    for (int i = 0; i < 7; i++) {
-      final d = DateTime.now().add(Duration(days: i));
-      if (_isVenueOpenOnDate(d)) {
-        initialDate = d;
-        break;
+    if (widget.isUpcomingNight) {
+      final parsedDate = _parseDate(widget.upcomingNightDate);
+      if (parsedDate != null) {
+        _selectedDate = parsedDate;
+      } else {
+        DateTime initialDate = DateTime.now();
+        for (int i = 0; i < 7; i++) {
+          final d = DateTime.now().add(Duration(days: i));
+          if (_isVenueOpenOnDate(d)) {
+            initialDate = d;
+            break;
+          }
+        }
+        _selectedDate = initialDate;
       }
-    }
-    _selectedDate = initialDate;
 
-    // Auto-fetch the first valid time slot for this venue on the selected date
-    final venueObj = Venue.fromJson(Map<String, dynamic>.from(widget.venue));
-    
-    // We check the venue opening time first
-    String? defaultTime;
-    final openingStr = venueObj.openingTime; // e.g. "20:00"
-    if (openingStr != null && openingStr.contains(':')) {
-      final parts = openingStr.split(':');
-      final hour = int.tryParse(parts[0]) ?? 20;
-      final minute = int.tryParse(parts[1]) ?? 0;
-      final tod = TimeOfDay(hour: hour, minute: minute);
+      if (widget.upcomingNightTime != null && widget.upcomingNightTime!.isNotEmpty) {
+        String timeStr = widget.upcomingNightTime!;
+        if (timeStr.toUpperCase().contains('PM') || timeStr.toUpperCase().contains('AM')) {
+          final clean = timeStr.toUpperCase();
+          final isPm = clean.contains('PM');
+          final timeOnly = clean.replaceAll('AM', '').replaceAll('PM', '').trim();
+          final parts = timeOnly.split(':');
+          if (parts.isNotEmpty) {
+            int h = int.tryParse(parts[0]) ?? 20;
+            int m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+            if (isPm && h < 12) h += 12;
+            if (!isPm && h == 12) h = 0;
+            _selectedTime = '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
+          }
+        } else {
+          _selectedTime = timeStr;
+        }
+      } else {
+        _selectedTime = '20:00';
+      }
+    } else {
+      DateTime initialDate = DateTime.now();
+      for (int i = 0; i < 7; i++) {
+        final d = DateTime.now().add(Duration(days: i));
+        if (_isVenueOpenOnDate(d)) {
+          initialDate = d;
+          break;
+        }
+      }
+      _selectedDate = initialDate;
+
+      final venueObj = Venue.fromJson(Map<String, dynamic>.from(widget.venue));
       
-      final selectedDateTime = DateTime(
-        _selectedDate.year,
-        _selectedDate.month,
-        _selectedDate.day,
-        tod.hour,
-        tod.minute,
-      );
-      final minAllowedDateTime = DateTime.now().add(const Duration(hours: 1));
-      if (_isTimeWithinVenueHours(tod, venueObj.openingTime, venueObj.closingTime) &&
-          !selectedDateTime.isBefore(minAllowedDateTime)) {
-        defaultTime = '${tod.hour.toString().padLeft(2, '0')}:${tod.minute.toString().padLeft(2, '0')}';
-      }
-    }
-
-    if (defaultTime == null) {
-      final predefinedTimes = [
-        const TimeOfDay(hour: 20, minute: 0), // 8 PM
-        const TimeOfDay(hour: 21, minute: 0), // 9 PM
-        const TimeOfDay(hour: 22, minute: 0), // 10 PM
-        const TimeOfDay(hour: 23, minute: 0), // 11 PM
-        const TimeOfDay(hour: 0, minute: 0),  // 12 AM
-        const TimeOfDay(hour: 19, minute: 0), // 7 PM
-      ];
-
-      for (final tod in predefinedTimes) {
+      String? defaultTime;
+      final openingStr = venueObj.openingTime;
+      if (openingStr != null && openingStr.contains(':')) {
+        final parts = openingStr.split(':');
+        final hour = int.tryParse(parts[0]) ?? 20;
+        final minute = int.tryParse(parts[1]) ?? 0;
+        final tod = TimeOfDay(hour: hour, minute: minute);
+        
         final selectedDateTime = DateTime(
           _selectedDate.year,
           _selectedDate.month,
@@ -174,17 +233,42 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
           tod.minute,
         );
         final minAllowedDateTime = DateTime.now().add(const Duration(hours: 1));
-        
         if (_isTimeWithinVenueHours(tod, venueObj.openingTime, venueObj.closingTime) &&
             !selectedDateTime.isBefore(minAllowedDateTime)) {
           defaultTime = '${tod.hour.toString().padLeft(2, '0')}:${tod.minute.toString().padLeft(2, '0')}';
-          break;
         }
       }
-    }
 
-    // Default fallback to 9 PM if all checks fail
-    _selectedTime = defaultTime ?? '21:00';
+      if (defaultTime == null) {
+        final predefinedTimes = [
+          const TimeOfDay(hour: 20, minute: 0),
+          const TimeOfDay(hour: 21, minute: 0),
+          const TimeOfDay(hour: 22, minute: 0),
+          const TimeOfDay(hour: 23, minute: 0),
+          const TimeOfDay(hour: 0, minute: 0),
+          const TimeOfDay(hour: 19, minute: 0),
+        ];
+
+        for (final tod in predefinedTimes) {
+          final selectedDateTime = DateTime(
+            _selectedDate.year,
+            _selectedDate.month,
+            _selectedDate.day,
+            tod.hour,
+            tod.minute,
+          );
+          final minAllowedDateTime = DateTime.now().add(const Duration(hours: 1));
+          
+          if (_isTimeWithinVenueHours(tod, venueObj.openingTime, venueObj.closingTime) &&
+              !selectedDateTime.isBefore(minAllowedDateTime)) {
+            defaultTime = '${tod.hour.toString().padLeft(2, '0')}:${tod.minute.toString().padLeft(2, '0')}';
+            break;
+          }
+        }
+      }
+
+      _selectedTime = defaultTime ?? '21:00';
+    }
   }
 
   @override
@@ -214,8 +298,15 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SizedBox(height: 16),
-                    _buildUpcomingNightCard(),
-                    const SizedBox(height: 32),
+                    if (widget.isUpcomingNight) ...[
+                      _buildUpcomingNightCard(),
+                      const SizedBox(height: 32),
+                    ] else ...[
+                      _buildDateSelection(),
+                      const SizedBox(height: 32),
+                      _buildTimeSelection(),
+                      const SizedBox(height: 32),
+                    ],
                     const Text(
                       'CHOOSE MODE',
                       style: TextStyle(
@@ -1378,6 +1469,7 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                   tablePackage: 'Confirmation Charges',
                                   goingMode: 'solo',
                                   numberOfGuests: isSolo ? 1 : guests,
+                                  isUpcomingNight: widget.isUpcomingNight,
                                 );
                                 if (bookingRes != null && bookingRes['bookingId'] != null) {
                                   createdBookingId = bookingRes['bookingId'].toString();

@@ -2466,6 +2466,7 @@ class ApiService {
     String? partyDescription,
     String? mobileNumber,
     String? optionalMobileNumber,
+    bool isUpcomingNight = false,
   }) async {
     final userId = currentUserId;
     if (userId == null) return null;
@@ -2485,6 +2486,7 @@ class ApiService {
           'partyDescription': partyDescription,
           'mobileNumber': mobileNumber,
           'optionalMobileNumber': optionalMobileNumber,
+          'isUpcomingNight': isUpcomingNight,
         },
       );
       if (response.statusCode == 200 || response.statusCode == 201) {

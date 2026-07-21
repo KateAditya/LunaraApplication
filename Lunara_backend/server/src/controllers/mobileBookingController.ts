@@ -117,6 +117,7 @@ export const createBooking = async (req: Request, res: Response) => {
             partyDescription,
             mobileNumber,
             optionalMobileNumber,
+            isUpcomingNight,
         } = req.body;
 
         if (!userId || !venueId || !bookingDate || !startTime || !packageName) {
@@ -194,6 +195,7 @@ export const createBooking = async (req: Request, res: Response) => {
             tablePackage: packageName,
             specialRequests,
             isLargePartyRequest: isLargeParty,
+            isUpcomingNight: !!isUpcomingNight,
             adminApprovalStatus: initialApprovalStatus,
             partySubject: isLargeParty ? partySubject : null,
             partyRequirement: isLargeParty ? partyRequirement : null,
