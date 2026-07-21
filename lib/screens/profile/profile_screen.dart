@@ -4,7 +4,6 @@ import '../../models/user.dart';
 import '../../services/api_service.dart';
 import '../../widgets/bumble_swipe_widget.dart';
 import 'profile_detail_view.dart';
-import 'vip_membership_screen.dart';
 import '../../widgets/subscription_limit_dialog.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -160,28 +159,50 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _initUser() async {
+    final String? myId = ApiService.currentUserId ?? ApiService.cachedCurrentUser?.id;
+
     if (widget.user != null) {
+      final bool isSelf = myId != null &&
+          myId.isNotEmpty &&
+          (widget.user!.id == myId || widget.user!.id.isEmpty);
+
       setState(() {
         _displayUser = widget.user;
-        _isMe = _displayUser!.id == ApiService.currentUserId;
+        _isMe = isSelf;
       });
       _updateCurrentProfileIndex();
 
-      final fullUser = await ApiService.fetchProfile(userId: widget.user!.id);
+      final String fetchId = widget.user!.id.isNotEmpty ? widget.user!.id : (myId ?? '');
+      final fullUser = await ApiService.fetchProfile(userId: fetchId.isNotEmpty ? fetchId : null);
       if (fullUser != null && mounted) {
         setState(() {
           _displayUser = fullUser;
+          if (isSelf || (myId != null && fullUser.id == myId)) {
+            _isMe = true;
+          }
         });
         _updateCurrentProfileIndex();
-        // Also check if already liked today
-        _checkExistingSwipe(fullUser.id);
+        if (!_isMe) {
+          _checkExistingSwipe(fullUser.id);
+        }
       }
     } else {
       setState(() => _isLoading = true);
-      final me = await ApiService.fetchProfile();
-      if (mounted) {
+      final me = ApiService.cachedCurrentUser;
+      if (me != null) {
         setState(() {
           _displayUser = me;
+          _isMe = true;
+          _isLoading = false;
+        });
+        _updateCurrentProfileIndex();
+      }
+
+      final fetchedMe = await ApiService.fetchProfile();
+      if (mounted) {
+        final finalUser = fetchedMe ?? me ?? ApiService.cachedCurrentUser;
+        setState(() {
+          _displayUser = finalUser;
           _isMe = true;
           _isLoading = false;
         });
@@ -669,10 +690,69 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (_outOfProfiles) return emptyStateWidget;
 
     if (_displayUser == null) {
+      final cached = ApiService.cachedCurrentUser;
+      if (cached != null) {
+        return ProfileDetailView(
+          key: ValueKey(cached.id),
+          user: cached,
+          isMe: true,
+          swipedAction: null,
+          isLikeDisabled: false,
+          isSuperLikeDisabled: false,
+          onNope: null,
+          onLike: null,
+          onSuper: null,
+          onBacktrack: null,
+          canBacktrack: false,
+        );
+      }
       return Scaffold(
         backgroundColor: Colors.white,
-        appBar: AppBar(title: const Text('PROFILE')),
-        body: const Center(child: Text('User not found')),
+        appBar: AppBar(
+          title: const Text('PROFILE', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16)),
+          backgroundColor: Colors.white,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black, size: 20),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.person_off_rounded, size: 64, color: Colors.grey),
+              const SizedBox(height: 16),
+              Text(
+                'Unable to load profile',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey[800]),
+              ),
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Text(
+                  'Please check your network connection and try again.',
+                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: () {
+                  setState(() => _isLoading = true);
+                  _initUser();
+                },
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Retry'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: LunaraTheme.electricViolet,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                ),
+              ),
+            ],
+          ),
+        ),
       );
     }
 

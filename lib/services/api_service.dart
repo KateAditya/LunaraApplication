@@ -1,4 +1,4 @@
-import 'dart:io' show Platform, File;
+import 'dart:io' show Platform;
 import 'dart:convert';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
@@ -150,13 +150,15 @@ class ApiService {
 
   static Future<User?> fetchProfile({String? userId}) async {
     try {
-      final targetUserId = userId ?? currentUserId;
-      if (targetUserId == null) {
-        debugPrint('Error fetching profile: targetUserId is null');
-        return null;
+      String? targetUserId = userId;
+      if (targetUserId == 'undefined' || targetUserId == 'null' || (targetUserId != null && targetUserId.trim().isEmpty)) {
+        targetUserId = null;
       }
-
-      //debugPrint('Fetching profile for userId: $targetUserId');
+      targetUserId ??= currentUserId ?? cachedCurrentUser?.id;
+      if (targetUserId == null || targetUserId == 'undefined' || targetUserId == 'null' || targetUserId.trim().isEmpty) {
+        debugPrint('Error fetching profile: targetUserId is null');
+        return cachedCurrentUser;
+      }
 
       // Use query parameter only, as Flutter Web (fetch) does not allow bodies in GET requests
       final response = await get(
@@ -164,23 +166,20 @@ class ApiService {
         queryParameters: {'userId': targetUserId},
       );
 
-      //debugPrint('Profile Response Status: ${response.statusCode}');
-      //debugPrint('Profile Response Body: ${response.body}');
-
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
           final user = User.fromJson(data);
-          if (userId == null || userId == currentUserId) {
+          if (userId == null || userId == currentUserId || (cachedCurrentUser != null && user.id == cachedCurrentUser!.id)) {
             cachedCurrentUser = user;
           }
           return user;
         }
       }
-      return null;
+      return cachedCurrentUser;
     } catch (e) {
       debugPrint('Error fetching profile: $e');
-      return null;
+      return cachedCurrentUser;
     }
   }
 
@@ -2111,7 +2110,10 @@ class ApiService {
   }
 
   static String? get currentUserId {
-    if (_authToken == null) return null;
+    if (cachedCurrentUser?.id != null && cachedCurrentUser!.id.isNotEmpty) {
+      return cachedCurrentUser!.id;
+    }
+    if (_authToken == null || _authToken!.isEmpty) return null;
     try {
       final parts = _authToken!.split('.');
       if (parts.length != 3) return null;
@@ -2119,10 +2121,14 @@ class ApiService {
         base64Url.decode(base64Url.normalize(parts[1])),
       );
       final data = jsonDecode(payload);
-      // debugPrint('Decoded JWT payload: $data');
-      return data['id']?.toString() ??
-          data['userId']?.toString() ??
-          data['_id']?.toString();
+      final rawId = data['userId']?.toString() ??
+          data['id']?.toString() ??
+          data['_id']?.toString() ??
+          data['sub']?.toString();
+      if (rawId == null || rawId == 'undefined' || rawId == 'null' || rawId.trim().isEmpty) {
+        return null;
+      }
+      return rawId;
     } catch (e) {
       debugPrint('Error decoding JWT: $e');
       return null;

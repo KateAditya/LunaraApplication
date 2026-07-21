@@ -257,7 +257,11 @@ export const completeProfileSetup = async (req: Request, res: Response): Promise
 // ─────────────────────────────────────────────────────────────────────────────
 export const getMyProfile = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const userId = (req.query.userId as string) || req.user?.id;
+        let rawQueryId = req.query.userId as string;
+        if (rawQueryId === 'undefined' || rawQueryId === 'null' || !rawQueryId?.trim()) {
+            rawQueryId = '';
+        }
+        const userId = rawQueryId || req.user?.id;
         if (!userId) {
             return res.status(401).json({ success: false, message: 'Unauthorized: userId query param is required' });
         }

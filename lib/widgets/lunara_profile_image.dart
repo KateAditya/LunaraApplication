@@ -208,10 +208,11 @@ class LunaraProfileImage extends StatelessWidget {
     if (isInteractive) {
       return GestureDetector(
         onTap: () {
+          final targetUser = _resolvedUser ?? ApiService.cachedCurrentUser;
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => ProfileScreen(user: _resolvedUser),
+              builder: (context) => ProfileScreen(user: targetUser),
             ),
           );
         },
