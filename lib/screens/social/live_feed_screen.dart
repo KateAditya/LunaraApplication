@@ -24,10 +24,10 @@ class LiveFeedScreen extends StatefulWidget {
   const LiveFeedScreen({super.key, this.isTab = false, this.onCountChanged, this.initialTabIndex = 0});
 
   @override
-  State<LiveFeedScreen> createState() => _LiveFeedScreenState();
+  State<LiveFeedScreen> createState() => LiveFeedScreenState();
 }
 
-class _LiveFeedScreenState extends State<LiveFeedScreen>
+class LiveFeedScreenState extends State<LiveFeedScreen>
     with TickerProviderStateMixin {
   late TabController _tabController;
   late AnimationController _pulseController;
@@ -47,6 +47,11 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
   // Track optimistic state changes for buttons
   final Map<String, String> _optimisticStates = {};
   final Set<String> _clearedFeedItemIds = {};
+
+  void refreshFeed() {
+    _loadFeed(showLoader: false);
+    _loadGroupPartyBookings();
+  }
 
   List<Map<String, dynamic>> _getJoinRequestsForMeet(String meetId) {
     return _feedItems.where((i) =>
@@ -443,13 +448,12 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
   void _markCurrentTabItemsAsRead() {
     final index = _tabController.index;
     if (index == 0) {
-      // Mark all Stranger Meet incoming requests as read
+      // Mark all Stranger Meet incoming and outgoing requests as read
       final List<String> toMark = [];
       setState(() {
         for (var item in _feedItems) {
-          if (item['type'] == 'incoming_request' &&
-              (item['requestType'] == 'table_plan' ||
-                  item['requestType'] == 'stranger_meet')) {
+          final rType = item['requestType'];
+          if (rType == 'table_plan' || rType == 'stranger_meet' || rType == 'stranger_meet_join') {
             final reqId = item['id']?.toString() ?? '';
             if (reqId.isNotEmpty && !_readRequestIds.contains(reqId)) {
               _readRequestIds.add(reqId);
@@ -465,12 +469,11 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
         widget.onCountChanged?.call();
       }
     } else if (index == 1) {
-      // Mark all Party Plan incoming requests as read
+      // Mark all Party Plan requests (incoming, outgoing, invites) as read
       final List<String> toMark = [];
       setState(() {
         for (var item in _feedItems) {
-          if (item['type'] == 'incoming_request' &&
-              item['requestType'] == 'party_plan') {
+          if (item['requestType'] == 'party_plan') {
             final reqId = item['id']?.toString() ?? '';
             if (reqId.isNotEmpty && !_readRequestIds.contains(reqId)) {
               _readRequestIds.add(reqId);
@@ -630,6 +633,16 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
       if (mounted) {
         setState(() {
           _feedItems = combined;
+          // Clean up optimistic states that are confirmed by the server
+          for (final item in combined) {
+            final id = item['id']?.toString();
+            if (id != null && _optimisticStates.containsKey(id)) {
+              final serverStatus = item['status']?.toString().toLowerCase();
+              if (serverStatus != null && serverStatus != 'pending') {
+                _optimisticStates.remove(id);
+              }
+            }
+          }
           // Re-apply local read state so polling never reverts dismissed notifications
           _notifications = notifs.map((n) {
             final nId = n['id']?.toString() ?? '';
@@ -699,16 +712,23 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
 
   @override
   Widget build(BuildContext context) {
-    final strangerMeetUnreadCount = _feedItems.where((i) =>
-        i['type'] == 'incoming_request' &&
-        (i['requestType'] == 'table_plan' || i['requestType'] == 'stranger_meet' || i['requestType'] == 'stranger_meet_join') &&
-        i['status'] == 'pending' &&
-        !_readRequestIds.contains(i['id']?.toString() ?? '')).length;
+    final strangerMeetUnreadCount = _feedItems.where((i) {
+      final rType = i['requestType'];
+      if (rType != 'table_plan' && rType != 'stranger_meet' && rType != 'stranger_meet_join') return false;
+      if (_readRequestIds.contains(i['id']?.toString() ?? '')) return false;
+      if (i['type'] == 'incoming_request' && i['status'] == 'pending') return true;
+      if (i['type'] == 'my_request' &&
+          (i['status'] == 'accepted' || i['paymentStatus'] == 'pending')) return true;
+      return false;
+    }).length;
 
     final partyPlanUnreadCount = _feedItems.where((i) {
-      if (i['requestType'] != 'party_plan' || i['status'] != 'pending') return false;
+      if (i['requestType'] != 'party_plan') return false;
       if (_readRequestIds.contains(i['id']?.toString() ?? '')) return false;
-      return i['type'] == 'incoming_request' || _isInvite(i);
+      if (i['type'] == 'incoming_request' && i['status'] == 'pending') return true;
+      if ((i['type'] == 'my_request' || _isInvite(i)) &&
+          (i['status'] == 'accepted' || i['joinerPaymentStatus'] == 'unpaid')) return true;
+      return false;
     }).length;
 
     final otherUnreadCount = _notifications.where((n) =>
@@ -740,10 +760,6 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
               tabs: [
                 Tab(
                   child: Badge(
-                    label: Text(
-                      '$strangerMeetUnreadCount',
-                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                    ),
                     isLabelVisible: strangerMeetUnreadCount > 0,
                     backgroundColor: LunaraTheme.electricViolet,
                     child: const Text('Stranger Meet'),
@@ -751,10 +767,6 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                 ),
                 Tab(
                   child: Badge(
-                    label: Text(
-                      '$partyPlanUnreadCount',
-                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                    ),
                     isLabelVisible: partyPlanUnreadCount > 0,
                     backgroundColor: LunaraTheme.electricViolet,
                     child: const Text('Party Plan'),
@@ -762,10 +774,6 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                 ),
                 Tab(
                   child: Badge(
-                    label: Text(
-                      '$groupPartyAwaitingCount',
-                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                    ),
                     isLabelVisible: groupPartyAwaitingCount > 0,
                     backgroundColor: Colors.orange,
                     child: const Text('Group Parties'),
@@ -773,10 +781,6 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
                 ),
                 Tab(
                   child: Badge(
-                    label: Text(
-                      '$otherUnreadCount',
-                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                    ),
                     isLabelVisible: otherUnreadCount > 0,
                     backgroundColor: LunaraTheme.electricViolet,
                     child: const Text('Other'),

@@ -1075,7 +1075,8 @@ router.get('/badge-counts', async (req, res) => {
             where: {
                 requesterId: uId,
                 status: { [Op.in]: ['accepted', 'payment_pending'] },
-                joinerPaymentStatus: 'unpaid'
+                joinerPaymentStatus: 'unpaid',
+                id: { [Op.notIn]: Array.from(activeReadRequestIds) }
             }
         });
 
@@ -1083,7 +1084,8 @@ router.get('/badge-counts', async (req, res) => {
             where: {
                 requesterId: uId,
                 status: 'accepted',
-                paymentStatus: 'pending'
+                paymentStatus: 'pending',
+                id: { [Op.notIn]: Array.from(activeReadRequestIds) }
             }
         });
 

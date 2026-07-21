@@ -292,9 +292,9 @@ router.post(
             const { PartyPlanRequest } = require('../../models');
             const request = await PartyPlanRequest.findByPk(reqId);
             if (!request) return res.status(404).json({ success: false, message: 'Request not found' });
-            request.status = 'cancelled';
+            request.status = 'rejected';
             await request.save();
-            return res.json({ success: true, message: 'Request rejected/cancelled' });
+            return res.json({ success: true, message: 'Request rejected' });
         } catch (error) {
             return res.status(500).json({ success: false, message: 'Error rejecting request', error });
         }

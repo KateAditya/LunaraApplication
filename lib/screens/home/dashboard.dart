@@ -32,13 +32,14 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
 
   bool _isInitialized = false;
   late final List<Widget> _screens;
+  final GlobalKey<LiveFeedScreenState> _liveFeedKey = GlobalKey<LiveFeedScreenState>();
 
   @override
   void initState() {
     super.initState();
     _screens = [
       const DiscoveryScreen(),
-      LiveFeedScreen(isTab: true, onCountChanged: _onLiveFeedCountChanged),
+      LiveFeedScreen(key: _liveFeedKey, isTab: true, onCountChanged: _onLiveFeedCountChanged),
       const SizedBox.shrink(), // Placeholder for center button
       const MessagesScreen(),
       const ProfileHubScreen(),
@@ -243,6 +244,9 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
               ),
             );
           } else {
+            if (index == 1) {
+              _liveFeedKey.currentState?.refreshFeed();
+            }
             setState(() => _currentIndex = index);
             if (index == 1) {
               _onLiveFeedRead();
@@ -264,9 +268,6 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
           BottomNavigationBarItem(
             icon: Badge(
               isLabelVisible: _liveFeedCount > 0,
-              label: Text(
-                _liveFeedCount > 99 ? '99+' : _liveFeedCount.toString(),
-              ),
               child: Icon(
                 Icons.favorite_outline,
                 key: AppTourService.matchesTabKey,
@@ -274,9 +275,6 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
             ),
             activeIcon: Badge(
               isLabelVisible: _liveFeedCount > 0,
-              label: Text(
-                _liveFeedCount > 99 ? '99+' : _liveFeedCount.toString(),
-              ),
               child: const Icon(Icons.favorite),
             ),
             label: 'Live Feed',
