@@ -1036,6 +1036,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                           child: VIPUpgradeButton(
                             key: AppTourService.vipUpgradeKey,
                             size: 36,
+                            tier: _currentUser?.subscriptionTier,
+                            onUpdated: () => _loadVenues(),
                           ),
                         ),
                         GestureDetector(

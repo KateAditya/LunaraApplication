@@ -19,6 +19,7 @@ class UserSubscription extends Model {
     // Remaining features for the current cycle
     public superlikesRemaining!: number;
     public boostsRemaining!: number;
+    public expirationAlertSent!: boolean;
 
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
@@ -70,6 +71,11 @@ UserSubscription.init(
             type: DataTypes.INTEGER,
             allowNull: false,
             defaultValue: 0,
+        },
+        expirationAlertSent: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
         },
     },
     {

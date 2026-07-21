@@ -60,6 +60,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
     try {
       final packages = await ApiService.fetchSubscriptionPackages();
       final currentSub = await ApiService.fetchUserSubscription();
+      await ApiService.fetchProfile();
 
       setState(() {
         _allPackages = packages;

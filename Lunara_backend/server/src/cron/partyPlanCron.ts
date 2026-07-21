@@ -10,6 +10,8 @@ import VenueImage from '../models/VenueImage';
 import { logger } from '../config/logger';
 import ChatSubscription, { ChatSubscriptionStatus } from '../models/ChatSubscription';
 import Conversation from '../models/Conversation';
+import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription';
+import SubscriptionPackage from '../models/SubscriptionPackage';
 
 // Run every 5 minutes
 export const startPartyPlanCron = () => {
@@ -190,6 +192,84 @@ export const startPartyPlanCron = () => {
                     }
                 } catch (pushErr: any) {
                     logger.warn('Failed to send chat expired push notification:', pushErr.message);
+                }
+            }
+
+            // 4. Check for user subscription expiration and expiration warnings (24h alert)
+            const activeSubscriptions = await UserSubscription.findAll({
+                where: {
+                    status: SubscriptionStatus.ACTIVE,
+                },
+                include: [{ model: SubscriptionPackage, as: 'package' }]
+            });
+
+            const in24Hours = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+            for (const sub of activeSubscriptions) {
+                const endDate = new Date(sub.endDate);
+                const pkg = (sub as any).package;
+                const pkgName = pkg?.name || 'VIP Package';
+
+                if (endDate <= now) {
+                    // Plan Has Expired
+                    await sub.update({ status: SubscriptionStatus.EXPIRED });
+                    logger.info(`Subscription ${sub.id} for user ${sub.userId} marked as EXPIRED.`);
+
+                    // Push Notification to user
+                    try {
+                        const user = await User.findByPk(sub.userId);
+                        if (user && user.fcmToken) {
+                            const { sendMulticastPushNotification } = require('../services/fcmService');
+                            await sendMulticastPushNotification([user.fcmToken], {
+                                title: '⚡ VIP Plan Expired',
+                                body: `Your ${pkgName} subscription has expired. Upgrade your plan to continue enjoying exclusive features!`,
+                                data: {
+                                    type: 'subscription_expired',
+                                    subscriptionId: sub.id,
+                                },
+                            });
+                        }
+
+                        // Socket notification
+                        const { io } = require('../server');
+                        io.to(`user_${sub.userId}`).emit('subscription_expired', {
+                            subscriptionId: sub.id,
+                            userId: sub.userId,
+                            message: `Your ${pkgName} subscription has expired.`,
+                        });
+                    } catch (pushErr: any) {
+                        logger.warn(`Failed to send subscription expiration push/socket for user ${sub.userId}:`, pushErr.message);
+                    }
+                } else if (endDate <= in24Hours) {
+                    // Plan is expiring within 24 hours - send warning if not already sent
+                    if (!sub.expirationAlertSent) {
+                        try {
+                            const user = await User.findByPk(sub.userId);
+                            if (user && user.fcmToken) {
+                                const { sendMulticastPushNotification } = require('../services/fcmService');
+                                await sendMulticastPushNotification([user.fcmToken], {
+                                    title: '⏳ VIP Plan Expiring Soon',
+                                    body: `Your ${pkgName} subscription will expire in less than 24 hours! Renew now to retain your benefits.`,
+                                    data: {
+                                        type: 'subscription_expiring_soon',
+                                        subscriptionId: sub.id,
+                                    },
+                                });
+                            }
+
+                            const { io } = require('../server');
+                            io.to(`user_${sub.userId}`).emit('subscription_expiring_soon', {
+                                subscriptionId: sub.id,
+                                userId: sub.userId,
+                                endDate: sub.endDate,
+                                message: `Your ${pkgName} subscription will expire in less than 24 hours!`,
+                            });
+
+                            await sub.update({ expirationAlertSent: true });
+                        } catch (warnErr: any) {
+                            logger.warn(`Failed to send subscription 24h warning to user ${sub.userId}:`, warnErr.message);
+                        }
+                    }
                 }
             }
             
