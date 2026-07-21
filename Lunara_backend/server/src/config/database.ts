@@ -65,6 +65,9 @@ export const connectDatabase = async (): Promise<void> => {
             await sequelize.query(`ALTER TABLE strangers_meet_joiners ADD COLUMN IF NOT EXISTS food_preference VARCHAR(100);`);
             await sequelize.query(`ALTER TABLE strangers_meet_joiners ADD COLUMN IF NOT EXISTS drink_preference VARCHAR(100);`);
 
+            // ── UserSubscriptions: expiration alert tracking ──────────────────
+            await sequelize.query(`ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS expiration_alert_sent BOOLEAN NOT NULL DEFAULT FALSE;`);
+
             // ── Users table: soft-delete & moderation columns ──────────────
             // These are referenced by the Sequelize User model but may be missing
             // on older production databases. ADD COLUMN IF NOT EXISTS is idempotent.

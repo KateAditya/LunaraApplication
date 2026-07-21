@@ -291,6 +291,7 @@ app.use(errorHandler);
 const startServer = async () => {
     try {
         await connectDatabase();
+
         httpServer.listen(PORT, () => {
             logger.info(`Worker ${process.pid} running server on http://${HOST}:${PORT}`);
             logger.info(`Environment: ${process.env.NODE_ENV}`);

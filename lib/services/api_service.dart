@@ -37,6 +37,17 @@ class ApiService {
   static String? selectedCity;
   static User? cachedCurrentUser;
 
+  /// Normalize any raw image path to a full URL, or return null if empty/invalid.
+  static String? formatImageUrl(dynamic rawUrl) {
+    if (rawUrl == null) return null;
+    final url = rawUrl.toString().trim();
+    if (url.isEmpty || url == 'null' || url == 'undefined') return null;
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    if (url.startsWith('assets/')) return url;
+    final clean = url.replaceAll('\\', '/');
+    return '$baseUrl${clean.startsWith('/') ? clean : '/$clean'}';
+  }
+
   static Future<void> initAuthToken() async {
     final prefs = await SharedPreferences.getInstance();
     _authToken = prefs.getString('auth_token');

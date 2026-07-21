@@ -152,22 +152,21 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
   }
 
   Widget _buildPostCard(BuildContext context, Map<String, dynamic> post) {
-    final String? profilePhoto =
-        (post['profilePhotoUrl'] ??
-                post['profileImageUrl'] ??
-                post['photoUrl'] ??
-                post['profilePhoto'] ??
-                (post['user'] is Map ? post['user']['photoUrl'] : null) ??
-                (post['user'] is Map ? post['user']['profilePhotoUrl'] : null) ??
-                post['image'])
-            ?.toString();
-    String? imageUrl = profilePhoto;
-    if (imageUrl != null && imageUrl.startsWith('/')) {
-      imageUrl = '${ApiService.baseUrl}$imageUrl';
-    }
+    // Resolve user avatar
+    final String? avatarUrl = ApiService.formatImageUrl(
+      post['profilePhotoUrl'] ??
+      post['profileImageUrl'] ??
+      post['photoUrl'] ??
+      post['profilePhoto'] ??
+      (post['user'] is Map ? post['user']['photoUrl'] : null) ??
+      (post['user'] is Map ? post['user']['profilePhotoUrl'] : null) ??
+      post['image'],
+    );
 
     final String venueName = post['venue']?.toString() ?? '';
-    final venue = widget.venues.firstWhere(
+
+    // Look up venue to get cover image
+    Venue matchedVenue = widget.venues.firstWhere(
       (v) => v.name.toLowerCase() == venueName.toLowerCase(),
       orElse: () => widget.venues.isNotEmpty
           ? widget.venues.first
@@ -180,25 +179,41 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
             ),
     );
 
+    // Use venue cover image as background; fall back to user avatar
+    final String? coverImageUrl = ApiService.formatImageUrl(
+      post['coverImageUrl']?.toString().isNotEmpty == true
+          ? post['coverImageUrl']
+          : matchedVenue.imageUrl,
+    ) ?? avatarUrl;
+
+    ImageProvider? bgImage;
+    if (coverImageUrl != null && coverImageUrl.isNotEmpty) {
+      if (coverImageUrl.startsWith('http')) {
+        bgImage = NetworkImage(coverImageUrl);
+      } else if (coverImageUrl.startsWith('assets/')) {
+        bgImage = AssetImage(coverImageUrl);
+      }
+    }
+
     return Container(
       width: double.infinity,
       height: 280,
       margin: const EdgeInsets.only(bottom: 24),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        image: DecorationImage(
-          image: (imageUrl != null && imageUrl.isNotEmpty)
-              ? (imageUrl.startsWith('http')
-                    ? NetworkImage(imageUrl) as ImageProvider
-                    : AssetImage(imageUrl))
-              : const AssetImage(LunaraTheme.defaultAvatar),
-          fit: BoxFit.cover,
-          colorFilter: ColorFilter.mode(
-            Colors.black.withValues(alpha: 0.3),
-            BlendMode.darken,
-          ),
-        ),
-        color: Colors.white,
+        image: bgImage != null
+            ? DecorationImage(
+                image: bgImage,
+                fit: BoxFit.cover,
+                colorFilter: ColorFilter.mode(
+                  Colors.black.withValues(alpha: 0.3),
+                  BlendMode.darken,
+                ),
+                onError: (e, s) {},
+              )
+            : null,
+        gradient: bgImage == null ? LunaraTheme.cardGradient : null,
+        color: bgImage == null ? null : Colors.black,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.15),
@@ -207,13 +222,14 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
           ),
         ],
       ),
+
       child: InkWell(
         onTap: () {
           Navigator.push(
             context,
             MaterialPageRoute(
               builder: (_) =>
-                  PostDetailScreen(post: post, venue: venue.toMap()),
+                  PostDetailScreen(post: post, venue: matchedVenue.toMap()),
             ),
           );
         },

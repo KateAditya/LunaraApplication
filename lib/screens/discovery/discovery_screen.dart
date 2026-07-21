@@ -251,6 +251,16 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   } catch (_) {}
                 }
 
+                // Resolve venue cover image from multiple possible fields
+                final venueCoverImg = venue['coverImageUrl'] ??
+                    venue['imageUrl'] ??
+                    venue['image'] ??
+                    (venue['coverImage'] is Map ? venue['coverImage']['url'] ?? venue['coverImage']['filePath'] : null) ??
+                    (venue['images'] is List && (venue['images'] as List).isNotEmpty
+                        ? ((venue['images'] as List).first is Map
+                            ? (venue['images'] as List).first['url'] ?? (venue['images'] as List).first['filePath']
+                            : (venue['images'] as List).first)
+                        : null);
                 return {
                   'id': plan['id'],
                   'type': 'party_plan',
@@ -265,8 +275,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   'venue': venue['name'] ?? 'Unknown',
                   'content': plan['message'] ?? '',
                   'time': timeStr,
-                  'coverImageUrl':
-                      venue['coverImageUrl'] ?? venue['imageUrl'] ?? '',
+                  'coverImageUrl': venueCoverImg?.toString() ?? '',
                   'userId': user['id'],
                   'user': user,
                   'createdAt': plan['createdAt'],
@@ -290,6 +299,16 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   } catch (_) {}
                 }
 
+                // Resolve venue cover image from multiple possible fields
+                final smVenueCoverImg = venue['coverImageUrl'] ??
+                    venue['imageUrl'] ??
+                    venue['image'] ??
+                    (venue['coverImage'] is Map ? venue['coverImage']['url'] ?? venue['coverImage']['filePath'] : null) ??
+                    (venue['images'] is List && (venue['images'] as List).isNotEmpty
+                        ? ((venue['images'] as List).first is Map
+                            ? (venue['images'] as List).first['url'] ?? (venue['images'] as List).first['filePath']
+                            : (venue['images'] as List).first)
+                        : null);
                 return {
                   'id': meet['id'],
                   'type': 'strangers_meet',
@@ -304,8 +323,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   'venue': venue['name'] ?? 'Unknown',
                   'content': meet['tagline'] ?? meet['subject'] ?? '',
                   'time': timeStr,
-                  'coverImageUrl':
-                      venue['imageUrl'] ?? venue['coverImageUrl'] ?? '',
+                  'coverImageUrl': smVenueCoverImg?.toString() ?? '',
                   'userId': user['id'],
                   'user': user,
                   'createdAt': meet['createdAt'],
@@ -2101,35 +2119,38 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           final feed = displayFeeds[index];
 
           // Handle nested user object or flat structure
-          final userObj = feed['user'] is Map ? feed['user'] : feed;
-          final String? profilePhoto =
-              (userObj['profilePhotoUrl'] ??
-                      userObj['profileImageUrl'] ??
-                      userObj['photoUrl'] ??
-                      userObj['profilePhoto'] ??
-                      feed['image'])
-                  ?.toString();
-          String? imageUrl = profilePhoto;
-          if (imageUrl != null && imageUrl.startsWith('/')) {
-            imageUrl = '${ApiService.baseUrl}$imageUrl';
-          }
+          final userObj = feed['user'] is Map ? feed['user'] as Map : feed;
+          final String? imageUrl = ApiService.formatImageUrl(
+            userObj['profilePhotoUrl'] ??
+            userObj['profileImageUrl'] ??
+            userObj['photoUrl'] ??
+            userObj['profilePhoto'] ??
+            feed['image'],
+          );
 
-          // Handle nested venue object or flat string
+          // Resolve venue name
           String venueName = '';
-          String? coverImageUrl;
           if (feed['venue'] is Map) {
-            venueName = feed['venue']['name']?.toString() ?? '';
-            coverImageUrl = feed['venue']['coverImageUrl']?.toString();
+            venueName = (feed['venue'] as Map)['name']?.toString() ?? '';
           } else {
             venueName = feed['venue']?.toString() ?? '';
-            coverImageUrl = feed['coverImageUrl']?.toString();
-            if (coverImageUrl != null && coverImageUrl.isEmpty) {
-              coverImageUrl = null;
-            }
           }
 
-          if (coverImageUrl != null && coverImageUrl.startsWith('/')) {
-            coverImageUrl = '${ApiService.baseUrl}$coverImageUrl';
+          // Try to get cover image: from mapped field first, then look up _allVenues
+          String? coverImageUrl = ApiService.formatImageUrl(
+            feed['coverImageUrl']?.toString().isNotEmpty == true
+                ? feed['coverImageUrl']
+                : null,
+          );
+          if (coverImageUrl == null && venueName.isNotEmpty) {
+            final matchedVenue = _allVenues.firstWhere(
+              (v) => v.name.toLowerCase() == venueName.toLowerCase(),
+              orElse: () => _allVenues.isNotEmpty ? _allVenues.first : Venue(
+                id: '0', name: venueName, city: '', addressLine1: '',
+                averageRating: 0.0,
+              ),
+            );
+            coverImageUrl = ApiService.formatImageUrl(matchedVenue.imageUrl);
           }
 
           return RepaintBoundary(
