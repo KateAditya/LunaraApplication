@@ -596,9 +596,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     setState(() {
       _chatSessionLoaded = true;
       _adminSettingsAvailable = result != null && settings != null;
-      _canChat = result?['canChat'] == true;
-      _daysLeft = (result?['daysLeft'] as num?)?.toInt() ?? 0;
-      _isFreeChat = result?['isFree'] == true;
+      // Chat is free — if API fails or returns null, always allow chat
+      _canChat = result == null ? true : (result['canChat'] == true);
+      _daysLeft = (result?['daysLeft'] as num?)?.toInt() ?? 3650;
+      _isFreeChat = result == null ? true : (result['isFree'] == true);
       // Only update if admin returned a value — never use a local default
       if (extDays != null) _extensionDays = extDays;
       if (extPrice != null) _extensionPrice = extPrice;
@@ -1012,16 +1013,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _openIcebreakers() async {
-    final bool chatExpired = _chatSessionLoaded && !_canChat;
-    if (chatExpired) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Chat session has expired. Please extend to send messages.'),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
-      return;
-    }
+    // Chat is free — no session expiry check needed
     final selected = await IcebreakerModal.show(context);
     if (selected != null && selected.isNotEmpty) {
       await _sendMessage(type: 'icebreaker', content: selected);
@@ -1031,16 +1023,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // ── Invitation Response ──────────────────────────────────────────────────────
 
   Future<void> _respondInvitation(String messageId, String action) async {
-    final bool chatExpired = _chatSessionLoaded && !_canChat;
-    if (chatExpired) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Chat session has expired. Please extend to respond to invitation.'),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
-      return;
-    }
+    // Chat is free — no session expiry check needed
     final convId = _conversationId;
     final userId = _currentUserId;
     if (convId == null || userId == null) return;

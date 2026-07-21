@@ -122,17 +122,15 @@ export const createGroupParty = async (req: Request, res: Response): Promise<voi
         });
 
         try {
+            const isPaid = totalAmount <= 0;
             const host = await User.findByPk(userId, { attributes: ['id', 'fcmToken'] });
-            if (host && host.fcmToken) {
+            if (isPaid && host && host.fcmToken) {
                 const { sendPushNotification } = require('../services/fcmService');
-                const isPaid = totalAmount <= 0;
                 await sendPushNotification(host.fcmToken, {
-                    title: isPaid ? 'Group Party Booked! 🎉' : 'Group Party Initiated 💳',
-                    body: isPaid
-                        ? `Your group party of ${numberOfFriends} friends at ${venue.name} is confirmed!`
-                        : `Your group party of ${numberOfFriends} friends at ${venue.name} is initiated. Complete payment to confirm.`,
+                    title: 'Group Party Booked! 🎉',
+                    body: `Your group party of ${numberOfFriends} friends at ${venue.name} is confirmed!`,
                     data: {
-                        type: isPaid ? 'group_party_confirmed' : 'group_party_initiated',
+                        type: 'group_party_confirmed',
                         partyId: groupParty.id,
                     }
                 });

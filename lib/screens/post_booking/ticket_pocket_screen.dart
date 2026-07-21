@@ -355,8 +355,12 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
 
   Widget _buildActiveTickets() {
     final activeBookings = _allBookings.where((b) {
-      if (b is Map<String, dynamic>) {
-        return _isActiveBooking(b);
+      if (b is Map) {
+        try {
+          return _isActiveBooking(Map<String, dynamic>.from(b));
+        } catch (_) {
+          return false;
+        }
       }
       return false;
     }).toList();
@@ -369,7 +373,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
       padding: const EdgeInsets.all(24),
       itemCount: activeBookings.length,
       itemBuilder: (context, index) {
-        final booking = activeBookings[index] as Map<String, dynamic>;
+        final booking = Map<String, dynamic>.from(activeBookings[index] as Map);
         return _buildTicketCard(booking, isActive: true);
       },
     );
@@ -377,8 +381,12 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
 
   Widget _buildPastTickets() {
     final pastBookings = _allBookings.where((b) {
-      if (b is Map<String, dynamic>) {
-        return !_isActiveBooking(b);
+      if (b is Map) {
+        try {
+          return !_isActiveBooking(Map<String, dynamic>.from(b));
+        } catch (_) {
+          return false;
+        }
       }
       return false;
     }).toList();
@@ -391,7 +399,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
       padding: const EdgeInsets.all(24),
       itemCount: pastBookings.length,
       itemBuilder: (context, index) {
-        final booking = pastBookings[index] as Map<String, dynamic>;
+        final booking = Map<String, dynamic>.from(pastBookings[index] as Map);
         return _buildTicketCard(booking, isActive: false);
       },
     );

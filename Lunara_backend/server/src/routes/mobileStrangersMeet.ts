@@ -4,6 +4,7 @@ import { validate } from '../middleware/validate';
 import {
     createRequest,
     getUserRequests,
+    getUserJoinedMeets,
     getRequestById,
     confirmPayment,
     initiatePayment,
@@ -56,6 +57,16 @@ router.get(
     '/my-requests/:userId',
     [param('userId').isUUID().withMessage('userId must be a valid UUID'), validate],
     getUserRequests
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/mobile/strangers-meet/my-joined/:userId
+// Get all requests user has joined
+// ─────────────────────────────────────────────────────────────────────────────
+router.get(
+    '/my-joined/:userId',
+    [param('userId').isUUID().withMessage('userId must be a valid UUID'), validate],
+    getUserJoinedMeets
 );
 
 // ─────────────────────────────────────────────────────────────────────────────

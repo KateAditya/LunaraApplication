@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/theme.dart';
 import '../../models/user.dart';
 import '../../services/api_service.dart';
+import '../../widgets/subscription_limit_dialog.dart';
 
 class EditProfileScreen extends StatefulWidget {
   final User user;
@@ -463,6 +464,103 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
+  Widget _buildHideProfileOption() {
+    final isProUser = widget.user.isPro;
+
+    if (isProUser) {
+      return _buildSwitch('Hide Profile', _invisibleMode, (v) => setState(() => _invisibleMode = v));
+    }
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12, top: 8),
+      child: GestureDetector(
+        onTap: () {
+          showSubscriptionLimitDialog(
+            context,
+            feature: SubLimitFeature.hideProfile,
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E1E30) : Colors.grey[50],
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: LunaraTheme.premiumShadow,
+            border: Border.all(
+              color: LunaraTheme.electricViolet.withValues(alpha: 0.15),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.visibility_off_outlined, color: Theme.of(context).colorScheme.onSurface, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Row(
+                  children: [
+                    Text(
+                      'Hide Profile',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF7F00FF), Color(0xFFE100FF)],
+                        ),
+                        borderRadius: BorderRadius.all(Radius.circular(6)),
+                      ),
+                      child: const Text(
+                        'VIP',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: () {
+                  showSubscriptionLimitDialog(
+                    context,
+                    feature: SubLimitFeature.hideProfile,
+                  );
+                },
+                icon: const Icon(Icons.lock, size: 12, color: Colors.white),
+                label: const Text(
+                  'UPGRADE',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: LunaraTheme.electricViolet,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildSection(String title, List<Widget> children, {bool initiallyExpanded = false}) {
     return Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -717,7 +815,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 const SizedBox(height: 8),
 
                 _buildSection('SETTINGS', [
-                  _buildSwitch('Hide Profile', _invisibleMode, (v) => setState(() => _invisibleMode = v)),
+                  _buildHideProfileOption(),
                   _buildSwitch('Booking Alerts Enabled', _bookingAlerts, (v) => setState(() => _bookingAlerts = v)),
                   const SizedBox(height: 16),
                 ], initiallyExpanded: true),

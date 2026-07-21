@@ -405,6 +405,39 @@ export const getUserRequests = async (req: Request, res: Response): Promise<void
     }
 };
 
+export const getUserJoinedMeets = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { userId } = req.params;
+        const user = await User.findByPk(userId, { attributes: ['id'] });
+        if (!user) { res.status(404).json({ success: false, message: 'User not found' }); return; }
+
+        const joiners = await StrangersMeetJoiner.findAll({
+            where: { userId },
+            include: [
+                {
+                    model: StrangersMeetRequest,
+                    as: 'strangersMeetRequest',
+                    include: buildIncludes(),
+                }
+            ],
+            order: [['createdAt', 'DESC']],
+        });
+
+        const requests = joiners
+            .map((j: any) => j.strangersMeetRequest)
+            .filter((r: any) => r !== null);
+
+        res.json({
+            success: true,
+            total: requests.length,
+            data: requests.map(formatRequest),
+        });
+    } catch (err: any) {
+        logger.error('getUserJoinedMeets error:', err);
+        res.status(500).json({ success: false, message: 'Failed to fetch joined meets', error: err.message });
+    }
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/mobile/strangers-meet/:id
 // ─────────────────────────────────────────────────────────────────────────────

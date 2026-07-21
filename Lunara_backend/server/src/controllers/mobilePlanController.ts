@@ -14,6 +14,7 @@ import PartyPlanRequest, { PartyPlanRequestStatus } from '../models/PartyPlanReq
 import UserPhoto from '../models/UserPhoto';
 import StrangersMeetRequest from '../models/StrangersMeetRequest';
 import StrangersMeetJoiner from '../models/StrangersMeetJoiner';
+import GroupParty from '../models/GroupParty';
 import { logger } from '../config/logger';
 import Conversation from '../models/Conversation';
 import ChatSubscription, { ChatSubscriptionStatus, ChatSubscriptionType } from '../models/ChatSubscription';
@@ -405,6 +406,16 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 ]
             });
 
+            // Fetch my Group Parties (<= 20 friends)
+            const myGroupParties = await GroupParty.findAll({
+                where: {
+                    userId: viewerId as string,
+                },
+                include: [
+                    { model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }
+                ]
+            });
+
             // Fetch my Strangers Meet Requests
             const myStrangersMeetReqs = await StrangersMeetRequest.findAll({
                 where: { userId: viewerId as string },
@@ -471,6 +482,32 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                     status: b.adminApprovalStatus || 'pending',
                     createdAt: b.createdAt,
                     booking: b
+                })),
+                ...myGroupParties.map((gp: any) => ({
+                    id: gp.id,
+                    type: 'my_request',
+                    requestType: 'large_party_request',
+                    status: gp.status || 'pending',
+                    createdAt: gp.createdAt,
+                    booking: {
+                        id: gp.id,
+                        bookingId: gp.id,
+                        venue: gp.venue,
+                        venueName: gp.venue?.name,
+                        venueAddress: gp.venue?.addressLine1 ?? gp.venue?.city ?? '',
+                        status: gp.status || 'pending',
+                        bookingStatus: gp.status || 'pending',
+                        numberOfGuests: gp.numberOfFriends,
+                        partySubject: 'Group Party',
+                        bookingDate: gp.partyDate,
+                        startTime: '08:00 PM',
+                        approvedAmount: gp.totalAmount,
+                        charges: gp.totalAmount,
+                        createdAt: gp.createdAt,
+                        mobileNumber: gp.mobileNumber,
+                        optionalMobileNumber: gp.optionalMobileNumber,
+                        goingMode: 'party_request'
+                    }
                 })),
                 ...myStrangersMeetReqs.map((r: any) => ({
                     id: r.id,
