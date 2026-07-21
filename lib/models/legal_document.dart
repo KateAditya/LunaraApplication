@@ -28,10 +28,16 @@ class LegalDocument {
       type: json['type'] ?? '',
       content: json['content'] ?? '',
       version: json['version']?.toString() ?? '',
-      isActive: json['isActive'] ?? false,
-      effectiveDate: json['effectiveDate'] != null ? DateTime.tryParse(json['effectiveDate']) : null,
-      createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt']) : null,
-      updatedAt: json['updatedAt'] != null ? DateTime.tryParse(json['updatedAt']) : null,
+      isActive: json['isActive'] ?? json['is_active'] ?? false,
+      effectiveDate: json['effectiveDate'] != null 
+          ? DateTime.tryParse(json['effectiveDate'].toString()) 
+          : (json['effective_date'] != null ? DateTime.tryParse(json['effective_date'].toString()) : null),
+      createdAt: json['createdAt'] != null 
+          ? DateTime.tryParse(json['createdAt'].toString()) 
+          : (json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) : null),
+      updatedAt: json['updatedAt'] != null 
+          ? DateTime.tryParse(json['updatedAt'].toString()) 
+          : (json['updated_at'] != null ? DateTime.tryParse(json['updated_at'].toString()) : null),
     );
   }
 

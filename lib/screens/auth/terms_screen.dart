@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
+import '../../services/api_service.dart';
 
-class TermsScreen extends StatelessWidget {
+class TermsScreen extends StatefulWidget {
   const TermsScreen({super.key});
 
   static const String termsText = '''App Name: Powered by: SSKL WORLD.
@@ -10,49 +11,6 @@ Jurisdiction: Pune, Maharashtra, India
 TERMS & CONDITIONS
 
 These Terms & Conditions ("Terms") constitute a legally binding agreement between You ("User", "You", "Your") and SSKL WORLD, the owner and operator of the digital platform known as LUNARA ("LUNARA", "Platform", "Company", "We", "Us", or "Our").
-
-These Terms govern Your access to and use of the LUNARA mobile application, website, software, platform services, social discovery features, matchmaking tools, venue discovery services, bookings, subscriptions, content, communications, events, promotional offers, and all associated services provided by LUNARA.
-
-By accessing, downloading, browsing, registering on, or using the Platform in any manner whatsoever, You acknowledge that You have read, understood, and agreed to be legally bound by these Terms, the Privacy Policy, Refund & Cancellation Policy, Community Guidelines, Venue Partner Policies, and all other policies issued by LUNARA from time to time.
-
-IF YOU DO NOT AGREE TO THESE TERMS, YOU MUST IMMEDIATELY STOP USING THE PLATFORM.''';
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      appBar: AppBar(
-        title: Text(
-          'Terms and Conditions',
-          style: LunaraTheme.headingStyle.copyWith(
-            fontSize: 20,
-            color: Theme.of(context).colorScheme.onSurface,
-          ),
-        ),
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        elevation: 0,
-        iconTheme: IconThemeData(color: Theme.of(context).colorScheme.onSurface),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Terms and Conditions',
-              style: LunaraTheme.headingStyle.copyWith(
-                fontSize: 24,
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              '''App Name: Powered by: SSKL WORLD.
-Jurisdiction: Pune, Maharashtra, India
-
-TERMS & CONDITIONS
-
-These Terms & Conditions (“Terms”) constitute a legally binding agreement between You (“User”, “You”, “Your”) and SSKL WORLD, the owner and operator of the digital platform known as LUNARA (“LUNARA”, “Platform”, “Company”, “We”, “Us”, or “Our”).
 
 These Terms govern Your access to and use of the LUNARA mobile application, website, software, platform services, social discovery features, matchmaking tools, venue discovery services, bookings, subscriptions, content, communications, events, promotional offers, and all associated services provided by LUNARA.
 
@@ -404,16 +362,78 @@ These Terms together with the Privacy Policy, Refund Policy, Community Guideline
 LUNARA – Powered by SSKL WORLD
 Pune, Maharashtra, India
 Email: __________________
-Support: __________________''',
-              style: TextStyle(
-                fontSize: 14,
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.8),
-                height: 1.5,
+Support: __________________''';
+
+  @override
+  State<TermsScreen> createState() => _TermsScreenState();
+}
+
+class _TermsScreenState extends State<TermsScreen> {
+  String _content = '';
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTerms();
+  }
+
+  Future<void> _loadTerms() async {
+    final doc = await ApiService.fetchLegalDocumentByType('terms_of_service');
+    if (mounted) {
+      setState(() {
+        _content = doc?.content ?? TermsScreen.termsText;
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      appBar: AppBar(
+        title: Text(
+          'Terms and Conditions',
+          style: LunaraTheme.headingStyle.copyWith(
+            fontSize: 20,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        elevation: 0,
+        iconTheme: IconThemeData(color: Theme.of(context).colorScheme.onSurface),
+      ),
+      body: _isLoading
+          ? const Center(
+              child: CircularProgressIndicator(
+                color: LunaraTheme.primaryRich,
+              ),
+            )
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Terms and Conditions',
+                    style: LunaraTheme.headingStyle.copyWith(
+                      fontSize: 24,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    _content,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.8),
+                      height: 1.5,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
-      ),
     );
   }
 }

@@ -755,19 +755,36 @@ class _TermsScrollBottomSheet extends StatefulWidget {
 class _TermsScrollBottomSheetState extends State<_TermsScrollBottomSheet> {
   final ScrollController _scrollController = ScrollController();
   bool _canAccept = false;
+  String _termsContent = '';
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    // Allow accept if content is shorter than viewport
-    WidgetsBinding.instance.addPostFrameCallback((_) => _onScroll());
+    _loadTerms();
+  }
+
+  Future<void> _loadTerms() async {
+    final doc = await ApiService.fetchLegalDocumentByType('terms_of_service');
+    if (mounted) {
+      setState(() {
+        _termsContent = doc?.content ?? 'Failed to load Terms and Conditions. Please try again later.';
+        _isLoading = false;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) => _onScroll());
+    }
   }
 
   void _onScroll() {
-    if (!_scrollController.hasClients) return;
+    if (!_scrollController.hasClients) {
+      if (!_canAccept && !_isLoading) {
+        setState(() => _canAccept = true);
+      }
+      return;
+    }
     final pos = _scrollController.position;
-    final atBottom = pos.pixels >= pos.maxScrollExtent - 40;
+    final atBottom = pos.pixels >= pos.maxScrollExtent - 40 || pos.maxScrollExtent <= 0;
     if (atBottom && !_canAccept) setState(() => _canAccept = true);
   }
 
@@ -848,11 +865,24 @@ class _TermsScrollBottomSheetState extends State<_TermsScrollBottomSheet> {
               ),
               // Scrollable terms content
               Expanded(
-                child: SingleChildScrollView(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
-                  child: const TermsContent(),
-                ),
+                child: _isLoading
+                    ? const Center(
+                        child: CircularProgressIndicator(
+                          color: LunaraTheme.primaryRich,
+                        ),
+                      )
+                    : SingleChildScrollView(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+                        child: Text(
+                          _termsContent,
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            height: 1.6,
+                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.82),
+                          ),
+                        ),
+                      ),
               ),
               // Accept button
               SafeArea(
@@ -871,67 +901,50 @@ class _TermsScrollBottomSheetState extends State<_TermsScrollBottomSheet> {
                               const SizedBox(width: 4),
                               Text(
                                 'Scroll down to enable acceptance',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: LunaraTheme.primaryRich,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: LunaraTheme.primaryRich,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        AnimatedOpacity(
+                          opacity: _canAccept ? 1.0 : 0.4,
+                          duration: const Duration(milliseconds: 300),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: _canAccept ? widget.onAccepted : null,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: LunaraTheme.primaryRich,
+                                disabledBackgroundColor:
+                                    LunaraTheme.primaryRich.withValues(alpha: 0.4),
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
                                 ),
                               ),
-                            ],
-                          ),
-                        ),
-                      AnimatedOpacity(
-                        opacity: _canAccept ? 1.0 : 0.4,
-                        duration: const Duration(milliseconds: 300),
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: _canAccept ? widget.onAccepted : null,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: LunaraTheme.primaryRich,
-                              disabledBackgroundColor:
-                                  LunaraTheme.primaryRich.withValues(alpha: 0.4),
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                            ),
-                            child: const Text(
-                              'I AGREE & ACCEPT',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                                letterSpacing: 1,
+                              child: const Text(
+                                'I AGREE & ACCEPT',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                  letterSpacing: 1,
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+              ],
+            ),
+          );
+        },
+      );
+    }
   }
-}
-
-/// Reusable widget exposing the Terms text content.
-class TermsContent extends StatelessWidget {
-  const TermsContent({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      TermsScreen.termsText,
-      style: TextStyle(
-        fontSize: 13.5,
-        height: 1.6,
-        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.82),
-      ),
-    );
-  }
-}

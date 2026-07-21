@@ -107,6 +107,7 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.addSocketListener('party_plan_host_paid', _onPartyPlanHostPaid);
     ApiService.addSocketListener('party_plan_joiner_paid', _onPartyPlanJoinerPaid);
     ApiService.addSocketListener('plan_unavailable', _onPlanUnavailable);
+    ApiService.addSocketListener('notification_created', _onNotificationCreated);
   }
 
   void _disposeSocketListeners() {
@@ -117,6 +118,12 @@ class _LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.removeSocketListener('party_plan_host_paid', _onPartyPlanHostPaid);
     ApiService.removeSocketListener('party_plan_joiner_paid', _onPartyPlanJoinerPaid);
     ApiService.removeSocketListener('plan_unavailable', _onPlanUnavailable);
+    ApiService.removeSocketListener('notification_created', _onNotificationCreated);
+  }
+
+  void _onNotificationCreated(dynamic data) {
+    if (!mounted) return;
+    _loadFeed(showLoader: false);
   }
 
   void _onPartyPlanCreated(dynamic data) {

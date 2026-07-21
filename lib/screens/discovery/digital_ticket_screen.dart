@@ -51,48 +51,50 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
 
   DateTime? _getEventDateTime() {
     try {
-      String dateStr = widget.date ?? '';
-      String timeStr = widget.time ?? '';
+      String dateStr = (widget.date ?? '').trim();
+      String timeStr = (widget.time ?? '').trim();
+      
+      if (dateStr.isEmpty) return null;
+
+      // 1. Try direct parsing of the date string
+      var parsed = DateTime.tryParse(dateStr);
+      if (parsed != null) {
+        if (timeStr.isNotEmpty) {
+          final timeParts = _parseTimeStr(timeStr);
+          return DateTime(parsed.year, parsed.month, parsed.day, timeParts[0], timeParts[1]);
+        }
+        return parsed;
+      }
+
+      // 2. Try direct parsing of combined date and time
+      if (timeStr.isNotEmpty) {
+        parsed = DateTime.tryParse('$dateStr $timeStr');
+        if (parsed != null) return parsed;
+        parsed = DateTime.tryParse('${dateStr}T$timeStr');
+        if (parsed != null) return parsed;
+      }
+
+      // 3. Handle split if contains '•' or 'at'
       if (dateStr.contains('•')) {
         final parts = dateStr.split('•');
         dateStr = parts[0].trim();
         if (parts.length > 1 && timeStr.isEmpty) {
           timeStr = parts[1].trim();
         }
-      }
-      if (dateStr.isEmpty) return null;
-
-      // Parse time parts
-      int hour = 20; // default 8 PM
-      int minute = 0;
-      if (timeStr.isNotEmpty) {
-        final cleanTime = timeStr.toUpperCase();
-        // Check if AM/PM format
-        if (cleanTime.contains('AM') || cleanTime.contains('PM')) {
-          final isPm = cleanTime.contains('PM');
-          final timeOnly = cleanTime.replaceAll('AM', '').replaceAll('PM', '').trim();
-          final parts = timeOnly.split(':');
-          if (parts.isNotEmpty) {
-            int h = int.tryParse(parts[0]) ?? 12;
-            int m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
-            if (isPm && h < 12) h += 12;
-            if (!isPm && h == 12) h = 0;
-            hour = h;
-            minute = m;
-          }
-        } else {
-          // 24 hour format e.g. "20:00"
-          final parts = timeStr.split(':');
-          if (parts.isNotEmpty) {
-            hour = int.tryParse(parts[0]) ?? 20;
-            minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
-          }
+      } else if (dateStr.contains(' at ')) {
+        final parts = dateStr.split(' at ');
+        dateStr = parts[0].trim();
+        if (parts.length > 1 && timeStr.isEmpty) {
+          timeStr = parts[1].trim();
         }
       }
 
-      // Parse date parts
-      // Format 1: YYYY-MM-DD
-      final ymdRegex = RegExp(r'^(\d{4})[-/](\d{1,2})[-/](\d{1,2})');
+      final timeParts = _parseTimeStr(timeStr);
+      final hour = timeParts[0];
+      final minute = timeParts[1];
+
+      // 4. Try regex for YYYY-MM-DD
+      final ymdRegex = RegExp(r'(\d{4})[-/](\d{1,2})[-/](\d{1,2})');
       var match = ymdRegex.firstMatch(dateStr);
       if (match != null) {
         final year = int.parse(match.group(1)!);
@@ -101,8 +103,8 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
         return DateTime(year, month, day, hour, minute);
       }
 
-      // Format 2: DD-MM-YYYY or DD/MM/YYYY
-      final dmyRegex = RegExp(r'^(\d{1,2})[-/](\d{1,2})[-/](\d{4})');
+      // 5. Try regex for DD-MM-YYYY
+      final dmyRegex = RegExp(r'(\d{1,2})[-/](\d{1,2})[-/](\d{4})');
       match = dmyRegex.firstMatch(dateStr);
       if (match != null) {
         final day = int.parse(match.group(1)!);
@@ -111,8 +113,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
         return DateTime(year, month, day, hour, minute);
       }
 
-      // Format 3: EEE, MMM d or MMM d (e.g. "Mon, Jul 21" or "Jul 21" or "SAT, OCT 24")
-      // Since year is not present, default to current year
+      // 6. Try word-based month format (e.g., "FRI, JUL 24", "24 JUL 2026")
       final monthsList = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
       final cleanDate = dateStr.toUpperCase();
       int? foundMonth;
@@ -124,20 +125,55 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
       }
 
       if (foundMonth != null) {
+        final yearRegex = RegExp(r'\b(20\d{2})\b');
+        final yearMatch = yearRegex.firstMatch(dateStr);
+        final year = yearMatch != null ? int.parse(yearMatch.group(1)!) : DateTime.now().year;
+
         final dayRegex = RegExp(r'\b(\d{1,2})\b');
-        final dayMatch = dayRegex.firstMatch(cleanDate);
-        if (dayMatch != null) {
-          final day = int.parse(dayMatch.group(1)!);
-          final yearRegex = RegExp(r'\b(20\d{2})\b');
-          final yearMatch = yearRegex.firstMatch(cleanDate);
-          final year = yearMatch != null ? int.parse(yearMatch.group(1)!) : DateTime.now().year;
-          return DateTime(year, foundMonth, day, hour, minute);
+        final dayMatches = dayRegex.allMatches(cleanDate);
+        int? day;
+        for (final m in dayMatches) {
+          final val = int.parse(m.group(1)!);
+          if (val != year % 100 && val != year / 100 && val <= 31) {
+            day = val;
+            break;
+          }
         }
+        day ??= 1;
+        return DateTime(year, foundMonth, day, hour, minute);
       }
     } catch (e) {
       debugPrint("Error parsing event datetime: $e");
     }
     return null;
+  }
+
+  List<int> _parseTimeStr(String timeStr) {
+    int hour = 20; // default 8 PM
+    int minute = 0;
+    if (timeStr.isNotEmpty) {
+      final cleanTime = timeStr.toUpperCase();
+      if (cleanTime.contains('AM') || cleanTime.contains('PM')) {
+        final isPm = cleanTime.contains('PM');
+        final timeOnly = cleanTime.replaceAll('AM', '').replaceAll('PM', '').trim();
+        final parts = timeOnly.split(':');
+        if (parts.isNotEmpty) {
+          int h = int.tryParse(parts[0]) ?? 12;
+          int m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+          if (isPm && h < 12) h += 12;
+          if (!isPm && h == 12) h = 0;
+          hour = h;
+          minute = m;
+        }
+      } else {
+        final parts = timeStr.split(':');
+        if (parts.isNotEmpty) {
+          hour = int.tryParse(parts[0]) ?? 20;
+          minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+        }
+      }
+    }
+    return [hour, minute];
   }
 
   void _startCountdown() {
@@ -226,22 +262,49 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
     final venue = widget.venue;
     if (venue == null) return 'https://picsum.photos/seed/venue/600/400';
     
+    String normalize(String path) {
+      final clean = path.replaceAll('\\', '/');
+      if (clean.startsWith('http://') || clean.startsWith('https://')) {
+        return clean;
+      }
+      return '${ApiService.baseUrl}/${clean.startsWith('/') ? clean.substring(1) : clean}';
+    }
+
+    if (venue['coverImage'] != null && venue['coverImage'] is Map) {
+      final path = venue['coverImage']['url'] ?? venue['coverImage']['filePath'];
+      if (path != null && path.toString().isNotEmpty) {
+        return normalize(path.toString());
+      }
+    }
+    
     if (venue['imageUrl'] != null && venue['imageUrl'].toString().isNotEmpty) {
-      final path = venue['imageUrl'].toString().replaceAll('\\', '/');
-      return path.startsWith('http') ? path : '${ApiService.baseUrl}/${path.startsWith('/') ? path.substring(1) : path}';
+      return normalize(venue['imageUrl'].toString());
+    }
+    if (venue['image'] != null && venue['image'].toString().isNotEmpty) {
+      return normalize(venue['image'].toString());
     }
     
     final images = venue['images'];
     if (images is List && images.isNotEmpty) {
       final img = images[0];
       if (img is Map) {
-        final path = (img['filePath'] ?? img['url'] ?? '').toString().replaceAll('\\', '/');
-        if (path.isNotEmpty) {
-          return path.startsWith('http') ? path : '${ApiService.baseUrl}/${path.startsWith('/') ? path.substring(1) : path}';
+        final path = img['filePath'] ?? img['url'] ?? img['filePath'];
+        if (path != null && path.toString().isNotEmpty) {
+          return normalize(path.toString());
         }
-      } else if (img is String) {
-        final path = img.replaceAll('\\', '/');
-        return path.startsWith('http') ? path : '${ApiService.baseUrl}/${path.startsWith('/') ? path.substring(1) : path}';
+      } else if (img is String && img.isNotEmpty) {
+        return normalize(img);
+      }
+    }
+
+    final gallery = venue['gallery'];
+    if (gallery is List && gallery.isNotEmpty) {
+      final img = gallery[0];
+      if (img is Map) {
+        final path = img['url'] ?? img['filePath'];
+        if (path != null && path.toString().isNotEmpty) {
+          return normalize(path.toString());
+        }
       }
     }
     
@@ -300,8 +363,9 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: isDark ? LunaraTheme.midnightBlack : Colors.white,
       body: SafeArea(
         child: Column(
           children: [
@@ -310,7 +374,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
               child: Center(
                 child: SingleChildScrollView(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                     child: Align(
                       alignment: Alignment.topCenter,
                       child: _buildGlowingTicket(context),
@@ -327,27 +391,29 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
   }
 
   Widget _buildHeader(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final color = isDark ? Colors.white : Colors.black87;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           IconButton(
-            icon: const Icon(Icons.close, color: Colors.black87),
+            icon: Icon(Icons.close, color: color),
             onPressed: () =>
                 Navigator.of(context).popUntil((route) => route.isFirst),
           ),
-          const Text(
+          Text(
             'DIGITAL TICKET',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w900,
               letterSpacing: 4,
-              color: Colors.black87,
+              color: color,
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.share_outlined, color: Colors.black87, size: 20),
+            icon: Icon(Icons.share_outlined, color: color, size: 20),
             onPressed: () => _shareTicket(context),
           ),
         ],
@@ -356,6 +422,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
   }
 
   Widget _buildGlowingTicket(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final String venueName = widget.venue?['name']?.toString() ?? 'ELARA VELVET';
     final String venueCity = widget.venue?['city']?.toString() ?? 'Unknown City';
     final String venueArea = widget.venue?['area']?.toString() ?? '';
@@ -417,17 +484,31 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
     return Container(
       width: ticketWidth,
       decoration: BoxDecoration(
-        gradient: LunaraTheme.cardGradient,
+        gradient: isDark 
+            ? const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF1E1E28), Color(0xFF15151D)],
+              )
+            : LunaraTheme.cardGradient,
         borderRadius: BorderRadius.circular(32),
-        boxShadow: LunaraTheme.premiumCardShadow,
-        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.15)),
+        boxShadow: isDark
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.3),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                )
+              ]
+            : LunaraTheme.premiumCardShadow,
+        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: isDark ? 0.3 : 0.15)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           // Event Banner Section with Venue Image Background
           Container(
-            height: 180,
+            height: (MediaQuery.of(context).size.height * 0.22).clamp(130.0, 190.0),
             decoration: const BoxDecoration(
               borderRadius: BorderRadius.vertical(
                 top: Radius.circular(32),
@@ -460,7 +541,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                           colors: [
-                            Colors.black.withValues(alpha: 0.2),
+                            Colors.transparent,
                             Colors.black.withValues(alpha: 0.8),
                           ],
                         ),
@@ -477,7 +558,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                         Text(
                           venueName.toUpperCase(),
                           style: const TextStyle(
-                            fontSize: 24,
+                            fontSize: 22,
                             fontWeight: FontWeight.w900,
                             color: Colors.white,
                             letterSpacing: 1,
@@ -490,7 +571,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                           displayDateTime.toUpperCase(),
                           style: const TextStyle(
                             color: LunaraTheme.cyberCyan,
-                            fontSize: 12,
+                            fontSize: 11,
                             fontWeight: FontWeight.w900,
                           ),
                           maxLines: 1,
@@ -510,9 +591,9 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
               Container(
                 width: 12,
                 height: 24,
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.horizontal(
+                decoration: BoxDecoration(
+                  color: isDark ? LunaraTheme.midnightBlack : Colors.white,
+                  borderRadius: const BorderRadius.horizontal(
                     right: Radius.circular(12),
                   ),
                 ),
@@ -531,7 +612,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                           height: 2,
                           child: DecoratedBox(
                             decoration: BoxDecoration(
-                              color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
+                              color: LunaraTheme.electricViolet.withValues(alpha: isDark ? 0.4 : 0.2),
                             ),
                           ),
                         ),
@@ -543,9 +624,9 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
               Container(
                 width: 12,
                 height: 24,
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.horizontal(
+                decoration: BoxDecoration(
+                  color: isDark ? LunaraTheme.midnightBlack : Colors.white,
+                  borderRadius: const BorderRadius.horizontal(
                     left: Radius.circular(12),
                   ),
                 ),
@@ -555,89 +636,93 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
 
           // Dynamic Info & Profiles Section
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 // Live Countdown Banner
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  margin: const EdgeInsets.only(bottom: 20),
+                  margin: const EdgeInsets.only(bottom: 16),
                   decoration: BoxDecoration(
-                    color: LunaraTheme.electricViolet.withValues(alpha: 0.08),
+                    color: LunaraTheme.electricViolet.withValues(alpha: isDark ? 0.15 : 0.08),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.25)),
+                    border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: isDark ? 0.4 : 0.25)),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.timer_outlined, color: LunaraTheme.electricViolet, size: 20),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'EXPIRATION COUNTDOWN: ',
-                        style: TextStyle(
-                          color: Colors.black87,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 11,
-                          letterSpacing: 1,
+                  child: Center(
+                    child: Wrap(
+                      alignment: WrapAlignment.center,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        const Icon(Icons.timer_outlined, color: LunaraTheme.electricViolet, size: 18),
+                        Text(
+                          'EXPIRATION COUNTDOWN: ',
+                          style: TextStyle(
+                            color: isDark ? Colors.white70 : Colors.black87,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 10,
+                            letterSpacing: 1,
+                          ),
                         ),
-                      ),
-                      Text(
-                        _formatCountdownText(),
-                        style: const TextStyle(
-                          color: LunaraTheme.electricViolet,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 15,
-                          letterSpacing: 1.5,
+                        Text(
+                          _formatCountdownText(),
+                          style: const TextStyle(
+                            color: LunaraTheme.electricViolet,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                            letterSpacing: 1.5,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
 
                 // Ticket Holder Profile Section
                 Container(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.grey[50],
+                    color: isDark ? const Color(0xFF24242E) : Colors.grey[50],
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.grey[200]!),
+                    border: Border.all(color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.grey[200]!),
                   ),
                   child: Row(
                     children: [
                       if (hostUser != null)
                         LunaraProfileImage(
                           user: hostUser,
-                          radius: 30,
+                          radius: 26,
                           showGradientBorder: true,
                           isInteractive: true,
                         )
                       else
                         CircleAvatar(
-                          radius: 30,
-                          backgroundColor: Colors.grey[200],
-                          child: Icon(Icons.person, color: Colors.grey[500], size: 28),
+                          radius: 26,
+                          backgroundColor: isDark ? Colors.grey[800] : Colors.grey[200],
+                          child: Icon(Icons.person, color: isDark ? Colors.grey[400] : Colors.grey[500], size: 24),
                         ),
-                      const SizedBox(width: 16),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               cleanHostName,
-                              style: const TextStyle(
-                                color: Colors.black87,
+                              style: TextStyle(
+                                color: isDark ? Colors.white : Colors.black87,
                                 fontWeight: FontWeight.bold,
-                                fontSize: 16,
+                                fontSize: 15,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                             Text(
                               hostUsername,
-                              style: const TextStyle(
-                                color: Colors.black54,
-                                fontSize: 12,
+                              style: TextStyle(
+                                color: isDark ? Colors.white70 : Colors.black54,
+                                fontSize: 11,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -646,14 +731,14 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
                           color: LunaraTheme.electricViolet.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(10),
                           border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.2), width: 1),
                         ),
                         child: const Text(
-                          'TICKET HOLDER',
+                          'HOLDER',
                           style: TextStyle(
                             color: LunaraTheme.electricViolet,
                             fontSize: 9,
@@ -665,16 +750,16 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
 
                 // Payment details card
                 Container(
-                  padding: const EdgeInsets.all(14),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.grey[50],
+                    color: isDark ? const Color(0xFF24242E) : Colors.grey[50],
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: Colors.grey[200]!,
+                      color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.grey[200]!,
                     ),
                   ),
                   child: Row(
@@ -683,7 +768,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                       Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.all(8),
+                            padding: const EdgeInsets.all(6),
                             decoration: BoxDecoration(
                               color: LunaraTheme.electricViolet.withValues(alpha: 0.08),
                               shape: BoxShape.circle,
@@ -691,28 +776,28 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                             child: const Icon(
                               Icons.account_balance_wallet_rounded,
                               color: LunaraTheme.electricViolet,
-                              size: 18,
+                              size: 16,
                             ),
                           ),
-                          const SizedBox(width: 10),
-                          const Column(
+                          const SizedBox(width: 8),
+                          Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
                                 'PAYMENT METHOD',
                                 style: TextStyle(
-                                  color: Colors.black54,
+                                  color: isDark ? Colors.white54 : Colors.black54,
                                   fontSize: 8,
                                   fontWeight: FontWeight.bold,
                                   letterSpacing: 0.5,
                                 ),
                               ),
-                              SizedBox(height: 2),
+                              const SizedBox(height: 2),
                               Text(
                                 'UPI / Net Banking',
                                 style: TextStyle(
-                                  color: Colors.black87,
-                                  fontSize: 12,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                  fontSize: 11,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -723,10 +808,10 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          const Text(
+                          Text(
                             'AMOUNT PAID',
                             style: TextStyle(
-                              color: Colors.black54,
+                              color: isDark ? Colors.white54 : Colors.black54,
                               fontSize: 8,
                               fontWeight: FontWeight.bold,
                               letterSpacing: 0.5,
@@ -737,9 +822,9 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                             children: [
                               Text(
                                 '₹${amountPaid.toStringAsFixed(0)}',
-                                style: const TextStyle(
-                                  color: Color(0xFF2E7D32),
-                                  fontSize: 14,
+                                style: TextStyle(
+                                  color: isDark ? Colors.green[400] : const Color(0xFF2E7D32),
+                                  fontSize: 13,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -747,13 +832,13 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                                 decoration: BoxDecoration(
-                                  color: Colors.green[50],
+                                  color: Colors.green[50]?.withValues(alpha: isDark ? 0.15 : 1.0),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
                                   'PAID',
                                   style: TextStyle(
-                                    color: Colors.green[700],
+                                    color: isDark ? Colors.green[300] : Colors.green[700],
                                     fontSize: 7,
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -770,12 +855,12 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
 
                 // Venue Details Card with map navigation and distance tag
                 Container(
-                  padding: const EdgeInsets.all(14),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.grey[50],
+                    color: isDark ? const Color(0xFF24242E) : Colors.grey[50],
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: Colors.grey[200]!,
+                      color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.grey[200]!,
                     ),
                   ),
                   child: Column(
@@ -784,18 +869,18 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Container(
-                            width: 40,
-                            height: 40,
+                            width: 36,
+                            height: 36,
                             decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(10),
+                              borderRadius: BorderRadius.circular(8),
                               image: DecorationImage(
                                 image: NetworkImage(cleanVenueImage),
                                 fit: BoxFit.cover,
                               ),
-                              border: Border.all(color: Colors.grey[300]!),
+                              border: Border.all(color: isDark ? Colors.white10 : Colors.grey[300]!),
                             ),
                           ),
-                          const SizedBox(width: 10),
+                          const SizedBox(width: 8),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -805,9 +890,9 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                                     Expanded(
                                       child: Text(
                                         venueName.toUpperCase(),
-                                        style: const TextStyle(
-                                          color: Colors.black87,
-                                          fontSize: 13,
+                                        style: TextStyle(
+                                          color: isDark ? Colors.white : Colors.black87,
+                                          fontSize: 12,
                                           fontWeight: FontWeight.w900,
                                         ),
                                         maxLines: 1,
@@ -818,12 +903,12 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                                       const SizedBox(width: 8),
                                       Container(
                                         padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
+                                          horizontal: 6,
                                           vertical: 2,
                                         ),
                                         decoration: BoxDecoration(
                                           color: LunaraTheme.electricViolet.withValues(alpha: 0.08),
-                                          borderRadius: BorderRadius.circular(8),
+                                          borderRadius: BorderRadius.circular(6),
                                           border: Border.all(
                                             color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
                                             width: 0.5,
@@ -833,7 +918,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                                           distanceText,
                                           style: const TextStyle(
                                             color: LunaraTheme.electricViolet,
-                                            fontSize: 9,
+                                            fontSize: 8,
                                             fontWeight: FontWeight.w900,
                                           ),
                                         ),
@@ -844,8 +929,8 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                                 const SizedBox(height: 2),
                                 Text(
                                   venueAddress,
-                                  style: const TextStyle(
-                                    color: Colors.black54,
+                                  style: TextStyle(
+                                    color: isDark ? Colors.white70 : Colors.black54,
                                     fontSize: 10,
                                   ),
                                   maxLines: 2,
@@ -895,22 +980,22 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
 
                 // Bottom Ticket Info
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Expanded(child: _ticketLabelValue('TABLE', displayTable)),
-                    Expanded(child: _ticketLabelValue('GUESTS', displayGuests)),
-                    Expanded(child: _ticketLabelValue('STATUS', displayStatus)),
+                    Expanded(child: _ticketLabelValue('TABLE', displayTable, isDark)),
+                    Expanded(child: _ticketLabelValue('GUESTS', displayGuests, isDark)),
+                    Expanded(child: _ticketLabelValue('STATUS', displayStatus, isDark)),
                   ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
                 Text(
                   'ADMIT ONE + FRIENDS • TICKET ID: $finalTicketId',
                   style: TextStyle(
-                    color: Colors.grey[600],
+                    color: isDark ? Colors.white54 : Colors.grey[600],
                     fontSize: 9,
                     fontWeight: FontWeight.w900,
                     letterSpacing: 1,
@@ -927,14 +1012,14 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
     );
   }
 
-  Widget _ticketLabelValue(String label, String value) {
+  Widget _ticketLabelValue(String label, String value, bool isDark) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
           label,
           style: TextStyle(
-            color: Colors.grey[600],
+            color: isDark ? Colors.white54 : Colors.grey[600],
             fontSize: 9,
             fontWeight: FontWeight.w900,
           ),
@@ -942,13 +1027,14 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
         const SizedBox(height: 4),
         Text(
           value,
-          style: const TextStyle(
-            color: Colors.black87,
-            fontSize: 13,
+          style: TextStyle(
+            color: isDark ? Colors.white : Colors.black87,
+            fontSize: 12,
             fontWeight: FontWeight.w900,
           ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
         ),
       ],
     );
@@ -957,7 +1043,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
   Widget _buildFooter(BuildContext context) {
     final hasPdf = widget.ticketUrl != null && widget.ticketUrl!.isNotEmpty;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

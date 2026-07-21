@@ -65,18 +65,55 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
   }
 
   String _getVenueImageUrl(Map<String, dynamic>? venue) {
-    if (venue != null && venue['imageUrl'] != null && venue['imageUrl'].toString().isNotEmpty) {
-      final path = venue['imageUrl'].toString().replaceAll('\\', '/');
-      return path.startsWith('http') ? path : '${ApiService.baseUrl}/${path.startsWith('/') ? path.substring(1) : path}';
+    if (venue == null) return 'https://picsum.photos/seed/venue/600/400';
+    
+    String normalize(String path) {
+      final clean = path.replaceAll('\\', '/');
+      if (clean.startsWith('http://') || clean.startsWith('https://')) {
+        return clean;
+      }
+      return '${ApiService.baseUrl}/${clean.startsWith('/') ? clean.substring(1) : clean}';
     }
-    if (venue != null && venue['images'] != null && (venue['images'] as List).isNotEmpty) {
-      final img = venue['images'][0];
-      if (img is Map && img['filePath'] != null) {
-        final path = img['filePath'].toString().replaceAll('\\', '/');
-        return path.startsWith('http') ? path : '${ApiService.baseUrl}/${path.startsWith('/') ? path.substring(1) : path}';
+
+    if (venue['coverImage'] != null && venue['coverImage'] is Map) {
+      final path = venue['coverImage']['url'] ?? venue['coverImage']['filePath'];
+      if (path != null && path.toString().isNotEmpty) {
+        return normalize(path.toString());
       }
     }
-    final idHash = (venue?['name']?.toString() ?? 'venue').hashCode.abs() % 20;
+    
+    if (venue['imageUrl'] != null && venue['imageUrl'].toString().isNotEmpty) {
+      return normalize(venue['imageUrl'].toString());
+    }
+    if (venue['image'] != null && venue['image'].toString().isNotEmpty) {
+      return normalize(venue['image'].toString());
+    }
+    
+    final images = venue['images'];
+    if (images is List && images.isNotEmpty) {
+      final img = images[0];
+      if (img is Map) {
+        final path = img['filePath'] ?? img['url'] ?? img['filePath'];
+        if (path != null && path.toString().isNotEmpty) {
+          return normalize(path.toString());
+        }
+      } else if (img is String && img.isNotEmpty) {
+        return normalize(img);
+      }
+    }
+
+    final gallery = venue['gallery'];
+    if (gallery is List && gallery.isNotEmpty) {
+      final img = gallery[0];
+      if (img is Map) {
+        final path = img['url'] ?? img['filePath'];
+        if (path != null && path.toString().isNotEmpty) {
+          return normalize(path.toString());
+        }
+      }
+    }
+    
+    final idHash = (venue['name']?.toString() ?? 'venue').hashCode.abs() % 20;
     return 'https://picsum.photos/seed/$idHash/600/400';
   }
 

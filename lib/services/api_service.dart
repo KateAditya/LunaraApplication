@@ -1397,6 +1397,22 @@ class ApiService {
     }
   }
 
+  static Future<LegalDocument?> fetchLegalDocumentByType(String type) async {
+    try {
+      final response = await get('/api/mobile/support/legal/type/$type');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['document'] != null) {
+          return LegalDocument.fromJson(data['document']);
+        }
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error fetching legal document of type $type: $e');
+      return null;
+    }
+  }
+
   static void _checkAutoblockedResponse(http.Response response) {
     if (response.statusCode == 403) {
       try {

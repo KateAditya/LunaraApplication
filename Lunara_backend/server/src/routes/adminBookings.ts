@@ -50,4 +50,36 @@ router.post(
     ctrl.markPaymentDone
 );
 
+// POST /api/admin/bookings/:id/confirm
+router.post(
+    '/:id/confirm',
+    [param('id').isUUID().withMessage('id must be a UUID'), validate],
+    ctrl.confirmBooking
+);
+
+// POST /api/admin/bookings/:id/cancel
+router.post(
+    '/:id/cancel',
+    [
+        param('id').isUUID().withMessage('id must be a UUID'),
+        body('reason').notEmpty().withMessage('reason is required'),
+        validate
+    ],
+    ctrl.cancelBooking
+);
+
+// POST /api/admin/bookings/:id/complete
+router.post(
+    '/:id/complete',
+    [param('id').isUUID().withMessage('id must be a UUID'), validate],
+    ctrl.markCompleted
+);
+
+// POST /api/admin/bookings/:id/no-show
+router.post(
+    '/:id/no-show',
+    [param('id').isUUID().withMessage('id must be a UUID'), validate],
+    ctrl.markNoShow
+);
+
 export default router;

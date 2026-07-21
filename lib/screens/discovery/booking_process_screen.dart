@@ -1467,9 +1467,14 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                   bookingDate: '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
                                   startTime: _selectedTime ?? '22:00',
                                   tablePackage: 'Confirmation Charges',
-                                  goingMode: 'solo',
+                                  goingMode: isSolo ? 'solo' : 'party_request',
                                   numberOfGuests: isSolo ? 1 : guests,
                                   isUpcomingNight: widget.isUpcomingNight,
+                                  partySubject: isLargeParty ? _partySubjectController.text.trim() : null,
+                                  partyRequirement: isLargeParty ? _partyRequirementController.text.trim() : null,
+                                  partyDescription: isLargeParty ? _partyDescriptionController.text.trim() : null,
+                                  mobileNumber: isLargeParty ? _partyMobileController.text.trim() : null,
+                                  optionalMobileNumber: isLargeParty ? _partyOptMobileController.text.trim() : null,
                                 );
                                 if (bookingRes != null && bookingRes['bookingId'] != null) {
                                   createdBookingId = bookingRes['bookingId'].toString();

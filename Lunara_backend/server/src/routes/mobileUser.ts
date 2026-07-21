@@ -773,67 +773,117 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
         console.error('Error fetching safety check feedbacks for notifications:', err);
     }
 
-    // Fetch Booking records (goingMode = party_request)
+    // Fetch Booking records (goingMode = party_request or solo)
     try {
-        const largePartyBookings = await Booking.findAll({
-            where: { userId: uId, goingMode: 'party_request' },
+        const bookings = await Booking.findAll({
+            where: { userId: uId },
             include: [{ model: Venue, as: 'venue', attributes: ['name'] }],
             order: [['createdAt', 'DESC']],
-            limit: 20
+            limit: 30
         });
 
-        for (const booking of largePartyBookings) {
+        for (const booking of bookings) {
             const venueName = (booking as any).venue?.name || 'Venue';
-            const notificationId = `large_party_${booking.id}_${booking.adminApprovalStatus}`;
             
-            let title = '';
-            let body = '';
-            let showNotification = false;
-            let type = '';
+            if (booking.goingMode === 'party_request') {
+                const notificationId = `large_party_${booking.id}_${booking.adminApprovalStatus}`;
+                let title = '';
+                let body = '';
+                let showNotification = false;
+                let type = '';
 
-            if (booking.adminApprovalStatus === 'pending') {
-                title = 'Large Party Request Submitted ⏳';
-                body = `Your party request of ${booking.numberOfGuests} guests at ${venueName} is pending admin approval.`;
-                showNotification = true;
-                type = 'large_party_pending';
-            } else if (booking.adminApprovalStatus === 'approved') {
-                title = 'Large Party Request Approved! 🎉';
-                body = `Your party request at ${venueName} has been approved! Complete payment to confirm.`;
-                showNotification = true;
-                type = 'large_party_approved';
-            } else if (booking.adminApprovalStatus === 'rejected') {
-                title = 'Large Party Request Rejected ❌';
-                body = `Your party request at ${venueName} was rejected by admin.`;
-                showNotification = true;
-                type = 'large_party_rejected';
-            } else if (booking.adminApprovalStatus === 'payment_sent') {
-                title = 'Large Party Payment Link Received 💳';
-                body = `Admin sent a payment link of ₹${booking.adminPaymentAmount} for your party at ${venueName}. Complete payment.`;
-                showNotification = true;
-                type = 'large_party_payment_link';
-            } else if (booking.adminApprovalStatus === 'payment_done') {
-                title = 'Large Party Confirmed! 🎉';
-                body = `Your party of ${booking.numberOfGuests} guests at ${venueName} is fully confirmed. Enjoy your night!`;
-                showNotification = true;
-                type = 'large_party_confirmed';
-            }
+                if (booking.adminApprovalStatus === 'pending') {
+                    title = 'Large Party Request Submitted ⏳';
+                    body = `Your party request of ${booking.numberOfGuests} guests at ${venueName} is pending admin approval.`;
+                    showNotification = true;
+                    type = 'large_party_pending';
+                } else if (booking.adminApprovalStatus === 'approved') {
+                    title = 'Large Party Request Approved! 🎉';
+                    body = `Your party request at ${venueName} has been approved! Complete payment to confirm.`;
+                    showNotification = true;
+                    type = 'large_party_approved';
+                } else if (booking.adminApprovalStatus === 'rejected') {
+                    title = 'Large Party Request Rejected ❌';
+                    body = `Your party request at ${venueName} was rejected by admin.`;
+                    showNotification = true;
+                    type = 'large_party_rejected';
+                } else if (booking.adminApprovalStatus === 'payment_sent') {
+                    title = 'Large Party Payment Link Received 💳';
+                    body = `Admin sent a payment link of ₹${booking.adminPaymentAmount} for your party at ${venueName}. Complete payment.`;
+                    showNotification = true;
+                    type = 'large_party_payment_link';
+                } else if (booking.adminApprovalStatus === 'payment_done') {
+                    title = 'Large Party Confirmed! 🎉';
+                    body = `Your party of ${booking.numberOfGuests} guests at ${venueName} is fully confirmed. Enjoy your night!`;
+                    showNotification = true;
+                    type = 'large_party_confirmed';
+                }
 
-            if (showNotification) {
-                notifications.push({
-                    id: notificationId,
-                    title,
-                    body,
-                    createdAt: booking.updatedAt ? booking.updatedAt.toISOString() : (booking.createdAt ? booking.createdAt.toISOString() : new Date().toISOString()),
-                    read: activeReadNotificationIds.has(notificationId),
-                    data: {
-                        type,
-                        bookingId: booking.id,
-                    }
-                });
+                if (showNotification) {
+                    notifications.push({
+                        id: notificationId,
+                        title,
+                        body,
+                        createdAt: booking.updatedAt ? booking.updatedAt.toISOString() : (booking.createdAt ? booking.createdAt.toISOString() : new Date().toISOString()),
+                        read: activeReadNotificationIds.has(notificationId),
+                        data: {
+                            type,
+                            bookingId: booking.id,
+                        }
+                    });
+                }
+            } else {
+                // goingMode === 'solo' or standard bookings
+                const notificationId = `solo_booking_${booking.id}_${booking.status}`;
+                let title = '';
+                let body = '';
+                let showNotification = false;
+                let type = '';
+
+                if (booking.status === 'pending') {
+                    title = 'Booking Initiated ⏳';
+                    body = `Your booking at ${venueName} is pending.`;
+                    showNotification = true;
+                    type = 'booking_pending';
+                } else if (booking.status === 'confirmed') {
+                    title = 'Booking Confirmed! 🎉';
+                    body = `Your booking at ${venueName} has been confirmed. Enjoy your night!`;
+                    showNotification = true;
+                    type = 'booking_confirmed';
+                } else if (booking.status === 'cancelled') {
+                    title = 'Booking Cancelled ❌';
+                    body = `Your booking at ${venueName} was cancelled.`;
+                    showNotification = true;
+                    type = 'booking_cancelled';
+                } else if (booking.status === 'completed') {
+                    title = 'Booking Completed ✨';
+                    body = `We hope you had a great time at ${venueName}!`;
+                    showNotification = true;
+                    type = 'booking_completed';
+                } else if (booking.status === 'no_show') {
+                    title = 'Booking No-Show ⚠️';
+                    body = `Your booking at ${venueName} was marked as no-show.`;
+                    showNotification = true;
+                    type = 'booking_no_show';
+                }
+
+                if (showNotification) {
+                    notifications.push({
+                        id: notificationId,
+                        title,
+                        body,
+                        createdAt: booking.updatedAt ? booking.updatedAt.toISOString() : (booking.createdAt ? booking.createdAt.toISOString() : new Date().toISOString()),
+                        read: activeReadNotificationIds.has(notificationId),
+                        data: {
+                            type,
+                            bookingId: booking.id,
+                        }
+                    });
+                }
             }
         }
     } catch (bookingErr) {
-        console.error('Error fetching large party booking notifications:', bookingErr);
+        console.error('Error fetching booking notifications:', bookingErr);
     }
 
     // Fetch GroupParty records (<= 20 guests)
