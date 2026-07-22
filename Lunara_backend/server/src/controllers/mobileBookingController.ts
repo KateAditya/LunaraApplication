@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import Booking, { BookingStatus, PaymentStatus, GoingMode, BookingPaymentMode, AdminApprovalStatus } from '../models/Booking';
+import { PlanEligibilityService } from '../services/PlanEligibilityService';
 import User from '../models/User';
 import GroupParty, { GroupPartyStatus, GroupPartyPaymentStatus } from '../models/GroupParty';
 import BookingTablePackage, { TablePackageName } from '../models/BookingTablePackage';
@@ -182,27 +183,41 @@ export const createBooking = async (req: Request, res: Response) => {
             ? (numberOfGuests <= 20 ? AdminApprovalStatus.APPROVED : AdminApprovalStatus.PENDING)
             : null;
 
-        const booking = await Booking.create({
+        const bookingStartDateTime = new Date(`${bookingDate}T${startTime}:00`);
+        if (isNaN(bookingStartDateTime.getTime())) {
+            return res.status(400).json({ success: false, message: 'Invalid bookingDate or startTime format' });
+        }
+
+        const planType = isUpcomingNight ? 'upcoming_night' : (goingMode === GoingMode.PARTY_REQUEST ? 'large_group_party' : 'venue_booking');
+
+        const booking = await PlanEligibilityService.runAtomicCheckAndCreate(
             userId,
-            venueId,
-            bookingDate: new Date(bookingDate),
-            startTime,
-            numberOfGuests: numberOfGuests || (pkg ? pkg.maxGuests : 1),
-            totalAmount,
-            depositAmount: 0,
-            commissionAmount,
-            goingMode: goingMode,
-            tablePackage: packageName,
-            specialRequests,
-            isLargePartyRequest: isLargeParty,
-            isUpcomingNight: !!isUpcomingNight,
-            adminApprovalStatus: initialApprovalStatus,
-            partySubject: isLargeParty ? partySubject : null,
-            partyRequirement: isLargeParty ? partyRequirement : null,
-            partyDescription: isLargeParty ? partyDescription : null,
-            mobileNumber: isLargeParty ? (mobileNumber?.trim() || null) : null,
-            optionalMobileNumber: isLargeParty ? (optionalMobileNumber?.trim() || null) : null,
-        } as any);
+            planType,
+            bookingStartDateTime,
+            async (transaction) => {
+                return await (Booking as any).create({
+                    userId,
+                    venueId,
+                    bookingDate: new Date(bookingDate),
+                    startTime,
+                    numberOfGuests: numberOfGuests || (pkg ? pkg.maxGuests : 1),
+                    totalAmount,
+                    depositAmount: 0,
+                    commissionAmount,
+                    goingMode: goingMode,
+                    tablePackage: packageName,
+                    specialRequests,
+                    isLargePartyRequest: isLargeParty,
+                    isUpcomingNight: !!isUpcomingNight,
+                    adminApprovalStatus: initialApprovalStatus,
+                    partySubject: isLargeParty ? partySubject : null,
+                    partyRequirement: isLargeParty ? partyRequirement : null,
+                    partyDescription: isLargeParty ? partyDescription : null,
+                    mobileNumber: isLargeParty ? (mobileNumber?.trim() || null) : null,
+                    optionalMobileNumber: isLargeParty ? (optionalMobileNumber?.trim() || null) : null,
+                }, { transaction });
+            }
+        );
 
         // Fetch venue details for the response
         const venueDetails = await Venue.findByPk(venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
@@ -265,6 +280,14 @@ export const createBooking = async (req: Request, res: Response) => {
         });
     } catch (err: any) {
         logger.error('createBooking:', err);
+        if (err.code && err.code.startsWith('PLAN_')) {
+            return res.status(409).json({
+                success: false,
+                code: err.code,
+                message: err.message,
+                lock: err.details
+            });
+        }
         return res.status(500).json({ success: false, message: err.message });
     }
 };

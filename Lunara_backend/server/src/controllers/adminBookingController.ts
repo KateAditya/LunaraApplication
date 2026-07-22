@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import Booking, { AdminApprovalStatus } from '../models/Booking';
+import { PlanEligibilityService } from '../services/PlanEligibilityService';
 import User from '../models/User';
 import Venue from '../models/Venue';
 import GroupParty, { GroupPartyStatus, GroupPartyPaymentStatus } from '../models/GroupParty';
@@ -624,6 +625,7 @@ export const cancelBooking = async (req: Request, res: Response) => {
                 return res.status(404).json({ success: false, message: 'Booking or Group Party not found' });
             }
             await groupParty.update({ status: GroupPartyStatus.CANCELLED });
+            await PlanEligibilityService.releaseLock(id);
             
             try {
                 const host = await User.findByPk(groupParty.userId, { attributes: ['id', 'fcmToken'] });
@@ -667,6 +669,7 @@ export const cancelBooking = async (req: Request, res: Response) => {
 
         // Standard booking
         await booking.update({ status: 'cancelled' as any });
+        await PlanEligibilityService.releaseLock(id);
 
         try {
             const customer = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });

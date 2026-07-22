@@ -1,7 +1,10 @@
 import { Request, Response } from 'express';
 import GroupParty, { GroupPartyStatus, GroupPartyPaymentStatus } from '../models/GroupParty';
+import { PlanEligibilityService } from '../services/PlanEligibilityService';
 import Venue from '../models/Venue';
 import User from '../models/User';
+import UserProfile from '../models/UserProfile';
+import UserPhoto from '../models/UserPhoto';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import { logger } from '../config/logger';
@@ -105,22 +108,29 @@ export const createGroupParty = async (req: Request, res: Response): Promise<voi
             order = await razorpay.orders.create(options);
         }
 
-        const groupParty = await GroupParty.create({
+        const groupParty = await PlanEligibilityService.runAtomicCheckAndCreate(
             userId,
-            venueId,
-            numberOfFriends,
-            tableBookingCharge,
-            discountAmount,
-            totalAmount,
+            'group_party',
             partyDate,
-            mobileNumber: mobileNumber.trim(),
-            optionalMobileNumber: optionalMobileNumber?.trim(),
-            foodPreference: foodPreference?.trim(),
-            drinkPreference: drinkPreference?.trim(),
-            status: totalAmount > 0 ? GroupPartyStatus.PENDING : GroupPartyStatus.CONFIRMED,
-            paymentStatus: totalAmount > 0 ? GroupPartyPaymentStatus.PENDING : GroupPartyPaymentStatus.PAID,
-            paymentId: order ? order.id : `free_${Date.now()}`
-        });
+            async (transaction) => {
+                return await GroupParty.create({
+                    userId,
+                    venueId,
+                    numberOfFriends,
+                    tableBookingCharge,
+                    discountAmount,
+                    totalAmount,
+                    partyDate,
+                    mobileNumber: mobileNumber.trim(),
+                    optionalMobileNumber: optionalMobileNumber?.trim(),
+                    foodPreference: foodPreference?.trim(),
+                    drinkPreference: drinkPreference?.trim(),
+                    status: totalAmount > 0 ? GroupPartyStatus.PENDING : GroupPartyStatus.CONFIRMED,
+                    paymentStatus: totalAmount > 0 ? GroupPartyPaymentStatus.PENDING : GroupPartyPaymentStatus.PAID,
+                    paymentId: order ? order.id : `free_${Date.now()}`
+                }, { transaction });
+            }
+        );
 
         try {
             const isPaid = totalAmount <= 0;
@@ -163,6 +173,15 @@ export const createGroupParty = async (req: Request, res: Response): Promise<voi
 
     } catch (err: any) {
         logger.error('createGroupParty error:', err);
+        if (err.code && err.code.startsWith('PLAN_')) {
+            res.status(409).json({
+                success: false,
+                code: err.code,
+                message: err.message,
+                lock: err.details
+            });
+            return;
+        }
         res.status(500).json({ success: false, error: err.message });
     }
 };
@@ -251,6 +270,92 @@ export const getMyGroupParties = async (req: Request, res: Response): Promise<vo
         });
     } catch (err: any) {
         logger.error('getMyGroupParties error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+
+export const getGroupPartyTicket = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const groupParty = await GroupParty.findByPk(id, {
+            include: [
+                {
+                    model: Venue,
+                    as: 'venue',
+                    attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'latitude', 'longitude', 'images', 'imageUrl'],
+                },
+                {
+                    model: User,
+                    as: 'user',
+                    attributes: ['id', 'firstName', 'lastName', 'username', 'profileImageUrl', 'subscriptionTier'],
+                    include: [
+                        { model: UserProfile, as: 'profile', attributes: ['bio', 'city'], required: false },
+                        { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary'], required: false },
+                    ],
+                },
+            ],
+        });
+
+        if (!groupParty) {
+            res.status(404).json({ success: false, message: 'Group party not found' });
+            return;
+        }
+
+        const resolveUserPhoto = (u: any): string | null => {
+            if (!u) return null;
+            let photoUrl: string | null = u.profileImageUrl ?? null;
+            if (u.photos && u.photos.length > 0) {
+                const primary = u.photos.find((p: any) => p.isPrimary) || u.photos[0];
+                if (primary?.filePath) {
+                    photoUrl = '/' + primary.filePath.replace(/\\/g, '/');
+                }
+            }
+            return photoUrl;
+        };
+
+        const hostRaw = (groupParty as any).user;
+        const hostData = hostRaw ? {
+            id: hostRaw.id,
+            firstName: hostRaw.firstName,
+            lastName: hostRaw.lastName,
+            username: hostRaw.username,
+            profilePhotoUrl: resolveUserPhoto(hostRaw),
+            subscriptionTier: hostRaw.subscriptionTier,
+        } : null;
+
+        let ticketUrl = groupParty.ticketUrl ?? null;
+        let ticketCode = groupParty.ticketCode || groupParty.paymentId || `GP-${groupParty.id.substring(0, 8).toUpperCase()}`;
+
+        if (!ticketUrl && groupParty.paymentStatus === GroupPartyPaymentStatus.PAID) {
+            try {
+                ticketUrl = await generateTicketForGroupPartyHelper(groupParty.id);
+            } catch (tErr: any) {
+                logger.warn(`On-the-fly group party ticket generation failed: ${tErr.message}`);
+            }
+        }
+
+        res.json({
+            success: true,
+            data: {
+                groupParty: {
+                    id: groupParty.id,
+                    partyDate: groupParty.partyDate,
+                    numberOfFriends: groupParty.numberOfFriends,
+                    numberOfMembers: groupParty.numberOfFriends + 1,
+                    totalAmount: groupParty.totalAmount,
+                    status: groupParty.status,
+                    paymentStatus: groupParty.paymentStatus,
+                    ticketCode: ticketCode,
+                    ticketUrl: ticketUrl,
+                    host: hostData,
+                    venue: (groupParty as any).venue,
+                },
+                ticketCode: ticketCode,
+                ticketUrl: ticketUrl,
+            },
+        });
+    } catch (err: any) {
+        logger.error('getGroupPartyTicket error:', err);
         res.status(500).json({ success: false, error: err.message });
     }
 };

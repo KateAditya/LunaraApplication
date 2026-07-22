@@ -370,3 +370,74 @@ async function relistPartyPlanInSocket(planId: string) {
         logger.warn('Socket emission failed for relistPartyPlanInSocket:', socketErr);
     }
 }
+
+export const startNotificationJobCron = () => {
+    cron.schedule('* * * * *', async () => {
+        try {
+            const now = new Date();
+            const NotificationJob = require('../models/NotificationJob').default;
+            const User = require('../models/User').default;
+
+            const pendingJobs = await NotificationJob.findAll({
+                where: {
+                    status: 'pending',
+                    sendAt: { [Op.lte]: now }
+                }
+            });
+
+            if (pendingJobs.length === 0) return;
+
+            logger.info(`Processing ${pendingJobs.length} scheduled notification jobs...`);
+
+            for (const job of pendingJobs) {
+                try {
+                    const recipient = await User.findByPk(job.userId);
+                    if (!recipient) {
+                        await job.update({ status: 'failed' });
+                        continue;
+                    }
+
+                    // 1. Send foreground WebSocket notification
+                    try {
+                        const socketPayload = {
+                            id: `lock_expired_${job.id}`,
+                            title: job.title,
+                            body: job.body,
+                            createdAt: new Date().toISOString(),
+                            read: false,
+                            data: { type: 'lock_expired' }
+                        };
+                        const { io } = require('../server');
+                        if (io) {
+                            io.to(`user_${job.userId}`).emit('notification_created', socketPayload);
+                        }
+                    } catch (wsErr: any) {
+                        logger.warn(`WS failed for job ${job.id}: ${wsErr.message}`);
+                    }
+
+                    // 2. Send background FCM push notification
+                    if (recipient.fcmToken) {
+                        try {
+                            const { sendMulticastPushNotification } = require('../services/fcmService');
+                            await sendMulticastPushNotification([recipient.fcmToken], {
+                                title: job.title,
+                                body: job.body,
+                                data: { type: 'lock_expired' }
+                            });
+                        } catch (fcmErr: any) {
+                            logger.warn(`FCM failed for job ${job.id}: ${fcmErr.message}`);
+                        }
+                    }
+
+                    await job.update({ status: 'sent' });
+                } catch (jobErr: any) {
+                    logger.error(`Error processing job ${job.id}:`, jobErr);
+                    await job.update({ status: 'failed' });
+                }
+            }
+        } catch (cronErr: any) {
+            logger.error('Notification Job Cron error:', cronErr);
+        }
+    });
+};
+

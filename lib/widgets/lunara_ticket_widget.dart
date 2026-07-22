@@ -5,22 +5,28 @@ class LunaraTicketWidget extends StatelessWidget {
   final Widget topSection;
   final Widget bottomSection;
   final Gradient? gradient;
+  final Color? cardColor;
   final double borderRadius;
   final double cutoutRadius;
   final Color cutoutColor;
+  final Color dashColor;
   final List<BoxShadow>? boxShadow;
   final double? width;
+  final Border? border;
 
   const LunaraTicketWidget({
     super.key,
     required this.topSection,
     required this.bottomSection,
     this.gradient,
+    this.cardColor,
     this.borderRadius = 24.0,
     this.cutoutRadius = 12.0,
     this.cutoutColor = LunaraTheme.midnightBlack,
+    this.dashColor = Colors.white54,
     this.boxShadow,
     this.width,
+    this.border,
   });
 
   @override
@@ -42,8 +48,10 @@ class LunaraTicketWidget extends StatelessWidget {
     return Container(
       width: width ?? double.infinity,
       decoration: BoxDecoration(
-        gradient: gradient ?? defaultGradient,
+        color: gradient == null ? cardColor : null,
+        gradient: cardColor == null ? (gradient ?? defaultGradient) : null,
         borderRadius: BorderRadius.circular(borderRadius),
+        border: border,
         boxShadow: boxShadow ?? defaultShadows,
       ),
       child: Column(
@@ -74,12 +82,12 @@ class LunaraTicketWidget extends StatelessWidget {
                       mainAxisSize: MainAxisSize.max,
                       children: List.generate(
                         (constraints.constrainWidth() / 10).floor(),
-                        (index) => const SizedBox(
+                        (index) => SizedBox(
                           width: 5,
                           height: 1.5,
                           child: DecoratedBox(
                             decoration: BoxDecoration(
-                              color: Colors.white54,
+                              color: dashColor,
                             ),
                           ),
                         ),

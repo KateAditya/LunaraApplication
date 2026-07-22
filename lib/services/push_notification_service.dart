@@ -8,6 +8,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'api_service.dart';
 import 'notification_navigator.dart';
 import '../core/theme.dart';
+import '../widgets/top_notification_banner.dart';
 import '../screens/social/chat_screen.dart';
 import '../screens/discovery/venue_detail_screen.dart';
 import '../screens/social/live_feed_screen.dart';
@@ -198,8 +199,8 @@ class PushNotificationService {
           _highImportanceChannel.id,
           _highImportanceChannel.name,
           channelDescription: _highImportanceChannel.description,
-          importance: Importance.high,
-          priority: Priority.high,
+          importance: Importance.max,
+          priority: Priority.max,
           icon: 'launcher_icon',
           color: notificationColor,
         ),
@@ -212,138 +213,12 @@ class PushNotificationService {
       payload: payload,
     );
 
-    // Show dynamic in-app premium dialog popup
-    _showInAppPopup(message);
-  }
-
-  static void _showInAppPopup(RemoteMessage message) {
-    final context = NotificationNavigator.navigator?.context;
-    if (context == null) return;
-
-    final title = message.notification?.title ?? 'Notification';
-    final body = message.notification?.body ?? '';
-    final data = message.data;
-
-    Future.delayed(Duration.zero, () {
-      if (!Navigator.canPop(context) && Navigator.of(context).mounted == false) return;
-
-      showDialog(
-        context: context,
-        barrierDismissible: true,
-        builder: (dialogCtx) {
-          final isDark = Theme.of(context).brightness == Brightness.dark;
-          final textColor = isDark ? Colors.white : Colors.black87;
-          final subTextColor = isDark ? Colors.white70 : Colors.black54;
-
-          return Dialog(
-            backgroundColor: Colors.transparent,
-            insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-            child: Container(
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1E1E28) : Colors.white,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.4 : 0.15),
-                    blurRadius: 20,
-                    offset: const Offset(0, 10),
-                  ),
-                ],
-                border: Border.all(
-                  color: LunaraTheme.electricViolet.withValues(alpha: 0.15),
-                  width: 1.5,
-                ),
-              ),
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 50,
-                    height: 50,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
-                    ),
-                    child: const Icon(
-                      Icons.celebration_rounded,
-                      color: LunaraTheme.electricViolet,
-                      size: 28,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
-                      color: textColor,
-                      letterSpacing: 0.5,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    body,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: subTextColor,
-                      height: 1.4,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.pop(dialogCtx),
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(color: isDark ? Colors.white12 : Colors.grey.shade300),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                          child: Text(
-                            'DISMISS',
-                            style: TextStyle(
-                              color: isDark ? Colors.white38 : Colors.grey,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () {
-                            Navigator.pop(dialogCtx);
-                            _navigateFromPayload(data);
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: LunaraTheme.electricViolet,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                          child: const Text(
-                            'VIEW',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      );
-    });
+    // Show WhatsApp-style top floating banner notification
+    TopNotificationBanner.show(
+      title: notification.title ?? 'Notification',
+      body: notification.body ?? '',
+      data: message.data,
+    );
   }
 
   // ── Tap Handlers ────────────────────────────────────────────────────────────
@@ -354,7 +229,7 @@ class PushNotificationService {
 
     try {
       final data = jsonDecode(response.payload!) as Map<String, dynamic>;
-      _navigateFromPayload(data);
+      navigateFromPayload(data);
     } catch (e) {
       debugPrint('🔔 Error parsing local notification payload: $e');
     }
@@ -363,12 +238,12 @@ class PushNotificationService {
   /// Called when a FCM notification (background) is tapped.
   static void _onNotificationTap(RemoteMessage message) {
     debugPrint('🔔 Notification tapped: ${message.data}');
-    _navigateFromPayload(message.data);
+    navigateFromPayload(message.data);
   }
 
   // ── Navigation ──────────────────────────────────────────────────────────────
 
-  static void _navigateFromPayload(Map<String, dynamic> data) {
+  static void navigateFromPayload(Map<String, dynamic> data) {
     final navigator = NotificationNavigator.navigator;
     if (navigator == null) {
       debugPrint('🔔 Navigator not available yet — skipping navigation');

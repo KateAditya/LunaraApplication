@@ -1,0 +1,370 @@
+import { Op, Transaction } from 'sequelize';
+import sequelize from '../config/database';
+import User from '../models/User';
+import UserSubscription from '../models/UserSubscription';
+import SubscriptionPackage from '../models/SubscriptionPackage';
+import PlanTimeLock from '../models/PlanTimeLock';
+import PlanTimeLockConfig, { PlanTimeLockConfigAttributes } from '../models/PlanTimeLockConfig';
+import NotificationJob from '../models/NotificationJob';
+
+// Unique 32-bit signed integer hash function for Postgres transaction advisory lock
+export function getAdvisoryLockKey(uuidStr: string): number {
+    let hash = 0;
+    for (let i = 0; i < uuidStr.length; i++) {
+        const char = uuidStr.charCodeAt(i);
+        hash = (hash << 5) - hash + char;
+        hash |= 0; // Convert to 32-bit signed integer
+    }
+    return hash;
+}
+
+export class PlanEligibilityService {
+    /**
+     * Resolves the hierarchical configurations for a user and a specific plan type.
+     * Order of Precedence (highest overrides lowest):
+     * 1. User Override (scope: 'user:UUID')
+     * 2. Plan Type (scope: 'plan_type:TYPE')
+     * 3. User Role (scope: 'role:ROLE')
+     * 4. Subscription Plan (scope: 'subscription:TIER')
+     * 5. Global (scope: 'global')
+     */
+    public static async resolveConfig(
+        userId: string,
+        planType: string
+    ): Promise<PlanTimeLockConfigAttributes> {
+        // Resolve user role
+        const user = await User.findByPk(userId);
+        const role = user?.role || 'customer';
+
+        // Resolve subscription tier
+        let tier = 'FREE';
+        const activeSub = await UserSubscription.findOne({
+            where: { userId, status: 'ACTIVE' },
+            include: [{ model: SubscriptionPackage, as: 'package' }]
+        });
+        if (activeSub && (activeSub as any).package) {
+            tier = (activeSub as any).package.tier;
+        }
+
+        const scopes = [
+            'global',
+            `subscription:${tier}`,
+            `role:${role}`,
+            `plan_type:${planType}`,
+            `user:${userId}`
+        ];
+
+        const configs = await PlanTimeLockConfig.findAll({
+            where: { scope: { [Op.in]: scopes } }
+        });
+
+        // Initialize with fallback defaults
+        const resolved: PlanTimeLockConfigAttributes = {
+            id: 'resolved',
+            scope: 'resolved',
+            timeLockEnabled: true,
+            defaultCooldownHours: 4,
+            maxActivePlans: 1,
+            maxDailyPlans: 3,
+            maxWeeklyPlans: 10,
+            allowOverlappingPlans: false,
+            allowSameVenue: false,
+            allowDifferentVenue: false,
+            allowFuturePlans: true,
+            allowEmergencyOverride: false,
+            overlapPolicy: 'NO_OVERLAP'
+        };
+
+        // Merge in strict order of precedence
+        const scopeOrder = [
+            'global',
+            `subscription:${tier}`,
+            `role:${role}`,
+            `plan_type:${planType}`,
+            `user:${userId}`
+        ];
+
+        for (const scopeKey of scopeOrder) {
+            const match = configs.find(c => c.scope === scopeKey);
+            if (match) {
+                if (match.timeLockEnabled !== undefined) resolved.timeLockEnabled = match.timeLockEnabled;
+                if (match.defaultCooldownHours !== undefined) resolved.defaultCooldownHours = match.defaultCooldownHours;
+                if (match.maxActivePlans !== undefined) resolved.maxActivePlans = match.maxActivePlans;
+                if (match.maxDailyPlans !== undefined) resolved.maxDailyPlans = match.maxDailyPlans;
+                if (match.maxWeeklyPlans !== undefined) resolved.maxWeeklyPlans = match.maxWeeklyPlans;
+                if (match.allowOverlappingPlans !== undefined) resolved.allowOverlappingPlans = match.allowOverlappingPlans;
+                if (match.allowSameVenue !== undefined) resolved.allowSameVenue = match.allowSameVenue;
+                if (match.allowDifferentVenue !== undefined) resolved.allowDifferentVenue = match.allowDifferentVenue;
+                if (match.allowFuturePlans !== undefined) resolved.allowFuturePlans = match.allowFuturePlans;
+                if (match.allowEmergencyOverride !== undefined) resolved.allowEmergencyOverride = match.allowEmergencyOverride;
+                if (match.overlapPolicy !== undefined) resolved.overlapPolicy = match.overlapPolicy;
+            }
+        }
+
+        return resolved;
+    }
+
+    /**
+     * Checks if a user is eligible to create a plan of a specific type starting at startTime.
+     * Returns eligibility result matching the API response contract.
+     */
+    public static async checkEligibility(
+        userId: string,
+        planType: string,
+        startTimeInput: Date | string,
+        options?: { transaction?: Transaction }
+    ): Promise<{
+        eligible: boolean;
+        reasonCode?: string;
+        message?: string;
+        lockedUntil?: Date;
+        remainingSeconds?: number;
+        existingPlanId?: string;
+        existingPlanType?: string;
+    }> {
+        const transaction = options?.transaction;
+        const config = await this.resolveConfig(userId, planType);
+
+        if (!config.timeLockEnabled) {
+            return { eligible: true };
+        }
+
+        const startTime = typeof startTimeInput === 'string' ? new Date(startTimeInput) : startTimeInput;
+        if (isNaN(startTime.getTime())) {
+            return { eligible: false, reasonCode: 'PLAN_INVALID_TIME', message: 'Requested plan start time is invalid.' };
+        }
+
+        const now = new Date();
+        if (startTime.getTime() < now.getTime() && !config.allowEmergencyOverride) {
+            return { eligible: false, reasonCode: 'PLAN_PAST_TIME', message: 'Plan start time cannot be in the past.' };
+        }
+
+        // Calculate proposed lock window
+        const cooldownMs = config.defaultCooldownHours * 60 * 60 * 1000;
+        const proposedStart = startTime;
+        const proposedEnd = new Date(startTime.getTime() + cooldownMs);
+
+        // 1. time lock checks (derived metadata)
+        const activeLocks = await PlanTimeLock.findAll({
+            where: {
+                userId,
+                status: 'active',
+                lockEndAt: { [Op.gt]: now }
+            },
+            transaction
+        });
+
+        // 2. source of truth check (directly query original source tables to guarantee accuracy)
+        const overlappingLock = activeLocks.find(lock => {
+            const existingStart = new Date(lock.lockStartAt).getTime();
+            const existingEnd = new Date(lock.lockEndAt).getTime();
+            const reqStart = proposedStart.getTime();
+            const reqEnd = proposedEnd.getTime();
+
+            if (config.overlapPolicy === 'ALLOW_TOUCHING_BOUNDARIES') {
+                return (reqStart > existingStart && reqStart < existingEnd) ||
+                       (reqEnd > existingStart && reqEnd < existingEnd);
+            }
+            // Default: NO_OVERLAP
+            return reqStart < existingEnd && reqEnd > existingStart;
+        });
+
+        if (overlappingLock) {
+            const lockedUntil = new Date(overlappingLock.lockEndAt);
+            const remainingSeconds = Math.max(0, Math.floor((lockedUntil.getTime() - now.getTime()) / 1000));
+            return {
+                eligible: false,
+                reasonCode: 'PLAN_TIME_LOCKED',
+                message: `You have a temporary plan lock until ${lockedUntil.toISOString()}`,
+                lockedUntil,
+                remainingSeconds,
+                existingPlanId: overlappingLock.sourcePlanId,
+                existingPlanType: overlappingLock.sourcePlanType
+            };
+        }
+
+        // 3. active limit checks
+        const activePlansCount = await PlanTimeLock.count({
+            where: {
+                userId,
+                status: 'active',
+                lockEndAt: { [Op.gt]: now }
+            },
+            transaction
+        });
+
+        if (activePlansCount >= config.maxActivePlans) {
+            return {
+                eligible: false,
+                reasonCode: 'PLAN_ACTIVE_LIMIT_REACHED',
+                message: `You have reached the maximum of ${config.maxActivePlans} active plans.`
+            };
+        }
+
+        // 4. daily/weekly limit checks
+        const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+        const dailyCount = await PlanTimeLock.count({
+            where: {
+                userId,
+                createdAt: { [Op.gte]: dayAgo }
+            },
+            transaction
+        });
+
+        if (dailyCount >= config.maxDailyPlans) {
+            return {
+                eligible: false,
+                reasonCode: 'PLAN_DAILY_LIMIT_REACHED',
+                message: `You have reached the maximum limit of ${config.maxDailyPlans} daily plans.`
+            };
+        }
+
+        const weeklyCount = await PlanTimeLock.count({
+            where: {
+                userId,
+                createdAt: { [Op.gte]: weekAgo }
+            },
+            transaction
+        });
+
+        if (weeklyCount >= config.maxWeeklyPlans) {
+            return {
+                eligible: false,
+                reasonCode: 'PLAN_WEEKLY_LIMIT_REACHED',
+                message: `You have reached the maximum limit of ${config.maxWeeklyPlans} weekly plans.`
+            };
+        }
+
+        return { eligible: true };
+    }
+
+    /**
+     * Executes atomic transactional verification using PostgreSQL advisory locks.
+     * Prevents race conditions from simultaneous requests.
+     */
+    public static async runAtomicCheckAndCreate(
+        userId: string,
+        planType: string,
+        startTimeInput: Date | string,
+        callback: (transaction: Transaction) => Promise<any>
+    ): Promise<any> {
+        return await sequelize.transaction(async (t) => {
+            // Acquire advisory transaction lock for the user ID
+            const lockKey = getAdvisoryLockKey(userId);
+            await sequelize.query(`SELECT pg_advisory_xact_lock(:lockKey)`, {
+                replacements: { lockKey },
+                transaction: t
+            });
+
+            // Re-validate eligibility under current database state inside transaction
+            const eligibility = await this.checkEligibility(userId, planType, startTimeInput, { transaction: t });
+            if (!eligibility.eligible) {
+                const error: any = new Error(eligibility.message || 'Time lock conflict detected.');
+                error.code = eligibility.reasonCode || 'PLAN_TIME_LOCKED';
+                error.details = eligibility;
+                throw error;
+            }
+
+            // Execute original plan creation controller logic
+            const result = await callback(t);
+
+            // Fetch config to calculate lock times
+            const config = await this.resolveConfig(userId, planType);
+            const startTime = typeof startTimeInput === 'string' ? new Date(startTimeInput) : startTimeInput;
+            const cooldownMs = config.defaultCooldownHours * 60 * 60 * 1000;
+            const endTime = new Date(startTime.getTime() + cooldownMs);
+
+            // Create plan lock metadata row
+            await PlanTimeLock.create({
+                userId,
+                sourcePlanId: result.id || result.planId || result.bookingId,
+                sourcePlanType: planType,
+                lockStartAt: startTime,
+                lockEndAt: endTime,
+                status: 'active'
+            }, { transaction: t });
+
+            // Queue notification job near expiration (only if notifications are enabled)
+            if (config.timeLockEnabled && cooldownMs > 0) {
+                // Queue alert 5 minutes before lock end time
+                const alertTime = new Date(endTime.getTime() - 5 * 60 * 1000);
+                if (alertTime.getTime() > Date.now()) {
+                    await NotificationJob.create({
+                        userId,
+                        sendAt: alertTime,
+                        title: 'Lock Expiration Approaching ⏳',
+                        body: 'Your plan creation lock is expiring in 5 minutes. You can create a new plan soon!',
+                        status: 'pending'
+                    }, { transaction: t });
+                }
+            }
+
+            return result;
+        });
+    }
+
+    /**
+     * Reschedules an existing plan's lock window.
+     */
+    public static async rescheduleLock(
+        userId: string,
+        sourcePlanId: string,
+        newStartTimeInput: Date | string,
+        options?: { transaction?: Transaction }
+    ): Promise<void> {
+        const transaction = options?.transaction || await sequelize.transaction();
+        try {
+            const lock = await PlanTimeLock.findOne({
+                where: { sourcePlanId, status: 'active' },
+                transaction
+            });
+            if (!lock) return;
+
+            const newStartTime = typeof newStartTimeInput === 'string' ? new Date(newStartTimeInput) : newStartTimeInput;
+            const config = await this.resolveConfig(userId, lock.sourcePlanType);
+            const cooldownMs = config.defaultCooldownHours * 60 * 60 * 1000;
+            const newEndTime = new Date(newStartTime.getTime() + cooldownMs);
+
+            // Temporarily cancel lock for overlap evaluation
+            lock.status = 'cancelled';
+            await lock.save({ transaction });
+
+            const eligibility = await this.checkEligibility(userId, lock.sourcePlanType, newStartTime, { transaction });
+            if (!eligibility.eligible) {
+                // Revert status on failure
+                lock.status = 'active';
+                await lock.save({ transaction });
+                const error: any = new Error(eligibility.message || 'Conflict detected during reschedule.');
+                error.code = eligibility.reasonCode || 'PLAN_TIME_LOCKED';
+                error.details = eligibility;
+                throw error;
+            }
+
+            lock.lockStartAt = newStartTime;
+            lock.lockEndAt = newEndTime;
+            lock.status = 'active';
+            await lock.save({ transaction });
+
+            if (!options?.transaction) await transaction.commit();
+        } catch (err) {
+            if (!options?.transaction) await transaction.rollback();
+            throw err;
+        }
+    }
+
+    /**
+     * Releases (cancels) a plan lock record immediately.
+     */
+    public static async releaseLock(
+        sourcePlanId: string,
+        options?: { transaction?: Transaction }
+    ): Promise<void> {
+        const transaction = options?.transaction;
+        await PlanTimeLock.update(
+            { status: 'cancelled', reason: 'User cancelled plan' },
+            { where: { sourcePlanId }, transaction }
+        );
+    }
+}

@@ -17,9 +17,12 @@ import {
     submitSettlementRequest,
     updateChargesPerHead,
     getMeetFinancials,
+    getStrangersMeetTicket,
 } from '../controllers/strangersMeetController';
 
 const router = Router();
+
+router.get('/requests/:id/ticket', getStrangersMeetTicket);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/mobile/strangers-meet

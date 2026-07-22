@@ -18,7 +18,7 @@ import User from './models/User';
 import Message, { MessageStatus } from './models/Message';
 import Conversation from './models/Conversation';
 import { Op } from 'sequelize';
-import { startPartyPlanCron } from './cron/partyPlanCron';
+import { startPartyPlanCron, startNotificationJobCron } from './cron/partyPlanCron';
 
 // Load environment variables
 dotenv.config();
@@ -141,6 +141,7 @@ import adminSubscriptionRoutes from './routes/adminSubscription';
 import mobileSubscriptionRoutes from './routes/mobileSubscription';
 import mobileWalletRoutes from './routes/mobileWallet';
 import { getAdminChatSettings, updateAdminChatSettings } from './controllers/chatSubscriptionController';
+import { getAdminTimeLockSettings, updateAdminTimeLockSettings } from './controllers/mobilePlanController';
 import dbRestoreRoutes from './routes/dbRestore';
 import adminSafetyChecksRoutes from './routes/adminSafetyChecks';
 
@@ -191,6 +192,10 @@ app.use('/api/mobile/wallet', mobileWalletRoutes);             // Wallet (Mobile
 // Admin — chat subscription settings
 app.get('/api/admin/settings/chat', getAdminChatSettings);
 app.put('/api/admin/settings/chat', updateAdminChatSettings);
+
+// Admin — plan time lock settings
+app.get('/api/admin/settings/time-lock', getAdminTimeLockSettings);
+app.put('/api/admin/settings/time-lock', updateAdminTimeLockSettings);
 
 // TEMP: DB restore endpoint — REMOVE AFTER USE
 app.use('/api/db-restore', dbRestoreRoutes);
@@ -304,6 +309,7 @@ const startServer = async () => {
         
         if (isMasterProcess && isFirstPm2Instance) {
             startPartyPlanCron();
+            startNotificationJobCron();
             logger.info('Background Cron Jobs started on process/instance.');
         } else {
             logger.info(`Background Cron Jobs bypassed on worker/instance (Process ID: ${process.pid}).`);
@@ -335,6 +341,7 @@ if (process.env.NODE_ENV !== 'test') {
         if (isFirstPm2Instance) {
             connectDatabase().then(() => {
                 startPartyPlanCron();
+                startNotificationJobCron();
                 logger.info('Primary process database connected & initiated background Cron Jobs.');
             }).catch((err) => {
                 logger.error('Primary process failed to connect to database for Cron Jobs:', err);

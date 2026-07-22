@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { Op } from 'sequelize';
+import { PlanEligibilityService } from '../services/PlanEligibilityService';
 import StrangersMeetRequest, {
     StrangersMeetStatus,
     StrangersMeetPaymentStatus,
@@ -296,26 +297,33 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
             return;
         }
 
-        const request = await StrangersMeetRequest.create({
+        const request = await PlanEligibilityService.runAtomicCheckAndCreate(
             userId,
-            venueId,
-            subject: subject.trim(),
-            tagline: tagline.trim(),
-            eventDateTime: eventDate,
-            numberOfPersons: Number(numberOfPersons),
-            chargesPerHead: 0.0,
-            mobileNumber: finalMobileNumber,
-            alternateMobileNumber: alternateMobileNumber?.trim() || null,
-            // Store bank/UPI details provided at creation
-            bankName: bankName?.trim() || null,
-            accountNumber: accountNumber?.trim() || null,
-            accountHolderName: accountHolderName?.trim() || null,
-            ifscCode: ifscCode?.trim() || null,
-            upiId: upiId?.trim() || null,
-            upiNumber: upiNumber?.trim() || null,
-            foodPreference: foodPreference?.trim() || null,
-            drinkPreference: drinkPreference?.trim() || null,
-        });
+            'strangers_meet',
+            eventDate,
+            async (transaction) => {
+                return await StrangersMeetRequest.create({
+                    userId,
+                    venueId,
+                    subject: subject.trim(),
+                    tagline: tagline.trim(),
+                    eventDateTime: eventDate,
+                    numberOfPersons: Number(numberOfPersons),
+                    chargesPerHead: 0.0,
+                    mobileNumber: finalMobileNumber,
+                    alternateMobileNumber: alternateMobileNumber?.trim() || null,
+                    // Store bank/UPI details provided at creation
+                    bankName: bankName?.trim() || null,
+                    accountNumber: accountNumber?.trim() || null,
+                    accountHolderName: accountHolderName?.trim() || null,
+                    ifscCode: ifscCode?.trim() || null,
+                    upiId: upiId?.trim() || null,
+                    upiNumber: upiNumber?.trim() || null,
+                    foodPreference: foodPreference?.trim() || null,
+                    drinkPreference: drinkPreference?.trim() || null,
+                }, { transaction });
+            }
+        );
 
         // Send request submitted push notification to creator
         try {
@@ -348,6 +356,15 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
         });
     } catch (err: any) {
         logger.error('createStrangersMeetRequest error:', err);
+        if (err.code && err.code.startsWith('PLAN_')) {
+            res.status(409).json({
+                success: false,
+                code: err.code,
+                message: err.message,
+                lock: err.details
+            });
+            return;
+        }
         res.status(500).json({ success: false, message: 'Failed to submit request', error: err.message });
     }
 };
@@ -1751,6 +1768,95 @@ export const updateChargesPerHead = async (req: Request, res: Response): Promise
     } catch (err: any) {
         logger.error('updateChargesPerHead error:', err);
         res.status(500).json({ success: false, message: 'Failed to update charges per head', error: err.message });
+    }
+};
+
+export const getStrangersMeetTicket = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const request = await StrangersMeetRequest.findByPk(id, {
+            include: [
+                {
+                    model: Venue,
+                    as: 'venue',
+                    attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'latitude', 'longitude', 'images', 'imageUrl'],
+                },
+                {
+                    model: User,
+                    as: 'user',
+                    attributes: ['id', 'firstName', 'lastName', 'username', 'profileImageUrl', 'subscriptionTier'],
+                    include: [
+                        { model: UserProfile, as: 'profile', attributes: ['bio', 'city'], required: false },
+                        { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary'], required: false },
+                    ],
+                },
+            ],
+        });
+
+        if (!request) {
+            res.status(404).json({ success: false, message: 'Strangers meet request not found' });
+            return;
+        }
+
+        const resolveUserPhoto = (u: any): string | null => {
+            if (!u) return null;
+            let photoUrl: string | null = u.profileImageUrl ?? null;
+            if (u.photos && u.photos.length > 0) {
+                const primary = u.photos.find((p: any) => p.isPrimary) || u.photos[0];
+                if (primary?.filePath) {
+                    photoUrl = '/' + primary.filePath.replace(/\\/g, '/');
+                }
+            }
+            return photoUrl;
+        };
+
+        const hostRaw = (request as any).user;
+        const hostData = hostRaw ? {
+            id: hostRaw.id,
+            firstName: hostRaw.firstName,
+            lastName: hostRaw.lastName,
+            username: hostRaw.username,
+            profilePhotoUrl: resolveUserPhoto(hostRaw),
+            subscriptionTier: hostRaw.subscriptionTier,
+        } : null;
+
+        let ticketUrl = request.ticketUrl ?? null;
+        let ticketCode = request.ticketId || `SM-${request.id.substring(0, 8).toUpperCase()}`;
+
+        if (!ticketUrl && request.paymentStatus === StrangersMeetPaymentStatus.PAID) {
+            try {
+                const { generateTicketForStrangersMeetHelper } = require('../services/ticketService');
+                ticketUrl = await generateTicketForStrangersMeetHelper(request.id);
+            } catch (tErr: any) {
+                logger.warn(`On-the-fly strangers meet ticket generation failed: ${tErr.message}`);
+            }
+        }
+
+        res.json({
+            success: true,
+            data: {
+                request: {
+                    id: request.id,
+                    subject: request.subject,
+                    tagline: request.tagline,
+                    eventDateTime: request.eventDateTime,
+                    numberOfPersons: request.numberOfPersons,
+                    paymentAmount: request.paymentAmount,
+                    chargesPerHead: request.chargesPerHead,
+                    status: request.status,
+                    paymentStatus: request.paymentStatus,
+                    ticketCode: ticketCode,
+                    ticketUrl: ticketUrl,
+                    host: hostData,
+                    venue: (request as any).venue,
+                },
+                ticketCode: ticketCode,
+                ticketUrl: ticketUrl,
+            },
+        });
+    } catch (err: any) {
+        logger.error('getStrangersMeetTicket error:', err);
+        res.status(500).json({ success: false, error: err.message });
     }
 };
 

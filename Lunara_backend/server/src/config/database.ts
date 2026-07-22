@@ -308,6 +308,99 @@ export const connectDatabase = async (): Promise<void> => {
             logger.warn('Failed to seed default admin user: ' + seedError.message);
         }
 
+        // ── Create Plan Time Lock & Cooldown Engine Tables ──
+        try {
+            await sequelize.query(`
+                CREATE TABLE IF NOT EXISTS plan_time_lock_configs (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    scope VARCHAR(100) UNIQUE NOT NULL,
+                    time_lock_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                    default_cooldown_hours INTEGER NOT NULL DEFAULT 4,
+                    max_active_plans INTEGER NOT NULL DEFAULT 1,
+                    max_daily_plans INTEGER NOT NULL DEFAULT 3,
+                    max_weekly_plans INTEGER NOT NULL DEFAULT 10,
+                    allow_overlapping_plans BOOLEAN NOT NULL DEFAULT FALSE,
+                    allow_same_venue BOOLEAN NOT NULL DEFAULT FALSE,
+                    allow_different_venue BOOLEAN NOT NULL DEFAULT FALSE,
+                    allow_future_plans BOOLEAN NOT NULL DEFAULT TRUE,
+                    allow_emergency_override BOOLEAN NOT NULL DEFAULT FALSE,
+                    overlap_policy VARCHAR(100) NOT NULL DEFAULT 'NO_OVERLAP',
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            `);
+
+            await sequelize.query(`
+                CREATE TABLE IF NOT EXISTS plan_time_locks (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    source_plan_id UUID NOT NULL,
+                    source_plan_type VARCHAR(100) NOT NULL,
+                    lock_start_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    lock_end_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    status VARCHAR(50) NOT NULL DEFAULT 'active',
+                    reason TEXT,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            `);
+
+            await sequelize.query(`
+                CREATE TABLE IF NOT EXISTS plan_time_lock_config_histories (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    config_id UUID NOT NULL REFERENCES plan_time_lock_configs(id) ON DELETE CASCADE,
+                    admin_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    scope VARCHAR(100) NOT NULL,
+                    previous_value JSONB NOT NULL,
+                    new_value JSONB NOT NULL,
+                    change_reason TEXT,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            `);
+
+            await sequelize.query(`
+                CREATE TABLE IF NOT EXISTS notification_jobs (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    send_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    title VARCHAR(255) NOT NULL,
+                    body TEXT NOT NULL,
+                    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            `);
+
+            logger.info('Time Lock tables verified/migrated successfully.');
+
+            // Seed default configs if not existing
+            const defaultConfigs = [
+                { scope: 'global', time_lock_enabled: true, default_cooldown_hours: 4, max_active_plans: 1, max_daily_plans: 3, max_weekly_plans: 10, allow_overlapping_plans: false, overlap_policy: 'NO_OVERLAP' },
+                { scope: 'subscription:FREE', time_lock_enabled: true, default_cooldown_hours: 6, max_active_plans: 1, max_daily_plans: 2, max_weekly_plans: 5, allow_overlapping_plans: false, overlap_policy: 'NO_OVERLAP' },
+                { scope: 'subscription:CORE', time_lock_enabled: true, default_cooldown_hours: 4, max_active_plans: 1, max_daily_plans: 3, max_weekly_plans: 10, allow_overlapping_plans: false, overlap_policy: 'NO_OVERLAP' },
+                { scope: 'subscription:PLUS', time_lock_enabled: true, default_cooldown_hours: 4, max_active_plans: 1, max_daily_plans: 3, max_weekly_plans: 10, allow_overlapping_plans: false, overlap_policy: 'NO_OVERLAP' },
+                { scope: 'subscription:PRO', time_lock_enabled: true, default_cooldown_hours: 2, max_active_plans: 2, max_daily_plans: 5, max_weekly_plans: 15, allow_overlapping_plans: true, overlap_policy: 'ALLOW_TOUCHING_BOUNDARIES' },
+                { scope: 'subscription:ELITE', time_lock_enabled: false, default_cooldown_hours: 0, max_active_plans: 999, max_daily_plans: 999, max_weekly_plans: 999, allow_overlapping_plans: true, overlap_policy: 'ALLOW_OVERLAP_FOR_PREMIUM_USERS' },
+                { scope: 'role:admin', time_lock_enabled: false, default_cooldown_hours: 0, max_active_plans: 999, max_daily_plans: 999, max_weekly_plans: 999, allow_overlapping_plans: true, overlap_policy: 'ALLOW_OVERLAP_FOR_PREMIUM_USERS' },
+                { scope: 'role:venue_owner', time_lock_enabled: false, default_cooldown_hours: 0, max_active_plans: 999, max_daily_plans: 999, max_weekly_plans: 999, allow_overlapping_plans: true, overlap_policy: 'ALLOW_OVERLAP_FOR_PREMIUM_USERS' },
+                { scope: 'role:customer', time_lock_enabled: true, default_cooldown_hours: 4, max_active_plans: 1, max_daily_plans: 3, max_weekly_plans: 10, allow_overlapping_plans: false, overlap_policy: 'NO_OVERLAP' }
+            ];
+
+            for (const cfg of defaultConfigs) {
+                await sequelize.query(`
+                    INSERT INTO plan_time_lock_configs 
+                        (id, scope, time_lock_enabled, default_cooldown_hours, max_active_plans, max_daily_plans, max_weekly_plans, allow_overlapping_plans, overlap_policy, created_at, updated_at)
+                    VALUES 
+                        (gen_random_uuid(), :scope, :time_lock_enabled, :default_cooldown_hours, :max_active_plans, :max_daily_plans, :max_weekly_plans, :allow_overlapping_plans, :overlap_policy, NOW(), NOW())
+                    ON CONFLICT (scope) DO NOTHING;
+                `, { replacements: cfg });
+            }
+            logger.info('Default Time Lock configurations seeded.');
+        } catch (dbErr: any) {
+            logger.warn('Failed to verify/seed Time Lock schema: ' + dbErr.message);
+        }
+
         if (process.env.NODE_ENV === 'development') {
             // Sync models in development (be careful in production)
             try {

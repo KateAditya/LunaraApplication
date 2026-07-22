@@ -2,6 +2,9 @@ import { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { Op } from 'sequelize';
 import Plan, { PlanStatus, PlanPaymentOption } from '../models/Plan';
+import PlanTimeLockConfig from '../models/PlanTimeLockConfig';
+import PlanTimeLockConfigHistory from '../models/PlanTimeLockConfigHistory';
+import { PlanEligibilityService } from '../services/PlanEligibilityService';
 import PlanJoinRequest, { JoinRequestStatus, JoinPaymentStatus } from '../models/PlanJoinRequest';
 import BookingTablePackage, { TablePackageName } from '../models/BookingTablePackage';
 import Booking, { BookingStatus, PaymentStatus, GoingMode, BookingPaymentMode } from '../models/Booking';
@@ -126,19 +129,32 @@ export const postPlan = async (req: Request, res: Response) => {
             // Actual Payment record will be created on secure-reservation
         }
 
-        const plan = await Plan.create({
+        // Combined start datetime of the plan
+        const planStartDateTime = new Date(`${planDate}T${startTime}:00`);
+        if (isNaN(planStartDateTime.getTime())) {
+            return res.status(400).json({ success: false, message: 'Invalid planDate or startTime format' });
+        }
+
+        const plan = await PlanEligibilityService.runAtomicCheckAndCreate(
             userId,
-            venueId,
-            planDate: new Date(planDate),
-            startTime,
-            tablePackage: packageName,
-            paymentOption,
-            totalAmount,
-            maxJoiners: pkg.maxGuests - 1, // host occupies 1 slot
-            description,
-            hostPaymentStatus,
-            hostTransactionId,
-        });
+            'upcoming_night',
+            planStartDateTime,
+            async (transaction) => {
+                return await Plan.create({
+                    userId,
+                    venueId,
+                    planDate: new Date(planDate),
+                    startTime,
+                    tablePackage: packageName,
+                    paymentOption,
+                    totalAmount,
+                    maxJoiners: pkg.maxGuests - 1, // host occupies 1 slot
+                    description,
+                    hostPaymentStatus,
+                    hostTransactionId,
+                }, { transaction });
+            }
+        );
 
         const venue = await Venue.findByPk(venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
 
@@ -160,6 +176,14 @@ export const postPlan = async (req: Request, res: Response) => {
         });
     } catch (err: any) {
         logger.error('postPlan:', err);
+        if (err.code && err.code.startsWith('PLAN_')) {
+            return res.status(409).json({
+                success: false,
+                code: err.code,
+                message: err.message,
+                lock: err.details
+            });
+        }
         return res.status(500).json({ success: false, message: err.message });
     }
 };
@@ -1142,6 +1166,103 @@ function buildPlanTicket(booking: Booking, venue: any) {
     };
 }
 
+export const checkEligibility = async (req: Request, res: Response) => {
+    try {
+        const { userId, planType, startTime } = req.query;
+        if (!userId || !planType || !startTime) {
+            return res.status(400).json({
+                success: false,
+                message: 'Required query params: userId, planType, startTime'
+            });
+        }
+        const result = await PlanEligibilityService.checkEligibility(
+            userId as string,
+            planType as string,
+            new Date(startTime as string)
+        );
+        return res.json({ success: true, ...result });
+    } catch (err: any) {
+        logger.error('checkEligibility error:', err);
+        return res.status(500).json({ success: false, message: err.message });
+    }
+};
+
+export const getAdminTimeLockSettings = async (req: Request, res: Response) => {
+    try {
+        const { scope = 'global' } = req.query;
+        const config = await PlanTimeLockConfig.findOne({ where: { scope: scope as string } });
+        if (!config) {
+            return res.status(404).json({ success: false, message: `Configuration scope "${scope}" not found.` });
+        }
+        return res.json({ success: true, data: config });
+    } catch (err: any) {
+        logger.error('getAdminTimeLockSettings error:', err);
+        return res.status(500).json({ success: false, message: err.message });
+    }
+};
+
+export const updateAdminTimeLockSettings = async (req: Request, res: Response) => {
+    try {
+        const {
+            adminUserId,
+            scope = 'global',
+            timeLockEnabled,
+            defaultCooldownHours,
+            maxActivePlans,
+            maxDailyPlans,
+            maxWeeklyPlans,
+            allowOverlappingPlans,
+            allowSameVenue,
+            allowDifferentVenue,
+            allowFuturePlans,
+            allowEmergencyOverride,
+            overlapPolicy,
+            changeReason
+        } = req.body;
+
+        if (!adminUserId) {
+            return res.status(400).json({ success: false, message: 'adminUserId is required for audit logs.' });
+        }
+
+        const config = await PlanTimeLockConfig.findOne({ where: { scope } });
+        if (!config) {
+            return res.status(404).json({ success: false, message: `Configuration scope "${scope}" not found.` });
+        }
+
+        const previousValue = config.toJSON();
+
+        // Update fields
+        if (timeLockEnabled !== undefined) config.timeLockEnabled = timeLockEnabled;
+        if (defaultCooldownHours !== undefined) config.defaultCooldownHours = defaultCooldownHours;
+        if (maxActivePlans !== undefined) config.maxActivePlans = maxActivePlans;
+        if (maxDailyPlans !== undefined) config.maxDailyPlans = maxDailyPlans;
+        if (maxWeeklyPlans !== undefined) config.maxWeeklyPlans = maxWeeklyPlans;
+        if (allowOverlappingPlans !== undefined) config.allowOverlappingPlans = allowOverlappingPlans;
+        if (allowSameVenue !== undefined) config.allowSameVenue = allowSameVenue;
+        if (allowDifferentVenue !== undefined) config.allowDifferentVenue = allowDifferentVenue;
+        if (allowFuturePlans !== undefined) config.allowFuturePlans = allowFuturePlans;
+        if (allowEmergencyOverride !== undefined) config.allowEmergencyOverride = allowEmergencyOverride;
+        if (overlapPolicy !== undefined) config.overlapPolicy = overlapPolicy;
+
+        await config.save();
+
+        // Write history/audit trail
+        await PlanTimeLockConfigHistory.create({
+            configId: config.id,
+            adminUserId,
+            scope,
+            previousValue,
+            newValue: config.toJSON(),
+            changeReason: changeReason || 'Admin settings update'
+        });
+
+        return res.json({ success: true, message: 'Time Lock settings updated successfully.', data: config });
+    } catch (err: any) {
+        logger.error('updateAdminTimeLockSettings error:', err);
+        return res.status(500).json({ success: false, message: err.message });
+    }
+};
+
 export default {
     postPlan,
     getLiveFeed,
@@ -1153,4 +1274,5 @@ export default {
     addPlanToWallet,
     getMyPlans,
     getMyJoins,
+    checkEligibility,
 };

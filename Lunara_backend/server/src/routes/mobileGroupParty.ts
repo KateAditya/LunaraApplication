@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
 import { validate } from '../middleware/validate';
-import { calculatePricing, createGroupParty, verifyPayment, getMyGroupParties } from '../controllers/mobileGroupPartyController';
+import { calculatePricing, createGroupParty, verifyPayment, getMyGroupParties, getGroupPartyTicket } from '../controllers/mobileGroupPartyController';
 
 const router = Router();
 
 router.get('/', getMyGroupParties);
+router.get('/:id/ticket', getGroupPartyTicket);
 
 router.post(
     '/calculate-pricing',

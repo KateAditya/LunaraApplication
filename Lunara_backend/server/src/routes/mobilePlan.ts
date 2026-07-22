@@ -7,6 +7,8 @@ const router = Router();
 
 // ─── User's own plans ────────────────────────────────────────────────────────
 
+router.get('/eligibility', ctrl.checkEligibility);
+
 /**
  * GET /api/mobile/plans/my-plans?userId=<uuid>
  * Lists all plans the calling user has posted.

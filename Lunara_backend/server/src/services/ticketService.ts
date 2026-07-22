@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { BlobServiceClient } from '@azure/storage-blob';
 import { logger } from '../config/logger';
-import Booking from '../models/Booking';
+import Booking, { GoingMode } from '../models/Booking';
 import User from '../models/User';
 import UserPhoto from '../models/UserPhoto';
 import Venue from '../models/Venue';
@@ -581,6 +581,71 @@ export async function generateTicketForStrangersMeetHelper(requestId: string): P
         return ticketUrl;
     } catch (err: any) {
         logger.error(`Error generating ticket for StrangersMeetRequest ID ${requestId}: ${err.message}`, err);
+        throw err;
+    }
+}
+
+/**
+ * Orchestrator helper to generate ticket for Party Plan request
+ */
+export async function generateTicketForPartyPlanHelper(requestId: string): Promise<string> {
+    try {
+        const PartyPlanRequestModel = (await import('../models/PartyPlanRequest')).default;
+        const PartyPlanModel = (await import('../models/PartyPlan')).default;
+
+        const reqRecord = await PartyPlanRequestModel.findByPk(requestId, {
+            include: [
+                {
+                    model: PartyPlanModel,
+                    as: 'plan',
+                    include: [{ model: Venue, as: 'venue' }]
+                },
+                { model: User, as: 'requester' }
+            ]
+        });
+        if (!reqRecord) {
+            throw new Error(`PartyPlanRequest ${requestId} not found`);
+        }
+
+        const plan = (reqRecord as any).plan;
+        const host = plan ? await User.findByPk(plan.userId) : null;
+        const joiner = (reqRecord as any).requester;
+
+        const hostPhoto = host ? await UserPhoto.findOne({ where: { userId: host.id, isPrimary: true } }) : null;
+        const joinerPhoto = joiner ? await UserPhoto.findOne({ where: { userId: joiner.id, isPrimary: true } }) : null;
+        const venueImg = plan?.venueId ? await VenueImage.findOne({ where: { venueId: plan.venueId, isPrimary: true } }) : null;
+
+        const booking = await Booking.findOne({
+            where: { goingMode: GoingMode.PARTY_REQUEST, userId: plan?.userId, venueId: plan?.venueId },
+            order: [['createdAt', 'DESC']],
+        });
+
+        const ticketCode = booking?.ticketCode || `PP-${reqRecord.id.substring(0, 8).toUpperCase()}`;
+
+        const ticketUrl = await generateTicketPDF({
+            bookingType: 'party_plan',
+            ticketCode,
+            hostName: host ? `${host.firstName} ${host.lastName}` : 'Host',
+            hostProfileUrl: hostPhoto?.filePath || null,
+            partnerName: joiner ? `${joiner.firstName} ${joiner.lastName}` : 'Partner',
+            partnerProfileUrl: joinerPhoto?.filePath || null,
+            venueName: plan?.venue?.name || 'LUNARA VENUE',
+            venueAddress: plan?.venue?.addressLine1 || 'LUNARA ADDRESS',
+            venueImageUrl: venueImg?.filePath || null,
+            numberOfGuests: 2,
+            eventDate: plan?.planDateTime || new Date(),
+            startTime: plan?.planDateTime ? new Date(plan.planDateTime).toTimeString().split(' ')[0] : '08:00 PM',
+            paymentAmount: Number(plan?.depositAmount || 198),
+            paymentStatus: 'PAID',
+        });
+
+        if (booking) {
+            await booking.update({ ticketUrl });
+        }
+        logger.info(`Successfully generated & saved ticket PDF for PartyPlanRequest ID: ${requestId}, URL: ${ticketUrl}`);
+        return ticketUrl;
+    } catch (err: any) {
+        logger.error(`Error generating ticket for PartyPlanRequest ID ${requestId}: ${err.message}`, err);
         throw err;
     }
 }

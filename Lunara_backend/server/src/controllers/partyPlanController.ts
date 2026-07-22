@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import PartyPlan, { PartyPlanStatus, PartyPlanVisibility, PartyPlanPaymentType } from '../models/PartyPlan';
-import { Op } from 'sequelize';
+import { PlanEligibilityService } from '../services/PlanEligibilityService';
+import { Op, Transaction } from 'sequelize';
 import User from '../models/User';
 import Venue from '../models/Venue';
 import UserProfile from '../models/UserProfile';
@@ -9,6 +10,7 @@ import VenueImage from '../models/VenueImage';
 import { logger } from '../config/logger';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
+import sequelize from '../config/database';
 import { PartyPlanPaymentStatus } from '../models/PartyPlan';
 import PartyPlanRequest, { PartyPlanRequestStatus, PartyPlanJoinerPaymentStatus } from '../models/PartyPlanRequest';
 import { sendMulticastPushNotification } from '../services/fcmService';
@@ -90,7 +92,7 @@ async function autoOpenChat(hostId: string, joinerId: string) {
     }
 }
 
-async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanRequest) {
+async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanRequest, transaction?: Transaction) {
     try {
         const existingBooking = await Booking.findOne({
             where: {
@@ -98,7 +100,8 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
                 userId: plan.userId,
                 venueId: plan.venueId,
                 bookingDate: plan.planDateTime,
-            }
+            },
+            transaction
         });
         if (existingBooking) {
             logger.info(`Booking already exists for plan ${plan.id}, skipping creation.`);
@@ -153,7 +156,7 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
             goingMode: GoingMode.PARTY_REQUEST,
             ticketCode,
             specialRequests: ticketMetadata,
-        });
+        }, { transaction });
 
         // Generate digital ticket in background
         setImmediate(async () => {
@@ -175,7 +178,7 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
             paymentGateway: 'razorpay',
             status: PaymentStatus.SUCCESSFUL,
             refundAmount: 0,
-        });
+        }, { transaction });
 
         // Create Payment record for Joiner
         await Payment.create({
@@ -188,7 +191,7 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
             paymentGateway: 'razorpay',
             status: PaymentStatus.SUCCESSFUL,
             refundAmount: 0,
-        });
+        }, { transaction });
 
         // Emit party_plan_ticket_generated so the client can refresh the ticket screen
         // with the canonical ticketCode and expiresAt
@@ -216,22 +219,23 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
     }
 }
 
-async function rejectAndNotifyStaleRequests(plan: PartyPlan, acceptedRequestId: string) {
+async function rejectAndNotifyStaleRequests(plan: PartyPlan, acceptedRequestId: string, transaction?: Transaction) {
     try {
         const otherRequests = await PartyPlanRequest.findAll({
             where: {
                 planId: plan.id,
                 id: { [Op.ne]: acceptedRequestId },
                 status: { [Op.in]: [PartyPlanRequestStatus.PENDING, PartyPlanRequestStatus.PAYMENT_PENDING] }
-            }
+            },
+            transaction
         });
 
         for (const req of otherRequests) {
-            await req.update({ status: PartyPlanRequestStatus.REJECTED });
+            await req.update({ status: PartyPlanRequestStatus.REJECTED }, { transaction });
             
             let venueName = 'Club';
             if (plan.venueId) {
-                const venue = await Venue.findByPk(plan.venueId);
+                const venue = await Venue.findByPk(plan.venueId, { transaction });
                 if (venue && venue.name) {
                     venueName = venue.name;
                 }
@@ -383,64 +387,75 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             receipt: `pp_${Date.now()}`
         };
         let order: any = { id: `order_mock_${Date.now()}`, amount: options.amount, currency: options.currency };
-        if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id') {
+        if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id' && process.env.RAZORPAY_KEY_ID !== 'rzp_test_123') {
             try {
-                order = await razorpay.orders.create(options);
+                const resOrder = await razorpay.orders.create(options);
+                if (resOrder) {
+                    order = resOrder;
+                }
             } catch (err: any) {
                 logger.warn('Razorpay create order failed, using mock order. Error: ' + err.message);
             }
         }
 
-        // ── Create the party plan ─────────────────────────────────────────────
-        const partyPlan = await PartyPlan.create({
+        // ── Create the party plan under a transaction ──
+        const partyPlan = await PlanEligibilityService.runAtomicCheckAndCreate(
             userId,
-            venueId,
-            message: message.trim(),
-            planDateTime: partyDate,
-            mobileNumber: finalMobileNumber,
-            optionalMobileNumber: optionalMobileNumber?.trim(),
-            status: PartyPlanStatus.ACTIVE,
-            visibility: parsedVisibility,
-            selectedUsers: (parsedVisibility === PartyPlanVisibility.PRIVATE || parsedVisibility === PartyPlanVisibility.BOTH) ? selectedUsers : null,
-            depositAmount: depositAmount,
-            hostPaymentStatus: PartyPlanPaymentStatus.UNPAID,
-            hostRazorpayOrderId: order.id,
-            isLive: parsedVisibility === PartyPlanVisibility.PRIVATE ? false : true, // Private plans are not shown in public feed, both and public are
-            expiresAt: partyDate,
-            paymentStatus: 'pending',
-            foodPreference: foodPreference || 'Both',
-            drinkPreference: drinkPreference || 'Both',
-            paymentType: parsedPaymentType,
-        });
+            'party_plan',
+            partyDate,
+            async (transaction) => {
+                const plan = await PartyPlan.create({
+                    userId,
+                    venueId,
+                    message: message.trim(),
+                    planDateTime: partyDate,
+                    mobileNumber: finalMobileNumber,
+                    optionalMobileNumber: optionalMobileNumber?.trim(),
+                    status: PartyPlanStatus.ACTIVE,
+                    visibility: parsedVisibility,
+                    selectedUsers: (parsedVisibility === PartyPlanVisibility.PRIVATE || parsedVisibility === PartyPlanVisibility.BOTH) ? selectedUsers : null,
+                    depositAmount: depositAmount,
+                    hostPaymentStatus: PartyPlanPaymentStatus.UNPAID,
+                    hostRazorpayOrderId: order.id,
+                    isLive: parsedVisibility === PartyPlanVisibility.PRIVATE ? false : true, // Private plans are not shown in public feed, both and public are
+                    expiresAt: partyDate,
+                    paymentStatus: 'pending',
+                    foodPreference: foodPreference || 'Both',
+                    drinkPreference: drinkPreference || 'Both',
+                    paymentType: parsedPaymentType,
+                }, { transaction });
 
-        // Auto-generate accepted requests for invited users of private or both plan
-        if ((parsedVisibility === PartyPlanVisibility.PRIVATE || parsedVisibility === PartyPlanVisibility.BOTH) && Array.isArray(selectedUsers) && selectedUsers.length > 0) {
-            for (const invitedUserId of selectedUsers) {
-                // Generate a joiner order ID
-                const joinerOptions = {
-                    amount: Math.round(depositAmount * 100),
-                    currency: 'INR',
-                    receipt: `ppreq_${Date.now()}`
-                };
-                let joinerOrder: any = { id: `order_mock_${Date.now()}` };
-                if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id') {
-                    try {
-                        joinerOrder = await razorpay.orders.create(joinerOptions);
-                    } catch (err: any) {
-                        logger.warn('Razorpay create joiner order failed for invite, using mock. Error: ' + err.message);
+                // Auto-generate accepted requests for invited users of private or both plan
+                if ((parsedVisibility === PartyPlanVisibility.PRIVATE || parsedVisibility === PartyPlanVisibility.BOTH) && Array.isArray(selectedUsers) && selectedUsers.length > 0) {
+                    for (const invitedUserId of selectedUsers) {
+                        // Generate a joiner order ID
+                        const joinerOptions = {
+                            amount: Math.round(depositAmount * 100),
+                            currency: 'INR',
+                            receipt: `ppreq_${Date.now()}`
+                        };
+                        let joinerOrder: any = { id: `order_mock_${Date.now()}` };
+                        if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id') {
+                            try {
+                                joinerOrder = await razorpay.orders.create(joinerOptions);
+                            } catch (err: any) {
+                                logger.warn('Razorpay create joiner order failed for invite, using mock. Error: ' + err.message);
+                            }
+                        }
+                        
+                        await PartyPlanRequest.create({
+                            planId: plan.id,
+                            requesterId: invitedUserId,
+                            status: PartyPlanRequestStatus.PENDING,
+                            joinerPaymentStatus: PartyPlanJoinerPaymentStatus.UNPAID,
+                            joinerRazorpayOrderId: joinerOrder.id,
+                            latLangCheckIn: false,
+                        }, { transaction });
                     }
                 }
-                
-                await PartyPlanRequest.create({
-                    planId: partyPlan.id,
-                    requesterId: invitedUserId,
-                    status: PartyPlanRequestStatus.PENDING,
-                    joinerPaymentStatus: PartyPlanJoinerPaymentStatus.UNPAID,
-                    joinerRazorpayOrderId: joinerOrder.id,
-                    latLangCheckIn: false,
-                });
+                return plan;
             }
-        }
+        );
 
         const responseData = {
             id: partyPlan.id,
@@ -517,14 +532,12 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                         where: { id: { [Op.in]: selectedUsers } },
                         attributes: ['id', 'fcmToken'],
                     });
-                    const privateTokens = invitedUsers
-                        .map((u: any) => u.fcmToken)
-                        .filter((t: any) => t && t.trim() !== '') as string[];
 
-                    if (privateTokens.length > 0) {
-                        await sendMulticastPushNotification(privateTokens, {
-                            title: `🎉 Private Invitation!`,
-                            body: `${hostName} has invited you privately for "${partyPlan.message}".`,
+                    const tokens = invitedUsers.map(u => u.fcmToken).filter(t => !!t) as string[];
+                    if (tokens.length > 0) {
+                        await sendMulticastPushNotification(tokens, {
+                            title: '🎉 Party Plan Invitation',
+                            body: `${hostName} invited you to join a party plan at ${venueName}!`,
                             data: notifData,
                         });
                     }
@@ -544,6 +557,15 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
         });
     } catch (err: any) {
         logger.error('createPartyPlan error:', err);
+        if (err.code && err.code.startsWith('PLAN_')) {
+            res.status(409).json({
+                success: false,
+                code: err.code,
+                message: err.message,
+                lock: err.details
+            });
+            return;
+        }
         res.status(500).json({ success: false, message: 'Failed to create party plan', error: err.message });
     }
 };
@@ -1046,34 +1068,68 @@ export const getPartyPlanById = async (req: Request, res: Response): Promise<voi
 // Body: { userId, status }
 // ─────────────────────────────────────────────────────────────────────────────
 export const updatePartyPlanStatus = async (req: Request, res: Response): Promise<void> => {
+    const transaction = await sequelize.transaction();
     try {
         const { id } = req.params;
         const { userId, status } = req.body;
 
         if (!userId || !status) {
+            await transaction.rollback();
             res.status(400).json({ success: false, message: 'userId and status are required' });
             return;
         }
 
         const validStatuses = Object.values(PartyPlanStatus);
         if (!validStatuses.includes(status as PartyPlanStatus)) {
+            await transaction.rollback();
             res.status(400).json({ success: false, message: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
             return;
         }
 
-        const plan = await PartyPlan.findByPk(id);
+        const plan = await PartyPlan.findByPk(id, { transaction });
         if (!plan) {
+            await transaction.rollback();
             res.status(404).json({ success: false, message: 'Party plan not found' });
             return;
         }
 
         // Only the creator can update the status
         if (plan.userId !== userId) {
+            await transaction.rollback();
             res.status(403).json({ success: false, message: 'You are not authorized to update this plan' });
             return;
         }
 
-        await (plan as any).update({ status });
+        // Acquire transactional row update lock on the party plan
+        await plan.reload({ lock: transaction.LOCK.UPDATE, transaction });
+
+        // Enforce state transitions
+        if (plan.status === PartyPlanStatus.CANCELLED) {
+            await transaction.rollback();
+            res.status(400).json({ success: false, message: 'Cannot update status of a cancelled plan.' });
+            return;
+        }
+
+        if (status === PartyPlanStatus.CANCELLED) {
+            await cancelPartyPlanInternal(plan, transaction);
+        } else {
+            // Block invalid reactivation (e.g. from inactive to active)
+            if (plan.status === PartyPlanStatus.INACTIVE && status === PartyPlanStatus.ACTIVE) {
+                await transaction.rollback();
+                res.status(400).json({ success: false, message: 'Cannot reactivate a completed/matched party plan.' });
+                return;
+            }
+            await (plan as any).update({ status }, { transaction });
+        }
+
+        await transaction.commit();
+
+        if (status === PartyPlanStatus.CANCELLED) {
+            try {
+                const { io } = require('../server');
+                io.emit('party_plan_deleted', { planId: plan.id });
+            } catch (_) {}
+        }
 
         res.json({
             success: true,
@@ -1081,6 +1137,7 @@ export const updatePartyPlanStatus = async (req: Request, res: Response): Promis
             data: { id: plan.id, status },
         });
     } catch (err: any) {
+        await transaction.rollback();
         logger.error('updatePartyPlanStatus error:', err);
         res.status(500).json({ success: false, message: 'Failed to update plan status', error: err.message });
     }
@@ -1113,6 +1170,7 @@ export const deletePartyPlan = async (req: Request, res: Response): Promise<void
         }
 
         await plan.destroy();
+        await PlanEligibilityService.releaseLock(id);
 
         // Emit socket event to notify other clients to remove it from feed
         try {
@@ -1322,19 +1380,35 @@ export const getPartyPlanRequests = async (req: Request, res: Response): Promise
 // Accept a join request and generate Razorpay order for joiner
 // ─────────────────────────────────────────────────────────────────────────────
 export const acceptPartyPlanRequest = async (req: Request, res: Response): Promise<void> => {
+    const transaction = await sequelize.transaction();
     try {
         const { reqId } = req.params;
         const { userId } = req.body; // Host's userId
 
-        const request = await PartyPlanRequest.findByPk(reqId, { include: [{ model: PartyPlan, as: 'plan' }] });
+        const request = await PartyPlanRequest.findByPk(reqId, {
+            include: [{ model: PartyPlan, as: 'plan' }],
+            transaction
+        });
         if (!request) {
+            await transaction.rollback();
             res.status(404).json({ success: false, message: 'Request not found' });
             return;
         }
 
         const plan = (request as any).plan as PartyPlan;
         if (plan.userId !== userId) {
+            await transaction.rollback();
             res.status(403).json({ success: false, message: 'Only the host can accept requests' });
+            return;
+        }
+
+        // Acquire transactional row update lock on the party plan
+        await plan.reload({ lock: transaction.LOCK.UPDATE, transaction });
+
+        // Enforce state transition checks: plan status must be active
+        if (plan.status !== PartyPlanStatus.ACTIVE) {
+            await transaction.rollback();
+            res.status(400).json({ success: false, message: 'This plan is not active or has already been completed/cancelled.' });
             return;
         }
 
@@ -1344,9 +1418,11 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
                 planId: plan.id,
                 status: PartyPlanRequestStatus.PAYMENT_PENDING,
                 paymentTimeoutAt: { [Op.gt]: new Date() }
-            }
+            },
+            transaction
         });
         if (activeReq) {
+            await transaction.rollback();
             res.status(400).json({
                 success: false,
                 message: 'You already accepted another request. Please complete the payment or wait for the 30-minute window to expire.'
@@ -1360,10 +1436,11 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
                 planId: plan.id,
                 status: PartyPlanRequestStatus.PAYMENT_PENDING,
                 paymentTimeoutAt: { [Op.lte]: new Date() }
-            }
+            },
+            transaction
         });
         for (const expiredReq of expiredReqs) {
-            await expiredReq.update({ status: PartyPlanRequestStatus.PAYMENT_FAILED });
+            await expiredReq.update({ status: PartyPlanRequestStatus.PAYMENT_FAILED }, { transaction });
         }
 
         const hostAlreadyPaid = plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID;
@@ -1373,18 +1450,20 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
                 await request.update({
                     status: PartyPlanRequestStatus.ACCEPTED,
                     joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
-                });
+                }, { transaction });
 
                 await plan.update({
                     status: PartyPlanStatus.INACTIVE,
                     isLive: false,
                     paymentStatus: 'Confirmed',
-                });
+                }, { transaction });
 
-                await createBookingAndPayments(plan, request);
+                await createBookingAndPayments(plan, request, transaction);
 
                 // Reject and notify all other requests now that match is fully confirmed
-                await rejectAndNotifyStaleRequests(plan, request.id);
+                await rejectAndNotifyStaleRequests(plan, request.id, transaction);
+
+                await transaction.commit();
 
                 setImmediate(async () => {
                     try {
@@ -1453,12 +1532,14 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
                 await request.update({
                     status: PartyPlanRequestStatus.ACCEPTED,
                     joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
-                });
+                }, { transaction });
 
                 await plan.update({
                     isLive: false,
                     paymentStatus: 'Awaiting Host Payment',
-                });
+                }, { transaction });
+
+                await transaction.commit();
 
                 try {
                     const { io } = require('../server');
@@ -1521,9 +1602,12 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
             receipt: `ppreq_${Date.now()}`
         };
         let joinerOrder: any = { id: `order_mock_${Date.now()}`, amount: joinerOptions.amount, currency: joinerOptions.currency };
-        if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id') {
+        if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id' && process.env.RAZORPAY_KEY_ID !== 'rzp_test_123') {
             try {
-                joinerOrder = await razorpay.orders.create(joinerOptions);
+                const resOrder = await razorpay.orders.create(joinerOptions);
+                if (resOrder) {
+                    joinerOrder = resOrder;
+                }
             } catch (err: any) {
                 logger.warn('Razorpay joiner order failed, using mock: ' + err.message);
             }
@@ -1538,9 +1622,12 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
                 receipt: `pphost_${Date.now()}`
             };
             hostOrder = { id: `order_mock_${Date.now()}`, amount: hostOptions.amount, currency: hostOptions.currency };
-            if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id') {
+            if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id' && process.env.RAZORPAY_KEY_ID !== 'rzp_test_123') {
                 try {
-                    hostOrder = await razorpay.orders.create(hostOptions);
+                    const resOrder = await razorpay.orders.create(hostOptions);
+                    if (resOrder) {
+                        hostOrder = resOrder;
+                    }
                 } catch (err: any) {
                     logger.warn('Razorpay host order failed, using mock: ' + err.message);
                 }
@@ -1556,7 +1643,7 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
             joinerRazorpayOrderId: joinerOrder.id,
             paymentTimeoutAt: timeout, // Reset for Joiner when Host pays
             joinerPaymentStatus: PartyPlanJoinerPaymentStatus.UNPAID,
-        });
+        }, { transaction });
 
         // Reserve the plan while waiting for payment
         await plan.update({
@@ -1564,7 +1651,9 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
             hostPaymentStatus: hostAlreadyPaid ? PartyPlanPaymentStatus.PAID : PartyPlanPaymentStatus.UNPAID,
             hostRazorpayOrderId: hostOrder ? hostOrder.id : plan.hostRazorpayOrderId,
             paymentStatus: hostAlreadyPaid ? 'Awaiting Participant Payment' : 'Awaiting Host Payment',
-        });
+        }, { transaction });
+
+        await transaction.commit();
 
         // Emit socket events
         try {
@@ -1670,6 +1759,7 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
             },
         });
     } catch (err: any) {
+        await transaction.rollback();
         logger.error('acceptPartyPlanRequest error:', err);
         res.status(500).json({ success: false, message: 'Failed to accept request', error: err.message });
     }
@@ -1680,17 +1770,23 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
 // Verify joiner payment
 // ─────────────────────────────────────────────────────────────────────────────
 export const verifyJoinerPayment = async (req: Request, res: Response): Promise<void> => {
+    const transaction = await sequelize.transaction();
     try {
         const { reqId } = req.params;
         const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
-        const request = await PartyPlanRequest.findByPk(reqId, { include: [{ model: PartyPlan, as: 'plan' }] });
+        const request = await PartyPlanRequest.findByPk(reqId, {
+            include: [{ model: PartyPlan, as: 'plan' }],
+            transaction
+        });
         if (!request) {
+            await transaction.rollback();
             res.status(404).json({ success: false, message: 'Request not found' });
             return;
         }
 
         if (request.joinerRazorpayOrderId !== razorpay_order_id) {
+            await transaction.rollback();
             res.status(400).json({ success: false, message: 'Invalid order ID' });
             return;
         }
@@ -1703,48 +1799,47 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
             await request.update({
                 joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
                 joinerRazorpayPaymentId: razorpay_payment_id,
-            });
-
-            // Send push notification for Joiner successful payment
-            setImmediate(async () => {
-                try {
-                    const joiner = await User.findByPk(request.requesterId);
-                    if (joiner && joiner.fcmToken) {
-                        await sendMulticastPushNotification([joiner.fcmToken], {
-                            title: '💳 Payment Successful',
-                            body: 'Your ₹99 deposit payment was successfully verified.',
-                            data: {
-                                type: 'joiner_payment_successful',
-                                partyPlanId: request.planId,
-                            },
-                        });
-                    }
-                } catch (pushErr: any) {
-                    logger.warn('Failed to send joiner payment success push:', pushErr.message);
-                }
-            });
+            }, { transaction });
 
             const plan = (request as any).plan as PartyPlan;
-            const hostPaid = plan && plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID;
+            if (!plan) {
+                await transaction.rollback();
+                res.status(404).json({ success: false, message: 'Party plan not found' });
+                return;
+            }
+
+            // Acquire transactional row update lock on the party plan
+            await plan.reload({ lock: transaction.LOCK.UPDATE, transaction });
+
+            // Enforce state transition checks: plan status must be active
+            if (plan.status !== PartyPlanStatus.ACTIVE) {
+                await transaction.rollback();
+                res.status(400).json({ success: false, message: 'This plan is not active or has already been completed/cancelled.' });
+                return;
+            }
+
+            const hostPaid = plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID;
 
             if (hostPaid) {
                 // Both parties have paid within 30 minutes! Keep both as PAID (not refunded)
                 await request.update({
                     status: PartyPlanRequestStatus.ACCEPTED,
                     joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
-                });
+                }, { transaction });
                 await plan.update({
                     hostPaymentStatus: PartyPlanPaymentStatus.PAID,
                     status: PartyPlanStatus.INACTIVE,
                     isLive: false,
                     paymentStatus: 'Confirmed',
-                });
+                }, { transaction });
 
                 // Create Booking & Payments
-                await createBookingAndPayments(plan, request);
+                await createBookingAndPayments(plan, request, transaction);
 
                 // Reject and notify all other requests now that match is fully confirmed
-                await rejectAndNotifyStaleRequests(plan, request.id);
+                await rejectAndNotifyStaleRequests(plan, request.id, transaction);
+
+                await transaction.commit();
 
                 // Notify both about confirmed booking and ticket
                 setImmediate(async () => {
@@ -1777,6 +1872,25 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
                     }
                 });
 
+                // Send push notification for Joiner successful payment
+                setImmediate(async () => {
+                    try {
+                        const joiner = await User.findByPk(request.requesterId);
+                        if (joiner && joiner.fcmToken) {
+                            await sendMulticastPushNotification([joiner.fcmToken], {
+                                title: '💳 Payment Successful',
+                                body: 'Your ₹99 deposit payment was successfully verified.',
+                                data: {
+                                    type: 'joiner_payment_successful',
+                                    partyPlanId: request.planId,
+                                },
+                            });
+                        }
+                    } catch (pushErr: any) {
+                        logger.warn('Failed to send joiner payment success push:', pushErr.message);
+                    }
+                });
+
                 // Emit socket match success
                 try {
                     const { io } = require('../server');
@@ -1791,7 +1905,9 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
                 // Joiner paid, wait for host (though in flow Host should pay first)
                 await request.update({
                     status: PartyPlanRequestStatus.PAYMENT_PENDING,
-                });
+                }, { transaction });
+
+                await transaction.commit();
 
                 // Emit joiner paid to host
                 try {
@@ -1804,38 +1920,58 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
                 res.json({ success: true, message: 'Payment verified. Waiting for host payment. ⏳', data: request });
             }
         } else {
+            await transaction.rollback();
             res.status(400).json({ success: false, message: 'Invalid payment signature' });
         }
     } catch (err: any) {
+        await transaction.rollback();
         logger.error('verifyJoinerPayment error:', err);
         res.status(500).json({ success: false, message: 'Failed to verify payment', error: err.message });
     }
 };
 
 export const confirmSelfPaidJoin = async (req: Request, res: Response): Promise<void> => {
+    const transaction = await sequelize.transaction();
     try {
         const { reqId } = req.params;
         const { userId } = req.body;
 
-        const request = await PartyPlanRequest.findByPk(reqId, { include: [{ model: PartyPlan, as: 'plan' }] });
+        const request = await PartyPlanRequest.findByPk(reqId, {
+            include: [{ model: PartyPlan, as: 'plan' }],
+            transaction
+        });
         if (!request) {
+            await transaction.rollback();
             res.status(404).json({ success: false, message: 'Request not found' });
             return;
         }
 
         if (request.requesterId !== userId) {
+            await transaction.rollback();
             res.status(403).json({ success: false, message: 'Only the requesting/invited user can confirm this request' });
             return;
         }
 
         const plan = (request as any).plan as PartyPlan;
         if (!plan) {
+            await transaction.rollback();
             res.status(404).json({ success: false, message: 'Party plan not found' });
             return;
         }
 
         if (plan.paymentType !== 'self_pay') {
+            await transaction.rollback();
             res.status(400).json({ success: false, message: 'This plan is not self-paid. Payment is required.' });
+            return;
+        }
+
+        // Acquire transactional row update lock on the party plan
+        await plan.reload({ lock: transaction.LOCK.UPDATE, transaction });
+
+        // Enforce state transition checks: plan status must be active
+        if (plan.status !== PartyPlanStatus.ACTIVE) {
+            await transaction.rollback();
+            res.status(400).json({ success: false, message: 'This plan is not active or has already been completed/cancelled.' });
             return;
         }
 
@@ -1845,18 +1981,20 @@ export const confirmSelfPaidJoin = async (req: Request, res: Response): Promise<
             await request.update({
                 status: PartyPlanRequestStatus.ACCEPTED,
                 joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
-            });
+            }, { transaction });
 
             await plan.update({
                 status: PartyPlanStatus.INACTIVE,
                 isLive: false,
                 paymentStatus: 'Confirmed',
-            });
+            }, { transaction });
 
-            await createBookingAndPayments(plan, request);
+            await createBookingAndPayments(plan, request, transaction);
 
             // Reject and notify all other requests now that match is fully confirmed
-            await rejectAndNotifyStaleRequests(plan, request.id);
+            await rejectAndNotifyStaleRequests(plan, request.id, transaction);
+
+            await transaction.commit();
 
             setImmediate(async () => {
                 try {
@@ -1892,11 +2030,13 @@ export const confirmSelfPaidJoin = async (req: Request, res: Response): Promise<
             await request.update({
                 status: PartyPlanRequestStatus.ACCEPTED,
                 joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
-            });
+            }, { transaction });
 
             await plan.update({
                 paymentStatus: 'Awaiting Host Payment',
-            });
+            }, { transaction });
+
+            await transaction.commit();
 
             try {
                 const { io } = require('../server');
@@ -1908,6 +2048,7 @@ export const confirmSelfPaidJoin = async (req: Request, res: Response): Promise<
             res.json({ success: true, message: 'Join confirmed. Waiting for host to complete their payment. ⏳', data: request });
         }
     } catch (err: any) {
+        await transaction.rollback();
         logger.error('confirmSelfPaidJoin error:', err);
         res.status(500).json({ success: false, message: 'Failed to confirm join', error: err.message });
     }
@@ -1918,24 +2059,41 @@ export const confirmSelfPaidJoin = async (req: Request, res: Response): Promise<
 // Accept an invite to a party plan
 // ─────────────────────────────────────────────────────────────────────────────
 export const acceptPartyPlanInvite = async (req: Request, res: Response): Promise<void> => {
+    const transaction = await sequelize.transaction();
     try {
         const { reqId } = req.params;
         const { userId } = req.body;
 
-        const request = await PartyPlanRequest.findByPk(reqId, { include: [{ model: PartyPlan, as: 'plan' }] });
+        const request = await PartyPlanRequest.findByPk(reqId, {
+            include: [{ model: PartyPlan, as: 'plan' }],
+            transaction
+        });
         if (!request) {
+            await transaction.rollback();
             res.status(404).json({ success: false, message: 'Request not found' });
             return;
         }
 
         if (request.requesterId !== userId) {
+            await transaction.rollback();
             res.status(403).json({ success: false, message: 'Only the invited user can accept this invite' });
             return;
         }
 
         const plan = (request as any).plan as PartyPlan;
         if (!plan) {
+            await transaction.rollback();
             res.status(404).json({ success: false, message: 'Party plan not found' });
+            return;
+        }
+
+        // Acquire transactional row update lock on the party plan
+        await plan.reload({ lock: transaction.LOCK.UPDATE, transaction });
+
+        // Enforce state transition checks: plan status must be active
+        if (plan.status !== PartyPlanStatus.ACTIVE) {
+            await transaction.rollback();
+            res.status(400).json({ success: false, message: 'This plan is not active or has already been completed/cancelled.' });
             return;
         }
 
@@ -1946,9 +2104,11 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
                 id: { [Op.ne]: request.id },
                 status: PartyPlanRequestStatus.PAYMENT_PENDING,
                 paymentTimeoutAt: { [Op.gt]: new Date() }
-            }
+            },
+            transaction
         });
         if (activeReq) {
+            await transaction.rollback();
             res.status(400).json({
                 success: false,
                 message: 'This plan is currently reserved by another user. Try again later.'
@@ -1963,16 +2123,18 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
                 await request.update({
                     status: PartyPlanRequestStatus.ACCEPTED,
                     joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
-                });
+                }, { transaction });
                 await plan.update({
                     status: PartyPlanStatus.INACTIVE,
                     isLive: false,
                     paymentStatus: 'Confirmed',
-                });
-                await createBookingAndPayments(plan, request);
+                }, { transaction });
+                await createBookingAndPayments(plan, request, transaction);
 
                 // Reject and notify all other requests now that match is fully confirmed
-                await rejectAndNotifyStaleRequests(plan, request.id);
+                await rejectAndNotifyStaleRequests(plan, request.id, transaction);
+
+                await transaction.commit();
 
                 // Send push notification & socket events
                 setImmediate(async () => {
@@ -2031,11 +2193,13 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
                 await request.update({
                     status: PartyPlanRequestStatus.ACCEPTED,
                     joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
-                });
+                }, { transaction });
                 await plan.update({
                     paymentStatus: 'Awaiting Host Payment',
                     isLive: false,
-                });
+                }, { transaction });
+
+                await transaction.commit();
 
                 // Send push notification & socket events
                 setImmediate(async () => {
@@ -2097,11 +2261,13 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
             await request.update({
                 status: PartyPlanRequestStatus.PAYMENT_PENDING,
                 paymentTimeoutAt: timeout,
-            });
+            }, { transaction });
 
             await plan.update({
                 isLive: false, // reserved
-            });
+            }, { transaction });
+
+            await transaction.commit();
 
             try {
                 const host = await User.findByPk(plan.userId);
@@ -2146,6 +2312,7 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
             res.json({ success: true, message: 'Invite accepted! You have 30 minutes to pay the deposit.', data: request });
         }
     } catch (err: any) {
+        await transaction.rollback();
         logger.error('acceptPartyPlanInvite error:', err);
         res.status(500).json({ success: false, message: 'Failed to accept invite', error: err.message });
     }
@@ -2155,31 +2322,145 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
 // POST /api/mobile/party-plans/:id/cancel
 // Cancel a party plan (by host)
 // ─────────────────────────────────────────────────────────────────────────────
+async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction) {
+    // 1. Update plan status
+    await plan.update({
+        status: PartyPlanStatus.CANCELLED,
+        isLive: false,
+        paymentStatus: plan.paymentStatus === 'Confirmed' ? 'Refunded' : plan.paymentStatus,
+        hostPaymentStatus: plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID
+            ? PartyPlanPaymentStatus.REFUNDED
+            : plan.hostPaymentStatus,
+    }, { transaction });
+
+    // 2. Release lock in Time Lock Engine
+    await PlanEligibilityService.releaseLock(plan.id, { transaction });
+
+    // 3. Find and update all requests
+    const requests = await PartyPlanRequest.findAll({
+        where: {
+            planId: plan.id,
+            status: { [Op.in]: [PartyPlanRequestStatus.PENDING, PartyPlanRequestStatus.PAYMENT_PENDING, PartyPlanRequestStatus.ACCEPTED] }
+        },
+        transaction
+    });
+
+    for (const req of requests) {
+        await req.update({
+            status: PartyPlanRequestStatus.CANCELLED,
+            joinerPaymentStatus: req.joinerPaymentStatus === PartyPlanJoinerPaymentStatus.PAID
+                ? PartyPlanJoinerPaymentStatus.REFUNDED
+                : req.joinerPaymentStatus
+        }, { transaction });
+
+        // Notify joiners
+        try {
+            const { io } = require('../server');
+            io.to(`user_${req.requesterId}`).emit('plan_unavailable', {
+                planId: plan.id,
+                requestId: req.id,
+            });
+            io.to(`user_${req.requesterId}`).emit('notification_created', {
+                id: `ppr_cancelled_${req.id}`,
+                title: 'Party Plan Cancelled',
+                body: 'The Party Plan has been cancelled by the host. Any deposits paid will be refunded.',
+                createdAt: new Date().toISOString(),
+                read: false,
+                type: 'plan_unavailable',
+            });
+        } catch (_) {}
+
+        setImmediate(async () => {
+            try {
+                const joiner = await User.findByPk(req.requesterId);
+                if (joiner && joiner.fcmToken) {
+                    await sendMulticastPushNotification([joiner.fcmToken], {
+                        title: 'Party Plan Cancelled',
+                        body: 'The Party Plan has been cancelled by the host. Any deposits paid will be refunded.',
+                        data: {
+                            type: 'plan_unavailable',
+                            partyPlanId: plan.id,
+                            requestId: req.id,
+                        },
+                    });
+                }
+            } catch (_) {}
+        });
+    }
+
+    // 4. Find associated Booking (goingMode = GoingMode.PARTY_REQUEST, matching host userId, venueId, planDateTime)
+    const booking = await Booking.findOne({
+        where: {
+            goingMode: GoingMode.PARTY_REQUEST,
+            userId: plan.userId,
+            venueId: plan.venueId,
+            bookingDate: plan.planDateTime,
+            status: { [Op.ne]: BookingStatus.CANCELLED }
+        },
+        transaction
+    });
+
+    if (booking) {
+        await booking.update({
+            status: BookingStatus.CANCELLED,
+            paymentStatus: BookingPaymentStatus.REFUNDED
+        }, { transaction });
+
+        // Update all related Payment records to refunded
+        const payments = await Payment.findAll({
+            where: {
+                bookingId: booking.id,
+                status: PaymentStatus.SUCCESSFUL
+            },
+            transaction
+        });
+
+        for (const payment of payments) {
+            await payment.update({
+                status: PaymentStatus.REFUNDED,
+                refundAmount: payment.amount,
+                refundedAt: new Date()
+            }, { transaction });
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/party-plans/:id/cancel
+// Cancel a party plan (by host)
+// ─────────────────────────────────────────────────────────────────────────────
 export const cancelPartyPlan = async (req: Request, res: Response): Promise<void> => {
+    const transaction = await sequelize.transaction();
     try {
         const { id } = req.params;
         const { userId } = req.body;
 
-        const plan = await PartyPlan.findByPk(id);
+        const plan = await PartyPlan.findByPk(id, { transaction });
         if (!plan) {
+            await transaction.rollback();
             res.status(404).json({ success: false, message: 'Party plan not found' });
             return;
         }
 
         if (plan.userId !== userId) {
+            await transaction.rollback();
             res.status(403).json({ success: false, message: 'Only the host can cancel the plan' });
             return;
         }
 
-        await (plan as any).update({ status: PartyPlanStatus.CANCELLED, isLive: false });
+        // Row lock
+        await plan.reload({ lock: transaction.LOCK.UPDATE, transaction });
 
-        // Cancel all pending or accepted requests
-        await PartyPlanRequest.update(
-            { status: PartyPlanRequestStatus.CANCELLED },
-            { where: { planId: plan.id, status: { [Op.in]: [PartyPlanRequestStatus.PENDING, PartyPlanRequestStatus.PAYMENT_PENDING, PartyPlanRequestStatus.ACCEPTED] } } }
-        );
+        // Check if already cancelled
+        if (plan.status === PartyPlanStatus.CANCELLED) {
+            await transaction.rollback();
+            res.json({ success: true, message: 'Party plan is already cancelled' });
+            return;
+        }
 
-        // TODO: Initiate refund for host and any joiner if applicable
+        await cancelPartyPlanInternal(plan, transaction);
+
+        await transaction.commit();
 
         // Emit socket event to notify other clients to remove it from feed
         try {
@@ -2191,6 +2472,7 @@ export const cancelPartyPlan = async (req: Request, res: Response): Promise<void
 
         res.json({ success: true, message: 'Party plan cancelled' });
     } catch (err: any) {
+        await transaction.rollback();
         logger.error('cancelPartyPlan error:', err);
         res.status(500).json({ success: false, message: 'Failed to cancel plan', error: err.message });
     }
@@ -2276,12 +2558,46 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
         const hostRaw = (plan as any).creator;
         const joinerRaw = (request as any).requester;
 
-        // Fetch the booking record to retrieve the ticketCode
+        const hostData = hostRaw ? {
+            id: hostRaw.id,
+            firstName: hostRaw.firstName,
+            lastName: hostRaw.lastName,
+            username: hostRaw.username,
+            profilePhotoUrl: resolveUserPhoto(hostRaw),
+            subscriptionTier: hostRaw.subscriptionTier,
+            bio: hostRaw.profile?.bio ?? null,
+            city: hostRaw.profile?.city ?? null,
+        } : null;
+
+        const joinerData = joinerRaw ? {
+            id: joinerRaw.id,
+            firstName: joinerRaw.firstName,
+            lastName: joinerRaw.lastName,
+            username: joinerRaw.username,
+            profilePhotoUrl: resolveUserPhoto(joinerRaw),
+            subscriptionTier: joinerRaw.subscriptionTier,
+            bio: joinerRaw.profile?.bio ?? null,
+            city: joinerRaw.profile?.city ?? null,
+        } : null;
+
+        // Fetch the booking record to retrieve the ticketCode and ticketUrl
         const booking = await Booking.findOne({
             where: { goingMode: GoingMode.PARTY_REQUEST, userId: plan.userId, venueId: plan.venueId },
             order: [['createdAt', 'DESC']],
             attributes: ['id', 'ticketCode', 'ticketUrl', 'specialRequests'],
         });
+
+        let ticketUrl = (booking as any)?.ticketUrl ?? null;
+        let ticketCode = booking?.ticketCode ?? null;
+
+        if (booking && !ticketUrl) {
+            try {
+                const { generateTicketForBookingHelper } = require('../services/ticketService');
+                ticketUrl = await generateTicketForBookingHelper(booking.id);
+            } catch (ticketGenErr: any) {
+                logger.warn(`On-the-fly ticket PDF generation failed for booking ${booking.id}: ${ticketGenErr.message}`);
+            }
+        }
 
         res.json({
             success: true,
@@ -2292,43 +2608,28 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
                     status: request.status,
                     joinerPaymentStatus: request.joinerPaymentStatus,
                     createdAt: request.createdAt,
-                    requester: joinerRaw ? {
-                        id: joinerRaw.id,
-                        firstName: joinerRaw.firstName,
-                        lastName: joinerRaw.lastName,
-                        username: joinerRaw.username,
-                        profilePhotoUrl: resolveUserPhoto(joinerRaw),
-                        subscriptionTier: joinerRaw.subscriptionTier,
-                        bio: joinerRaw.profile?.bio ?? null,
-                        city: joinerRaw.profile?.city ?? null,
-                    } : null,
+                    requester: joinerData,
+                    joiner: joinerData,
+                    user: joinerData,
                 },
                 plan: {
                     id: plan.id,
                     message: plan.message,
                     planDateTime: plan.planDateTime,
-                    // Ticket is valid until the moment the party begins
                     expiresAt: plan.planDateTime,
                     paymentType: plan.paymentType,
                     depositAmount: plan.depositAmount,
                     status: plan.status,
                     foodPreference: plan.foodPreference,
                     drinkPreference: plan.drinkPreference,
-                    user: hostRaw ? {
-                        id: hostRaw.id,
-                        firstName: hostRaw.firstName,
-                        lastName: hostRaw.lastName,
-                        username: hostRaw.username,
-                        profilePhotoUrl: resolveUserPhoto(hostRaw),
-                        subscriptionTier: hostRaw.subscriptionTier,
-                        bio: hostRaw.profile?.bio ?? null,
-                        city: hostRaw.profile?.city ?? null,
-                    } : null,
+                    user: hostData,
+                    creator: hostData,
+                    host: hostData,
                     venue: buildVenueData(plan as any),
                 },
-                ticketCode: booking?.ticketCode ?? null,
+                ticketCode: ticketCode,
                 bookingId: booking?.id ?? null,
-                ticketUrl: (booking as any)?.ticketUrl ?? null,
+                ticketUrl: ticketUrl,
             },
         });
     } catch (err: any) {

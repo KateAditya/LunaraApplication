@@ -36,6 +36,10 @@ import SubscriptionPackage from './SubscriptionPackage';
 import UserSubscription from './UserSubscription';
 import SafetyCheck from './SafetyCheck';
 import DeletedAccount from './DeletedAccount';
+import PlanTimeLock from './PlanTimeLock';
+import PlanTimeLockConfig from './PlanTimeLockConfig';
+import PlanTimeLockConfigHistory from './PlanTimeLockConfigHistory';
+import NotificationJob from './NotificationJob';
 
 // ============================================================================
 // User Associations
@@ -114,6 +118,15 @@ UserSubscription.belongsTo(User, {
 });
 
 // User -> SafetyCheck (submitted)
+User.hasMany(PlanTimeLock, {
+    foreignKey: 'userId',
+    as: 'timeLocks',
+});
+PlanTimeLock.belongsTo(User, {
+    foreignKey: 'userId',
+    as: 'user',
+});
+
 User.hasMany(SafetyCheck, {
     foreignKey: 'userId',
     as: 'submittedSafetyChecks',
@@ -534,6 +547,10 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
         await UserSubscription.sync(options);
         await SafetyCheck.sync(options);
         await DeletedAccount.sync(options);
+        await PlanTimeLock.sync(options);
+        await PlanTimeLockConfig.sync(options);
+        await PlanTimeLockConfigHistory.sync(options);
+        await NotificationJob.sync(options);
 
         console.log('✅ All models synchronized successfully');
     } catch (error) {
@@ -580,5 +597,9 @@ export default {
     SubscriptionPackage,
     UserSubscription,
     SafetyCheck,
+    PlanTimeLock,
+    PlanTimeLockConfig,
+    PlanTimeLockConfigHistory,
+    NotificationJob,
     syncModels,
 };
