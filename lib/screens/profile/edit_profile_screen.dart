@@ -283,6 +283,49 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     setState(() => _isLoading = false);
   }
 
+  // ── Registration-style Chip Option Lists ─────────────────────────────
+  final List<String> _interestsOptions = [
+    'TRAVEL', 'FITNESS', 'MOVIES', 'MUSIC', 'FOOD', 'PHOTOGRAPHY',
+    'GAMING', 'BUSINESS', 'STARTUPS', 'ENTREPRENEURSHIP', 'SPORTS',
+    'READING', 'DANCING', 'ART', 'FASHION', 'PETS', 'NATURE', 'ADVENTURE',
+  ];
+  late Set<String> _selectedInterests;
+
+  final List<String> _lookingForOptions = [
+    'NEW FRIENDS', 'SOCIAL OUTINGS', 'ACTIVITY PARTNER', 'NETWORKING',
+    'EVENT COMPANIONS', 'CASUAL MEETUPS', 'MEANINGFUL CONNECTIONS',
+  ];
+  late Set<String> _selectedLookingFor;
+
+  final List<String> _musicOptions = [
+    'BOLLYWOOD', 'PUNJABI', 'EDM / TECHNO', 'HIP HOP', 'COMMERCIAL', 'ROCK', 'POP', 'INDIE',
+  ];
+  late Set<String> _selectedMusic;
+
+  final List<String> _smokingOptions = [
+    'NON-SMOKER', 'OCCASIONAL', 'REGULAR', 'NOT FOR ME',
+  ];
+  String? _selectedSmoking;
+
+  final List<String> _drinkOptions = [
+    'NON-DRINKER', 'SOCIALLY', 'REGULAR', 'TEETOTALER',
+  ];
+  late Set<String> _selectedDrink;
+
+  final List<String> _genderPrefOptions = [
+    'MALE', 'FEMALE', 'EVERYONE',
+  ];
+  late Set<String> _selectedPrefGenders;
+
+  final List<Map<String, dynamic>> _distanceOptions = [
+    {'label': '5 KM', 'value': 5},
+    {'label': '10 KM', 'value': 10},
+    {'label': '25 KM', 'value': 25},
+    {'label': '50 KM', 'value': 50},
+    {'label': '100 KM+', 'value': 100},
+  ];
+  int _selectedDistance = 10;
+
   @override
   void initState() {
     super.initState();
@@ -310,6 +353,39 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _matchDistanceController = TextEditingController(text: u.matchDistanceKm?.toString() ?? '10');
     _invisibleMode = u.invisibleMode;
     _bookingAlerts = u.bookingAlertsEnabled;
+
+    // Initialize Chip Sets
+    _selectedInterests = u.interests.map((e) => e.toUpperCase()).toSet();
+    for (final item in _selectedInterests) {
+      if (!_interestsOptions.contains(item)) _interestsOptions.add(item);
+    }
+
+    _selectedLookingFor = u.lookingFor.map((e) => e.toUpperCase()).toSet();
+    for (final item in _selectedLookingFor) {
+      if (!_lookingForOptions.contains(item)) _lookingForOptions.add(item);
+    }
+
+    _selectedMusic = u.musicPreference.map((e) => e.toUpperCase()).toSet();
+    for (final item in _selectedMusic) {
+      if (!_musicOptions.contains(item)) _musicOptions.add(item);
+    }
+
+    _selectedSmoking = u.smokingPreference?.toUpperCase();
+    if (_selectedSmoking != null && _selectedSmoking!.isNotEmpty && !_smokingOptions.contains(_selectedSmoking)) {
+      _smokingOptions.add(_selectedSmoking!);
+    }
+
+    _selectedDrink = u.drinkPreference.map((e) => e.toUpperCase()).toSet();
+    for (final item in _selectedDrink) {
+      if (!_drinkOptions.contains(item)) _drinkOptions.add(item);
+    }
+
+    _selectedPrefGenders = u.preferredGenders.map((e) => e.toUpperCase()).toSet();
+    for (final item in _selectedPrefGenders) {
+      if (!_genderPrefOptions.contains(item)) _genderPrefOptions.add(item);
+    }
+
+    _selectedDistance = u.matchDistanceKm ?? 10;
   }
 
   @override
@@ -336,9 +412,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     super.dispose();
   }
 
-  List<String> _parseList(String val) => 
-      val.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
     
@@ -352,18 +425,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       'gender': _genderController.text.trim(),
       'city': _cityController.text.trim(),
       'bio': _bioController.text.trim(),
-      'lookingFor': _parseList(_lookingForController.text),
-      'musicPreference': _parseList(_musicController.text),
-      'smokingPreference': _smokingController.text.trim(),
-      'drinkPreference': _parseList(_drinkController.text),
+      'interests': _selectedInterests.toList(),
+      'lookingFor': _selectedLookingFor.toList(),
+      'musicPreference': _selectedMusic.toList(),
+      'smokingPreference': _selectedSmoking ?? '',
+      'drinkPreference': _selectedDrink.toList(),
       'occupation': _occupationController.text.trim(),
       'education': _educationController.text.trim(),
       'minBudget': int.tryParse(_minBudgetController.text.trim()),
       'maxBudget': int.tryParse(_maxBudgetController.text.trim()),
-      'preferredGenders': _parseList(_prefGendersController.text),
+      'preferredGenders': _selectedPrefGenders.toList(),
       'minAgePreference': int.tryParse(_minAgeController.text.trim()),
       'maxAgePreference': int.tryParse(_maxAgeController.text.trim()),
-      'matchDistanceKm': int.tryParse(_matchDistanceController.text.trim()),
+      'matchDistanceKm': _selectedDistance,
       'invisibleMode': _invisibleMode,
       'bookingAlertsEnabled': _bookingAlerts,
     };
@@ -387,6 +461,146 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         const SnackBar(content: Text('Failed to update profile.'), backgroundColor: Colors.red),
       );
     }
+  }
+
+  Widget _buildSubLabel(String title, String subtitle) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            fontWeight: FontWeight.w900,
+            fontSize: 13,
+            letterSpacing: 1.0,
+            color: LunaraTheme.electricViolet,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          subtitle,
+          style: TextStyle(
+            fontSize: 11,
+            color: (isDark ? Colors.white : Colors.black).withOpacity(0.5),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildChipSelector(List<String> options, Set<String> selectedSet) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 10,
+      children: options.map((option) {
+        final isSelected = selectedSet.contains(option);
+        return GestureDetector(
+          onTap: () {
+            setState(() {
+              if (isSelected) {
+                selectedSet.remove(option);
+              } else {
+                selectedSet.add(option);
+              }
+            });
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(30),
+              color: isSelected
+                  ? LunaraTheme.electricViolet.withOpacity(0.18)
+                  : (isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.04)),
+              border: Border.all(
+                color: isSelected
+                    ? LunaraTheme.electricViolet
+                    : (isDark ? Colors.white24 : Colors.black12),
+                width: isSelected ? 1.5 : 1,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isSelected) ...[
+                  const Icon(Icons.check_circle, size: 14, color: LunaraTheme.electricViolet),
+                  const SizedBox(width: 6),
+                ],
+                Text(
+                  option,
+                  style: TextStyle(
+                    color: isSelected
+                        ? (isDark ? Colors.white : Colors.black87)
+                        : (isDark ? Colors.white54 : Colors.black54),
+                    fontSize: 11,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildSingleChipSelector<T>(List<Map<String, dynamic>> options, T? currentValue, ValueChanged<T> onSelected) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 10,
+      children: options.map((opt) {
+        final label = opt['label'] as String;
+        final val = opt['value'] as T;
+        final isSelected = currentValue == val;
+        return GestureDetector(
+          onTap: () {
+            setState(() {
+              onSelected(val);
+            });
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(30),
+              color: isSelected
+                  ? LunaraTheme.electricViolet.withOpacity(0.18)
+                  : (isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.04)),
+              border: Border.all(
+                color: isSelected
+                    ? LunaraTheme.electricViolet
+                    : (isDark ? Colors.white24 : Colors.black12),
+                width: isSelected ? 1.5 : 1,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isSelected) ...[
+                  const Icon(Icons.check_circle, size: 14, color: LunaraTheme.electricViolet),
+                  const SizedBox(width: 6),
+                ],
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: isSelected
+                        ? (isDark ? Colors.white : Colors.black87)
+                        : (isDark ? Colors.white54 : Colors.black54),
+                    fontSize: 11,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
   }
 
   Widget _buildTextField(
@@ -781,11 +995,35 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 const SizedBox(height: 8),
                 
                 _buildSection('PREFERENCES & LIFESTYLE', [
-                  _buildTextField('Looking For (comma separated)', _lookingForController),
-                  _buildTextField('Music Preference (comma separated)', _musicController),
-                  _buildTextField('Smoking Preference', _smokingController),
-                  _buildTextField('Drink Preference (comma separated)', _drinkController),
-                ], initiallyExpanded: false),
+                  _buildSubLabel('INTERESTS', 'What do you vibe with beyond the night?'),
+                  const SizedBox(height: 10),
+                  _buildChipSelector(_interestsOptions, _selectedInterests),
+                  const SizedBox(height: 20),
+
+                  _buildSubLabel('LOOKING FOR', 'What kind of connections are you seeking?'),
+                  const SizedBox(height: 10),
+                  _buildChipSelector(_lookingForOptions, _selectedLookingFor),
+                  const SizedBox(height: 20),
+
+                  _buildSubLabel('MUSIC PREFERENCE', 'Your favorite party beats'),
+                  const SizedBox(height: 10),
+                  _buildChipSelector(_musicOptions, _selectedMusic),
+                  const SizedBox(height: 20),
+
+                  _buildSubLabel('SMOKING PREFERENCE', 'Smoking habits'),
+                  const SizedBox(height: 10),
+                  _buildSingleChipSelector<String>(
+                    _smokingOptions.map((e) => {'label': e, 'value': e}).toList(),
+                    _selectedSmoking,
+                    (val) => _selectedSmoking = val,
+                  ),
+                  const SizedBox(height: 20),
+
+                  _buildSubLabel('DRINK PREFERENCE', 'Drinking habits'),
+                  const SizedBox(height: 10),
+                  _buildChipSelector(_drinkOptions, _selectedDrink),
+                  const SizedBox(height: 12),
+                ], initiallyExpanded: true),
                 const SizedBox(height: 8),
 
                 _buildSection('WORK & EDUCATION', [
@@ -795,14 +1033,32 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 const SizedBox(height: 8),
 
                 _buildSection('MATCHING & BUDGET', [
+                  _buildSubLabel('PREFERRED GENDERS', 'Who would you like to meet?'),
+                  const SizedBox(height: 10),
+                  _buildChipSelector(_genderPrefOptions, _selectedPrefGenders),
+                  const SizedBox(height: 20),
+
+                  _buildSubLabel('MATCH DISTANCE', 'Maximum discovery radius'),
+                  const SizedBox(height: 10),
+                  _buildSingleChipSelector<int>(
+                    _distanceOptions,
+                    _selectedDistance,
+                    (val) => _selectedDistance = val,
+                  ),
+                  const SizedBox(height: 20),
+
+                  _buildSubLabel('BUDGET RANGE (PER NIGHT)', 'Average spending preference'),
+                  const SizedBox(height: 10),
                   Row(
                     children: [
-                      Expanded(child: _buildTextField('Min Budget', _minBudgetController, isNumber: true)),
+                      Expanded(child: _buildTextField('Min Budget (₹)', _minBudgetController, isNumber: true)),
                       const SizedBox(width: 16),
-                      Expanded(child: _buildTextField('Max Budget', _maxBudgetController, isNumber: true)),
+                      Expanded(child: _buildTextField('Max Budget (₹)', _maxBudgetController, isNumber: true)),
                     ],
                   ),
-                  _buildTextField('Preferred Genders (comma separated)', _prefGendersController),
+
+                  _buildSubLabel('AGE PREFERENCE', 'Age match range'),
+                  const SizedBox(height: 10),
                   Row(
                     children: [
                       Expanded(child: _buildTextField('Min Age', _minAgeController, isNumber: true)),
@@ -810,7 +1066,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       Expanded(child: _buildTextField('Max Age', _maxAgeController, isNumber: true)),
                     ],
                   ),
-                  _buildTextField('Match Distance (km)', _matchDistanceController, isNumber: true),
                 ], initiallyExpanded: false),
                 const SizedBox(height: 8),
 
