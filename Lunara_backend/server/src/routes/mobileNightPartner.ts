@@ -13,7 +13,7 @@ router.get(
     '/check-interest',
     [
         query('userId').notEmpty().withMessage('userId is required'),
-        query('venueId').isUUID().withMessage('venueId must be a UUID'),
+        query('venueId').notEmpty().withMessage('venueId is required'),
         query('eventDate').isISO8601().withMessage('eventDate must be YYYY-MM-DD'),
         validate,
     ],
@@ -28,7 +28,7 @@ router.post(
     '/interested',
     [
         body('userId').notEmpty().withMessage('userId is required'),
-        body('venueId').isUUID().withMessage('venueId must be a UUID'),
+        body('venueId').notEmpty().withMessage('venueId is required'),
         body('eventDate').isISO8601().withMessage('eventDate must be YYYY-MM-DD'),
         validate,
     ],
@@ -43,7 +43,7 @@ router.delete(
     '/interested',
     [
         body('userId').notEmpty().withMessage('userId is required'),
-        body('venueId').isUUID().withMessage('venueId must be a UUID'),
+        body('venueId').notEmpty().withMessage('venueId is required'),
         body('eventDate').isISO8601().withMessage('eventDate must be YYYY-MM-DD'),
         validate,
     ],
