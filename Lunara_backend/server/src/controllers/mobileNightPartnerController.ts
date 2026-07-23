@@ -2,6 +2,26 @@ import { Request, Response } from 'express';
 import { NightPartnerService } from '../services/NightPartnerService';
 import { logger } from '../config/logger';
 
+export const checkUserInterest = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { userId, venueId, eventDate } = req.query;
+        if (!userId || !venueId || !eventDate) {
+            res.status(400).json({ success: false, message: 'userId, venueId, and eventDate are required' });
+            return;
+        }
+
+        const isInterested = await NightPartnerService.checkUserInterest(
+            String(userId),
+            String(venueId),
+            String(eventDate)
+        );
+        res.json({ success: true, isInterested });
+    } catch (err: any) {
+        logger.error('checkUserInterest error:', err);
+        res.status(400).json({ success: false, message: err.message || 'Failed to check interest' });
+    }
+};
+
 export const markInterested = async (req: Request, res: Response): Promise<void> => {
     try {
         const { userId, venueId, eventDate, eventTime } = req.body;
@@ -200,6 +220,7 @@ export const verifyMatchPayment = async (req: Request, res: Response): Promise<v
 };
 
 export default {
+    checkUserInterest,
     markInterested,
     removeInterest,
     getInterestedPartners,

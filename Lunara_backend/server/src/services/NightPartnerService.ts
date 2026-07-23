@@ -41,6 +41,25 @@ export interface SafePartnerProfile {
 
 export class NightPartnerService {
     /**
+     * Check if a user has marked interest in an upcoming night
+     */
+    public static async checkUserInterest(
+        userId: string,
+        venueId: string,
+        eventDate: string
+    ): Promise<boolean> {
+        const interest = await NightInterest.findOne({
+            where: {
+                userId,
+                venueId,
+                eventDate: new Date(eventDate),
+                status: NightInterestStatus.INTERESTED,
+            },
+        });
+        return !!interest;
+    }
+
+    /**
      * Mark a user as interested in an upcoming night event (Idempotent)
      */
     public static async markInterested(

@@ -18,6 +18,25 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
   bool _isInterested = false;
   bool _isToggling = false;
 
+  @override
+  void initState() {
+    super.initState();
+    _checkInitialInterest();
+  }
+
+  Future<void> _checkInitialInterest() async {
+    final venueId = widget.venueMap?['id']?.toString() ?? widget.party['venueId']?.toString() ?? '';
+    final date = widget.party['rawDate']?.toString() ?? widget.party['date']?.toString() ?? '';
+    if (venueId.isNotEmpty && date.isNotEmpty) {
+      final isInt = await ApiService.checkNightInterest(venueId: venueId, date: date);
+      if (mounted) {
+        setState(() {
+          _isInterested = isInt;
+        });
+      }
+    }
+  }
+
   Widget _circleButton({required IconData icon, required VoidCallback onTap}) {
     return GestureDetector(
       onTap: onTap,
@@ -394,39 +413,53 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                             duration: const Duration(milliseconds: 200),
                             height: 56,
                             decoration: BoxDecoration(
-                              color: _isInterested
-                                  ? LunaraTheme.electricViolet.withValues(alpha: 0.12)
-                                  : Colors.grey[50],
+                              gradient: _isInterested ? LunaraTheme.primaryGradient : null,
+                              color: _isInterested ? null : Colors.white,
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
                                 color: _isInterested
-                                    ? LunaraTheme.electricViolet
-                                    : Colors.grey[300]!,
-                                width: 1.5,
+                                    ? Colors.transparent
+                                    : LunaraTheme.electricViolet,
+                                width: 1.8,
                               ),
+                              boxShadow: _isInterested
+                                  ? [
+                                      BoxShadow(
+                                        color: LunaraTheme.electricViolet.withValues(alpha: 0.35),
+                                        blurRadius: 14,
+                                        offset: const Offset(0, 6),
+                                      ),
+                                    ]
+                                  : [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(alpha: 0.03),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
                             ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 _isToggling
-                                    ? const SizedBox(
+                                    ? SizedBox(
                                         width: 18,
                                         height: 18,
                                         child: CircularProgressIndicator(
                                           strokeWidth: 2,
-                                          color: LunaraTheme.electricViolet,
+                                          color: _isInterested ? Colors.white : LunaraTheme.electricViolet,
                                         ),
                                       )
                                     : Icon(
                                         _isInterested ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                                        color: _isInterested ? LunaraTheme.electricViolet : Colors.black87,
+                                        color: _isInterested ? Colors.white : LunaraTheme.electricViolet,
                                         size: 20,
                                       ),
                                 const SizedBox(width: 8),
                                 Text(
                                   _isInterested ? 'INTERESTED ✓' : 'INTERESTED',
                                   style: TextStyle(
-                                    color: _isInterested ? LunaraTheme.electricViolet : Colors.black87,
+                                    color: _isInterested ? Colors.white : LunaraTheme.electricViolet,
                                     fontWeight: FontWeight.w900,
                                     fontSize: 13,
                                     letterSpacing: 1.2,

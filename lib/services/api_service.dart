@@ -2642,6 +2642,31 @@ class ApiService {
 
   // ── Upcoming Night Partner Discovery & Matching ────────────────────────────
 
+  static Future<bool> checkNightInterest({
+    required String venueId,
+    required String date,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) return false;
+    try {
+      final response = await get(
+        '/api/mobile/nights/check-interest',
+        queryParameters: {
+          'userId': userId,
+          'venueId': venueId,
+          'eventDate': date,
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['isInterested'] == true;
+      }
+    } catch (e) {
+      debugPrint('checkNightInterest error: $e');
+    }
+    return false;
+  }
+
   static Future<bool> markNightInterested({
     required String venueId,
     required String date,

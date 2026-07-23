@@ -6,6 +6,21 @@ import ctrl from '../controllers/mobileNightPartnerController';
 const router = Router();
 
 /**
+ * GET /api/mobile/nights/check-interest?userId=<uuid>&venueId=<uuid>&eventDate=YYYY-MM-DD
+ * Check if user is interested in an upcoming night
+ */
+router.get(
+    '/check-interest',
+    [
+        query('userId').notEmpty().withMessage('userId is required'),
+        query('venueId').isUUID().withMessage('venueId must be a UUID'),
+        query('eventDate').isISO8601().withMessage('eventDate must be YYYY-MM-DD'),
+        validate,
+    ],
+    ctrl.checkUserInterest
+);
+
+/**
  * POST /api/mobile/nights/interested
  * Mark interest in an upcoming night event
  */
