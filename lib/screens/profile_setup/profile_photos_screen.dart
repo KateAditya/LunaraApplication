@@ -230,20 +230,23 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
       ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.verified_rounded, color: Colors.green, size: 18),
-          SizedBox(width: 8),
-          Text(
-            'Azure AI Face Verification Completed ✓',
-            style: TextStyle(
-              color: Colors.green,
-              fontWeight: FontWeight.bold,
-              fontSize: 12,
+      child: const FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.verified_rounded, color: Colors.green, size: 18),
+            SizedBox(width: 8),
+            Text(
+              'Azure AI Face Verification Completed ✓',
+              style: TextStyle(
+                color: Colors.green,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -287,7 +287,7 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
                           crossAxisCount: 3,
                           crossAxisSpacing: 16,
                           mainAxisSpacing: 24,
-                          childAspectRatio: 0.7,
+                          childAspectRatio: 0.65,
                         ),
                     itemCount: _filteredUsers.length,
                     itemBuilder: (context, index) {

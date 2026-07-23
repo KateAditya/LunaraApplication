@@ -165,13 +165,19 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text(
-                                'PROFILE COMPLETION',
-                                style: TextStyle(
-                                  color: Colors.black54,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 1,
+                              const Expanded(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    'PROFILE COMPLETION',
+                                    style: TextStyle(
+                                      color: Colors.black54,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1,
+                                    ),
+                                  ),
                                 ),
                               ),
                               Text(

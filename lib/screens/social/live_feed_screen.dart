@@ -3247,12 +3247,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     children: [
                       const Icon(Icons.check_circle, color: Colors.blue, size: 16),
                       const SizedBox(width: 6),
-                      Text(
-                        currentStatus == 'completed' ? 'COMPLETED' : 'PAYMENT CONFIRMED & PUBLISHED',
-                        style: const TextStyle(
-                          color: Colors.blue,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
+                      Flexible(
+                        child: Text(
+                          currentStatus == 'completed' ? 'COMPLETED' : 'PAYMENT CONFIRMED & PUBLISHED',
+                          style: const TextStyle(
+                            color: Colors.blue,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                          textAlign: TextAlign.center,
                         ),
                       ),
                     ],

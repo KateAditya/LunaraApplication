@@ -473,10 +473,12 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                                 const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    Flexible(
-                                      child: Text(
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: Row(
+                                    children: [
+                                      Text(
                                         table,
                                         style: const TextStyle(
                                           color: Colors.black,
@@ -484,19 +486,18 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                           fontWeight: FontWeight.w900,
                                         ),
                                         maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
                                       ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      amountStr,
-                                      style: const TextStyle(
-                                        color: LunaraTheme.electricViolet,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w900,
+                                      if (table.isNotEmpty) const SizedBox(width: 8),
+                                      Text(
+                                        amountStr,
+                                        style: const TextStyle(
+                                          color: LunaraTheme.electricViolet,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w900,
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ],
                             ),

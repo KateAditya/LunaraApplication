@@ -39,15 +39,18 @@ class LunaraActionButton extends StatelessWidget {
         ),
         child: isLoading
             ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-            : Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (icon != null) ...[
-                    Icon(icon, size: 20),
-                    const SizedBox(width: 8),
+            : FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (icon != null) ...[
+                      Icon(icon, size: 20),
+                      const SizedBox(width: 8),
+                    ],
+                    Text(text, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                   ],
-                  Text(text, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                ],
+                ),
               ),
       ),
     );
