@@ -141,6 +141,8 @@ import adminBookingsRoutes from './routes/adminBookings';
 import adminSubscriptionRoutes from './routes/adminSubscription';
 import mobileSubscriptionRoutes from './routes/mobileSubscription';
 import mobileWalletRoutes from './routes/mobileWallet';
+import mobileTicketRoutes from './routes/mobileTicket';
+import { ExpiredTicketCleanupWorker } from './services/ExpiredTicketCleanupWorker';
 import { getAdminChatSettings, updateAdminChatSettings } from './controllers/chatSubscriptionController';
 import { getAdminTimeLockSettings, updateAdminTimeLockSettings } from './controllers/mobilePlanController';
 import dbRestoreRoutes from './routes/dbRestore';
@@ -190,6 +192,7 @@ app.use('/api/admin/subscriptions', adminSubscriptionRoutes); // Subscriptions (
 app.use('/api/admin/safety-checks', adminSafetyChecksRoutes); // Safety Checks (Admin)
 app.use('/api/mobile/subscriptions', mobileSubscriptionRoutes); // Subscriptions (Mobile)
 app.use('/api/mobile/wallet', mobileWalletRoutes);             // Wallet (Mobile)
+app.use('/api/mobile/tickets', mobileTicketRoutes);           // Digital Tickets (Mobile)
 
 // Admin — chat subscription settings
 app.get('/api/admin/settings/chat', getAdminChatSettings);
@@ -312,7 +315,8 @@ const startServer = async () => {
         if (isMasterProcess && isFirstPm2Instance) {
             startPartyPlanCron();
             startNotificationJobCron();
-            logger.info('Background Cron Jobs started on process/instance.');
+            ExpiredTicketCleanupWorker.startWorker();
+            logger.info('Background Cron Jobs & ExpiredTicketCleanupWorker started on process/instance.');
         } else {
             logger.info(`Background Cron Jobs bypassed on worker/instance (Process ID: ${process.pid}).`);
         }
@@ -344,6 +348,7 @@ if (process.env.NODE_ENV !== 'test') {
             connectDatabase().then(() => {
                 startPartyPlanCron();
                 startNotificationJobCron();
+                ExpiredTicketCleanupWorker.startWorker();
                 logger.info('Primary process database connected & initiated background Cron Jobs.');
             }).catch((err) => {
                 logger.error('Primary process failed to connect to database for Cron Jobs:', err);

@@ -3388,6 +3388,109 @@ class ApiService {
       return {'success': false, 'message': 'Network error deleting account'};
     }
   }
+
+  // ── Ticket System Methods & Internal Helpers ───────────────────────
+
+  static Map<String, String> get _authHeaders {
+    final headers = {'Content-Type': 'application/json'};
+    if (_authToken != null) {
+      headers['Authorization'] = 'Bearer $_authToken';
+    }
+    return headers;
+  }
+
+  static Future<http.Response> _get(String path) async {
+    final uri = Uri.parse('$baseUrl$path');
+    return await http.get(uri, headers: _authHeaders);
+  }
+
+  static Future<http.Response> _post(String path, Map<String, dynamic> body) async {
+    final uri = Uri.parse('$baseUrl$path');
+    return await http.post(uri, headers: _authHeaders, body: jsonEncode(body));
+  }
+
+  /// Fetch user tickets with tab filtering ('upcoming', 'active', 'used', 'expired', 'cancelled')
+  static Future<List<Map<String, dynamic>>> getUserTickets({String tab = 'all'}) async {
+    final userId = currentUserId ?? '';
+    if (userId.isEmpty) return [];
+    try {
+      final response = await _get('/api/mobile/tickets?userId=$userId&tab=$tab');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] is List) {
+          return List<Map<String, dynamic>>.from(data['data']);
+        }
+      }
+    } catch (e) {
+      debugPrint('getUserTickets error: $e');
+    }
+    return [];
+  }
+
+  /// Get single ticket details by ID
+  static Future<Map<String, dynamic>?> getTicketById(String id) async {
+    final userId = currentUserId ?? '';
+    try {
+      final response = await _get('/api/mobile/tickets/$id?userId=$userId');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return Map<String, dynamic>.from(data['data']);
+        }
+      }
+    } catch (e) {
+      debugPrint('getTicketById error: $e');
+    }
+    return null;
+  }
+
+  /// Get secure signed PDF download URL
+  static Future<Map<String, dynamic>> getTicketDownloadUrl(String ticketId) async {
+    final userId = currentUserId ?? '';
+    try {
+      final response = await _get('/api/mobile/tickets/$ticketId/download?userId=$userId');
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        return {'success': true, 'downloadUrl': data['downloadUrl']};
+      }
+      return {'success': false, 'message': data['message'] ?? 'Failed to get ticket download link'};
+    } catch (e) {
+      return {'success': false, 'message': 'Network error getting ticket download link'};
+    }
+  }
+
+  /// Create or retrieve secure share token & text
+  static Future<Map<String, dynamic>> createTicketShareToken(String ticketId) async {
+    final userId = currentUserId ?? '';
+    try {
+      final response = await _post('/api/mobile/tickets/$ticketId/share', {'userId': userId});
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        return {
+          'success': true,
+          'shareUrl': data['shareUrl'],
+          'shareText': data['shareText'],
+        };
+      }
+      return {'success': false, 'message': data['message'] ?? 'Failed to create share link'};
+    } catch (e) {
+      return {'success': false, 'message': 'Network error generating share link'};
+    }
+  }
+
+  /// Verify gate scanner QR ticket (Staff verification)
+  static Future<Map<String, dynamic>> verifyGateTicket({String? ticketCode, String? qrToken}) async {
+    try {
+      final response = await _post('/api/mobile/tickets/verify', {
+        'ticketCode': ticketCode,
+        'qrToken': qrToken,
+      });
+      final data = jsonDecode(response.body);
+      return data;
+    } catch (e) {
+      return {'success': false, 'message': 'Network error verifying ticket'};
+    }
+  }
 }
 
 

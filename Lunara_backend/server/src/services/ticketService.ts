@@ -422,6 +422,22 @@ async function saveLocally(pdfBuffer: Buffer, filename: string): Promise<string>
     return `/uploads/tickets/${filename}`;
 }
 
+import crypto from 'crypto';
+import Ticket, { TicketStatus, StorageCleanupStatus } from '../models/Ticket';
+
+export function generateHMACSignature(ticketCode: string, userId: string, eventDateStr: string): string {
+    const secret = process.env.JWT_SECRET || 'lunara_ticket_secret_key_2026';
+    return crypto.createHmac('sha256', secret)
+        .update(`${ticketCode}:${userId}:${eventDateStr}`)
+        .digest('hex');
+}
+
+export function generateUniqueTicketCode(typePrefix: string = 'BK'): string {
+    const randomHex = crypto.randomBytes(4).toString('hex').toUpperCase();
+    const year = new Date().getFullYear();
+    return `LUN-${year}-${typePrefix}-${randomHex}`;
+}
+
 /**
  * Orchestrator helper to generate ticket for standard Booking model
  */
@@ -432,6 +448,13 @@ export async function generateTicketForBookingHelper(bookingId: string): Promise
         });
         if (!booking) {
             throw new Error(`Booking ${bookingId} not found`);
+        }
+
+        // Idempotency Check: return existing ticket if already generated & stored
+        let existingTicket = await Ticket.findOne({ where: { bookingId } });
+        if (existingTicket && existingTicket.pdfUrl && existingTicket.ticketStatus === TicketStatus.ACTIVE) {
+            logger.info(`Idempotent guard: Active ticket ${existingTicket.ticketId} already exists for booking ${bookingId}`);
+            return existingTicket.pdfUrl;
         }
 
         const host = await User.findByPk(booking.userId);
@@ -467,9 +490,24 @@ export async function generateTicketForBookingHelper(bookingId: string): Promise
             bookingType = booking.numberOfGuests <= 20 ? 'group_party_small' : 'group_party_large';
         }
 
+        const ticketCode = booking.ticketCode || generateUniqueTicketCode('BK');
+        const eventStartAt = new Date(booking.bookingDate);
+        const eventEndAt = new Date(eventStartAt.getTime() + 12 * 60 * 60 * 1000);
+        const expiresAt = eventEndAt;
+        const storageDeletionAt = new Date(expiresAt.getTime() + 24 * 60 * 60 * 1000);
+        const verificationToken = generateHMACSignature(ticketCode, booking.userId, booking.bookingDate.toString());
+
+        const qrPayload = JSON.stringify({
+            ticketId: ticketCode,
+            bookingId: booking.id,
+            userId: booking.userId,
+            eventDate: booking.bookingDate,
+            signature: verificationToken,
+        });
+
         const ticketUrl = await generateTicketPDF({
             bookingType,
-            ticketCode: booking.ticketCode || `BK-${booking.id.substring(0, 8).toUpperCase()}`,
+            ticketCode,
             hostName: `${host.firstName} ${host.lastName}`,
             hostProfileUrl: hostPhoto?.filePath || null,
             partnerName,
@@ -484,8 +522,29 @@ export async function generateTicketForBookingHelper(bookingId: string): Promise
             paymentStatus: booking.paymentStatus,
         });
 
-        await booking.update({ ticketUrl });
-        logger.info(`Successfully generated & saved ticket PDF for Booking ID: ${bookingId}, URL: ${ticketUrl}`);
+        await Ticket.upsert({
+            ticketId: ticketCode,
+            bookingId: booking.id,
+            bookingType: 'solo',
+            userId: booking.userId,
+            venueId: booking.venueId,
+            ticketStatus: TicketStatus.ACTIVE,
+            eventStartAt,
+            eventEndAt,
+            issuedAt: new Date(),
+            expiresAt,
+            storageDeletionAt,
+            storageProvider: 'local',
+            storageKey: ticketUrl,
+            pdfUrl: ticketUrl,
+            pdfVersion: 1,
+            qrToken: qrPayload,
+            verificationToken,
+            storageCleanupStatus: StorageCleanupStatus.PENDING,
+        });
+
+        await booking.update({ ticketCode, ticketUrl });
+        logger.info(`Successfully generated & saved ticket PDF for Booking ID: ${bookingId}, Code: ${ticketCode}, URL: ${ticketUrl}`);
         return ticketUrl;
     } catch (err: any) {
         logger.error(`Error generating ticket for Booking ID ${bookingId}: ${err.message}`, err);
@@ -505,6 +564,13 @@ export async function generateTicketForGroupPartyHelper(groupPartyId: string): P
             throw new Error(`GroupParty ${groupPartyId} not found`);
         }
 
+        // Idempotency check
+        let existingTicket = await Ticket.findOne({ where: { bookingId: groupPartyId } });
+        if (existingTicket && existingTicket.pdfUrl && existingTicket.ticketStatus === TicketStatus.ACTIVE) {
+            logger.info(`Idempotent guard: Active ticket ${existingTicket.ticketId} already exists for GroupParty ${groupPartyId}`);
+            return existingTicket.pdfUrl;
+        }
+
         const host = await User.findByPk(groupParty.userId);
         if (!host) {
             throw new Error(`Host user ${groupParty.userId} not found`);
@@ -513,7 +579,20 @@ export async function generateTicketForGroupPartyHelper(groupPartyId: string): P
         const hostPhoto = await UserPhoto.findOne({ where: { userId: groupParty.userId, isPrimary: true } });
         const venueImg = await VenueImage.findOne({ where: { venueId: groupParty.venueId, isPrimary: true } });
 
-        const ticketCode = groupParty.ticketCode || groupParty.paymentId || `GP-${groupParty.id.substring(0, 8).toUpperCase()}`;
+        const ticketCode = groupParty.ticketCode || generateUniqueTicketCode('GP');
+        const eventStartAt = new Date(groupParty.partyDate);
+        const eventEndAt = new Date(eventStartAt.getTime() + 12 * 60 * 60 * 1000);
+        const expiresAt = eventEndAt;
+        const storageDeletionAt = new Date(expiresAt.getTime() + 24 * 60 * 60 * 1000);
+        const verificationToken = generateHMACSignature(ticketCode, groupParty.userId, groupParty.partyDate.toString());
+
+        const qrPayload = JSON.stringify({
+            ticketId: ticketCode,
+            bookingId: groupParty.id,
+            userId: groupParty.userId,
+            eventDate: groupParty.partyDate,
+            signature: verificationToken,
+        });
 
         const ticketUrl = await generateTicketPDF({
             bookingType: 'group_party_small',
@@ -530,8 +609,29 @@ export async function generateTicketForGroupPartyHelper(groupPartyId: string): P
             paymentStatus: groupParty.paymentStatus,
         });
 
+        await Ticket.upsert({
+            ticketId: ticketCode,
+            bookingId: groupParty.id,
+            bookingType: 'group_party',
+            userId: groupParty.userId,
+            venueId: groupParty.venueId,
+            ticketStatus: TicketStatus.ACTIVE,
+            eventStartAt,
+            eventEndAt,
+            issuedAt: new Date(),
+            expiresAt,
+            storageDeletionAt,
+            storageProvider: 'local',
+            storageKey: ticketUrl,
+            pdfUrl: ticketUrl,
+            pdfVersion: 1,
+            qrToken: qrPayload,
+            verificationToken,
+            storageCleanupStatus: StorageCleanupStatus.PENDING,
+        });
+
         await groupParty.update({ ticketUrl, ticketCode });
-        logger.info(`Successfully generated & saved ticket PDF for GroupParty ID: ${groupPartyId}, URL: ${ticketUrl}`);
+        logger.info(`Successfully generated & saved ticket PDF for GroupParty ID: ${groupPartyId}, Code: ${ticketCode}, URL: ${ticketUrl}`);
         return ticketUrl;
     } catch (err: any) {
         logger.error(`Error generating ticket for GroupParty ID ${groupPartyId}: ${err.message}`, err);
@@ -551,6 +651,13 @@ export async function generateTicketForStrangersMeetHelper(requestId: string): P
             throw new Error(`StrangersMeetRequest ${requestId} not found`);
         }
 
+        // Idempotency check
+        let existingTicket = await Ticket.findOne({ where: { bookingId: requestId } });
+        if (existingTicket && existingTicket.pdfUrl && existingTicket.ticketStatus === TicketStatus.ACTIVE) {
+            logger.info(`Idempotent guard: Active ticket ${existingTicket.ticketId} already exists for StrangersMeetRequest ${requestId}`);
+            return existingTicket.pdfUrl;
+        }
+
         const host = await User.findByPk(request.userId);
         if (!host) {
             throw new Error(`Host user ${request.userId} not found`);
@@ -559,7 +666,20 @@ export async function generateTicketForStrangersMeetHelper(requestId: string): P
         const hostPhoto = await UserPhoto.findOne({ where: { userId: request.userId, isPrimary: true } });
         const venueImg = await VenueImage.findOne({ where: { venueId: request.venueId, isPrimary: true } });
 
-        const ticketCode = request.ticketId || `SM-${request.id.substring(0, 8).toUpperCase()}`;
+        const ticketCode = request.ticketId || generateUniqueTicketCode('SM');
+        const eventStartAt = new Date(request.eventDateTime);
+        const eventEndAt = new Date(eventStartAt.getTime() + 12 * 60 * 60 * 1000);
+        const expiresAt = eventEndAt;
+        const storageDeletionAt = new Date(expiresAt.getTime() + 24 * 60 * 60 * 1000);
+        const verificationToken = generateHMACSignature(ticketCode, request.userId, request.eventDateTime.toString());
+
+        const qrPayload = JSON.stringify({
+            ticketId: ticketCode,
+            bookingId: request.id,
+            userId: request.userId,
+            eventDate: request.eventDateTime,
+            signature: verificationToken,
+        });
 
         const ticketUrl = await generateTicketPDF({
             bookingType: 'strangers_meet',
@@ -576,8 +696,29 @@ export async function generateTicketForStrangersMeetHelper(requestId: string): P
             paymentStatus: request.paymentStatus,
         });
 
+        await Ticket.upsert({
+            ticketId: ticketCode,
+            bookingId: request.id,
+            bookingType: 'strangers_meet',
+            userId: request.userId,
+            venueId: request.venueId,
+            ticketStatus: TicketStatus.ACTIVE,
+            eventStartAt,
+            eventEndAt,
+            issuedAt: new Date(),
+            expiresAt,
+            storageDeletionAt,
+            storageProvider: 'local',
+            storageKey: ticketUrl,
+            pdfUrl: ticketUrl,
+            pdfVersion: 1,
+            qrToken: qrPayload,
+            verificationToken,
+            storageCleanupStatus: StorageCleanupStatus.PENDING,
+        });
+
         await request.update({ ticketUrl, ticketId: ticketCode });
-        logger.info(`Successfully generated & saved ticket PDF for StrangersMeetRequest ID: ${requestId}, URL: ${ticketUrl}`);
+        logger.info(`Successfully generated & saved ticket PDF for StrangersMeetRequest ID: ${requestId}, Code: ${ticketCode}, URL: ${ticketUrl}`);
         return ticketUrl;
     } catch (err: any) {
         logger.error(`Error generating ticket for StrangersMeetRequest ID ${requestId}: ${err.message}`, err);

@@ -44,6 +44,7 @@ import NightInterest from './NightInterest';
 import NightPartnerRequest from './NightPartnerRequest';
 import NightPartnerMatch from './NightPartnerMatch';
 import Notification from './Notification';
+import Ticket, { TicketStatus, StorageCleanupStatus } from './Ticket';
 
 // ============================================================================
 // Notification Associations
@@ -638,5 +639,8 @@ export default {
     NightPartnerRequest,
     NightPartnerMatch,
     Notification,
+    Ticket,
+    TicketStatus,
+    StorageCleanupStatus,
     syncModels,
 };
