@@ -157,7 +157,7 @@ export class NightPartnerService {
             throw new Error('MATCHED_USER_CANNOT_REMOVE_INTEREST');
         }
 
-        await interest.update({ status: NightInterestStatus.CANCELLED });
+        await interest.update({ status: NightInterestStatus.REMOVED });
         return true;
     }
 
