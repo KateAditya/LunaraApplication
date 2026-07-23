@@ -488,6 +488,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (toMark.isNotEmpty) {
         widget.onCountChanged?.call();
       }
+    } else if (index == 2) {
+      // Mark group parties as read / refresh badge count
+      widget.onCountChanged?.call();
     } else if (index == 3) {
       // Mark all other notifications as read (Tab 3 = "Other")
       _markAllNotificationsAsRead();
@@ -740,12 +743,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       return st == 'approved' || st == 'approved_awaiting_payment' || st == 'awaiting_payment';
     }).length;
 
+    final bool hasAnyUnread = (strangerMeetUnreadCount + partyPlanUnreadCount + groupPartyAwaitingCount + otherUnreadCount) > 0;
+
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
-            _buildHeader(context),
+            _buildHeader(context, hasUnread: hasAnyUnread),
             TabBar(
               controller: _tabController,
               labelColor: LunaraTheme.electricViolet,
@@ -807,7 +812,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildHeader(BuildContext context, {bool hasUnread = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
       child: Row(
@@ -824,33 +829,30 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           else
             const SizedBox(
               width: 48,
-            ), // Maintain spacing for the Row's MainAxisAlignment.spaceBetween
+            ),
           Row(
             children: [
-              AnimatedBuilder(
-                animation: _pulseAnimation,
-                builder: (context, child) {
-                  return Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: Colors.red.withValues(
-                        alpha: _pulseAnimation.value,
-                      ),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.red.withValues(
-                            alpha: _pulseAnimation.value * 0.5,
+              if (hasUnread)
+                AnimatedBuilder(
+                  animation: _pulseAnimation,
+                  builder: (context, child) {
+                    return Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(_pulseAnimation.value),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.red.withOpacity(_pulseAnimation.value * 0.5),
+                            blurRadius: 6,
                           ),
-                          blurRadius: 6,
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(width: 8),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              if (hasUnread) const SizedBox(width: 8),
               Text(
                 'LIVE FEED',
                 style: LunaraTheme.headingStyle.copyWith(
@@ -1129,17 +1131,34 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
 
+    String cleanLocation = '';
+    if (venue is Map) {
+      final city = venue['city']?.toString() ?? '';
+      final area = venue['area']?.toString() ?? venue['addressLine1']?.toString() ?? '';
+      if (area.isNotEmpty && city.isNotEmpty && area != city) {
+        cleanLocation = '$area, $city';
+      } else if (city.isNotEmpty) {
+        cleanLocation = city;
+      } else {
+        cleanLocation = area;
+      }
+    }
+    if (cleanLocation.isEmpty && venueAddress.isNotEmpty) {
+      cleanLocation = venueAddress.split(',').take(2).join(', ').trim();
+    }
+
     return Card(
-      margin: const EdgeInsets.only(bottom: 14),
-      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 16),
+      elevation: 3,
+      shadowColor: LunaraTheme.electricViolet.withOpacity(0.12),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         side: BorderSide(
           color: isAwaitingPayment
-              ? Colors.orange.withValues(alpha: 0.5)
+              ? Colors.orange.withOpacity(0.5)
               : isPaid
-                  ? Colors.green.withValues(alpha: 0.4)
-                  : LunaraTheme.electricViolet.withValues(alpha: 0.18),
+                  ? Colors.green.withOpacity(0.4)
+                  : LunaraTheme.electricViolet.withOpacity(0.2),
           width: 1.5,
         ),
       ),
@@ -1148,11 +1167,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         children: [
           // ── Venue image / header ──────────────────────────────────────
           ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
             child: Container(
-              height: 90,
+              height: 100,
               width: double.infinity,
-              color: LunaraTheme.electricViolet.withValues(alpha: 0.12),
+              color: LunaraTheme.electricViolet.withOpacity(0.12),
               child: venueImage != null && venueImage.isNotEmpty
                   ? Image.network(venueImage, fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => _groupPartyHeaderPlaceholder(venueName))
@@ -1161,47 +1180,88 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ),
 
           Padding(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── Booking ID + time ─────────────────────────────────
+                // ── Category Badge + Time Ago ─────────────────────────────
                 Row(
                   children: [
-                    const Icon(Icons.confirmation_number_outlined,
-                        size: 13, color: Colors.grey),
-                    const SizedBox(width: 4),
-                    Text(
-                      bookingId.length > 14 ? bookingId.substring(0, 14) : bookingId,
-                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: LunaraTheme.electricViolet.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: LunaraTheme.electricViolet.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(Icons.groups_rounded, size: 12, color: LunaraTheme.electricViolet),
+                          SizedBox(width: 4),
+                          Text(
+                            'GROUP PARTY',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              color: LunaraTheme.electricViolet,
+                              letterSpacing: 0.8,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     const Spacer(),
                     if (createdAt != null)
                       Text(
                         _formatTimeAgo(createdAt),
-                        style: const TextStyle(fontSize: 11, color: Colors.grey),
+                        style: TextStyle(fontSize: 11, color: Colors.grey[600], fontWeight: FontWeight.w500),
                       ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
 
-                // ── Venue name ────────────────────────────────────────
+                // ── Venue Name & Clean Location ────────────────────────
                 Text(
-                  venueName,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  venueName.toUpperCase(),
+                  style: const TextStyle(
+                    fontFamily: 'AllroundGothic',
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.5,
+                  ),
                 ),
-                if (venueAddress.isNotEmpty)
-                  Text(venueAddress,
-                      style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                if (cleanLocation.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.location_on_rounded, size: 14, color: LunaraTheme.cyberCyan),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          cleanLocation.toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[700],
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.4,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
 
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 const Divider(height: 1),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
 
-                // ── Details grid ──────────────────────────────────────
+                // ── Details Grid Chips ──────────────────────────────────────
                 Wrap(
                   spacing: 16,
-                  runSpacing: 6,
+                  runSpacing: 8,
                   children: [
                     _infoChip(Icons.calendar_today_outlined, dateDisplay),
                     _infoChip(Icons.people_outline, '$guests guests'),
@@ -1212,51 +1272,56 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   ],
                 ),
 
-                const SizedBox(height: 10),
+                const SizedBox(height: 14),
 
-                // ── Status badge ──────────────────────────────────────
+                // ── Status Badge ──────────────────────────────────────
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                   decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: statusColor.withValues(alpha: 0.4)),
+                    color: statusColor.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: statusColor.withOpacity(0.4)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(statusIcon, size: 15, color: statusColor),
-                      const SizedBox(width: 6),
+                      Icon(statusIcon, size: 16, color: statusColor),
+                      const SizedBox(width: 8),
                       Text(
                         statusLabel,
                         style: TextStyle(
                           fontSize: 12,
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w900,
                           color: statusColor,
+                          letterSpacing: 0.5,
                         ),
                       ),
                     ],
                   ),
                 ),
 
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
 
-                // ── Action buttons ────────────────────────────────────
+                // ── Action Buttons ────────────────────────────────────
                 if (isAwaitingPayment && approvedAmount != null)
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: () => _initiateLargePartyPayment(booking),
+                      onPressed: () {
+                        widget.onCountChanged?.call();
+                        _initiateLargePartyPayment(booking);
+                      },
                       icon: const Icon(Icons.payment_rounded, size: 18),
                       label: Text(
                         'PAY ₹${(approvedAmount is num ? approvedAmount.toStringAsFixed(0) : approvedAmount)} TO CONFIRM',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 0.8),
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
+                        backgroundColor: Colors.orange[700],
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        elevation: 3,
                       ),
                     ),
                   ),
@@ -1265,37 +1330,41 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => LargePartyTicketScreen(
-                            booking: booking,
-                            venue: Map<dynamic, dynamic>.from(
-                              booking['venue'] is Map ? booking['venue'] : {},
+                      onPressed: () {
+                        widget.onCountChanged?.call();
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => LargePartyTicketScreen(
+                              booking: booking,
+                              venue: Map<dynamic, dynamic>.from(
+                                booking['venue'] is Map ? booking['venue'] : {},
+                              ),
                             ),
                           ),
-                        ),
-                      ),
+                        );
+                      },
                       icon: const Icon(Icons.confirmation_number_rounded, size: 18),
                       label: const Text(
                         'VIEW TICKET',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 1.0),
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: LunaraTheme.electricViolet,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        elevation: 3,
                       ),
                     ),
                   ),
 
                 if (isAwaitingPayment && approvedAmount == null)
                   Container(
-                    padding: const EdgeInsets.all(10),
+                    padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.orange.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.orange.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Row(
                       children: [
