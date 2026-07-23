@@ -1,6 +1,5 @@
 import { Request, Response } from 'express';
 import { Op } from 'sequelize';
-import { PlanEligibilityService } from '../services/PlanEligibilityService';
 import StrangersMeetRequest, {
     StrangersMeetStatus,
     StrangersMeetPaymentStatus,
@@ -16,9 +15,8 @@ import VenueImage from '../models/VenueImage';
 import { logger } from '../config/logger';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
-import { validateVenueTimingAndHolidays } from '../utils/venueValidator';
-import { checkExistingBookingForDate } from '../utils/bookingLimitValidator';
 import { generateTicketForStrangersMeetHelper } from '../services/ticketService';
+import { StrangersMeetService } from '../services/StrangersMeetService';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -215,115 +213,28 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
         const {
             userId, venueId, subject, tagline, eventDateTime, numberOfPersons,
             mobileNumber, alternateMobileNumber,
-            // v2: Structured bank/UPI payment details collected up-front
             bankName, accountNumber, accountHolderName, ifscCode, upiId, upiNumber,
             foodPreference, drinkPreference,
         } = req.body;
 
-        // Validate required fields
-        const errors: Record<string, string> = {};
-        if (!userId) errors.userId = 'userId is required';
-        if (!venueId) errors.venueId = 'venueId is required';
-        if (!subject?.trim()) errors.subject = 'subject is required';
-        if (!tagline?.trim()) errors.tagline = 'tagline is required';
-        if (!eventDateTime) errors.eventDateTime = 'eventDateTime is required';
-        if (numberOfPersons === undefined || numberOfPersons === null)
-            errors.numberOfPersons = 'numberOfPersons is required';
-        else if (numberOfPersons < 21 || numberOfPersons > 50)
-            errors.numberOfPersons = 'numberOfPersons must be between 21 and 50';
-
-        // Validate compulsory payment details (must provide at least one valid payment option)
-        const hasUpiId = !!upiId?.trim();
-        const hasUpiNumber = !!upiNumber?.trim();
-        const hasBankDetails = !!(bankName?.trim() && accountNumber?.trim() && accountHolderName?.trim() && ifscCode?.trim());
-
-        if (!hasUpiId && !hasUpiNumber && !hasBankDetails) {
-            errors.paymentDetails = 'Payment details are compulsory. Please fill at least one option: UPI ID, 10-digit UPI Number, or complete Bank Details.';
-        }
-
-        if (hasUpiNumber) {
-            const cleanUpiNumber = upiNumber.trim();
-            const phoneRegex = /^[0-9]{10}$/;
-            if (!phoneRegex.test(cleanUpiNumber)) {
-                errors.upiNumber = 'UPI Number must be a valid 10-digit mobile number';
-            }
-        }
-
-        const bankFields = [bankName, accountNumber, accountHolderName, ifscCode];
-        const anyBankFilled = bankFields.some(f => !!f?.trim());
-        if (anyBankFilled && !hasBankDetails) {
-            if (!bankName?.trim()) errors.bankName = 'Bank name is required';
-            if (!accountNumber?.trim()) errors.accountNumber = 'Account number is required';
-            if (!accountHolderName?.trim()) errors.accountHolderName = 'Account holder name is required';
-            if (!ifscCode?.trim()) errors.ifscCode = 'IFSC code is required';
-        }
-
-        if (Object.keys(errors).length > 0) {
-            res.status(400).json({ success: false, message: 'Validation failed', errors });
-            return;
-        }
-
-        const eventDate = new Date(eventDateTime);
-        if (isNaN(eventDate.getTime())) {
-            res.status(400).json({ success: false, message: 'eventDateTime must be a valid ISO date string' });
-            return;
-        }
-        if (eventDate < new Date()) {
-            res.status(400).json({ success: false, message: 'eventDateTime must be in the future' });
-            return;
-        }
-
-        // Verify user
-        const user = await User.findByPk(userId, { attributes: USER_ATTRS });
-        if (!user) { res.status(404).json({ success: false, message: 'User not found' }); return; }
-
-        const finalMobileNumber = mobileNumber?.trim() || user.phone?.trim() || '9999999999';
-
-        // Verify venue
-        const venue = await Venue.findByPk(venueId, { attributes: VENUE_ATTRS });
-        if (!venue) { res.status(404).json({ success: false, message: 'Venue not found' }); return; }
-
-        // Validate Venue Timings and Holidays
-        const timingValidation = validateVenueTimingAndHolidays(venue, eventDateTime);
-        if (!timingValidation.isValid) {
-            res.status(400).json({ success: false, message: timingValidation.reason });
-            return;
-        }
-
-        // Check for 1 plan per day limit (Stranger Meet / Party Plan / Group Party)
-        const bookingConflictMsg = await checkExistingBookingForDate(userId, eventDate);
-        if (bookingConflictMsg) {
-            res.status(400).json({ success: false, message: 'You already have a plan scheduled on this day.' });
-            return;
-        }
-
-        const request = await PlanEligibilityService.runAtomicCheckAndCreate(
+        const request = await StrangersMeetService.createMeetupRequest({
             userId,
-            'strangers_meet',
-            eventDate,
-            async (transaction) => {
-                return await StrangersMeetRequest.create({
-                    userId,
-                    venueId,
-                    subject: subject.trim(),
-                    tagline: tagline.trim(),
-                    eventDateTime: eventDate,
-                    numberOfPersons: Number(numberOfPersons),
-                    chargesPerHead: 0.0,
-                    mobileNumber: finalMobileNumber,
-                    alternateMobileNumber: alternateMobileNumber?.trim() || null,
-                    // Store bank/UPI details provided at creation
-                    bankName: bankName?.trim() || null,
-                    accountNumber: accountNumber?.trim() || null,
-                    accountHolderName: accountHolderName?.trim() || null,
-                    ifscCode: ifscCode?.trim() || null,
-                    upiId: upiId?.trim() || null,
-                    upiNumber: upiNumber?.trim() || null,
-                    foodPreference: foodPreference?.trim() || null,
-                    drinkPreference: drinkPreference?.trim() || null,
-                }, { transaction });
-            }
-        );
+            venueId,
+            subject,
+            tagline,
+            eventDateTime,
+            numberOfPersons: Number(numberOfPersons),
+            mobileNumber,
+            alternateMobileNumber,
+            bankName,
+            accountNumber,
+            accountHolderName,
+            ifscCode,
+            upiId,
+            upiNumber,
+            foodPreference,
+            drinkPreference,
+        });
 
         // Send request submitted push notification to creator
         try {
@@ -348,14 +259,13 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
             message: 'Request submitted successfully! Admin will review and get back to you. 🎉',
             data: {
                 id: request.id,
+                subject: request.subject,
+                numberOfPersons: request.numberOfPersons,
                 status: request.status,
-                paymentStatus: request.paymentStatus,
-                chargesPerHead: request.chargesPerHead,
-                createdAt: request.createdAt,
-            },
+            }
         });
     } catch (err: any) {
-        logger.error('createStrangersMeetRequest error:', err);
+        logger.error('createRequest error:', err);
         if (err.code && err.code.startsWith('PLAN_')) {
             res.status(409).json({
                 success: false,
@@ -365,7 +275,7 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
             });
             return;
         }
-        res.status(500).json({ success: false, message: 'Failed to submit request', error: err.message });
+        res.status(400).json({ success: false, message: err.message || 'Failed to submit Stranger Meet request' });
     }
 };
 

@@ -2640,6 +2640,202 @@ class ApiService {
     return null;
   }
 
+  // ── Upcoming Night Partner Discovery & Matching ────────────────────────────
+
+  static Future<bool> markNightInterested({
+    required String venueId,
+    required String date,
+    String? time,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) return false;
+    try {
+      final response = await post(
+        '/api/mobile/nights/interested',
+        body: {
+          'userId': userId,
+          'venueId': venueId,
+          'eventDate': date,
+          'eventTime': time ?? '20:00',
+        },
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      debugPrint('markNightInterested error: $e');
+    }
+    return false;
+  }
+
+  static Future<bool> removeNightInterest({
+    required String venueId,
+    required String date,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) return false;
+    try {
+      final response = await delete(
+        '/api/mobile/nights/interested',
+        body: {
+          'userId': userId,
+          'venueId': venueId,
+          'eventDate': date,
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      debugPrint('removeNightInterest error: $e');
+    }
+    return false;
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchInterestedPartners({
+    required String venueId,
+    required String date,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) return [];
+    try {
+      final response = await get(
+        '/api/mobile/nights/interested-partners',
+        queryParameters: {
+          'hostId': userId,
+          'venueId': venueId,
+          'eventDate': date,
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] is List) {
+          return List<Map<String, dynamic>>.from(data['data']);
+        }
+      }
+    } catch (e) {
+      debugPrint('fetchInterestedPartners error: $e');
+    }
+    return [];
+  }
+
+  static Future<Map<String, dynamic>?> fetchPartnerProfilePreview(String targetUserId) async {
+    try {
+      final response = await get('/api/mobile/nights/partners/$targetUserId/profile');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return Map<String, dynamic>.from(data['data']);
+        }
+      }
+    } catch (e) {
+      debugPrint('fetchPartnerProfilePreview error: $e');
+    }
+    return null;
+  }
+
+  static Future<Map<String, dynamic>?> sendNightPartnerRequest({
+    required String partnerId,
+    required String venueId,
+    required String date,
+    String? time,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) return null;
+    try {
+      final response = await post(
+        '/api/mobile/nights/requests',
+        body: {
+          'hostId': userId,
+          'partnerId': partnerId,
+          'venueId': venueId,
+          'eventDate': date,
+          'eventTime': time ?? '20:00',
+        },
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true ? Map<String, dynamic>.from(data) : null;
+      }
+    } catch (e) {
+      debugPrint('sendNightPartnerRequest error: $e');
+    }
+    return null;
+  }
+
+  static Future<bool> respondToNightPartnerRequest({
+    required String requestId,
+    required String action, // 'accept' | 'decline'
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) return false;
+    try {
+      final response = await patch(
+        '/api/mobile/nights/requests/$requestId',
+        body: {
+          'partnerId': userId,
+          'action': action,
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      debugPrint('respondToNightPartnerRequest error: $e');
+    }
+    return false;
+  }
+
+  static Future<Map<String, dynamic>?> initiateMatchPayment(String matchId) async {
+    final userId = currentUserId;
+    if (userId == null) return null;
+    try {
+      final response = await post(
+        '/api/mobile/nights/matches/$matchId/pay',
+        body: {'hostId': userId},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return Map<String, dynamic>.from(data);
+        }
+      }
+    } catch (e) {
+      debugPrint('initiateMatchPayment error: $e');
+    }
+    return null;
+  }
+
+  static Future<Map<String, dynamic>?> verifyMatchPayment({
+    required String matchId,
+    required String razorpayOrderId,
+    required String razorpayPaymentId,
+    required String razorpaySignature,
+  }) async {
+    try {
+      final response = await post(
+        '/api/mobile/nights/matches/$matchId/verify',
+        body: {
+          'razorpay_order_id': razorpayOrderId,
+          'razorpay_payment_id': razorpayPaymentId,
+          'razorpay_signature': razorpaySignature,
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return Map<String, dynamic>.from(data['data']);
+        }
+      }
+    } catch (e) {
+      debugPrint('verifyMatchPayment error: $e');
+    }
+    return null;
+  }
+
 
   // ── Swipe Status & Subscription Limits ────────────────────────────────────
 

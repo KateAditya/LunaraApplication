@@ -40,6 +40,28 @@ import PlanTimeLock from './PlanTimeLock';
 import PlanTimeLockConfig from './PlanTimeLockConfig';
 import PlanTimeLockConfigHistory from './PlanTimeLockConfigHistory';
 import NotificationJob from './NotificationJob';
+import NightInterest from './NightInterest';
+import NightPartnerRequest from './NightPartnerRequest';
+import NightPartnerMatch from './NightPartnerMatch';
+
+// ============================================================================
+// Night Partner Associations
+// ============================================================================
+
+NightInterest.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+NightInterest.belongsTo(Venue, { foreignKey: 'venueId', as: 'venue' });
+
+NightPartnerRequest.belongsTo(User, { foreignKey: 'hostId', as: 'host' });
+NightPartnerRequest.belongsTo(User, { foreignKey: 'partnerId', as: 'partner' });
+NightPartnerRequest.belongsTo(Venue, { foreignKey: 'venueId', as: 'venue' });
+NightPartnerRequest.belongsTo(NightInterest, { foreignKey: 'nightInterestId', as: 'interest' });
+
+NightPartnerMatch.belongsTo(User, { foreignKey: 'hostId', as: 'host' });
+NightPartnerMatch.belongsTo(User, { foreignKey: 'partnerId', as: 'partner' });
+NightPartnerMatch.belongsTo(Venue, { foreignKey: 'venueId', as: 'venue' });
+NightPartnerMatch.belongsTo(NightPartnerRequest, { foreignKey: 'requestId', as: 'request' });
+NightPartnerMatch.belongsTo(Booking, { foreignKey: 'bookingId', as: 'booking' });
+NightPartnerMatch.belongsTo(Conversation, { foreignKey: 'conversationId', as: 'conversation' });
 
 // ============================================================================
 // User Associations
@@ -551,6 +573,9 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
         await PlanTimeLockConfig.sync(options);
         await PlanTimeLockConfigHistory.sync(options);
         await NotificationJob.sync(options);
+        await NightInterest.sync(options);
+        await NightPartnerRequest.sync(options);
+        await NightPartnerMatch.sync(options);
 
         console.log('✅ All models synchronized successfully');
     } catch (error) {
@@ -601,5 +626,8 @@ export default {
     PlanTimeLockConfig,
     PlanTimeLockConfigHistory,
     NotificationJob,
+    NightInterest,
+    NightPartnerRequest,
+    NightPartnerMatch,
     syncModels,
 };

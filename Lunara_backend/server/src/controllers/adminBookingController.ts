@@ -42,6 +42,10 @@ export const approveLargePartyRequest = async (req: Request, res: Response) => {
                 return res.status(404).json({ success: false, message: 'Booking or Group Party not found' });
             }
 
+            if (groupParty.status !== GroupPartyStatus.PENDING) {
+                return res.status(400).json({ success: false, message: `Request is already in '${groupParty.status}' status and cannot be modified.` });
+            }
+
             if (status === 'approved') {
                 if (totalAmount === undefined || isNaN(Number(totalAmount))) {
                     return res.status(400).json({ success: false, message: 'Valid totalAmount is required when approving' });
@@ -102,6 +106,10 @@ export const approveLargePartyRequest = async (req: Request, res: Response) => {
 
         if (!booking.isLargePartyRequest) {
             return res.status(400).json({ success: false, message: 'Not a large party request' });
+        }
+
+        if (booking.adminApprovalStatus !== 'pending') {
+            return res.status(400).json({ success: false, message: `Large party request is already '${booking.adminApprovalStatus}' and cannot be processed again.` });
         }
 
         booking.adminApprovalStatus = status as AdminApprovalStatus;

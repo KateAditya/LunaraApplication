@@ -131,6 +131,7 @@ import supportLegalRoutes from './routes/supportLegal';
 import mobileSupportLegalRoutes from './routes/mobileSupportLegal';
 import mobilePartyPlanRoutes from './routes/mobilePartyPlan';
 import mobileGroupPartyRoutes from './routes/mobileGroupParty';
+import mobileNightPartnerRoutes from './routes/mobileNightPartner';
 import adminGroupPartyRoutes from './routes/adminGroupParty';
 import profileRoutes from './routes/profile';
 import mobileStrangersMeetRoutes from './routes/mobileStrangersMeet';
@@ -178,6 +179,7 @@ app.use('/api/support', supportLegalRoutes);              // Support & Legal (Ad
 app.use('/api/mobile/support', mobileSupportLegalRoutes);  // Support & Legal (Mobile App)
 app.use('/api/mobile/party-plans', mobilePartyPlanRoutes); // Party Plans (Mobile App)
 app.use('/api/mobile/group-parties', mobileGroupPartyRoutes); // Group Parties (Mobile App)
+app.use('/api/mobile/nights', mobileNightPartnerRoutes); // Upcoming Nights Partner Discovery & Matching (Mobile App)
 app.use('/api/admin/group-parties', adminGroupPartyRoutes); // Group Parties (Admin)
 app.use('/api/profile', profileRoutes);                    // Edit Profile & Password APIs
 app.use('/api/mobile/strangers-meet', mobileStrangersMeetRoutes); // Strangers Meet (Mobile)

@@ -5,6 +5,8 @@ import 'payment_confirmation_screen.dart';
 import '../../services/api_service.dart';
 import '../../models/venue.dart';
 import '../../widgets/venue_timing_error_dialog.dart';
+import 'night_partner_discovery_screen.dart';
+import '../social/friends_list_screen.dart';
 
 
 class BookingProcessScreen extends StatefulWidget {
@@ -348,6 +350,147 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                         ),
                       ],
                     ),
+                    if (!_isGoingSolo && widget.isUpcomingNight) ...[
+                      const SizedBox(height: 28),
+                      const Text(
+                        'HOW DO YOU WANT TO PLAN YOUR NIGHT?',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.5,
+                          color: Colors.black54,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const FriendsListScreen(),
+                                  ),
+                                );
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[50],
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(color: const Color(0x1A7F00FF)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: const Icon(Icons.person_add_rounded, color: LunaraTheme.electricViolet, size: 20),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    const Text(
+                                      'Invite Partner',
+                                      style: TextStyle(
+                                        fontFamily: 'AllroundGothic',
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Invite someone you already know',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () async {
+                                final venueId = widget.venue['id']?.toString() ?? '';
+                                final yyyy = _selectedDate.year;
+                                final mm = _selectedDate.month.toString().padLeft(2, '0');
+                                final dd = _selectedDate.day.toString().padLeft(2, '0');
+                                final dateStr = '$yyyy-$mm-$dd';
+                                final timeStr = _selectedTime ?? '20:00';
+
+                                // Mark interest authoritatively
+                                await ApiService.markNightInterested(
+                                  venueId: venueId,
+                                  date: dateStr,
+                                  time: timeStr,
+                                );
+
+                                if (!context.mounted) return;
+
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => NightPartnerDiscoveryScreen(
+                                      venue: widget.venue,
+                                      date: dateStr,
+                                      time: timeStr,
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [Color(0xFFF3EEFF), Color(0xFFF8F4FF)],
+                                  ),
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.3)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: LunaraTheme.electricViolet,
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: const Icon(Icons.favorite_rounded, color: Colors.white, size: 20),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    const Text(
+                                      'Find Partner',
+                                      style: TextStyle(
+                                        fontFamily: 'AllroundGothic',
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15,
+                                        color: LunaraTheme.electricViolet,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Find members interested in this night',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[700],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 40),
                     LunaraActionButton(
                       text: 'BOOK NOW',

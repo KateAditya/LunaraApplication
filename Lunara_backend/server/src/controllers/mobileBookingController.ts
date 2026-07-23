@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import Booking, { BookingStatus, PaymentStatus, GoingMode, BookingPaymentMode, AdminApprovalStatus } from '../models/Booking';
-import { PlanEligibilityService } from '../services/PlanEligibilityService';
+import Booking, { BookingStatus, PaymentStatus, BookingPaymentMode } from '../models/Booking';
 import User from '../models/User';
 import GroupParty, { GroupPartyStatus, GroupPartyPaymentStatus } from '../models/GroupParty';
 import BookingTablePackage, { TablePackageName } from '../models/BookingTablePackage';
@@ -13,8 +12,8 @@ import VenueImage from '../models/VenueImage';
 import { logger } from '../config/logger';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
-import { checkExistingBookingForDate } from '../utils/bookingLimitValidator';
 import { generateTicketForBookingHelper, generateTicketForGroupPartyHelper } from '../services/ticketService';
+import { VenueBookingService } from '../services/VenueBookingService';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -102,7 +101,7 @@ export const getTimeSlots = async (req: Request, res: Response) => {
 };
 
 // ─── POST / — Create Booking ─────────────────────────────────────────────────
-export const createBooking = async (req: Request, res: Response) => {
+export const createBooking = async (req: Request, res: Response): Promise<void> => {
     try {
         const {
             userId,
@@ -122,173 +121,53 @@ export const createBooking = async (req: Request, res: Response) => {
         } = req.body;
 
         if (!userId || !venueId || !bookingDate || !startTime || !packageName) {
-            return res.status(400).json({
+            res.status(400).json({
                 success: false,
                 message: 'Required: userId, venueId, bookingDate, startTime, tablePackage',
             });
+            return;
         }
 
-        // Validate goingMode
-        if (![GoingMode.SOLO, GoingMode.PARTY_REQUEST].includes(goingMode as GoingMode)) {
-            return res.status(400).json({ success: false, message: 'Only "solo" or "party_request" goingMode is supported in this version' });
-        }
-
-        // Check for 1 plan per day limit (Stranger Meet / Party Plan / Group Party)
-        if (goingMode === GoingMode.PARTY_REQUEST) {
-            const bookingConflictMsg = await checkExistingBookingForDate(userId, bookingDate);
-            if (bookingConflictMsg) {
-                return res.status(400).json({ success: false, message: 'You already have a plan scheduled on this day.' });
-            }
-        }
-
-        // Fetch package price (auto-seed if needed)
-        let pkg = null;
-        let isStandardOrGroup = packageName === 'Standard Booking' || packageName === 'Group Party Booking';
-
-        const venue = await Venue.findByPk(venueId);
-        if (!venue) return res.status(404).json({ success: false, message: 'Venue not found' });
-
-        // Enforce boundary constraint
-        if (numberOfGuests > venue.capacity) {
-            return res.status(400).json({ success: false, message: `Maximum capacity for this venue is ${venue.capacity} guests.` });
-        }
-
-        if (packageName && packageName !== 'none' && !isStandardOrGroup) {
-            pkg = await BookingTablePackage.findOne({ where: { venueId, name: packageName, isActive: true } });
-            if (!pkg) {
-                // Try seeding
-                await BookingTablePackage.bulkCreate(DEFAULT_PACKAGES.map(p => ({ ...p, venueId })));
-                pkg = await BookingTablePackage.findOne({ where: { venueId, name: packageName, isActive: true } });
-            }
-            if (!pkg) return res.status(400).json({ success: false, message: `Package "${packageName}" not found` });
-        }
-
-        let totalAmount = 0;
-        let commissionAmount = 0;
-
-        if (isStandardOrGroup) {
-            const basePrice = Number(venue.tableBookingCharges || 0);
-            const subtotal = basePrice * numberOfGuests;
-            const discountPercent = Number(venue.discountPercentage || 0);
-            const discountAmount = (subtotal * discountPercent) / 100;
-            totalAmount = subtotal - discountAmount;
-            commissionAmount = Math.round(totalAmount * 0.1 * 100) / 100;
-        } else if ((goingMode === GoingMode.SOLO || packageName !== 'none') && pkg) {
-            totalAmount = Number(pkg.price);
-            commissionAmount = Math.round(totalAmount * 0.1 * 100) / 100;
-        }
-
-        const isLargeParty = goingMode === GoingMode.PARTY_REQUEST;
-        const initialApprovalStatus = isLargeParty
-            ? (numberOfGuests <= 20 ? AdminApprovalStatus.APPROVED : AdminApprovalStatus.PENDING)
-            : null;
-
-        const bookingStartDateTime = new Date(`${bookingDate}T${startTime}:00`);
-        if (isNaN(bookingStartDateTime.getTime())) {
-            return res.status(400).json({ success: false, message: 'Invalid bookingDate or startTime format' });
-        }
-
-        const planType = isUpcomingNight ? 'upcoming_night' : (goingMode === GoingMode.PARTY_REQUEST ? 'large_group_party' : 'venue_booking');
-
-        const booking = await PlanEligibilityService.runAtomicCheckAndCreate(
+        const { booking, razorpayOrder } = await VenueBookingService.createVenueBooking({
             userId,
-            planType,
-            bookingStartDateTime,
-            async (transaction) => {
-                return await (Booking as any).create({
-                    userId,
-                    venueId,
-                    bookingDate: new Date(bookingDate),
-                    startTime,
-                    numberOfGuests: numberOfGuests || (pkg ? pkg.maxGuests : 1),
-                    totalAmount,
-                    depositAmount: 0,
-                    commissionAmount,
-                    goingMode: goingMode,
-                    tablePackage: packageName,
-                    specialRequests,
-                    isLargePartyRequest: isLargeParty,
-                    isUpcomingNight: !!isUpcomingNight,
-                    adminApprovalStatus: initialApprovalStatus,
-                    partySubject: isLargeParty ? partySubject : null,
-                    partyRequirement: isLargeParty ? partyRequirement : null,
-                    partyDescription: isLargeParty ? partyDescription : null,
-                    mobileNumber: isLargeParty ? (mobileNumber?.trim() || null) : null,
-                    optionalMobileNumber: isLargeParty ? (optionalMobileNumber?.trim() || null) : null,
-                }, { transaction });
-            }
-        );
+            venueId,
+            bookingDate,
+            startTime,
+            tablePackage: packageName,
+            numberOfGuests: Number(numberOfGuests),
+            specialRequests,
+            goingMode,
+            partySubject,
+            partyRequirement,
+            partyDescription,
+            mobileNumber,
+            optionalMobileNumber,
+            isUpcomingNight
+        });
 
-        // Fetch venue details for the response
         const venueDetails = await Venue.findByPk(venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
 
-        if (isLargeParty) {
-            try {
-                const host = await User.findByPk(userId, { attributes: ['id', 'fcmToken'] });
-                if (host && host.fcmToken) {
-                    const { sendPushNotification } = require('../services/fcmService');
-                    if (numberOfGuests <= 20) {
-                        await sendPushNotification(host.fcmToken, {
-                            title: 'Group Party Approved! 🎉',
-                            body: `Your group party request at ${venueDetails?.name || 'Venue'} is automatically approved. Pay now to confirm!`,
-                            data: {
-                                type: 'large_party_approved',
-                                bookingId: booking.id,
-                            }
-                        });
-                    } else {
-                        await sendPushNotification(host.fcmToken, {
-                            title: 'Party Request Submitted ⏳',
-                            body: `Your party request of ${numberOfGuests} guests at ${venueDetails?.name || 'Venue'} is submitted for admin approval.`,
-                            data: {
-                                type: 'large_party_request_submitted',
-                                bookingId: booking.id,
-                            }
-                        });
-                    }
-                }
-                const { io } = require('../server');
-                io.to(`user_${userId}`).emit('large_party_status_update', {
-                    bookingId: booking.id,
-                    status: booking.adminApprovalStatus
-                });
-            } catch (pushErr) {
-                logger.warn('Failed to send push/socket for booking creation: ' + pushErr);
-            }
-        }
-
-        return res.status(201).json({
+        res.status(201).json({
             success: true,
-            message: 'Booking created. Choose your payment method to confirm.',
-            data: {
-                bookingId: booking.id,
-                bookingNumber: booking.bookingNumber,
-                venue: venueDetails,
-                bookingDate,
-                startTime,
-                tablePackage: packageName,
-                tableLabel: pkg?.label,
-                tableDescription: pkg?.description,
-                maxGuests: pkg?.maxGuests,
-                numberOfGuests: booking.numberOfGuests,
-                totalAmount,
-                status: booking.status,
-                paymentStatus: booking.paymentStatus,
-                goingMode: booking.goingMode,
-                adminApprovalStatus: booking.adminApprovalStatus,
-            },
+            data: booking,
+            razorpayOrderId: razorpayOrder ? razorpayOrder.id : '',
+            razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
+            amount: razorpayOrder ? razorpayOrder.amount : 0,
+            currency: razorpayOrder ? razorpayOrder.currency : 'INR',
+            ticket: buildTicket(booking, venueDetails, booking.ticketCode || '')
         });
     } catch (err: any) {
-        logger.error('createBooking:', err);
+        logger.error('createBooking error:', err);
         if (err.code && err.code.startsWith('PLAN_')) {
-            return res.status(409).json({
+            res.status(409).json({
                 success: false,
                 code: err.code,
                 message: err.message,
                 lock: err.details
             });
+            return;
         }
-        return res.status(500).json({ success: false, message: err.message });
+        res.status(400).json({ success: false, message: err.message || 'Failed to create booking' });
     }
 };
 
