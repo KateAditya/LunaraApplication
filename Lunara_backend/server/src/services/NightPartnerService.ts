@@ -13,6 +13,8 @@ import { VenueBookingService } from './VenueBookingService';
 import { validateVenueTimingAndHolidays } from '../utils/venueValidator';
 import { checkExistingBookingForDate } from '../utils/bookingLimitValidator';
 import { generateTicketForBookingHelper } from './ticketService';
+import { NotificationService } from './NotificationService';
+import { NotificationEventType } from '../types/NotificationEventTypes';
 import { logger } from '../config/logger';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
@@ -695,29 +697,36 @@ export class NightPartnerService {
     }
 
     /**
-     * Helper for push notifications and socket events
+     * Helper for push notifications, socket events, and persistent notification DB records
      */
-    private static async emitNotification(userId: string, payload: { type: string; title: string; body: string; entityId: string; data?: any }) {
+    private static async emitNotification(
+        userId: string,
+        payload: {
+            type: string;
+            title: string;
+            body: string;
+            entityId: string;
+            actorUserId?: string;
+            category?: any;
+            actionType?: string;
+            deepLink?: string;
+            data?: any;
+        }
+    ) {
         try {
-            const user = await User.findByPk(userId, { attributes: ['id', 'fcmToken'] });
-            if (user && user.fcmToken) {
-                const { sendPushNotification } = require('./fcmService');
-                await sendPushNotification(user.fcmToken, {
-                    title: payload.title,
-                    body: payload.body,
-                    data: { type: payload.type, entityId: payload.entityId, ...(payload.data || {}) },
-                });
-            }
-            const { io } = require('../server');
-            if (io) {
-                io.to(`user_${userId}`).emit('night_partner_event', {
-                    type: payload.type,
-                    title: payload.title,
-                    body: payload.body,
-                    entityId: payload.entityId,
-                    data: payload.data,
-                });
-            }
+            await NotificationService.dispatch({
+                recipientUserId: userId,
+                actorUserId: payload.actorUserId,
+                eventType: payload.type as NotificationEventType,
+                category: payload.category || 'requests',
+                entityType: 'night_partner',
+                entityId: payload.entityId,
+                title: payload.title,
+                body: payload.body,
+                actionType: payload.actionType,
+                deepLink: payload.deepLink,
+                metadata: payload.data,
+            });
         } catch (err) {
             logger.warn(`[NightPartnerService] Notification emit warning: ${err}`);
         }

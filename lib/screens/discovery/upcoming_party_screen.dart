@@ -24,10 +24,31 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
     _checkInitialInterest();
   }
 
+  String _formatDateIso(String raw) {
+    final clean = raw.trim();
+    if (RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(clean)) {
+      return clean;
+    }
+    try {
+      final parsed = DateTime.parse(clean);
+      final yyyy = parsed.year;
+      final mm = parsed.month.toString().padLeft(2, '0');
+      final dd = parsed.day.toString().padLeft(2, '0');
+      return '$yyyy-$mm-$dd';
+    } catch (_) {
+      final now = DateTime.now();
+      final yyyy = now.year;
+      final mm = now.month.toString().padLeft(2, '0');
+      final dd = now.day.toString().padLeft(2, '0');
+      return '$yyyy-$mm-$dd';
+    }
+  }
+
   Future<void> _checkInitialInterest() async {
     final venueId = widget.venueMap?['id']?.toString() ?? widget.party['venueId']?.toString() ?? '';
-    final date = widget.party['rawDate']?.toString() ?? widget.party['date']?.toString() ?? '';
-    if (venueId.isNotEmpty && date.isNotEmpty) {
+    final rawDate = widget.party['rawDate']?.toString() ?? widget.party['date']?.toString() ?? '';
+    final date = _formatDateIso(rawDate);
+    if (venueId.isNotEmpty) {
       final isInt = await ApiService.checkNightInterest(venueId: venueId, date: date);
       if (mounted) {
         setState(() {
@@ -54,12 +75,13 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
 
   Future<void> _toggleInterest() async {
     final venueId = widget.venueMap?['id']?.toString() ?? widget.party['venueId']?.toString() ?? '';
-    final date = widget.party['rawDate']?.toString() ?? widget.party['date']?.toString() ?? '';
+    final rawDate = widget.party['rawDate']?.toString() ?? widget.party['date']?.toString() ?? '';
+    final date = _formatDateIso(rawDate);
 
-    if (venueId.isEmpty || date.isEmpty) {
+    if (venueId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Venue or date missing for marking interest.'),
+          content: Text('Venue missing for marking interest.'),
           backgroundColor: LunaraTheme.electricViolet,
           behavior: SnackBarBehavior.floating,
         ),
@@ -67,44 +89,64 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
       return;
     }
 
-    setState(() => _isToggling = true);
+    final bool previousState = _isInterested;
 
-    if (_isInterested) {
+    // 1. Optimistic Instant UI Update
+    setState(() {
+      _isInterested = !previousState;
+      _isToggling = true;
+    });
+
+    if (previousState) {
+      // Reverting interest (removing)
       final success = await ApiService.removeNightInterest(venueId: venueId, date: date);
       if (mounted) {
+        setState(() => _isToggling = false);
         if (success) {
-          setState(() {
-            _isInterested = false;
-            _isToggling = false;
-          });
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Interest removed.'),
               backgroundColor: Colors.black87,
               behavior: SnackBarBehavior.floating,
+              duration: Duration(seconds: 2),
             ),
           );
         } else {
-          setState(() => _isToggling = false);
-        }
-      }
-    } else {
-      final success = await ApiService.markNightInterested(venueId: venueId, date: date);
-      if (mounted) {
-        if (success) {
-          setState(() {
-            _isInterested = true;
-            _isToggling = false;
-          });
+          // Revert state on failure
+          setState(() => _isInterested = previousState);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Marked as Interested! 🎉 Host will be able to see you in Interested Partners.'),
-              backgroundColor: Colors.green,
+              content: Text('Could not update interest. Please try again.'),
+              backgroundColor: Colors.red,
               behavior: SnackBarBehavior.floating,
             ),
           );
+        }
+      }
+    } else {
+      // Adding interest
+      final success = await ApiService.markNightInterested(venueId: venueId, date: date);
+      if (mounted) {
+        setState(() => _isToggling = false);
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Marked as Interested! 🎉 Host can view your profile.'),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+              duration: Duration(seconds: 2),
+            ),
+          );
         } else {
-          setState(() => _isToggling = false);
+          // Revert state on failure
+          setState(() => _isInterested = previousState);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not update interest. Please try again.'),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
         }
       }
     }
@@ -177,10 +219,10 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                           colors: [
-                            Colors.black.withValues(alpha: 0.4),
+                            Colors.black.withOpacity(0.4),
                             Colors.transparent,
                             Colors.transparent,
-                            Colors.black.withValues(alpha: 0.85),
+                            Colors.black.withOpacity(0.85),
                           ],
                           stops: const [0.0, 0.2, 0.5, 1.0],
                         ),
@@ -216,9 +258,9 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                           decoration: BoxDecoration(
-                            color: LunaraTheme.cyberCyan.withValues(alpha: 0.2),
+                            color: LunaraTheme.cyberCyan.withOpacity(0.2),
                             borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: LunaraTheme.cyberCyan.withValues(alpha: 0.5)),
+                            border: Border.all(color: LunaraTheme.cyberCyan.withOpacity(0.5)),
                           ),
                           child: Text(
                             dateStr.toUpperCase(),
@@ -335,13 +377,13 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                           borderRadius: BorderRadius.circular(20),
                           boxShadow: [
                             BoxShadow(
-                              color: LunaraTheme.electricViolet.withValues(alpha: 0.08),
+                              color: LunaraTheme.electricViolet.withOpacity(0.08),
                               blurRadius: 16,
                               offset: const Offset(0, 6),
                             ),
                           ],
                           border: Border.all(
-                            color: const Color(0xFF7F00FF).withValues(alpha: 0.08),
+                            color: const Color(0x147F00FF),
                             width: 1.2,
                           ),
                         ),
@@ -407,33 +449,32 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                       Expanded(
                         flex: 5,
                         child: InkWell(
-                          onTap: _isToggling ? null : _toggleInterest,
+                          onTap: _toggleInterest,
                           borderRadius: BorderRadius.circular(16),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
                             height: 56,
                             decoration: BoxDecoration(
-                              gradient: _isInterested ? LunaraTheme.primaryGradient : null,
-                              color: _isInterested ? null : Colors.white,
+                              color: _isInterested
+                                  ? LunaraTheme.electricViolet.withOpacity(0.12)
+                                  : Colors.white,
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
-                                color: _isInterested
-                                    ? Colors.transparent
-                                    : LunaraTheme.electricViolet,
-                                width: 1.8,
+                                color: LunaraTheme.electricViolet,
+                                width: 2.0,
                               ),
                               boxShadow: _isInterested
                                   ? [
                                       BoxShadow(
-                                        color: LunaraTheme.electricViolet.withValues(alpha: 0.35),
-                                        blurRadius: 14,
-                                        offset: const Offset(0, 6),
+                                        color: LunaraTheme.electricViolet.withOpacity(0.25),
+                                        blurRadius: 10,
+                                        offset: const Offset(0, 4),
                                       ),
                                     ]
                                   : [
                                       BoxShadow(
-                                        color: Colors.black.withValues(alpha: 0.03),
-                                        blurRadius: 8,
+                                        color: Colors.black.withOpacity(0.03),
+                                        blurRadius: 6,
                                         offset: const Offset(0, 2),
                                       ),
                                     ],
@@ -441,25 +482,16 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                _isToggling
-                                    ? SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: _isInterested ? Colors.white : LunaraTheme.electricViolet,
-                                        ),
-                                      )
-                                    : Icon(
-                                        _isInterested ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                                        color: _isInterested ? Colors.white : LunaraTheme.electricViolet,
-                                        size: 20,
-                                      ),
+                                Icon(
+                                  _isInterested ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                                  color: LunaraTheme.electricViolet,
+                                  size: 22,
+                                ),
                                 const SizedBox(width: 8),
                                 Text(
                                   _isInterested ? 'INTERESTED ✓' : 'INTERESTED',
-                                  style: TextStyle(
-                                    color: _isInterested ? Colors.white : LunaraTheme.electricViolet,
+                                  style: const TextStyle(
+                                    color: LunaraTheme.electricViolet,
                                     fontWeight: FontWeight.w900,
                                     fontSize: 13,
                                     letterSpacing: 1.2,

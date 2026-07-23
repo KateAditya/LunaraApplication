@@ -27,11 +27,13 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     super.initState();
     _fetchNotifications();
     ApiService.addSocketListener('notification_created', _onSocketNotification);
+    ApiService.addSocketListener('notification_received', _onSocketNotification);
   }
 
   @override
   void dispose() {
     ApiService.removeSocketListener('notification_created', _onSocketNotification);
+    ApiService.removeSocketListener('notification_received', _onSocketNotification);
     super.dispose();
   }
 
@@ -433,7 +435,17 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (senderData != null && senderData.isNotEmpty)
+              if ((item['imageUrl'] != null && item['imageUrl'].toString().isNotEmpty) ||
+                  (item['actor'] != null && item['actor']['profile'] != null && item['actor']['profile']['profilePhotoUrl'] != null))
+                LunaraProfileImage(
+                  userData: {
+                    'profilePhotoUrl': item['imageUrl']?.toString() ??
+                        item['actor']?['profile']?['profilePhotoUrl']?.toString()
+                  },
+                  radius: 22,
+                  showGradientBorder: true,
+                )
+              else if (senderData != null && senderData.isNotEmpty)
                 LunaraProfileImage(
                   userData: senderData,
                   radius: 22,
@@ -493,6 +505,35 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                         height: 1.3,
                       ),
                     ),
+                    if (item['actionType'] != null && item['actionType'].toString().isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      GestureDetector(
+                        onTap: () => _markAsRead(item),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            gradient: LunaraTheme.primaryGradient,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                                blurRadius: 8,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          child: Text(
+                            item['actionType'].toString().replaceAll('_', ' ').toUpperCase(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

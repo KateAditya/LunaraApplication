@@ -43,6 +43,14 @@ import NotificationJob from './NotificationJob';
 import NightInterest from './NightInterest';
 import NightPartnerRequest from './NightPartnerRequest';
 import NightPartnerMatch from './NightPartnerMatch';
+import Notification from './Notification';
+
+// ============================================================================
+// Notification Associations
+// ============================================================================
+
+Notification.belongsTo(User, { foreignKey: 'recipientUserId', as: 'recipient' });
+Notification.belongsTo(User, { foreignKey: 'actorUserId', as: 'actor' });
 
 // ============================================================================
 // Night Partner Associations
@@ -629,5 +637,6 @@ export default {
     NightInterest,
     NightPartnerRequest,
     NightPartnerMatch,
+    Notification,
     syncModels,
 };
