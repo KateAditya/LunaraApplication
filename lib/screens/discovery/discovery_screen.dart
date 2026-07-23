@@ -766,9 +766,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   // 3. Featured Venues
                   Padding(
                     padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
                         Row(
                           children: [
                             const Text(
@@ -868,6 +870,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                       ],
                     ),
                   ),
+                ),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Container(

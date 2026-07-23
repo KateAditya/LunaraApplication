@@ -1233,38 +1233,42 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                   ),
                                 ),
                                 const SizedBox(height: 4),
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.event_note,
-                                      color: Colors.amber[700],
-                                      size: 12,
-                                    ),
-                                    const SizedBox(width: 3),
-                                    Text(
-                                      '$planCount Plans',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        color: Colors.grey[600],
-                                        fontWeight: FontWeight.w600,
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.event_note,
+                                        color: Colors.amber[700],
+                                        size: 12,
                                       ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Icon(
-                                      Icons.star,
-                                      color: Colors.amber[600],
-                                      size: 12,
-                                    ),
-                                    const SizedBox(width: 3),
-                                    Text(
-                                      '$superLikes Super Likes',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        color: Colors.grey[600],
-                                        fontWeight: FontWeight.w600,
+                                      const SizedBox(width: 3),
+                                      Text(
+                                        '$planCount Plans',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.grey[600],
+                                          fontWeight: FontWeight.w600,
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                      const SizedBox(width: 10),
+                                      Icon(
+                                        Icons.star,
+                                        color: Colors.amber[600],
+                                        size: 12,
+                                      ),
+                                      const SizedBox(width: 3),
+                                      Text(
+                                        '$superLikes Super Likes',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.grey[600],
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ],
                             ),
@@ -2605,16 +2609,22 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               color: Colors.black87,
                             ),
                           ),
-                          Text(
-                            selectedPaymentType == 'self_pay'
-                                ? 'Host pays 2x Deposit: ₹198 (Refundable)'
-                                : 'Split Deposit: ₹99 per head (Refundable)',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: selectedPaymentType == 'self_pay'
-                                  ? Colors.green[700]
-                                  : Colors.grey[600],
+                          Expanded(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerRight,
+                              child: Text(
+                                selectedPaymentType == 'self_pay'
+                                    ? 'Host pays 2x Deposit: ₹198 (Refundable)'
+                                    : 'Split Deposit: ₹99 per head (Refundable)',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: selectedPaymentType == 'self_pay'
+                                      ? Colors.green[700]
+                                      : Colors.grey[600],
+                                ),
+                              ),
                             ),
                           ),
                         ],
@@ -4666,12 +4676,16 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
-                                  'Food Preference',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.black54,
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: const Text(
+                                    'Food Preference',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.black54,
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(height: 6),
@@ -4688,6 +4702,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                   ),
                                   child: DropdownButtonHideUnderline(
                                     child: DropdownButtonFormField<String>(
+                                      isExpanded: true,
                                       value: foodPreference,
                                       decoration: const InputDecoration(
                                         prefixIcon: Icon(
@@ -4736,12 +4751,16 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
-                                  'Drink Preference',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.black54,
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: const Text(
+                                    'Drink Preference',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.black54,
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(height: 6),
@@ -4758,6 +4777,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                   ),
                                   child: DropdownButtonHideUnderline(
                                     child: DropdownButtonFormField<String>(
+                                      isExpanded: true,
                                       value: drinkPreference,
                                       decoration: const InputDecoration(
                                         prefixIcon: Icon(

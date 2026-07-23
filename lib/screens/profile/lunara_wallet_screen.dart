@@ -131,13 +131,18 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
             icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black),
             onPressed: () => Navigator.pop(context),
           ),
-          const Text(
-            'LUNARA WALLET',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 4,
-              color: Colors.black,
+          const Expanded(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                'LUNARA WALLET',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 4,
+                  color: Colors.black,
+                ),
+              ),
             ),
           ),
           IconButton(
@@ -251,28 +256,38 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
   }
 
   Widget _walletStatItem(String label, String value, Color highlightColor) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.4),
-            fontSize: 8,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1.5,
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.4),
+                fontSize: 8,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.5,
+              ),
+            ),
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: TextStyle(
-            color: highlightColor,
-            fontSize: 15,
-            fontWeight: FontWeight.w900,
+          const SizedBox(height: 4),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: TextStyle(
+                color: highlightColor,
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

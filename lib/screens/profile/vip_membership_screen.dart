@@ -759,23 +759,26 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
                       width: 2,
                     ),
                   ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        option['label'],
-                        style: TextStyle(color: labelColor, fontWeight: FontWeight.bold, fontSize: 16),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        '₹${option['price']}',
-                        style: TextStyle(
-                          color: priceColor,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          option['label'],
+                          style: TextStyle(color: labelColor, fontWeight: FontWeight.bold, fontSize: 16),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 6),
+                        Text(
+                          '₹${option['price']}',
+                          style: TextStyle(
+                            color: priceColor,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );

@@ -245,7 +245,12 @@ class _OtpScreenState extends State<OtpScreen>
   Widget _buildOtpFields() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: List.generate(4, (index) => _buildOtpBox(index)),
+      children: List.generate(4, (index) => Flexible(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6.0),
+          child: _buildOtpBox(index),
+        ),
+      )),
     );
   }
 

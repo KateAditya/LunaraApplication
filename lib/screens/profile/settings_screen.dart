@@ -372,8 +372,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const Icon(Icons.visibility_off_outlined, color: Colors.black, size: 20),
               const SizedBox(width: 12),
               Expanded(
-                child: Row(
-                  children: [
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Row(
+                    children: [
                     Text(
                       'Hide Profile',
                       style: TextStyle(
@@ -401,6 +404,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                   ],
+                ),
                 ),
               ),
               ElevatedButton.icon(

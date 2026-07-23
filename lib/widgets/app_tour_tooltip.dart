@@ -94,62 +94,69 @@ class AppTourTooltip extends StatelessWidget {
           // Bottom Bar (Previous, Step indicator, Next)
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // Previous Button
-                if (currentStep > 1)
-                  OutlinedButton(
-                    onPressed: onPrevious,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF3b5998),
-                      side: const BorderSide(color: Color(0xFF3b5998)),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Previous Button
+                  if (currentStep > 1)
+                    OutlinedButton(
+                      onPressed: onPrevious,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF3b5998),
+                        side: const BorderSide(color: Color(0xFF3b5998)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      ),
+                      child: const Text('Previous'),
+                    )
+                  else
+                    OutlinedButton(
+                      onPressed: onSkip,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF3b5998),
+                        side: const BorderSide(color: Color(0xFF3b5998)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      ),
+                      child: const Text('End Tour'),
+                    ),
+
+                  const SizedBox(width: 16),
+
+                  // Step indicator
+                  Text(
+                    '$currentStep/$totalSteps',
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+
+                  const SizedBox(width: 16),
+
+                  // Next / Finish Button
+                  ElevatedButton(
+                    onPressed: onNext,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF3b5998),
+                      foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                      elevation: 0,
                     ),
-                    child: const Text('Previous'),
-                  )
-                else
-                  OutlinedButton(
-                    onPressed: onSkip,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF3b5998),
-                      side: const BorderSide(color: Color(0xFF3b5998)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                    ),
-                    child: const Text('End Tour'),
+                    child: Text(isLastStep ? 'Finish' : 'Next'),
                   ),
-
-                // Step indicator
-                Text(
-                  '$currentStep/$totalSteps',
-                  style: TextStyle(
-                    color: Colors.grey.shade600,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-
-                // Next / Finish Button
-                ElevatedButton(
-                  onPressed: onNext,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF3b5998),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                    elevation: 0,
-                  ),
-                  child: Text(isLastStep ? 'Finish' : 'Next'),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ],
