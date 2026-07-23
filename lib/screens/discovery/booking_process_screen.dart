@@ -6,6 +6,7 @@ import '../../services/api_service.dart';
 import '../../models/venue.dart';
 import '../../widgets/venue_timing_error_dialog.dart';
 import 'night_partner_discovery_screen.dart';
+import 'night_invite_partner_screen.dart';
 import '../social/friends_list_screen.dart';
 
 
@@ -367,10 +368,20 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                           Expanded(
                             child: GestureDetector(
                               onTap: () {
+                                final yyyy = _selectedDate.year;
+                                final mm = _selectedDate.month.toString().padLeft(2, '0');
+                                final dd = _selectedDate.day.toString().padLeft(2, '0');
+                                final dateStr = '$yyyy-$mm-$dd';
+                                final timeStr = _selectedTime ?? '20:00';
+
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (_) => const FriendsListScreen(),
+                                    builder: (_) => NightInvitePartnerScreen(
+                                      venue: widget.venue,
+                                      date: dateStr,
+                                      time: timeStr,
+                                    ),
                                   ),
                                 );
                               },

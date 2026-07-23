@@ -2721,6 +2721,38 @@ class ApiService {
     return [];
   }
 
+  static Future<List<Map<String, dynamic>>> fetchAvailableInvitees({
+    required String venueId,
+    required String date,
+    String? search,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) return [];
+    try {
+      final queryParams = <String, String>{
+        'hostId': userId,
+        'venueId': venueId,
+        'eventDate': date,
+      };
+      if (search != null && search.trim().isNotEmpty) {
+        queryParams['search'] = search.trim();
+      }
+      final response = await get(
+        '/api/mobile/nights/available-invitees',
+        queryParameters: queryParams,
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] is List) {
+          return List<Map<String, dynamic>>.from(data['data']);
+        }
+      }
+    } catch (e) {
+      debugPrint('fetchAvailableInvitees error: $e');
+    }
+    return [];
+  }
+
   static Future<Map<String, dynamic>?> fetchPartnerProfilePreview(String targetUserId) async {
     try {
       final response = await get('/api/mobile/nights/partners/$targetUserId/profile');

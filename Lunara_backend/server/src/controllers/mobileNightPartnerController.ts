@@ -54,6 +54,27 @@ export const getInterestedPartners = async (req: Request, res: Response): Promis
     }
 };
 
+export const getAvailableInvitees = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { hostId, venueId, eventDate, search } = req.query;
+        if (!hostId || !venueId || !eventDate) {
+            res.status(400).json({ success: false, message: 'hostId, venueId, and eventDate query parameters are required' });
+            return;
+        }
+
+        const invitees = await NightPartnerService.getAvailableInvitees(
+            String(hostId),
+            String(venueId),
+            String(eventDate),
+            search ? String(search) : undefined
+        );
+        res.json({ success: true, data: invitees });
+    } catch (err: any) {
+        logger.error('getAvailableInvitees error:', err);
+        res.status(400).json({ success: false, message: err.message || 'Failed to fetch available invitees' });
+    }
+};
+
 export const getPartnerProfilePreview = async (req: Request, res: Response): Promise<void> => {
     try {
         const { userId } = req.params;
@@ -182,6 +203,7 @@ export default {
     markInterested,
     removeInterest,
     getInterestedPartners,
+    getAvailableInvitees,
     getPartnerProfilePreview,
     sendPartnerRequest,
     respondToRequest,

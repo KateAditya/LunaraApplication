@@ -11,6 +11,7 @@ import Booking, { BookingStatus, PaymentStatus, GoingMode, BookingPaymentMode } 
 import Conversation, { ConversationStatus } from '../models/Conversation';
 import { VenueBookingService } from './VenueBookingService';
 import { validateVenueTimingAndHolidays } from '../utils/venueValidator';
+import { checkExistingBookingForDate } from '../utils/bookingLimitValidator';
 import { generateTicketForBookingHelper } from './ticketService';
 import { logger } from '../config/logger';
 import Razorpay from 'razorpay';
@@ -35,6 +36,7 @@ export interface SafePartnerProfile {
     trustScore: number;
     compatibilityScore: number;
     interestId?: string;
+    hasPendingInvite?: boolean;
 }
 
 export class NightPartnerService {
@@ -188,6 +190,105 @@ export class NightPartnerService {
     }
 
     /**
+     * List available invitees (users with NO existing plan or booking for that date)
+     */
+    public static async getAvailableInvitees(
+        hostId: string,
+        venueId: string,
+        eventDate: string,
+        search?: string
+    ): Promise<SafePartnerProfile[]> {
+        const userWhere: any = {
+            id: { [Op.ne]: hostId },
+            isActive: true,
+            isDeleted: false,
+        };
+
+        if (search && search.trim().length > 0) {
+            const cleanSearch = `%${search.trim()}%`;
+            userWhere[Op.or] = [
+                { firstName: { [Op.iLike]: cleanSearch } },
+                { lastName: { [Op.iLike]: cleanSearch } },
+            ];
+        }
+
+        const candidates = await User.findAll({
+            where: userWhere,
+            attributes: ['id', 'firstName', 'lastName', 'dateOfBirth', 'isVerified', 'createdAt'],
+            include: [
+                { model: UserProfile, as: 'profile' },
+                { model: UserPhoto, as: 'photos' },
+            ],
+            limit: 50,
+            order: [['createdAt', 'DESC']],
+        });
+
+        const available: SafePartnerProfile[] = [];
+
+        for (const u of candidates) {
+            // Check if user already has a plan/booking on this date
+            const conflict = await checkExistingBookingForDate(u.id, eventDate);
+            if (conflict) {
+                // User already has a plan or booking scheduled on this day -> skip!
+                continue;
+            }
+
+            // Check if user already has a confirmed or pending match on this date
+            const matchCount = await NightPartnerMatch.count({
+                where: {
+                    [Op.or]: [{ hostId: u.id }, { partnerId: u.id }],
+                    eventDate: new Date(eventDate),
+                    status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] },
+                },
+            });
+            if (matchCount > 0) {
+                continue;
+            }
+
+            // Check if host already sent a request to this user for this event
+            const existingReq = await NightPartnerRequest.findOne({
+                where: {
+                    hostId,
+                    partnerId: u.id,
+                    venueId,
+                    eventDate: new Date(eventDate),
+                    status: { [Op.in]: [NightPartnerRequestStatus.PENDING, NightPartnerRequestStatus.ACCEPTED] },
+                },
+            });
+
+            const profile = (u as any).profile;
+            const photos = (u as any).photos || [];
+            const primaryPhotoObj = photos.find((p: any) => p.isPrimary) || photos[0];
+
+            let age: number | undefined;
+            if (u.dateOfBirth) {
+                const birthDate = new Date(u.dateOfBirth);
+                const ageDifMs = Date.now() - birthDate.getTime();
+                const ageDate = new Date(ageDifMs);
+                age = Math.abs(ageDate.getUTCFullYear() - 1970);
+            }
+
+            available.push({
+                userId: u.id,
+                firstName: u.firstName || 'User',
+                age,
+                gender: profile?.gender,
+                city: profile?.city,
+                bio: profile?.bio,
+                occupation: profile?.occupation,
+                interests: profile?.interests || [],
+                primaryPhoto: primaryPhotoObj?.filePath || null,
+                isVerified: !!u.isVerified,
+                trustScore: u.isVerified ? 4.9 : 4.5,
+                compatibilityScore: 88,
+                hasPendingInvite: !!existingReq,
+            });
+        }
+
+        return available;
+    }
+
+    /**
      * Get single user's safe partner profile preview
      */
     public static async getPartnerProfilePreview(targetUserId: string): Promise<SafePartnerProfile> {
@@ -232,7 +333,7 @@ export class NightPartnerService {
     }
 
     /**
-     * Host sends partner request to an interested user (Idempotent)
+     * Host sends partner request to an interested user or direct invitee (Idempotent)
      */
     public static async sendPartnerRequest(
         hostId: string,
@@ -248,7 +349,7 @@ export class NightPartnerService {
         const venue = await Venue.findByPk(venueId);
         if (!venue) throw new Error('VENUE_NOT_FOUND');
 
-        // Check if partner is interested
+        // Check if partner is interested (optional for direct invitations)
         const interest = await NightInterest.findOne({
             where: {
                 userId: partnerId,
@@ -257,10 +358,6 @@ export class NightPartnerService {
                 status: NightInterestStatus.INTERESTED,
             },
         });
-
-        if (!interest) {
-            throw new Error('INTEREST_NOT_FOUND');
-        }
 
         // Check if host already has an active match for this night
         const existingMatch = await NightPartnerMatch.findOne({
@@ -293,7 +390,7 @@ export class NightPartnerService {
                 eventTime: eventTime || '20:00',
                 status: NightPartnerRequestStatus.PENDING,
                 expiresAt,
-                nightInterestId: interest.id,
+                nightInterestId: interest ? interest.id : undefined,
             },
         });
 

@@ -51,6 +51,21 @@ router.get(
 );
 
 /**
+ * GET /api/mobile/nights/available-invitees?hostId=<uuid>&venueId=<uuid>&eventDate=YYYY-MM-DD&search=
+ * Get list of available users who have NO existing plan or booking for that date
+ */
+router.get(
+    '/available-invitees',
+    [
+        query('hostId').notEmpty().withMessage('hostId is required'),
+        query('venueId').isUUID().withMessage('venueId must be a UUID'),
+        query('eventDate').isISO8601().withMessage('eventDate must be YYYY-MM-DD'),
+        validate,
+    ],
+    ctrl.getAvailableInvitees
+);
+
+/**
  * GET /api/mobile/nights/partners/:userId/profile
  * Get safe partner profile preview for Host
  */
