@@ -1,13 +1,22 @@
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
+import '../../services/api_service.dart';
 import 'venue_detail_screen.dart';
 import 'booking_process_screen.dart';
 
-class UpcomingPartyScreen extends StatelessWidget {
+class UpcomingPartyScreen extends StatefulWidget {
   final Map<String, dynamic> party;
   final Map<String, dynamic>? venueMap;
 
   const UpcomingPartyScreen({super.key, required this.party, this.venueMap});
+
+  @override
+  State<UpcomingPartyScreen> createState() => _UpcomingPartyScreenState();
+}
+
+class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
+  bool _isInterested = false;
+  bool _isToggling = false;
 
   Widget _circleButton({required IconData icon, required VoidCallback onTap}) {
     return GestureDetector(
@@ -24,20 +33,78 @@ class UpcomingPartyScreen extends StatelessWidget {
     );
   }
 
+  Future<void> _toggleInterest() async {
+    final venueId = widget.venueMap?['id']?.toString() ?? widget.party['venueId']?.toString() ?? '';
+    final date = widget.party['rawDate']?.toString() ?? widget.party['date']?.toString() ?? '';
+
+    if (venueId.isEmpty || date.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Venue or date missing for marking interest.'),
+          backgroundColor: LunaraTheme.electricViolet,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isToggling = true);
+
+    if (_isInterested) {
+      final success = await ApiService.removeNightInterest(venueId: venueId, date: date);
+      if (mounted) {
+        if (success) {
+          setState(() {
+            _isInterested = false;
+            _isToggling = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Interest removed.'),
+              backgroundColor: Colors.black87,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        } else {
+          setState(() => _isToggling = false);
+        }
+      }
+    } else {
+      final success = await ApiService.markNightInterested(venueId: venueId, date: date);
+      if (mounted) {
+        if (success) {
+          setState(() {
+            _isInterested = true;
+            _isToggling = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Marked as Interested! 🎉 Host will be able to see you in Interested Partners.'),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        } else {
+          setState(() => _isToggling = false);
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final double screenWidth = MediaQuery.of(context).size.width;
-    final String title = party['title']?.toString() ?? 'Special Event';
-    final String dateStr = party['date']?.toString() ?? 'Upcoming';
-    final String venueName = party['venue']?.toString() ?? 'Unknown Venue';
-    final String imageUrl = party['image']?.toString() ?? '';
-    final String aboutEventText = (party['aboutEvent'] != null && party['aboutEvent'].toString().trim().isNotEmpty)
-        ? party['aboutEvent'].toString().trim()
+    final String title = widget.party['title']?.toString() ?? 'Special Event';
+    final String dateStr = widget.party['date']?.toString() ?? 'Upcoming';
+    final String venueName = widget.party['venue']?.toString() ?? 'Unknown Venue';
+    final String imageUrl = widget.party['image']?.toString() ?? '';
+    final String aboutEventText = (widget.party['aboutEvent'] != null && widget.party['aboutEvent'].toString().trim().isNotEmpty)
+        ? widget.party['aboutEvent'].toString().trim()
         : 'Join us for an unforgettable night at $venueName. Get ready for amazing music, great vibes, and an incredible atmosphere. Book your tickets now before they sell out!';
 
     String? venueImageUrl;
-    if (venueMap != null) {
-      final images = venueMap!['images'];
+    if (widget.venueMap != null) {
+      final images = widget.venueMap!['images'];
       if (images is List && images.isNotEmpty) {
         final firstImg = images[0];
         if (firstImg is Map) {
@@ -46,8 +113,8 @@ class UpcomingPartyScreen extends StatelessWidget {
           venueImageUrl = firstImg;
         }
       }
-      if (venueImageUrl == null && venueMap!['imageUrl'] != null) {
-        venueImageUrl = venueMap!['imageUrl'].toString();
+      if (venueImageUrl == null && widget.venueMap!['imageUrl'] != null) {
+        venueImageUrl = widget.venueMap!['imageUrl'].toString();
       }
     }
 
@@ -102,7 +169,7 @@ class UpcomingPartyScreen extends StatelessWidget {
                     ),
                   ),
                   
-                  // Top Buttons (Back & Favorite)
+                  // Top Buttons (Back)
                   Positioned(
                     top: MediaQuery.of(context).padding.top + 10,
                     left: 20,
@@ -115,10 +182,6 @@ class UpcomingPartyScreen extends StatelessWidget {
                           icon: Icons.arrow_back_ios_new,
                           onTap: () => Navigator.pop(context),
                         ),
-                        // _circleButton(
-                        //   icon: Icons.favorite_border_rounded,
-                        //   onTap: () {},
-                        // ),
                       ],
                     ),
                   ),
@@ -225,7 +288,7 @@ class UpcomingPartyScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 32),
                   
-                  if (venueMap != null && venueMap!.isNotEmpty) ...[
+                  if (widget.venueMap != null && widget.venueMap!.isNotEmpty) ...[
                     const Text(
                       'HOSTED AT',
                       style: TextStyle(
@@ -242,7 +305,7 @@ class UpcomingPartyScreen extends StatelessWidget {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => VenueDetailScreen(venue: venueMap!),
+                            builder: (_) => VenueDetailScreen(venue: widget.venueMap!),
                           ),
                         );
                       },
@@ -299,7 +362,7 @@ class UpcomingPartyScreen extends StatelessWidget {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    '${venueMap!['city']} • ${venueMap!['area'] ?? venueMap!['addressLine1']}'.toUpperCase(),
+                                    '${widget.venueMap!['city']} • ${widget.venueMap!['area'] ?? widget.venueMap!['addressLine1']}'.toUpperCase(),
                                     style: TextStyle(
                                       color: Colors.grey[600],
                                       fontSize: 10,
@@ -318,58 +381,121 @@ class UpcomingPartyScreen extends StatelessWidget {
                   
                   const SizedBox(height: 32),
                   
-                  InkWell(
-                    onTap: () {
-                      if (venueMap != null) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => BookingProcessScreen(
-                              venue: venueMap!,
-                              isUpcomingNight: true,
-                              upcomingNightDate: party['rawDate'] ?? party['date'],
-                              upcomingNightTime: '20:00',
+                  // Action Row: Interested + Book Now
+                  Row(
+                    children: [
+                      // Interested Button
+                      Expanded(
+                        flex: 5,
+                        child: InkWell(
+                          onTap: _isToggling ? null : _toggleInterest,
+                          borderRadius: BorderRadius.circular(16),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            height: 56,
+                            decoration: BoxDecoration(
+                              color: _isInterested
+                                  ? LunaraTheme.electricViolet.withValues(alpha: 0.12)
+                                  : Colors.grey[50],
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: _isInterested
+                                    ? LunaraTheme.electricViolet
+                                    : Colors.grey[300]!,
+                                width: 1.5,
+                              ),
                             ),
-                          ),
-                        );
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Text('Venue details not available for booking.'),
-                            backgroundColor: LunaraTheme.electricViolet,
-                            behavior: SnackBarBehavior.floating,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                        );
-                      }
-                    },
-                    borderRadius: BorderRadius.circular(16),
-                    child: Container(
-                      width: double.infinity,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        gradient: LunaraTheme.primaryGradient,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
-                            blurRadius: 16,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: const Center(
-                        child: Text(
-                          'BOOK NOW',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 14,
-                            letterSpacing: 1.5,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                _isToggling
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: LunaraTheme.electricViolet,
+                                        ),
+                                      )
+                                    : Icon(
+                                        _isInterested ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                                        color: _isInterested ? LunaraTheme.electricViolet : Colors.black87,
+                                        size: 20,
+                                      ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  _isInterested ? 'INTERESTED ✓' : 'INTERESTED',
+                                  style: TextStyle(
+                                    color: _isInterested ? LunaraTheme.electricViolet : Colors.black87,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 13,
+                                    letterSpacing: 1.2,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
+                      const SizedBox(width: 12),
+
+                      // Book Now Button
+                      Expanded(
+                        flex: 6,
+                        child: InkWell(
+                          onTap: () {
+                            if (widget.venueMap != null) {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => BookingProcessScreen(
+                                    venue: widget.venueMap!,
+                                    isUpcomingNight: true,
+                                    upcomingNightDate: widget.party['rawDate'] ?? widget.party['date'],
+                                    upcomingNightTime: '20:00',
+                                  ),
+                                ),
+                              );
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: const Text('Venue details not available for booking.'),
+                                  backgroundColor: LunaraTheme.electricViolet,
+                                  behavior: SnackBarBehavior.floating,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
+                              );
+                            }
+                          },
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            height: 56,
+                            decoration: BoxDecoration(
+                              gradient: LunaraTheme.primaryGradient,
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 8),
+                                ),
+                              ],
+                            ),
+                            child: const Center(
+                              child: Text(
+                                'BOOK NOW',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 14,
+                                  letterSpacing: 1.5,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 16),
                 ],

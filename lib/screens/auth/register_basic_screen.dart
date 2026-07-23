@@ -301,8 +301,6 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                           errorMessage = 'First name can only contain letters (no symbols or numbers)';
                         } else if (lastName.isEmpty) {
                           errorMessage = 'Please enter your last name';
-                        } else if (lastName.length < 2) {
-                          errorMessage = 'Last name must be at least 2 characters';
                         } else if (!nameRegex.hasMatch(lastName)) {
                           errorMessage = 'Last name can only contain letters (no symbols or numbers)';
                         } else if (email.isEmpty) {
