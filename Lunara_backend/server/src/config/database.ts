@@ -187,28 +187,28 @@ export const connectDatabase = async (): Promise<void> => {
 
             // Seed default features if they do not exist
             await sequelize.query(`
-                INSERT INTO "SubscriptionFeatures" (key, name, description, category, value_type, display_order, icon) VALUES
-                    ('daily_likes', 'Daily Likes', 'Number of profiles you can like per day', 'matching', 'integer', 1, 'heart'),
-                    ('daily_match_requests', 'Daily Match Requests', 'Number of match requests you can send per day', 'matching', 'integer', 2, 'handshake'),
-                    ('daily_posts', 'Daily Posts', 'Number of posts you can create per day', 'social', 'integer', 3, 'camera'),
-                    ('super_likes', 'Super Likes (per cycle)', 'Super likes included in each subscription cycle', 'matching', 'integer', 4, 'star'),
-                    ('boosts', 'Profile Boosts (per cycle)', 'Profile boost credits included per cycle', 'visibility', 'integer', 5, 'rocket'),
-                    ('hide_profile', 'Hide Profile', 'Ability to hide your profile from others', 'privacy', 'boolean', 6, 'eye-off'),
-                    ('priority_visibility', 'Priority Visibility', 'Appear at the top of discovery feeds', 'visibility', 'boolean', 7, 'trending-up'),
-                    ('trust_badge', 'Trust Badge', 'Display a verified trust badge on your profile', 'badge', 'boolean', 8, 'shield'),
-                    ('elite_badge', 'Elite Badge', 'Exclusive elite member badge', 'badge', 'crown', 9, 'crown'),
-                    ('who_liked_me', 'See Who Liked Me', 'View profiles of people who liked you', 'insights', 'boolean', 10, 'eye'),
-                    ('who_viewed_me', 'See Who Viewed Me', 'View profiles of people who visited your profile', 'insights', 'boolean', 11, 'binoculars'),
-                    ('ai_features', 'AI-Powered Features', 'Access to AI-driven matching and suggestions', 'ai', 'boolean', 12, 'brain'),
-                    ('voice_calls', 'Voice Calls', 'Make voice calls with your matches', 'communication', 'boolean', 13, 'phone'),
-                    ('video_calls', 'Video Calls', 'Make video calls with your matches', 'communication', 'boolean', 14, 'video'),
-                    ('stranger_meet', 'Stranger Meet Access', 'Access the Stranger Meet feature', 'social', 'boolean', 15, 'users'),
-                    ('party_creation', 'Party Creation', 'Create group party plans on the live feed', 'events', 'boolean', 16, 'party-popper'),
-                    ('advanced_search', 'Advanced Search', 'Use advanced filters to find specific profiles', 'discovery', 'boolean', 17, 'search'),
-                    ('premium_filters', 'Premium Filters', 'Access premium discovery filters', 'discovery', 'boolean', 18, 'filter'),
-                    ('profile_boost', 'Profile Boost Purchase', 'Ability to purchase additional profile boosts', 'visibility', 'boolean', 19, 'zap'),
-                    ('storage', 'Photo Storage (GB)', 'Amount of storage for photos and media', 'storage', 'decimal', 20, 'database'),
-                    ('daily_backtracks', 'Daily Backtracks', 'Number of times you can backtrack per day', 'matching', 'integer', 21, 'rotate-left')
+                INSERT INTO "SubscriptionFeatures" (key, name, description, category, value_type, display_order, icon, created_at, updated_at) VALUES
+                    ('daily_likes', 'Daily Likes', 'Number of profiles you can like per day', 'matching', 'integer', 1, 'heart', NOW(), NOW()),
+                    ('daily_match_requests', 'Daily Match Requests', 'Number of match requests you can send per day', 'matching', 'integer', 2, 'handshake', NOW(), NOW()),
+                    ('daily_posts', 'Daily Posts', 'Number of posts you can create per day', 'social', 'integer', 3, 'camera', NOW(), NOW()),
+                    ('super_likes', 'Super Likes (per cycle)', 'Super likes included in each subscription cycle', 'matching', 'integer', 4, 'star', NOW(), NOW()),
+                    ('boosts', 'Profile Boosts (per cycle)', 'Profile boost credits included per cycle', 'visibility', 'integer', 5, 'rocket', NOW(), NOW()),
+                    ('hide_profile', 'Hide Profile', 'Ability to hide your profile from others', 'privacy', 'boolean', 6, 'eye-off', NOW(), NOW()),
+                    ('priority_visibility', 'Priority Visibility', 'Appear at the top of discovery feeds', 'visibility', 'boolean', 7, 'trending-up', NOW(), NOW()),
+                    ('trust_badge', 'Trust Badge', 'Display a verified trust badge on your profile', 'badge', 'boolean', 8, 'shield', NOW(), NOW()),
+                    ('elite_badge', 'Elite Badge', 'Exclusive elite member badge', 'badge', 'boolean', 9, 'crown', NOW(), NOW()),
+                    ('who_liked_me', 'See Who Liked Me', 'View profiles of people who liked you', 'insights', 'boolean', 10, 'eye', NOW(), NOW()),
+                    ('who_viewed_me', 'See Who Viewed Me', 'View profiles of people who visited your profile', 'insights', 'boolean', 11, 'binoculars', NOW(), NOW()),
+                    ('ai_features', 'AI-Powered Features', 'Access to AI-driven matching and suggestions', 'ai', 'boolean', 12, 'brain', NOW(), NOW()),
+                    ('voice_calls', 'Voice Calls', 'Make voice calls with your matches', 'communication', 'boolean', 13, 'phone', NOW(), NOW()),
+                    ('video_calls', 'Video Calls', 'Make video calls with your matches', 'communication', 'boolean', 14, 'video', NOW(), NOW()),
+                    ('stranger_meet', 'Stranger Meet Access', 'Access the Stranger Meet feature', 'social', 'boolean', 15, 'users', NOW(), NOW()),
+                    ('party_creation', 'Party Creation', 'Create group party plans on the live feed', 'events', 'boolean', 16, 'party-popper', NOW(), NOW()),
+                    ('advanced_search', 'Advanced Search', 'Use advanced filters to find specific profiles', 'discovery', 'boolean', 17, 'search', NOW(), NOW()),
+                    ('premium_filters', 'Premium Filters', 'Access premium discovery filters', 'discovery', 'boolean', 18, 'filter', NOW(), NOW()),
+                    ('profile_boost', 'Profile Boost Purchase', 'Ability to purchase additional profile boosts', 'visibility', 'boolean', 19, 'zap', NOW(), NOW()),
+                    ('storage', 'Photo Storage (GB)', 'Amount of storage for photos and media', 'storage', 'decimal', 20, 'database', NOW(), NOW()),
+                    ('daily_backtracks', 'Daily Backtracks', 'Number of times you can backtrack per day', 'matching', 'integer', 21, 'rotate-left', NOW(), NOW())
                 ON CONFLICT (key) DO NOTHING;
             `);
 
