@@ -496,22 +496,28 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                             color: Colors.green.withValues(alpha: 0.4),
                           ),
                         ),
-                        child: const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.check_circle_rounded,
-                                color: Colors.green),
-                            SizedBox(width: 10),
-                            Text(
-                              'REQUEST SENT — AWAITING HOST APPROVAL',
-                              style: TextStyle(
-                                color: Colors.green,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                                letterSpacing: 0.5,
-                              ),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.check_circle_rounded,
+                                    color: Colors.green),
+                                const SizedBox(width: 10),
+                                Text(
+                                  'REQUEST SENT — AWAITING HOST APPROVAL',
+                                  style: const TextStyle(
+                                    color: Colors.green,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
                       )
                     : GestureDetector(
