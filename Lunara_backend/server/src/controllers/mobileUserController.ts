@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import sharp from 'sharp';
-import { UserProfile, UserPreference, UserPhoto, UserMatch, PartyPlan, Booking } from '../models';
+import { UserProfile, UserPreference, UserPhoto, UserMatch, PartyPlan, GroupParty, StrangersMeetRequest, Booking } from '../models';
 import User, { UserRole } from '../models/User';
 import sequelize from '../config/database';
 import DeletedAccount from '../models/DeletedAccount';
@@ -619,6 +619,28 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                 group: ['userId']
             });
 
+            const groupPartyCounts = await GroupParty.findAll({
+                attributes: [
+                    'userId',
+                    [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+                ],
+                where: {
+                    userId: { [Op.in]: userIds }
+                },
+                group: ['userId']
+            });
+
+            const strangersMeetCounts = await StrangersMeetRequest.findAll({
+                attributes: [
+                    'userId',
+                    [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+                ],
+                where: {
+                    userId: { [Op.in]: userIds }
+                },
+                group: ['userId']
+            });
+
             superLikesCounts.forEach((c: any) => {
                 const u2Id = c.getDataValue('user2Id');
                 superLikesMap[u2Id] = parseInt(c.getDataValue('count')) || 0;
@@ -626,7 +648,17 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
 
             plansCounts.forEach((c: any) => {
                 const uId = c.getDataValue('userId');
-                plansMap[uId] = parseInt(c.getDataValue('count')) || 0;
+                plansMap[uId] = (plansMap[uId] || 0) + (parseInt(c.getDataValue('count')) || 0);
+            });
+
+            groupPartyCounts.forEach((c: any) => {
+                const uId = c.getDataValue('userId');
+                plansMap[uId] = (plansMap[uId] || 0) + (parseInt(c.getDataValue('count')) || 0);
+            });
+
+            strangersMeetCounts.forEach((c: any) => {
+                const uId = c.getDataValue('userId');
+                plansMap[uId] = (plansMap[uId] || 0) + (parseInt(c.getDataValue('count')) || 0);
             });
         }
 

@@ -15,6 +15,7 @@ import 'strangers_meet_payment_screen.dart';
 import 'strangers_meet_ticket_screen.dart';
 import 'chat_screen.dart';
 import 'large_party_ticket_screen.dart';
+import 'notification_center_screen.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 class LiveFeedScreen extends StatefulWidget {
@@ -40,6 +41,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   bool _isLoadingGroupParties = false;
   Timer? _pollingTimer;
 
+  // Sub-filter selection states for tabs
+  int _subFilterIndexTab0 = 0; // Stranger Meet: 0: All, 1: Requests, 2: Bookings, 3: Chats, 4: Activity
+  int _subFilterIndexTab1 = 0; // Party Plan: 0: All, 1: Requests, 2: Bookings, 3: Chats, 4: Activity
+  int _subFilterIndexTab2 = 0; // Group Parties: 0: All, 1: Invites, 2: Joined, 3: Bookings, 4: Activity
+  int _subFilterIndexTab3 = 0; // Other: 0: All, 1: System, 2: Alerts, 3: Activity
+
   // Razorpay for large party payments
   Razorpay? _razorpay;
   String? _pendingLargePartyBookingId;
@@ -47,6 +54,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   // Track optimistic state changes for buttons
   final Map<String, String> _optimisticStates = {};
   final Set<String> _clearedFeedItemIds = {};
+
+  String _sanitizeDisplayText(String rawText) {
+    if (rawText.isEmpty || rawText == 'null' || rawText == 'undefined') return '';
+    final trimmed = rawText.trim();
+    // Check if string is a raw UUID or random debug code (e.g. rxtxc6c6, hcidhdhd)
+    final isUuid = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$').hasMatch(trimmed);
+    final isRandomCode = RegExp(r'^[a-z0-9]{6,10}$').hasMatch(trimmed) && !trimmed.contains(' ');
+    if (isUuid || isRandomCode) {
+      return '';
+    }
+    return trimmed;
+  }
 
   void refreshFeed() {
     _loadFeed(showLoader: false);
@@ -612,7 +631,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final data = await ApiService.fetchLiveFeedData();
       final notifs = await ApiService.fetchNotifications();
 
-      final currentUserId = ApiService.currentUserId;
       List<Map<String, dynamic>> combined = [
         ...List<Map<String, dynamic>>.from(data['feed'] ?? []),
         ...List<Map<String, dynamic>>.from(data['myRequests'] ?? []),
@@ -743,14 +761,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       return st == 'approved' || st == 'approved_awaiting_payment' || st == 'awaiting_payment';
     }).length;
 
-    final bool hasAnyUnread = (strangerMeetUnreadCount + partyPlanUnreadCount + groupPartyAwaitingCount + otherUnreadCount) > 0;
+    final totalUnreadCount = strangerMeetUnreadCount + partyPlanUnreadCount + groupPartyAwaitingCount + otherUnreadCount;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
-            _buildHeader(context, hasUnread: hasAnyUnread),
+            _buildHeader(context, totalUnreadCount: totalUnreadCount),
             TabBar(
               controller: _tabController,
               labelColor: LunaraTheme.electricViolet,
@@ -812,27 +830,49 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     );
   }
 
-  Widget _buildHeader(BuildContext context, {bool hasUnread = false}) {
+  Widget _buildHeader(BuildContext context, {int totalUnreadCount = 0}) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          if (!widget.isTab)
-            IconButton(
-              icon: Icon(
-                Icons.arrow_back,
-                color: Theme.of(context).colorScheme.onSurface,
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications_none_rounded, size: 24),
+                onPressed: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const NotificationCenterScreen()),
+                  );
+                  _loadFeed(showLoader: false);
+                },
               ),
-              onPressed: () => Navigator.pop(context),
-            )
-          else
-            const SizedBox(
-              width: 48,
-            ),
+              if (totalUnreadCount > 0)
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: [
+                        BoxShadow(color: Colors.red.withValues(alpha: 0.5), blurRadius: 4),
+                      ],
+                    ),
+                    child: Text(
+                      totalUnreadCount > 9 ? '9+' : '$totalUnreadCount',
+                      style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+            ],
+          ),
           Row(
             children: [
-              if (hasUnread)
+              if (totalUnreadCount > 0) ...[
                 AnimatedBuilder(
                   animation: _pulseAnimation,
                   builder: (context, child) {
@@ -840,11 +880,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                       width: 8,
                       height: 8,
                       decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(_pulseAnimation.value),
+                        color: Colors.red.withValues(alpha: _pulseAnimation.value),
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.red.withOpacity(_pulseAnimation.value * 0.5),
+                            color: Colors.red.withValues(alpha: _pulseAnimation.value * 0.6),
                             blurRadius: 6,
                           ),
                         ],
@@ -852,21 +892,194 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     );
                   },
                 ),
-              if (hasUnread) const SizedBox(width: 8),
+                const SizedBox(width: 8),
+              ],
               Text(
                 'LIVE FEED',
                 style: LunaraTheme.headingStyle.copyWith(
                   fontSize: 18,
-                  letterSpacing: 4,
+                  letterSpacing: 3,
+                  fontWeight: FontWeight.w900,
                   color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
             ],
           ),
           IconButton(
-            icon: const Icon(Icons.refresh, color: LunaraTheme.electricViolet),
-            onPressed: () => _loadFeed(showLoader: true),
-            tooltip: 'Refresh Feed',
+            icon: const Icon(Icons.search_rounded, size: 24),
+            onPressed: () {
+              _loadFeed(showLoader: true);
+            },
+            tooltip: 'Search & Refresh',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeaderRow(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 12.0, bottom: 8.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              color: Theme.of(context).colorScheme.onSurface,
+              letterSpacing: 0.5,
+            ),
+          ),
+          GestureDetector(
+            onTap: _markCurrentTabItemsAsRead,
+            child: Row(
+              children: const [
+                Icon(Icons.check_circle_outline_rounded, color: LunaraTheme.electricViolet, size: 16),
+                SizedBox(width: 4),
+                Text(
+                  'Mark all as read',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: LunaraTheme.electricViolet,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSubFilterPills(List<String> options, int selectedIndex, ValueChanged<int> onSelected) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Row(
+        children: options.asMap().entries.map((entry) {
+          final isSelected = selectedIndex == entry.key;
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: GestureDetector(
+              onTap: () => onSelected(entry.key),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? LunaraTheme.electricViolet
+                      : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isSelected
+                        ? LunaraTheme.electricViolet
+                        : const Color(0xFFE2E8F0),
+                    width: 1,
+                  ),
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                            color: LunaraTheme.electricViolet.withValues(alpha: 0.25),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Text(
+                  entry.value,
+                  style: TextStyle(
+                    color: isSelected ? Colors.white : const Color(0xFF475569),
+                    fontSize: 11.5,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildWhyThisIsBetterBanner() {
+    return Container(
+      margin: const EdgeInsets.only(top: 20, bottom: 20),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F9FE),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.15)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x06000000),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Why this is better?',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF0F172A),
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildWhyItem(Icons.bolt_rounded, 'Smart & Instant', 'Real-time updates so you never miss important actions.', const Color(0xFF7F00FF)),
+                const SizedBox(width: 16),
+                _buildWhyItem(Icons.track_changes_rounded, 'Action Oriented', 'Clear actions right in the notification card.', const Color(0xFFE100FF)),
+                const SizedBox(width: 16),
+                _buildWhyItem(Icons.layers_rounded, 'Organized', 'Filter by type to see what matters most to you.', const Color(0xFF10B981)),
+                const SizedBox(width: 16),
+                _buildWhyItem(Icons.devices_rounded, 'Context Aware', 'Every notification shows the full context.', const Color(0xFF0284C7)),
+                const SizedBox(width: 16),
+                _buildWhyItem(Icons.shield_outlined, 'Reliable & Secure', 'Only relevant notifications, no spam.', const Color(0xFFF59E0B)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWhyItem(IconData icon, String title, String subtitle, Color color) {
+    return SizedBox(
+      width: 110,
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: color, size: 22),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 9.5, color: Color(0xFF64748B), height: 1.2),
           ),
         ],
       ),
@@ -879,58 +1092,62 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final reqType = item['requestType'];
       final id = item['id']?.toString() ?? '';
       if (_clearedFeedItemIds.contains(id)) return false;
-      return type == 'table_plan' ||
+
+      final isMatch = type == 'table_plan' ||
           ((type == 'incoming_request' || type == 'my_request') &&
               (reqType == 'table_plan' || reqType == 'stranger_meet' || reqType == 'stranger_meet_join'));
+      if (!isMatch) return false;
+
+      // Apply sub-filter: 0: All, 1: Requests, 2: Bookings, 3: Chats, 4: Activity
+      if (_subFilterIndexTab0 == 1) {
+        return type == 'incoming_request' || type == 'my_request';
+      } else if (_subFilterIndexTab0 == 2) {
+        final status = item['status']?.toString().toLowerCase() ?? '';
+        return status == 'accepted' || status == 'paid' || status == 'confirmed';
+      } else if (_subFilterIndexTab0 == 3) {
+        final status = item['status']?.toString().toLowerCase() ?? '';
+        return status == 'paid' || status == 'confirmed';
+      } else if (_subFilterIndexTab0 == 4) {
+        return type == 'table_plan';
+      }
+      return true;
     }).toList();
 
     return RefreshIndicator(
       onRefresh: () => _loadFeed(showLoader: false),
-      child: strangerItems.isEmpty
-          ? _buildEmptyState('No Stranger Meets active right now.')
-          : Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 16.0, bottom: 8.0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
+        children: [
+          _buildSectionHeaderRow('Stranger Meets'),
+          _buildSubFilterPills(
+            ['All', 'Requests', 'Bookings', 'Chats', 'Activity'],
+            _subFilterIndexTab0,
+            (idx) => setState(() => _subFilterIndexTab0 = idx),
+          ),
+          Expanded(
+            child: strangerItems.isEmpty
+                ? _buildEmptyState('No Stranger Meets active right now.')
+                : ListView(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     children: [
-                      Text(
-                        'Stranger Meets',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).colorScheme.onSurface,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
+                      ...strangerItems.map((item) {
+                        if (item['type'] == 'incoming_request') {
+                          return _buildIncomingRequestCard(item);
+                        }
+                        if (item['type'] == 'my_request') {
+                          return _buildMyRequestCard(item);
+                        }
+                        return _buildPlanCard(item);
+                      }),
+                      _buildWhyThisIsBetterBanner(),
                     ],
                   ),
-                ),
-                Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    itemCount: strangerItems.length,
-                    itemBuilder: (context, index) {
-                      final item = strangerItems[index];
-                      if (item['type'] == 'incoming_request') {
-                        return _buildIncomingRequestCard(item);
-                      }
-                      if (item['type'] == 'my_request') {
-                        return _buildMyRequestCard(item);
-                      }
-                      return _buildPlanCard(item); // default fallback
-                    },
-                  ),
-                ),
-              ],
-            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildPartyPlanFeed() {
-    // Collect plan IDs that are already fully confirmed (both paid) so we
-    // can suppress the duplicate public-feed card for the same plan.
     final confirmedPlanIds = <String>{};
     for (final item in _feedItems) {
       if ((item['type'] == 'my_request' || item['type'] == 'incoming_request') &&
@@ -948,114 +1165,116 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final reqType = item['requestType'];
       final id = item['id']?.toString() ?? '';
       if (_clearedFeedItemIds.contains(id)) return false;
-      // Suppress the public plan card when it is already confirmed
       if (type == 'party_plan') {
         final planId = (item['planId'] ?? item['id'] ?? '').toString();
         if (confirmedPlanIds.contains(planId)) return false;
       }
-      return type == 'party_plan' ||
+      final isMatch = type == 'party_plan' ||
           ((type == 'incoming_request' || type == 'my_request') &&
               reqType == 'party_plan');
+      if (!isMatch) return false;
+
+      // Apply sub-filter: 0: All, 1: Requests, 2: Bookings, 3: Chats, 4: Activity
+      if (_subFilterIndexTab1 == 1) {
+        return type == 'incoming_request' || type == 'my_request';
+      } else if (_subFilterIndexTab1 == 2) {
+        final status = item['status']?.toString().toLowerCase() ?? '';
+        return status == 'accepted' || status == 'paid' || status == 'confirmed';
+      } else if (_subFilterIndexTab1 == 3) {
+        final status = item['status']?.toString().toLowerCase() ?? '';
+        return status == 'paid' || status == 'confirmed';
+      } else if (_subFilterIndexTab1 == 4) {
+        return type == 'party_plan';
+      }
+      return true;
     }).toList();
 
     return RefreshIndicator(
       onRefresh: () => _loadFeed(showLoader: false),
-      child: partyItems.isEmpty
-          ? _buildEmptyState('No Party Plans active right now.')
-          : Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 16.0, bottom: 8.0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
+        children: [
+          _buildSectionHeaderRow('Party Plans'),
+          _buildSubFilterPills(
+            ['All', 'Requests', 'Bookings', 'Chats', 'Activity'],
+            _subFilterIndexTab1,
+            (idx) => setState(() => _subFilterIndexTab1 = idx),
+          ),
+          Expanded(
+            child: partyItems.isEmpty
+                ? _buildEmptyState('No Party Plans active right now.')
+                : ListView(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     children: [
-                      Text(
-                        'Party Plans',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).colorScheme.onSurface,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
+                      ...partyItems.map((item) {
+                        if (item['type'] == 'party_plan') {
+                          return _buildPartyPlanCard(item);
+                        }
+                        if (item['type'] == 'incoming_request') {
+                          return _buildIncomingRequestCard(item);
+                        }
+                        if (item['type'] == 'my_request') {
+                          return _buildMyRequestCard(item);
+                        }
+                        return const SizedBox.shrink();
+                      }),
+                      _buildWhyThisIsBetterBanner(),
                     ],
                   ),
-                ),
-                Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    itemCount: partyItems.length,
-                    itemBuilder: (context, index) {
-                      final item = partyItems[index];
-                      if (item['type'] == 'party_plan') {
-                        return _buildPartyPlanCard(item);
-                      }
-                      if (item['type'] == 'incoming_request') {
-                        return _buildIncomingRequestCard(item);
-                      }
-                      if (item['type'] == 'my_request') {
-                        return _buildMyRequestCard(item);
-                      }
-                      return const SizedBox.shrink();
-                    },
-                  ),
-                ),
-              ],
-            ),
+          ),
+        ],
+      ),
     );
   }
 
   // ── Group Parties Feed ─────────────────────────────────────────────────────
 
   Widget _buildGroupPartiesFeed() {
+    final filteredBookings = _largePartyBookings.where((booking) {
+      if (_subFilterIndexTab2 == 0) return true;
+      final rawStatus = (booking['adminApprovalStatus'] ??
+              booking['admin_approval_status'] ??
+              booking['status'] ??
+              'pending')
+          .toString()
+          .toLowerCase();
+      if (_subFilterIndexTab2 == 1) return rawStatus == 'pending'; // Invites / Pending
+      if (_subFilterIndexTab2 == 2) return rawStatus == 'approved' || rawStatus == 'payment_sent'; // Joined
+      if (_subFilterIndexTab2 == 3) return rawStatus == 'paid' || rawStatus == 'confirmed'; // Bookings
+      return true;
+    }).toList();
+
     return RefreshIndicator(
       onRefresh: () => _loadGroupPartyBookings(),
-      child: _isLoadingGroupParties && _largePartyBookings.isEmpty
-          ? const Center(child: CircularProgressIndicator())
-          : _largePartyBookings.isEmpty
-              ? _buildEmptyState(
-                  'No group party requests yet.\nSubmit one from the Plan Hub!',
-                  icon: Icons.groups_rounded,
-                )
-              : Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 16.0, bottom: 8.0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
+        children: [
+          _buildSectionHeaderRow('Group Parties'),
+          _buildSubFilterPills(
+            ['All', 'Invites', 'Joined', 'Bookings', 'Activity'],
+            _subFilterIndexTab2,
+            (idx) => setState(() => _subFilterIndexTab2 = idx),
+          ),
+          Expanded(
+            child: _isLoadingGroupParties && _largePartyBookings.isEmpty
+                ? const Center(child: CircularProgressIndicator())
+                : filteredBookings.isEmpty
+                    ? _buildEmptyState(
+                        'No group party requests yet.\nSubmit one from the Plan Hub!',
+                        icon: Icons.groups_rounded,
+                      )
+                    : ListView(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                         children: [
-                          Text(
-                            'Group Parties',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Theme.of(context).colorScheme.onSurface,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.refresh_rounded, color: LunaraTheme.electricViolet, size: 20),
-                            onPressed: _loadGroupPartyBookings,
-                            tooltip: 'Refresh',
-                          ),
+                          ...filteredBookings.map((b) => _buildGroupPartyCard(b)),
+                          _buildWhyThisIsBetterBanner(),
                         ],
                       ),
-                    ),
-                    Expanded(
-                      child: ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                        itemCount: _largePartyBookings.length,
-                        itemBuilder: (context, index) =>
-                            _buildGroupPartyCard(_largePartyBookings[index]),
-                      ),
-                    ),
-                  ],
-                ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildGroupPartyCard(Map<String, dynamic> booking) {
-    final bookingId = (booking['id'] ?? booking['bookingId'] ?? booking['booking_id'] ?? '').toString();
     final venue = booking['venue'];
     final venueName = (venue is Map ? venue['name'] : null) ??
         booking['venueName']?.toString() ??
@@ -1078,7 +1297,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         .toString()
         .toLowerCase();
     final guests = (booking['numberOfGuests'] ?? booking['number_of_guests'] ?? '?').toString();
-    final subject = (booking['partySubject'] ?? booking['party_subject'] ?? '').toString();
+    final rawSubject = (booking['partySubject'] ?? booking['party_subject'] ?? '').toString();
+    final subject = _sanitizeDisplayText(rawSubject);
     final bookingDate = (booking['bookingDate'] ?? booking['booking_date'])?.toString();
     final startTime = (booking['startTime'] ?? booking['start_time'] ?? '').toString();
     final approvedAmount = booking['approvedAmount'] ??
@@ -1149,16 +1369,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
-      elevation: 3,
-      shadowColor: LunaraTheme.electricViolet.withOpacity(0.12),
+      elevation: 2,
+      shadowColor: const Color(0x06000000),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
         side: BorderSide(
           color: isAwaitingPayment
-              ? Colors.orange.withOpacity(0.5)
+              ? Colors.orange.withValues(alpha: 0.5)
               : isPaid
-                  ? Colors.green.withOpacity(0.4)
-                  : LunaraTheme.electricViolet.withOpacity(0.2),
+                  ? Colors.green.withValues(alpha: 0.4)
+                  : LunaraTheme.electricViolet.withValues(alpha: 0.2),
           width: 1.5,
         ),
       ),
@@ -1171,7 +1391,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             child: Container(
               height: 100,
               width: double.infinity,
-              color: LunaraTheme.electricViolet.withOpacity(0.12),
+              color: LunaraTheme.electricViolet.withValues(alpha: 0.12),
               child: venueImage != null && venueImage.isNotEmpty
                   ? Image.network(venueImage, fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => _groupPartyHeaderPlaceholder(venueName))
@@ -1190,9 +1410,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: LunaraTheme.electricViolet.withOpacity(0.1),
+                        color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: LunaraTheme.electricViolet.withOpacity(0.3)),
+                        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.3)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -1215,7 +1435,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     if (createdAt != null)
                       Text(
                         _formatTimeAgo(createdAt),
-                        style: TextStyle(fontSize: 11, color: Colors.grey[600], fontWeight: FontWeight.w500),
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontWeight: FontWeight.w500),
                       ),
                   ],
                 ),
@@ -1240,9 +1460,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                       Expanded(
                         child: Text(
                           cleanLocation.toUpperCase(),
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 11,
-                            color: Colors.grey[700],
+                            color: Color(0xFF64748B),
                             fontWeight: FontWeight.w600,
                             letterSpacing: 0.4,
                           ),
@@ -1278,9 +1498,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                   decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.12),
+                    color: statusColor.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: statusColor.withOpacity(0.4)),
+                    border: Border.all(color: statusColor.withValues(alpha: 0.4)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -1420,61 +1640,48 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   Widget _buildNotificationsFeed() {
+    final filteredNotifications = _notifications.where((n) {
+      if (_subFilterIndexTab3 == 0) return true;
+      final category = (n['category'] ?? n['type'] ?? '').toString().toLowerCase();
+      if (_subFilterIndexTab3 == 1) return category.contains('system');
+      if (_subFilterIndexTab3 == 2) return category.contains('alert') || category.contains('reminder');
+      if (_subFilterIndexTab3 == 3) return category.contains('activity') || category.contains('event');
+      return true;
+    }).toList();
+
     return RefreshIndicator(
       onRefresh: () => _loadFeed(showLoader: false),
-      child: _notifications.isEmpty
-          ? _buildEmptyState('No recent activity.', icon: Icons.notifications_paused_rounded)
-          : Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 16.0, bottom: 8.0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(child: _buildSectionHeaderRow('Other Notifications')),
+              IconButton(
+                icon: const Icon(Icons.clear_all_rounded, color: LunaraTheme.electricViolet, size: 20),
+                onPressed: _clearAllNotifications,
+                tooltip: 'Clear All Notifications',
+              ),
+            ],
+          ),
+          _buildSubFilterPills(
+            ['All', 'System', 'Alerts', 'Activity'],
+            _subFilterIndexTab3,
+            (idx) => setState(() => _subFilterIndexTab3 = idx),
+          ),
+          Expanded(
+            child: filteredNotifications.isEmpty
+                ? _buildEmptyState('No recent activity.', icon: Icons.notifications_paused_rounded)
+                : ListView(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     children: [
-                      Text(
-                        'Recent Activity',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).colorScheme.onSurface,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                      TextButton.icon(
-                        onPressed: _clearAllNotifications,
-                        icon: const Icon(Icons.clear_all_rounded, color: LunaraTheme.electricViolet, size: 18),
-                        label: const Text(
-                          'CLEAR ALL',
-                          style: TextStyle(
-                            color: LunaraTheme.electricViolet,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 11,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          backgroundColor: LunaraTheme.electricViolet.withValues(alpha: 0.1),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                        ),
-                      ),
+                      ...filteredNotifications.map((n) => _buildNotificationCard(n)),
+                      _buildWhyThisIsBetterBanner(),
                     ],
                   ),
-                ),
-                Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    itemCount: _notifications.length,
-                    itemBuilder: (context, index) {
-                      final notif = _notifications[index];
-                      return _buildNotificationCard(notif);
-                    },
-                  ),
-                ),
-              ],
-            ),
+          ),
+        ],
+      ),
     );
   }
 

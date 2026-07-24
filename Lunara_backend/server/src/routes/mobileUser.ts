@@ -7,6 +7,7 @@ import mobileUserController from '../controllers/mobileUserController';
 import { User, UserMatch, Payment, PartyPlanRequest, PlanJoinRequest, Conversation, Message, Plan, PartyPlan, Venue, StrangersMeetRequest, StrangersMeetJoiner, SafetyCheck, Booking, GroupParty } from '../models';
 import { Op } from 'sequelize';
 import { optionalAuth } from '../middleware/auth';
+import { NotificationActionController } from '../controllers/NotificationActionController';
 
 const router = Router();
 
@@ -1011,6 +1012,21 @@ router.post('/notifications/clear-all', async (req, res) => {
         return res.status(500).json({ success: false, message: 'Failed to clear notifications' });
     }
 });
+
+/**
+ * POST /api/mobile/user/notifications/:id/action
+ */
+router.post('/notifications/:id/action', NotificationActionController.handleAction);
+
+/**
+ * POST /api/mobile/user/notifications/mark-all-read
+ */
+router.post('/notifications/mark-all-read', NotificationActionController.markAllAsRead);
+
+/**
+ * GET /api/mobile/user/notifications/unread-count
+ */
+router.get('/notifications/unread-count', NotificationActionController.getUnreadCount);
 
 /**
  * PATCH /api/mobile/user/requests/:id/read
