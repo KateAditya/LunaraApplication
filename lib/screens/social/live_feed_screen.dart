@@ -465,55 +465,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   void _markCurrentTabItemsAsRead() {
-    final index = _tabController.index;
-    if (index == 0) {
-      // Mark all Stranger Meet incoming and outgoing requests as read
-      final List<String> toMark = [];
-      setState(() {
-        for (var item in _feedItems) {
-          final rType = item['requestType'];
-          if (rType == 'table_plan' || rType == 'stranger_meet' || rType == 'stranger_meet_join') {
-            final reqId = item['id']?.toString() ?? '';
-            if (reqId.isNotEmpty && !_readRequestIds.contains(reqId)) {
-              _readRequestIds.add(reqId);
-              toMark.add(reqId);
-            }
-          }
-        }
-      });
-      for (final rId in toMark) {
-        ApiService.markRequestRead(rId);
-      }
-      if (toMark.isNotEmpty) {
-        widget.onCountChanged?.call();
-      }
-    } else if (index == 1) {
-      // Mark all Party Plan requests (incoming, outgoing, invites) as read
-      final List<String> toMark = [];
-      setState(() {
-        for (var item in _feedItems) {
-          if (item['requestType'] == 'party_plan') {
-            final reqId = item['id']?.toString() ?? '';
-            if (reqId.isNotEmpty && !_readRequestIds.contains(reqId)) {
-              _readRequestIds.add(reqId);
-              toMark.add(reqId);
-            }
-          }
-        }
-      });
-      for (final rId in toMark) {
-        ApiService.markRequestRead(rId);
-      }
-      if (toMark.isNotEmpty) {
-        widget.onCountChanged?.call();
-      }
-    } else if (index == 2) {
-      // Mark group parties as read / refresh badge count
-      widget.onCountChanged?.call();
-    } else if (index == 3) {
-      // Mark all other notifications as read (Tab 3 = "Other")
-      _markAllNotificationsAsRead();
-    }
+    widget.onCountChanged?.call();
   }
 
   Future<void> markAllNotificationsAsRead() async {
@@ -1124,17 +1076,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               (reqType == 'table_plan' || reqType == 'stranger_meet' || reqType == 'stranger_meet_join'));
       if (!isMatch) return false;
 
-      // Apply sub-filter: 0: All, 1: Requests, 2: Bookings, 3: Chats, 4: Activity
+      // Apply sub-filter: 0: All, 1: Pending, 2: Incoming, 3: My Requests, 4: Confirmed
       if (_subFilterIndexTab0 == 1) {
-        return type == 'incoming_request' || type == 'my_request';
+        final status = item['status']?.toString().toLowerCase() ?? '';
+        final pStatus = item['paymentStatus']?.toString().toLowerCase() ?? '';
+        return status == 'pending' || pStatus == 'pending' || pStatus == 'unpaid';
       } else if (_subFilterIndexTab0 == 2) {
+        return type == 'incoming_request';
+      } else if (_subFilterIndexTab0 == 3) {
+        return type == 'my_request';
+      } else if (_subFilterIndexTab0 == 4) {
         final status = item['status']?.toString().toLowerCase() ?? '';
         return status == 'accepted' || status == 'paid' || status == 'confirmed';
-      } else if (_subFilterIndexTab0 == 3) {
-        final status = item['status']?.toString().toLowerCase() ?? '';
-        return status == 'paid' || status == 'confirmed';
-      } else if (_subFilterIndexTab0 == 4) {
-        return type == 'table_plan';
       }
       return true;
     }).toList();
@@ -1145,7 +1098,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         children: [
           _buildSectionHeaderRow('Stranger Meets'),
           _buildSubFilterPills(
-            ['All', 'Requests', 'Bookings', 'Chats', 'Activity'],
+            ['All', 'Pending', 'Incoming', 'My Requests', 'Confirmed'],
             _subFilterIndexTab0,
             (idx) => setState(() => _subFilterIndexTab0 = idx),
           ),
@@ -1197,17 +1150,21 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               reqType == 'party_plan');
       if (!isMatch) return false;
 
-      // Apply sub-filter: 0: All, 1: Requests, 2: Bookings, 3: Chats, 4: Activity
+      // Apply sub-filter: 0: All, 1: Pending, 2: Public Feed, 3: My Invites, 4: My Requests, 5: Confirmed
       if (_subFilterIndexTab1 == 1) {
-        return type == 'incoming_request' || type == 'my_request';
+        final status = item['status']?.toString().toLowerCase() ?? '';
+        final pStatus = item['paymentStatus']?.toString().toLowerCase() ?? '';
+        final jStatus = item['joinerPaymentStatus']?.toString().toLowerCase() ?? '';
+        return status == 'pending' || pStatus == 'pending' || jStatus == 'unpaid' || status == 'host_paid';
       } else if (_subFilterIndexTab1 == 2) {
+        return type == 'party_plan';
+      } else if (_subFilterIndexTab1 == 3) {
+        return _isInvite(item);
+      } else if (_subFilterIndexTab1 == 4) {
+        return type == 'my_request';
+      } else if (_subFilterIndexTab1 == 5) {
         final status = item['status']?.toString().toLowerCase() ?? '';
         return status == 'accepted' || status == 'paid' || status == 'confirmed';
-      } else if (_subFilterIndexTab1 == 3) {
-        final status = item['status']?.toString().toLowerCase() ?? '';
-        return status == 'paid' || status == 'confirmed';
-      } else if (_subFilterIndexTab1 == 4) {
-        return type == 'party_plan';
       }
       return true;
     }).toList();
@@ -1218,7 +1175,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         children: [
           _buildSectionHeaderRow('Party Plans'),
           _buildSubFilterPills(
-            ['All', 'Requests', 'Bookings', 'Chats', 'Activity'],
+            ['All', 'Pending', 'Public Feed', 'My Invites', 'My Requests', 'Confirmed'],
             _subFilterIndexTab1,
             (idx) => setState(() => _subFilterIndexTab1 = idx),
           ),
@@ -1254,12 +1211,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final rawStatus = (booking['adminApprovalStatus'] ??
               booking['admin_approval_status'] ??
               booking['status'] ??
+              booking['bookingStatus'] ??
               'pending')
           .toString()
           .toLowerCase();
-      if (_subFilterIndexTab2 == 1) return rawStatus == 'pending'; // Invites / Pending
-      if (_subFilterIndexTab2 == 2) return rawStatus == 'approved' || rawStatus == 'payment_sent'; // Joined
-      if (_subFilterIndexTab2 == 3) return rawStatus == 'paid' || rawStatus == 'confirmed'; // Bookings
+      if (_subFilterIndexTab2 == 1) return rawStatus == 'pending' || rawStatus == 'unpaid' || rawStatus == 'submitted'; // Pending
+      if (_subFilterIndexTab2 == 2) return rawStatus == 'approved' || rawStatus == 'approved_awaiting_payment' || rawStatus == 'awaiting_payment' || rawStatus == 'payment_sent'; // Approved
+      if (_subFilterIndexTab2 == 3) return rawStatus == 'paid' || rawStatus == 'confirmed' || rawStatus == 'payment_done'; // Confirmed Bookings
       return true;
     }).toList();
 
@@ -1269,7 +1227,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         children: [
           _buildSectionHeaderRow('Group Parties'),
           _buildSubFilterPills(
-            ['All', 'Invites', 'Joined', 'Bookings', 'Activity'],
+            ['All', 'Pending', 'Approved', 'Confirmed Bookings'],
             _subFilterIndexTab2,
             (idx) => setState(() => _subFilterIndexTab2 = idx),
           ),
@@ -1383,7 +1341,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
 
     final bookingId = booking['id']?.toString() ?? booking['bookingId']?.toString() ?? '';
-    final isRead = _localReadNotificationIds.contains(bookingId) || (!isAwaitingPayment && !isPaid);
+    final isRead = _localReadNotificationIds.contains(bookingId);
 
     return Opacity(
       opacity: isRead ? 0.6 : 1.0,
@@ -2762,7 +2720,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final joinerPaid = req['joinerPaymentStatus']?.toString().toLowerCase() == 'paid' ||
                        req['joinerPaymentStatus']?.toString().toLowerCase() == 'confirmed';
 
-    final isRead = _readRequestIds.contains(reqId) || currentStatus != 'pending';
+    final isRead = _readRequestIds.contains(reqId);
 
     return Opacity(
       opacity: isRead ? 0.6 : 1.0,
@@ -3123,7 +3081,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         'pending';
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final isRead = _readRequestIds.contains(reqId) || currentStatus != 'pending';
+    final isRead = _readRequestIds.contains(reqId);
 
     return Opacity(
       opacity: isRead ? 0.6 : 1.0,

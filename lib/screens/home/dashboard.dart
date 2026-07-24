@@ -79,16 +79,8 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   /// disappears without waiting for a server round-trip.
   void _onLiveFeedRead() async {
     if (!mounted) return;
-    setState(() {
-      _liveFeedCount = 0;
-    });
-    _updateAppBadge(0 + _chatCount);
-    try {
-      _liveFeedKey.currentState?.markAllNotificationsAsRead();
-    } catch (e) {
-      debugPrint('Error marking live feed notifications read: $e');
-    }
-    // Background sync to reconcile chat count from server
+    // Refresh feed data when viewing
+    _liveFeedKey.currentState?.refreshFeed();
     _fetchBadges();
   }
 
