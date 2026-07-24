@@ -2056,7 +2056,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             if (type == 'invitation') {
               return _buildInvitationCard(msg);
             }
-            if (type == 'audio') {
+            if (type == 'audio' || type == 'voice') {
               return _buildAudioBubble(msg);
             }
             if (type == 'pay_request') {

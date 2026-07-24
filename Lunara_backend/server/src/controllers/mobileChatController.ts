@@ -63,7 +63,6 @@ export const getConversations = async (req: Request, res: Response) => {
                         where: { isPrimary: true },
                         attributes: ['id', 'filePath', 'userId'],
                         required: false,
-                        limit: 1,
                     }],
                 },
                 {
@@ -75,7 +74,6 @@ export const getConversations = async (req: Request, res: Response) => {
                         where: { isPrimary: true },
                         attributes: ['id', 'filePath', 'userId'],
                         required: false,
-                        limit: 1,
                     }],
                 },
             ],
@@ -140,7 +138,6 @@ export const getOrCreateConversation = async (req: Request, res: Response) => {
                 where: { isPrimary: true },
                 attributes: ['id', 'filePath', 'userId'],
                 required: false,
-                limit: 1,
             }],
         });
 
@@ -181,7 +178,7 @@ export const getMessages = async (req: Request, res: Response) => {
 
         const where: any = {
             conversationId: id,
-            deletedAt: null,
+            deletedAt: null as any,
         };
         if (before) where.createdAt = { [Op.lt]: new Date(before) };
 
@@ -196,7 +193,6 @@ export const getMessages = async (req: Request, res: Response) => {
                     where: { isPrimary: true },
                     attributes: ['id', 'filePath', 'userId'],
                     required: false,
-                    limit: 1,
                 }],
             }],
             order: [['createdAt', 'DESC']],
@@ -564,7 +560,7 @@ export const searchMessages = async (req: Request, res: Response) => {
                     model: UserPhoto, as: 'photos',
                     where: { isPrimary: true },
                     attributes: ['id', 'filePath', 'userId'],
-                    required: false, limit: 1,
+                    required: false,
                 }],
             }],
             order: [['createdAt', 'DESC']],
