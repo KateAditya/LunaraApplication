@@ -1583,22 +1583,28 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             color: Colors.green.withValues(alpha: 0.4),
                           ),
                         ),
-                        child: const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.check_circle_rounded, color: Colors.green),
-                            SizedBox(width: 12),
-                            Text(
-                              'REQUEST SENT — AWAITING HOST APPROVAL',
-                              style: TextStyle(
-                                fontFamily: 'AllroundGothic',
-                                color: Colors.green,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                                letterSpacing: 0.5,
-                              ),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.check_circle_rounded, color: Colors.green),
+                                const SizedBox(width: 12),
+                                Text(
+                                  'REQUEST SENT — AWAITING HOST APPROVAL',
+                                  style: const TextStyle(
+                                    fontFamily: 'AllroundGothic',
+                                    color: Colors.green,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
                       )
                     : Container(

@@ -248,8 +248,9 @@ class _SubscriptionLimitSheetState extends State<_SubscriptionLimitSheet>
                 ),
               ),
 
-              SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
                 child: Column(
                   children: [
                     // Animated Emoji Badge
@@ -404,6 +405,7 @@ class _SubscriptionLimitSheetState extends State<_SubscriptionLimitSheet>
                   ],
                 ),
               ),
+            ),
             ],
           ),
         ),
