@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_app_badger/flutter_app_badger.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme.dart';
 import '../profile/profile_hub_screen.dart';
 import '../discovery/discovery_screen.dart';
@@ -9,12 +11,12 @@ import '../social/live_feed_screen.dart';
 import '../social/messages_screen.dart';
 import '../social/plan_hub_screen.dart';
 import '../../services/app_tour_service.dart';
-
+import '../../services/push_notification_service.dart';
 import '../../models/user.dart';
 import '../../services/api_service.dart';
 import '../../widgets/lunara_profile_image.dart';
-
 import '../social/match_success_dialog.dart';
+import '../onboarding/permissions_screen.dart' show NotificationPermissionRequest;
 
 class Dashboard extends StatefulWidget {
   const Dashboard({super.key});
@@ -65,6 +67,76 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         });
       }
     }
+    // Soft-ask for notifications after login if not already granted
+    _maybeAskNotificationPermission();
+  }
+
+  /// Shows a friendly in-app notification permission prompt if the user hasn't
+  /// granted notifications yet. Only shown once per session unless denied permanently.
+  Future<void> _maybeAskNotificationPermission() async {
+    if (!mounted) return;
+    // Don't bother on web / unsupported platforms
+    if (kIsWeb) return;
+
+    // Wait a beat so the screen fully renders first
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted) return;
+
+    // Check current status
+    final status = await Permission.notification.status;
+    if (status.isGranted) return; // Already have permission
+
+    // Check if user permanently dismissed this session's soft ask
+    final prefs = await SharedPreferences.getInstance();
+    final dismissedAt = prefs.getInt('notif_soft_ask_dismissed_at') ?? 0;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    // Re-ask at most once per 24 hours
+    if (now - dismissedAt < const Duration(hours: 24).inMilliseconds) return;
+
+    if (!mounted) return;
+
+    if (status.isPermanentlyDenied) {
+      // Show settings redirect prompt instead
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => NotificationPermissionRequest(
+          onAllow: () {
+            Navigator.pop(context);
+            openAppSettings();
+          },
+          onDismiss: () async {
+            Navigator.pop(context);
+            final p = await SharedPreferences.getInstance();
+            await p.setInt('notif_soft_ask_dismissed_at', DateTime.now().millisecondsSinceEpoch);
+          },
+        ),
+      );
+      return;
+    }
+
+    // Show the soft ask bottom sheet
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => NotificationPermissionRequest(
+        onAllow: () async {
+          Navigator.pop(context);
+          final result = await Permission.notification.request();
+          if (result.isGranted) {
+            // Register FCM token now that we have permission
+            await PushNotificationService.registerTokenAfterLogin();
+          }
+        },
+        onDismiss: () async {
+          Navigator.pop(context);
+          final p = await SharedPreferences.getInstance();
+          await p.setInt('notif_soft_ask_dismissed_at', DateTime.now().millisecondsSinceEpoch);
+        },
+      ),
+    );
   }
 
   /// Called by the LiveFeedScreen whenever the user views/marks notifications.
