@@ -1067,14 +1067,20 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     final scoredList = filteredList.map((u) {
       final userId = u['id']?.toString() ?? '';
 
-      // Count of active plans they created
-      final planCount = _partyPlans.where((p) {
-        final creatorId = (p['userId'] ?? p['user']?['id'])?.toString();
-        return creatorId == userId;
-      }).length;
+      // Dynamic count of active plans created by the user (from API or local party plans filter)
+      final rawPlansCount = u['plansCount'] ?? u['plans_count'] ?? u['totalPlans'];
+      final planCount = rawPlansCount != null
+          ? (int.tryParse(rawPlansCount.toString()) ?? 0)
+          : _partyPlans.where((p) {
+              final creatorId = (p['userId'] ?? p['user']?['id'])?.toString();
+              return creatorId == userId;
+            }).length;
 
-      // Deterministic super likes count
-      final superLikes = (userId.hashCode.abs() % 41) + 10;
+      // Real dynamic super likes count received by the user from server API
+      final rawSuperLikes = u['superLikesCount'] ?? u['super_likes_count'] ?? u['superLikes'] ?? u['super_likes'];
+      final superLikes = rawSuperLikes != null
+          ? (int.tryParse(rawSuperLikes.toString()) ?? 0)
+          : 0;
 
       // Higher budget adds to their plan score
       final preferences = u['preferences'] ?? {};
