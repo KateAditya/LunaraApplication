@@ -249,6 +249,24 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('typing_started', (data: { conversationId: string; recipientId: string; senderId?: string }) => {
+        if (data?.recipientId) {
+            io.to(`user_${data.recipientId}`).emit('typing_started', {
+                conversationId: data.conversationId,
+                senderId: data.senderId || (socket as any).userId,
+            });
+        }
+    });
+
+    socket.on('typing_stopped', (data: { conversationId: string; recipientId: string; senderId?: string }) => {
+        if (data?.recipientId) {
+            io.to(`user_${data.recipientId}`).emit('typing_stopped', {
+                conversationId: data.conversationId,
+                senderId: data.senderId || (socket as any).userId,
+            });
+        }
+    });
+
     socket.on('disconnect', async () => {
         logger.info(`Client disconnected: ${socket.id}`);
         const userId = (socket as any).userId;
@@ -262,11 +280,6 @@ io.on('connection', (socket) => {
             }
         }
     });
-
-    // TODO: Add socket event handlers for real-time features
-    // - venue availability updates
-    // - booking confirmations
-    // - admin notifications
 });
 
 const PORT = process.env.PORT || 5000;

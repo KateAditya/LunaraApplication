@@ -248,16 +248,45 @@ export const sendMessage = async (req: Request, res: Response) => {
         const { id } = req.params;
         const {
             senderId,
+            clientMessageId,
             type = MessageType.TEXT,
             content,
             mediaUrl,
             mediaMimeType,
+            duration,
+            fileSize,
+            waveformData,
+            replyToMessageId,
             invitationRef,
             invitationRefType,
             invitationTime,
         } = req.body;
 
         if (!senderId) return res.status(400).json({ success: false, message: 'senderId is required' });
+
+        // ── Idempotency check: return existing message if clientMessageId already processed
+        if (clientMessageId) {
+            const existing = await Message.findOne({
+                where: { conversationId: id, clientMessageId },
+                include: [{
+                    model: User, as: 'sender',
+                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'],
+                    include: [{
+                        model: UserPhoto, as: 'photos',
+                        where: { isPrimary: true },
+                        attributes: ['id', 'filePath', 'userId'],
+                        required: false, limit: 1,
+                    }],
+                }],
+            });
+            if (existing) {
+                return res.status(200).json({
+                    success: true,
+                    message: 'Message already sent (idempotent)',
+                    data: formatMessage(existing),
+                });
+            }
+        }
 
         const conv = await Conversation.findByPk(id);
         if (!conv) return res.status(404).json({ success: false, message: 'Conversation not found' });
@@ -280,8 +309,8 @@ export const sendMessage = async (req: Request, res: Response) => {
         if ([MessageType.TEXT, MessageType.ICEBREAKER].includes(type) && !content) {
             return res.status(400).json({ success: false, message: 'content is required for text/icebreaker messages' });
         }
-        if ([MessageType.IMAGE, MessageType.STICKER].includes(type) && !mediaUrl) {
-            return res.status(400).json({ success: false, message: 'mediaUrl is required for image/sticker messages' });
+        if ([MessageType.IMAGE, MessageType.STICKER, MessageType.VOICE].includes(type) && !mediaUrl) {
+            return res.status(400).json({ success: false, message: 'mediaUrl is required for image/sticker/voice messages' });
         }
         if (type === MessageType.INVITATION && (!invitationRef || !invitationTime)) {
             return res.status(400).json({ success: false, message: 'invitationRef and invitationTime are required for invitation messages' });
@@ -298,10 +327,15 @@ export const sendMessage = async (req: Request, res: Response) => {
         const message = await Message.create({
             conversationId: id,
             senderId,
+            clientMessageId,
             type,
             content,
             mediaUrl,
             mediaMimeType,
+            duration: duration ? parseInt(duration) : undefined,
+            fileSize: fileSize ? parseInt(fileSize) : undefined,
+            waveformData: waveformData ? String(waveformData) : undefined,
+            replyToMessageId,
             invitationRef,
             invitationRefType,
             invitationTime,
@@ -350,6 +384,8 @@ export const sendMessage = async (req: Request, res: Response) => {
                         ? '📷 Sent you a photo'
                         : type === MessageType.STICKER
                         ? '🎨 Sent you a sticker'
+                        : type === MessageType.VOICE
+                        ? '🎙️ Sent you a voice message'
                         : type === MessageType.INVITATION
                         ? '🗓️ Sent you an invitation'
                         : (content ?? 'New message');
@@ -498,17 +534,70 @@ export const deleteMessage = async (req: Request, res: Response) => {
     }
 };
 
+// ─── GET /conversations/:id/search — Search messages in conversation ─────────
+export const searchMessages = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const userId = req.query.userId as string;
+        const query = (req.query.query as string || '').trim();
+
+        if (!userId) return res.status(400).json({ success: false, message: 'userId is required' });
+        if (!query) return res.json({ success: true, count: 0, data: [] });
+
+        const conv = await Conversation.findByPk(id);
+        if (!conv) return res.status(404).json({ success: false, message: 'Conversation not found' });
+
+        const messages = await Message.findAll({
+            where: {
+                conversationId: id,
+                deletedAt: null as any,
+                [Op.or]: [
+                    { content: { [Op.iLike]: `%${query}%` } },
+                    { type: { [Op.iLike]: `%${query}%` } },
+                    { invitationTime: { [Op.iLike]: `%${query}%` } },
+                ],
+            },
+            include: [{
+                model: User, as: 'sender',
+                attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'],
+                include: [{
+                    model: UserPhoto, as: 'photos',
+                    where: { isPrimary: true },
+                    attributes: ['id', 'filePath', 'userId'],
+                    required: false, limit: 1,
+                }],
+            }],
+            order: [['createdAt', 'DESC']],
+            limit: 50,
+        });
+
+        return res.json({
+            success: true,
+            count: messages.length,
+            data: messages.map(m => formatMessage(m)),
+        });
+    } catch (err: any) {
+        logger.error('searchMessages:', err);
+        return res.status(500).json({ success: false, message: err.message });
+    }
+};
+
 // ─── Helper: format a message for the response ────────────────────────────────
 function formatMessage(m: Message) {
     return {
         id:               m.id,
         conversationId:   m.conversationId,
         senderId:         m.senderId,
+        clientMessageId:  m.clientMessageId ?? null,
         sender:           (m as any).sender ? formatUserBrief((m as any).sender) : undefined,
         type:             m.type,
         content:          m.deletedAt ? '[Message deleted]' : (m.content ?? null),
         mediaUrl:         m.deletedAt ? null : (m.mediaUrl ?? null),
         mediaMimeType:    m.mediaMimeType ?? null,
+        duration:         m.duration ?? null,
+        fileSize:         m.fileSize ?? null,
+        waveformData:     m.waveformData ?? null,
+        replyToMessageId: m.replyToMessageId ?? null,
         // Invitation fields
         invitationRef:    m.invitationRef ?? null,
         invitationRefType:m.invitationRefType ?? null,
@@ -531,4 +620,5 @@ export default {
     getIcebreakers,
     markConversationRead,
     deleteMessage,
+    searchMessages,
 };

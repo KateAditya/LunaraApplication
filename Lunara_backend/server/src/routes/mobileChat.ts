@@ -52,11 +52,22 @@ router.get(
 );
 
 /**
+ * GET /api/mobile/chat/conversations/:id/search?userId=<uuid>&query=<search>
+ * Search text/invitation messages in a conversation.
+ */
+router.get(
+    '/conversations/:id/search',
+    [param('id').isUUID(), validate],
+    ctrl.searchMessages
+);
+
+/**
  * POST /api/mobile/chat/conversations/:id/messages
- * Send a message. Supports: text | image | sticker | invitation | icebreaker
+ * Send a message. Supports: text | image | sticker | invitation | icebreaker | voice
  *
  * For text/icebreaker:  { senderId, type, content }
  * For image/sticker:    { senderId, type, mediaUrl, mediaMimeType? }
+ * For voice:            { senderId, type: 'voice', mediaUrl, duration?, fileSize?, waveformData? }
  * For invitation:       { senderId, type: 'invitation', invitationRef, invitationRefType, invitationTime }
  */
 router.post(
@@ -66,8 +77,8 @@ router.post(
         body('senderId').notEmpty().withMessage('senderId is required'),
         body('type')
             .optional()
-            .isIn(['text', 'image', 'sticker', 'invitation', 'icebreaker'])
-            .withMessage('type must be text, image, sticker, invitation, or icebreaker'),
+            .isIn(['text', 'image', 'sticker', 'invitation', 'icebreaker', 'voice'])
+            .withMessage('type must be text, image, sticker, invitation, icebreaker, or voice'),
         validate,
     ],
     ctrl.sendMessage

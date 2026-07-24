@@ -7,6 +7,7 @@ export enum MessageType {
     STICKER    = 'sticker',
     INVITATION = 'invitation',  // Plan/Booking invitation card
     ICEBREAKER = 'icebreaker',  // Pre-defined starter message
+    VOICE      = 'voice',       // Voice audio note message
 }
 
 export enum MessageStatus {
@@ -25,10 +26,15 @@ export interface MessageAttributes {
     id: string;
     conversationId: string;
     senderId: string;
+    clientMessageId?: string;     // Idempotency key from client
     type: MessageType;
     content?: string;             // Text content / icebreaker text
-    mediaUrl?: string;            // For image / sticker
-    mediaMimeType?: string;       // e.g. 'image/jpeg', 'image/gif'
+    mediaUrl?: string;            // For image / sticker / voice audio URL
+    mediaMimeType?: string;       // e.g. 'image/jpeg', 'audio/mp4', 'audio/aac'
+    duration?: number;            // Voice recording duration in seconds
+    fileSize?: number;            // Media file size in bytes
+    waveformData?: string;        // Visual audio waveform amplitude JSON array
+    replyToMessageId?: string;    // Parent message ID for reply thread
     // Invitation-specific fields
     invitationRef?: string;       // planId or bookingId
     invitationRefType?: string;   // 'plan' | 'booking'
@@ -46,9 +52,14 @@ export interface MessageCreationAttributes
     extends Optional<
         MessageAttributes,
         | 'id'
+        | 'clientMessageId'
         | 'content'
         | 'mediaUrl'
         | 'mediaMimeType'
+        | 'duration'
+        | 'fileSize'
+        | 'waveformData'
+        | 'replyToMessageId'
         | 'invitationRef'
         | 'invitationRefType'
         | 'invitationTime'
@@ -66,10 +77,15 @@ class Message
     public id!: string;
     public conversationId!: string;
     public senderId!: string;
+    public clientMessageId?: string;
     public type!: MessageType;
     public content?: string;
     public mediaUrl?: string;
     public mediaMimeType?: string;
+    public duration?: number;
+    public fileSize?: number;
+    public waveformData?: string;
+    public replyToMessageId?: string;
     public invitationRef?: string;
     public invitationRefType?: string;
     public invitationTime?: string;
@@ -90,6 +106,7 @@ class Message
             case MessageType.TEXT:       return this.content?.slice(0, 80) ?? '';
             case MessageType.IMAGE:      return '📷 Photo';
             case MessageType.STICKER:    return '😄 Sticker';
+            case MessageType.VOICE:      return this.duration ? `🎙 Voice message (${Math.floor(this.duration / 60)}:${(this.duration % 60).toString().padStart(2, '0')})` : '🎙 Voice message';
             case MessageType.INVITATION: return `📅 Invitation · ${this.invitationTime ?? ''}`;
             case MessageType.ICEBREAKER: return `⚡ ${this.content?.slice(0, 60) ?? ''}`;
             default:                     return '';
@@ -116,6 +133,11 @@ Message.init(
             field: 'sender_id',
             references: { model: 'users', key: 'id' },
         },
+        clientMessageId: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'client_message_id',
+        },
         type: {
             type: DataTypes.ENUM(...Object.values(MessageType)),
             allowNull: false,
@@ -134,6 +156,26 @@ Message.init(
             type: DataTypes.STRING(50),
             allowNull: true,
             field: 'media_mime_type',
+        },
+        duration: {
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            field: 'duration',
+        },
+        fileSize: {
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            field: 'file_size',
+        },
+        waveformData: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+            field: 'waveform_data',
+        },
+        replyToMessageId: {
+            type: DataTypes.UUID,
+            allowNull: true,
+            field: 'reply_to_message_id',
         },
         invitationRef: {
             type: DataTypes.UUID,
@@ -179,6 +221,7 @@ Message.init(
         indexes: [
             { fields: ['conversation_id'] },
             { fields: ['sender_id'] },
+            { fields: ['client_message_id'] },
             { fields: ['created_at'] },
             { fields: ['type'] },
         ],

@@ -65,13 +65,18 @@ class PushNotificationService {
       _sendTokenToBackend(newToken);
     });
 
-    // 6. Foreground message handler — show a local notification
+    // 6. Foreground message handler — show a local notification & top banner
     FirebaseMessaging.onMessage.listen(_onForegroundMessage);
 
-    // 7. Notification tap handler (app in background, not terminated)
+    // 7. Register global real-time socket listeners for in-app floating banner
+    ApiService.addSocketListener('notification_created', _onSocketNotificationReceived);
+    ApiService.addSocketListener('notification_received', _onSocketNotificationReceived);
+    ApiService.addSocketListener('push_notification', _onSocketNotificationReceived);
+
+    // 8. Notification tap handler (app in background, not terminated)
     FirebaseMessaging.onMessageOpenedApp.listen(_onNotificationTap);
 
-    // 8. Handle the case where app was opened from a terminated state
+    // 9. Handle the case where app was opened from a terminated state
     final initialMessage = await _messaging.getInitialMessage();
     if (initialMessage != null) {
       // Small delay to let the navigator settle
@@ -174,26 +179,50 @@ class PushNotificationService {
 
   // ── Foreground Message ──────────────────────────────────────────────────────
 
+  static void _onSocketNotificationReceived(dynamic data) {
+    if (data == null) return;
+    final Map<String, dynamic> notifMap = data is Map ? Map<String, dynamic>.from(data) : {};
+
+    final title = (notifMap['title'] ?? notifMap['heading'] ?? notifMap['name'] ?? 'Notification').toString();
+    final body = (notifMap['body'] ?? notifMap['message'] ?? '').toString();
+    final senderData = notifMap['sender'] is Map ? Map<String, dynamic>.from(notifMap['sender']) : null;
+    final payloadData = notifMap['data'] is Map ? Map<String, dynamic>.from(notifMap['data']) : notifMap;
+
+    if (title.isEmpty && body.isEmpty) return;
+
+    debugPrint('🔔 Socket notification received in-app: $title - $body');
+
+    TopNotificationBanner.show(
+      title: title,
+      body: body,
+      data: payloadData,
+      senderData: senderData,
+    );
+  }
+
   static void _onForegroundMessage(RemoteMessage message) {
-    debugPrint('🔔 Foreground message: ${message.notification?.title}');
+    debugPrint('🔔 Foreground FCM message received: ${message.messageId}');
 
     final notification = message.notification;
-    if (notification == null) return;
+    final title = (notification?.title ?? message.data['title'] ?? message.data['heading'] ?? 'Notification').toString();
+    final body = (notification?.body ?? message.data['body'] ?? message.data['message'] ?? '').toString();
 
-    // Encode the data payload into the notification so we can read it on tap
+    if (title.isEmpty && body.isEmpty) return;
+
     final payload = jsonEncode(message.data);
 
     Color? notificationColor;
-    if (notification.title?.toLowerCase().contains('super') == true) {
-      notificationColor = const Color(0xFFFFB800); // Gold/Amber
-    } else if (notification.title?.toLowerCase().contains('like') == true) {
-      notificationColor = const Color(0xFFE100FF); // Hot Pink
+    final lowerTitle = title.toLowerCase();
+    if (lowerTitle.contains('super')) {
+      notificationColor = const Color(0xFFFFB800);
+    } else if (lowerTitle.contains('like') || lowerTitle.contains('interest')) {
+      notificationColor = const Color(0xFFE100FF);
     }
 
     _localNotifications.show(
-      id: notification.hashCode,
-      title: notification.title,
-      body: notification.body,
+      id: message.messageId?.hashCode ?? DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      title: title,
+      body: body,
       notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
           _highImportanceChannel.id,
@@ -215,8 +244,8 @@ class PushNotificationService {
 
     // Show WhatsApp-style top floating banner notification
     TopNotificationBanner.show(
-      title: notification.title ?? 'Notification',
-      body: notification.body ?? '',
+      title: title,
+      body: body,
       data: message.data,
     );
   }

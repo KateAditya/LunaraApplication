@@ -932,21 +932,42 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               letterSpacing: 0.5,
             ),
           ),
-          GestureDetector(
-            onTap: _markCurrentTabItemsAsRead,
-            child: Row(
-              children: const [
-                Icon(Icons.check_circle_outline_rounded, color: LunaraTheme.electricViolet, size: 16),
-                SizedBox(width: 4),
-                Text(
-                  'Mark all as read',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: LunaraTheme.electricViolet,
-                  ),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: _markCurrentTabItemsAsRead,
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF3E8FF),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.25)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: LunaraTheme.electricViolet.withValues(alpha: 0.08),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
-              ],
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Icon(Icons.done_all_rounded, color: LunaraTheme.electricViolet, size: 15),
+                    SizedBox(width: 5),
+                    Text(
+                      'Mark all as read',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800,
+                        color: LunaraTheme.electricViolet,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ],
@@ -1627,6 +1648,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     );
   }
 
+
+
   Widget _infoChip(IconData icon, String label) {
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -1653,17 +1676,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       onRefresh: () => _loadFeed(showLoader: false),
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(child: _buildSectionHeaderRow('Other Notifications')),
-              IconButton(
-                icon: const Icon(Icons.clear_all_rounded, color: LunaraTheme.electricViolet, size: 20),
-                onPressed: _clearAllNotifications,
-                tooltip: 'Clear All Notifications',
-              ),
-            ],
-          ),
+          _buildSectionHeaderRow('Other Notifications'),
           _buildSubFilterPills(
             ['All', 'System', 'Alerts', 'Activity'],
             _subFilterIndexTab3,
@@ -2618,16 +2631,30 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
   }
 
-  // Incoming Request = Host seeing someone asking to join
   Widget _buildIncomingRequestCard(Map<String, dynamic> req) {
-    final requester = req['requester'] ?? {};
+    final requester = req['requester'] ?? req['user'] ?? {};
     final reqId = req['id']?.toString() ?? '';
     final timeAgo = _formatTimeAgo(req['createdAt']);
     final currentStatus =
         _optimisticStates[reqId] ??
         req['status']?.toString().toLowerCase() ??
         'pending';
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final requesterFirstName = (requester['firstName'] ?? requester['name'] ?? 'User').toString();
+    final requesterLastName = (requester['lastName'] ?? '').toString();
+    final requesterFullName = '$requesterFirstName $requesterLastName'.trim();
+    final cleanRequesterName = requesterFullName.isNotEmpty ? requesterFullName : 'Guest User';
+
+    final plan = req['plan'] ?? req['planDetails'] ?? {};
+    final venue = plan['venue'] ?? {};
+    final venueName = (venue is Map ? venue['name'] : null) ?? plan['venueName'] ?? 'Venue';
+    final requestType = req['requestType']?.toString() ?? 'table_plan';
+    final requestTypeLabel = requestType == 'party_plan'
+        ? 'Party Plan Request'
+        : (requestType == 'stranger_meet' || requestType == 'stranger_meet_join'
+            ? 'Stranger Meet Request'
+            : 'Join Request');
+
     final hostPaid = req['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'paid' ||
                      req['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'refunded' ||
                      req['planDetails']?['hostPaymentStatus']?.toString().toLowerCase() == 'paid' ||
@@ -2640,29 +2667,28 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1E1428) : Colors.white,
+          color: Colors.white,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isDark 
-                ? LunaraTheme.hotPink.withValues(alpha: 0.4) 
-                : LunaraTheme.hotPink.withValues(alpha: 0.3),
-            width: 1.5,
+            color: const Color(0xFFF1F5F9),
+            width: 1.2,
           ),
-          boxShadow: [
+          boxShadow: const [
             BoxShadow(
-              color: LunaraTheme.hotPink.withValues(alpha: isDark ? 0.15 : 0.05),
-              blurRadius: 16,
-              offset: const Offset(0, 8),
+              color: Color(0x06000000),
+              blurRadius: 12,
+              offset: Offset(0, 4),
             ),
           ],
         ),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
                 LunaraProfileImage(
-                  userData: requester,
-                  radius: 20,
+                  userData: requester is Map ? Map<String, dynamic>.from(requester) : {},
+                  radius: 22,
                   isInteractive: true,
                 ),
                 const SizedBox(width: 12),
@@ -2685,27 +2711,29 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                           }
                         },
                         child: Text(
-                          '${requester['firstName'] ?? 'User'} wants to join',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
+                          '$cleanRequesterName requested to join',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
                             fontSize: 14,
-                            color: isDark ? Colors.white : Colors.black87,
+                            color: Color(0xFF0F172A),
                           ),
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 3),
                       Text(
-                        'Your ${req['requestType'] == 'table_plan' ? 'Table Plan' : (req['requestType'] == 'stranger_meet' ? 'Stranger Meet' : 'Party Plan')}',
-                        style: TextStyle(
-                          color: isDark ? Colors.white70 : Colors.black87,
+                        '$requestTypeLabel • $venueName',
+                        style: const TextStyle(
+                          color: LunaraTheme.electricViolet,
+                          fontWeight: FontWeight.bold,
                           fontSize: 12,
                         ),
                       ),
+                      const SizedBox(height: 2),
                       Text(
                         timeAgo,
-                        style: TextStyle(
-                          color: isDark ? Colors.white38 : Colors.black54,
-                          fontSize: 10,
+                        style: const TextStyle(
+                          color: Color(0xFF94A3B8),
+                          fontSize: 10.5,
                         ),
                       ),
                     ],
@@ -2713,7 +2741,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             if (currentStatus == 'pending') ...[
               Row(
                 children: [

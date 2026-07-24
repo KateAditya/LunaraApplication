@@ -23,8 +23,53 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 
   void _initSocketListeners() {
+    ApiService.socket?.on('new_message', (data) {
+      if (!mounted || data == null) return;
+      final convId = data['conversationId']?.toString();
+      if (convId == null) return;
+
+      final senderId = data['senderId']?.toString();
+      final currentUserId = ApiService.currentUserId;
+      final type = data['type']?.toString() ?? 'text';
+      final content = data['content']?.toString() ?? '';
+
+      String preview = content;
+      if (type == 'image') preview = '📷 Photo';
+      if (type == 'sticker') preview = '😄 Sticker';
+      if (type == 'voice') preview = '🎙 Voice message';
+      if (type == 'invitation') preview = '📅 Party invitation';
+
+      setState(() {
+        final idx = _conversations.indexWhere((c) => (c['conversationId'] ?? c['id'])?.toString() == convId);
+        if (idx != -1) {
+          final target = _conversations.removeAt(idx);
+          target['lastMessagePreview'] = preview;
+          target['lastMessageAt'] = data['createdAt'] ?? DateTime.now().toIso8601String();
+          if (senderId != currentUserId) {
+            target['unreadCount'] = (target['unreadCount'] as num? ?? 0).toInt() + 1;
+          }
+          _conversations.insert(0, target);
+        } else {
+          _loadConversations();
+        }
+      });
+    });
+
+    ApiService.socket?.on('messages_read', (data) {
+      if (!mounted || data == null) return;
+      final convId = data['conversationId']?.toString();
+      if (convId == null) return;
+
+      setState(() {
+        final idx = _conversations.indexWhere((c) => (c['conversationId'] ?? c['id'])?.toString() == convId);
+        if (idx != -1) {
+          _conversations[idx]['unreadCount'] = 0;
+        }
+      });
+    });
+
     ApiService.socket?.on('user_status_changed', (data) {
-      if (!mounted) return;
+      if (!mounted || data == null) return;
       final userId = data['userId']?.toString();
       final isOnline = data['isOnline'] == true;
       if (userId == null) return;
@@ -48,6 +93,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
   @override
   void dispose() {
+    ApiService.socket?.off('new_message');
+    ApiService.socket?.off('messages_read');
     ApiService.socket?.off('user_status_changed');
     super.dispose();
   }

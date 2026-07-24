@@ -15,35 +15,44 @@ class TopNotificationBanner {
     Map<String, dynamic>? senderData,
     IconData? iconData,
   }) {
-    final context = NotificationNavigator.navigatorKey.currentContext;
-    if (context == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final context = NotificationNavigator.navigatorKey.currentContext;
+      if (context == null) return;
 
-    _dismissTimer?.cancel();
-    _currentEntry?.remove();
-    _currentEntry = null;
+      final overlay = Overlay.maybeOf(context);
+      if (overlay == null) return;
 
-    final overlay = Overlay.of(context);
-
-    _currentEntry = OverlayEntry(
-      builder: (ctx) => _TopBannerWidget(
-        title: title,
-        body: body,
-        data: data,
-        senderData: senderData,
-        iconData: iconData,
-        onDismiss: () {
-          _dismissTimer?.cancel();
-          _currentEntry?.remove();
-          _currentEntry = null;
-        },
-      ),
-    );
-
-    overlay.insert(_currentEntry!);
-
-    _dismissTimer = Timer(const Duration(seconds: 4), () {
-      _currentEntry?.remove();
+      _dismissTimer?.cancel();
+      try {
+        _currentEntry?.remove();
+      } catch (_) {}
       _currentEntry = null;
+
+      _currentEntry = OverlayEntry(
+        builder: (ctx) => _TopBannerWidget(
+          title: title,
+          body: body,
+          data: data,
+          senderData: senderData,
+          iconData: iconData,
+          onDismiss: () {
+            _dismissTimer?.cancel();
+            try {
+              _currentEntry?.remove();
+            } catch (_) {}
+            _currentEntry = null;
+          },
+        ),
+      );
+
+      overlay.insert(_currentEntry!);
+
+      _dismissTimer = Timer(const Duration(seconds: 4), () {
+        try {
+          _currentEntry?.remove();
+        } catch (_) {}
+        _currentEntry = null;
+      });
     });
   }
 }
