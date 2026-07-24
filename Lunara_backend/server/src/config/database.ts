@@ -376,15 +376,15 @@ export const connectDatabase = async (): Promise<void> => {
 
             // Seed default configs if not existing
             const defaultConfigs = [
-                { scope: 'global', time_lock_enabled: true, default_cooldown_hours: 4, max_active_plans: 1, max_daily_plans: 3, max_weekly_plans: 10, allow_overlapping_plans: false, overlap_policy: 'NO_OVERLAP' },
-                { scope: 'subscription:FREE', time_lock_enabled: true, default_cooldown_hours: 6, max_active_plans: 1, max_daily_plans: 2, max_weekly_plans: 5, allow_overlapping_plans: false, overlap_policy: 'NO_OVERLAP' },
-                { scope: 'subscription:CORE', time_lock_enabled: true, default_cooldown_hours: 4, max_active_plans: 1, max_daily_plans: 3, max_weekly_plans: 10, allow_overlapping_plans: false, overlap_policy: 'NO_OVERLAP' },
-                { scope: 'subscription:PLUS', time_lock_enabled: true, default_cooldown_hours: 4, max_active_plans: 1, max_daily_plans: 3, max_weekly_plans: 10, allow_overlapping_plans: false, overlap_policy: 'NO_OVERLAP' },
-                { scope: 'subscription:PRO', time_lock_enabled: true, default_cooldown_hours: 2, max_active_plans: 2, max_daily_plans: 5, max_weekly_plans: 15, allow_overlapping_plans: true, overlap_policy: 'ALLOW_TOUCHING_BOUNDARIES' },
+                { scope: 'global', time_lock_enabled: true, default_cooldown_hours: 4, max_active_plans: 3, max_daily_plans: 3, max_weekly_plans: 10, allow_overlapping_plans: false, overlap_policy: 'NO_OVERLAP' },
+                { scope: 'subscription:FREE', time_lock_enabled: true, default_cooldown_hours: 6, max_active_plans: 2, max_daily_plans: 2, max_weekly_plans: 5, allow_overlapping_plans: false, overlap_policy: 'NO_OVERLAP' },
+                { scope: 'subscription:CORE', time_lock_enabled: true, default_cooldown_hours: 4, max_active_plans: 3, max_daily_plans: 3, max_weekly_plans: 10, allow_overlapping_plans: false, overlap_policy: 'NO_OVERLAP' },
+                { scope: 'subscription:PLUS', time_lock_enabled: true, default_cooldown_hours: 4, max_active_plans: 3, max_daily_plans: 3, max_weekly_plans: 10, allow_overlapping_plans: false, overlap_policy: 'NO_OVERLAP' },
+                { scope: 'subscription:PRO', time_lock_enabled: true, default_cooldown_hours: 2, max_active_plans: 5, max_daily_plans: 5, max_weekly_plans: 15, allow_overlapping_plans: true, overlap_policy: 'ALLOW_TOUCHING_BOUNDARIES' },
                 { scope: 'subscription:ELITE', time_lock_enabled: false, default_cooldown_hours: 0, max_active_plans: 999, max_daily_plans: 999, max_weekly_plans: 999, allow_overlapping_plans: true, overlap_policy: 'ALLOW_OVERLAP_FOR_PREMIUM_USERS' },
                 { scope: 'role:admin', time_lock_enabled: false, default_cooldown_hours: 0, max_active_plans: 999, max_daily_plans: 999, max_weekly_plans: 999, allow_overlapping_plans: true, overlap_policy: 'ALLOW_OVERLAP_FOR_PREMIUM_USERS' },
                 { scope: 'role:venue_owner', time_lock_enabled: false, default_cooldown_hours: 0, max_active_plans: 999, max_daily_plans: 999, max_weekly_plans: 999, allow_overlapping_plans: true, overlap_policy: 'ALLOW_OVERLAP_FOR_PREMIUM_USERS' },
-                { scope: 'role:customer', time_lock_enabled: true, default_cooldown_hours: 4, max_active_plans: 1, max_daily_plans: 3, max_weekly_plans: 10, allow_overlapping_plans: false, overlap_policy: 'NO_OVERLAP' }
+                { scope: 'role:customer', time_lock_enabled: true, default_cooldown_hours: 4, max_active_plans: 3, max_daily_plans: 3, max_weekly_plans: 10, allow_overlapping_plans: false, overlap_policy: 'NO_OVERLAP' }
             ];
 
             for (const cfg of defaultConfigs) {
@@ -393,9 +393,17 @@ export const connectDatabase = async (): Promise<void> => {
                         (id, scope, time_lock_enabled, default_cooldown_hours, max_active_plans, max_daily_plans, max_weekly_plans, allow_overlapping_plans, overlap_policy, created_at, updated_at)
                     VALUES 
                         (gen_random_uuid(), :scope, :time_lock_enabled, :default_cooldown_hours, :max_active_plans, :max_daily_plans, :max_weekly_plans, :allow_overlapping_plans, :overlap_policy, NOW(), NOW())
-                    ON CONFLICT (scope) DO NOTHING;
+                    ON CONFLICT (scope) DO UPDATE SET 
+                        max_active_plans = EXCLUDED.max_active_plans,
+                        max_daily_plans = EXCLUDED.max_daily_plans;
                 `, { replacements: cfg });
             }
+            // Update existing tables to ensure max_active_plans is at least max_daily_plans
+            await sequelize.query(`
+                UPDATE plan_time_lock_configs 
+                SET max_active_plans = max_daily_plans 
+                WHERE max_active_plans < max_daily_plans;
+            `);
             logger.info('Default Time Lock configurations seeded.');
         } catch (dbErr: any) {
             logger.warn('Failed to verify/seed Time Lock schema: ' + dbErr.message);

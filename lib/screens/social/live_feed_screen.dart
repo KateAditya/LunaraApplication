@@ -516,40 +516,45 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
   }
 
-  Future<void> _markAllNotificationsAsRead() async {
-    List<String> unreadIds = [];
+  Future<void> markAllNotificationsAsRead() async {
+    final List<String> notifIdsToMark = [];
     for (var n in _notifications) {
       final nId = n['id']?.toString() ?? '';
-      final isRead = n['isRead'] == true ||
-          n['read'] == true ||
-          _localReadNotificationIds.contains(nId);
-      if (!isRead && nId.isNotEmpty) {
-        unreadIds.add(nId);
+      if (nId.isNotEmpty && !_localReadNotificationIds.contains(nId)) {
+        _localReadNotificationIds.add(nId);
+        notifIdsToMark.add(nId);
       }
     }
-    if (unreadIds.isEmpty) return;
+    final List<String> reqIdsToMark = [];
+    for (var item in _feedItems) {
+      final rId = item['id']?.toString() ?? '';
+      if (rId.isNotEmpty && !_readRequestIds.contains(rId)) {
+        _readRequestIds.add(rId);
+        reqIdsToMark.add(rId);
+      }
+    }
+    await ApiService.saveLocalReadNotificationIds();
+    await ApiService.saveLocalReadRequestIds();
 
-    // Persist locally so future polls don't revert these to unread
-    _localReadNotificationIds.addAll(unreadIds);
-
-    // Optimistically mark all notifications as read in local state
-    setState(() {
-      for (var n in _notifications) {
-        final nId = n['id']?.toString() ?? '';
-        if (unreadIds.contains(nId)) {
+    if (mounted) {
+      setState(() {
+        for (var n in _notifications) {
           n['read'] = true;
           n['isRead'] = true;
         }
-      }
-    });
+      });
+      widget.onCountChanged?.call();
+    }
 
-    widget.onCountChanged?.call();
-
-    // Fire-and-forget: send to server; local state is already correct
-    for (var nId in unreadIds) {
+    for (final nId in notifIdsToMark) {
       ApiService.markNotificationRead(nId);
     }
+    for (final rId in reqIdsToMark) {
+      ApiService.markRequestRead(rId);
+    }
   }
+
+  Future<void> _markAllNotificationsAsRead() => markAllNotificationsAsRead();
 
   Future<void> _markNotificationAsRead(Map<String, dynamic> notif) async {
     final nId = notif['id']?.toString() ?? '';
@@ -1145,23 +1150,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             (idx) => setState(() => _subFilterIndexTab0 = idx),
           ),
           Expanded(
-            child: strangerItems.isEmpty
-                ? _buildEmptyState('No Stranger Meets active right now.')
-                : ListView(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    children: [
-                      ...strangerItems.map((item) {
-                        if (item['type'] == 'incoming_request') {
-                          return _buildIncomingRequestCard(item);
-                        }
-                        if (item['type'] == 'my_request') {
-                          return _buildMyRequestCard(item);
-                        }
-                        return _buildPlanCard(item);
-                      }),
-                      _buildWhyThisIsBetterBanner(),
-                    ],
-                  ),
+            child: _buildGroupedItemList(
+              items: strangerItems,
+              emptyText: 'No Stranger Meets active right now.',
+              onRefresh: () => _loadFeed(showLoader: false),
+              itemBuilder: (item) {
+                if (item['type'] == 'incoming_request') {
+                  return _buildIncomingRequestCard(item);
+                }
+                if (item['type'] == 'my_request') {
+                  return _buildMyRequestCard(item);
+                }
+                return _buildPlanCard(item);
+              },
+            ),
           ),
         ],
       ),
@@ -1221,26 +1223,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             (idx) => setState(() => _subFilterIndexTab1 = idx),
           ),
           Expanded(
-            child: partyItems.isEmpty
-                ? _buildEmptyState('No Party Plans active right now.')
-                : ListView(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    children: [
-                      ...partyItems.map((item) {
-                        if (item['type'] == 'party_plan') {
-                          return _buildPartyPlanCard(item);
-                        }
-                        if (item['type'] == 'incoming_request') {
-                          return _buildIncomingRequestCard(item);
-                        }
-                        if (item['type'] == 'my_request') {
-                          return _buildMyRequestCard(item);
-                        }
-                        return const SizedBox.shrink();
-                      }),
-                      _buildWhyThisIsBetterBanner(),
-                    ],
-                  ),
+            child: _buildGroupedItemList(
+              items: partyItems,
+              emptyText: 'No Party Plans active right now.',
+              onRefresh: () => _loadFeed(showLoader: false),
+              itemBuilder: (item) {
+                if (item['type'] == 'party_plan') {
+                  return _buildPartyPlanCard(item);
+                }
+                if (item['type'] == 'incoming_request') {
+                  return _buildIncomingRequestCard(item);
+                }
+                if (item['type'] == 'my_request') {
+                  return _buildMyRequestCard(item);
+                }
+                return const SizedBox.shrink();
+              },
+            ),
           ),
         ],
       ),
@@ -1277,18 +1276,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           Expanded(
             child: _isLoadingGroupParties && _largePartyBookings.isEmpty
                 ? const Center(child: CircularProgressIndicator())
-                : filteredBookings.isEmpty
-                    ? _buildEmptyState(
-                        'No group party requests yet.\nSubmit one from the Plan Hub!',
-                        icon: Icons.groups_rounded,
-                      )
-                    : ListView(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                        children: [
-                          ...filteredBookings.map((b) => _buildGroupPartyCard(b)),
-                          _buildWhyThisIsBetterBanner(),
-                        ],
-                      ),
+                : _buildGroupedItemList(
+                    items: filteredBookings,
+                    emptyText: 'No group party requests yet.\nSubmit one from the Plan Hub!',
+                    emptyIcon: Icons.groups_rounded,
+                    onRefresh: () => _loadGroupPartyBookings(),
+                    itemBuilder: (b) => _buildGroupPartyCard(b),
+                  ),
           ),
         ],
       ),
@@ -1388,8 +1382,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       cleanLocation = venueAddress.split(',').take(2).join(', ').trim();
     }
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
+    final bookingId = booking['id']?.toString() ?? booking['bookingId']?.toString() ?? '';
+    final isRead = _localReadNotificationIds.contains(bookingId) || (!isAwaitingPayment && !isPaid);
+
+    return Opacity(
+      opacity: isRead ? 0.6 : 1.0,
+      child: Card(
+        margin: const EdgeInsets.only(bottom: 16),
       elevation: 2,
       shadowColor: const Color(0x06000000),
       shape: RoundedRectangleBorder(
@@ -1625,7 +1624,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 
   Widget _groupPartyHeaderPlaceholder(String venueName) {
@@ -1683,19 +1683,119 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             (idx) => setState(() => _subFilterIndexTab3 = idx),
           ),
           Expanded(
-            child: filteredNotifications.isEmpty
-                ? _buildEmptyState('No recent activity.', icon: Icons.notifications_paused_rounded)
-                : ListView(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    children: [
-                      ...filteredNotifications.map((n) => _buildNotificationCard(n)),
-                      _buildWhyThisIsBetterBanner(),
-                    ],
-                  ),
+            child: _buildGroupedItemList(
+              items: filteredNotifications,
+              emptyText: 'No recent activity.',
+              emptyIcon: Icons.notifications_paused_rounded,
+              onRefresh: () => _loadFeed(showLoader: false),
+              itemBuilder: (n) => _buildNotificationCard(n),
+            ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildGroupedItemList({
+    required List<Map<String, dynamic>> items,
+    required Widget Function(Map<String, dynamic> item) itemBuilder,
+    required String emptyText,
+    IconData emptyIcon = Icons.notifications_none_rounded,
+    Future<void> Function()? onRefresh,
+  }) {
+    if (items.isEmpty) {
+      return _buildEmptyState(emptyText, icon: emptyIcon);
+    }
+
+    final sortedItems = List<Map<String, dynamic>>.from(items);
+    sortedItems.sort((a, b) {
+      final rawA = a['createdAt'] ?? a['postedAt'] ?? a['created_at'] ?? a['timestamp'];
+      final rawB = b['createdAt'] ?? b['postedAt'] ?? b['created_at'] ?? b['timestamp'];
+      final dtA = rawA != null ? (DateTime.tryParse(rawA.toString())?.toLocal() ?? DateTime.fromMillisecondsSinceEpoch(0)) : DateTime.fromMillisecondsSinceEpoch(0);
+      final dtB = rawB != null ? (DateTime.tryParse(rawB.toString())?.toLocal() ?? DateTime.fromMillisecondsSinceEpoch(0)) : DateTime.fromMillisecondsSinceEpoch(0);
+      return dtB.compareTo(dtA);
+    });
+
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final yesterdayStart = todayStart.subtract(const Duration(days: 1));
+
+    final Map<String, List<Map<String, dynamic>>> grouped = {};
+
+    for (final item in sortedItems) {
+      final rawDate = item['createdAt'] ?? item['postedAt'] ?? item['created_at'] ?? item['timestamp'];
+      DateTime dt = DateTime.now();
+      if (rawDate != null) {
+        dt = DateTime.tryParse(rawDate.toString())?.toLocal() ?? DateTime.now();
+      }
+      final itemDate = DateTime(dt.year, dt.month, dt.day);
+
+      String groupKey;
+      if (itemDate.isAtSameMomentAs(todayStart) || itemDate.isAfter(todayStart)) {
+        groupKey = 'TODAY';
+      } else if (itemDate.isAtSameMomentAs(yesterdayStart)) {
+        groupKey = 'YESTERDAY';
+      } else {
+        groupKey = DateFormat('EEEE, d MMMM yyyy').format(dt).toUpperCase();
+      }
+
+      grouped.putIfAbsent(groupKey, () => []).add(item);
+    }
+
+    final listViewChildren = <Widget>[];
+
+    for (final entry in grouped.entries) {
+      final headerTitle = entry.key;
+      final groupItems = entry.value;
+
+      listViewChildren.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 14, bottom: 8, left: 4, right: 4),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  headerTitle,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    color: LunaraTheme.electricViolet,
+                    letterSpacing: 1.0,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(child: Divider(height: 1, color: Colors.black12)),
+            ],
+          ),
+        ),
+      );
+
+      for (final item in groupItems) {
+        listViewChildren.add(itemBuilder(item));
+      }
+    }
+
+    listViewChildren.add(_buildWhyThisIsBetterBanner());
+
+    final listView = ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      children: listViewChildren,
+    );
+
+    if (onRefresh != null) {
+      return RefreshIndicator(
+        onRefresh: onRefresh,
+        child: listView,
+      );
+    }
+
+    return listView;
   }
 
   Widget _buildEmptyState(String text, {IconData icon = Icons.notifications_none_rounded}) {
@@ -2662,9 +2762,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final joinerPaid = req['joinerPaymentStatus']?.toString().toLowerCase() == 'paid' ||
                        req['joinerPaymentStatus']?.toString().toLowerCase() == 'confirmed';
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Container(
+    final isRead = _readRequestIds.contains(reqId) || currentStatus != 'pending';
+
+    return Opacity(
+      opacity: isRead ? 0.6 : 1.0,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -2990,7 +3094,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 
   // My Request = Current user requested to join someone else's plan
@@ -3018,9 +3123,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         'pending';
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Container(
+    final isRead = _readRequestIds.contains(reqId) || currentStatus != 'pending';
+
+    return Opacity(
+      opacity: isRead ? 0.6 : 1.0,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF101E24) : Colors.white,
@@ -4090,7 +4199,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildNotificationCard(Map<String, dynamic> notif) {
@@ -4177,10 +4287,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ? (isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05))
         : color.withValues(alpha: 0.35);
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: GestureDetector(
-        onTap: () => _markNotificationAsRead(notif),
+    return Opacity(
+      opacity: isRead ? 0.6 : 1.0,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: GestureDetector(
+          onTap: () => _markNotificationAsRead(notif),
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -4473,7 +4585,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 
   Widget _notifChip(IconData icon, String label, Color color, bool isDark) {

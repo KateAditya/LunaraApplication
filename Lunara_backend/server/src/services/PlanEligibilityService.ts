@@ -18,6 +18,32 @@ export function getAdvisoryLockKey(uuidStr: string): number {
     return hash;
 }
 
+export function formatFriendlyTime(date: Date): string {
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const h12 = hours % 12 === 0 ? 12 : hours % 12;
+    const mStr = minutes < 10 ? `0${minutes}` : `${minutes}`;
+    return `${h12}:${mStr} ${ampm}`;
+}
+
+export function formatFriendlyDate(date: Date, relativeTo: Date = new Date()): string {
+    const d1 = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const d2 = new Date(relativeTo.getFullYear(), relativeTo.getMonth(), relativeTo.getDate());
+    const diffDays = Math.round((d1.getTime() - d2.getTime()) / (24 * 60 * 60 * 1000));
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Tomorrow';
+    if (diffDays === -1) return 'Yesterday';
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${months[date.getMonth()]} ${date.getDate()}`;
+}
+
+export function formatFriendlyDateTime(date: Date, relativeTo: Date = new Date()): string {
+    const dateStr = formatFriendlyDate(date, relativeTo);
+    const timeStr = formatFriendlyTime(date);
+    return `${dateStr} at ${timeStr}`;
+}
+
 export class PlanEligibilityService {
     /**
      * Resolves the hierarchical configurations for a user and a specific plan type.
@@ -58,13 +84,13 @@ export class PlanEligibilityService {
             where: { scope: { [Op.in]: scopes } }
         });
 
-        // Initialize with fallback defaults
+        // Initialize with fallback defaults (allow up to 3 active intra-day non-overlapping plans)
         const resolved: PlanTimeLockConfigAttributes = {
             id: 'resolved',
             scope: 'resolved',
             timeLockEnabled: true,
             defaultCooldownHours: 4,
-            maxActivePlans: 1,
+            maxActivePlans: 3,
             maxDailyPlans: 3,
             maxWeeklyPlans: 10,
             allowOverlappingPlans: false,
@@ -170,12 +196,19 @@ export class PlanEligibilityService {
         });
 
         if (overlappingLock) {
+            const existingStart = new Date(overlappingLock.lockStartAt);
             const lockedUntil = new Date(overlappingLock.lockEndAt);
             const remainingSeconds = Math.max(0, Math.floor((lockedUntil.getTime() - now.getTime()) / 1000));
+
+            const existingTimeStr = formatFriendlyDateTime(existingStart, now);
+            const availableTimeStr = formatFriendlyDateTime(lockedUntil, now);
+
+            const friendlyMessage = `You already have a plan scheduled for ${existingTimeStr}. Plans must be at least ${config.defaultCooldownHours} hours apart. You can schedule your next plan at or after ${availableTimeStr}.`;
+
             return {
                 eligible: false,
                 reasonCode: 'PLAN_TIME_LOCKED',
-                message: `You have a temporary plan lock until ${lockedUntil.toISOString()}`,
+                message: friendlyMessage,
                 lockedUntil,
                 remainingSeconds,
                 existingPlanId: overlappingLock.sourcePlanId,
@@ -197,18 +230,19 @@ export class PlanEligibilityService {
             return {
                 eligible: false,
                 reasonCode: 'PLAN_ACTIVE_LIMIT_REACHED',
-                message: `You have reached the maximum of ${config.maxActivePlans} active plans.`
+                message: `You currently have ${activePlansCount} active plans. Maximum allowed active plans is ${config.maxActivePlans}.`
             };
         }
 
         // 4. daily/weekly limit checks
-        const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
         const dailyCount = await PlanTimeLock.count({
             where: {
                 userId,
-                createdAt: { [Op.gte]: dayAgo }
+                status: { [Op.ne]: 'cancelled' },
+                lockStartAt: { [Op.gte]: startOfToday }
             },
             transaction
         });
@@ -217,7 +251,7 @@ export class PlanEligibilityService {
             return {
                 eligible: false,
                 reasonCode: 'PLAN_DAILY_LIMIT_REACHED',
-                message: `You have reached the maximum limit of ${config.maxDailyPlans} daily plans.`
+                message: `You have reached your daily limit of ${config.maxDailyPlans} plans for Today. You can schedule more plans Tomorrow!`
             };
         }
 

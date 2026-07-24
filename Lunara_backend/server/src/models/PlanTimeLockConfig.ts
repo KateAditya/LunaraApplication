@@ -86,7 +86,7 @@ PlanTimeLockConfig.init(
         maxActivePlans: {
             type: DataTypes.INTEGER,
             allowNull: false,
-            defaultValue: 1,
+            defaultValue: 3,
             field: 'max_active_plans',
         },
         maxDailyPlans: {

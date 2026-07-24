@@ -124,9 +124,14 @@ class ApiService {
 
   static Future<void> setAuthToken(String? token) async {
     _authToken = token;
+    cachedCurrentUser = null;
+    localReadNotificationIds.clear();
+    localReadRequestIds.clear();
+    _readIdsLoaded = false;
+
     final prefs = await SharedPreferences.getInstance();
-    if (token != null) {
-      await prefs.setString('auth_token', token);
+    if (token != null && token.trim().isNotEmpty) {
+      await prefs.setString('auth_token', token.trim());
       initSocket();
     } else {
       await prefs.remove('auth_token');
@@ -136,9 +141,25 @@ class ApiService {
 
   static Future<void> clearAuthToken() async {
     _authToken = null;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('auth_token');
+    cachedCurrentUser = null;
+    selectedCity = null;
+    localReadNotificationIds.clear();
+    localReadRequestIds.clear();
+    _readIdsLoaded = false;
+
+    _socketListeners.clear();
     disconnectSocket();
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('auth_token');
+      await prefs.remove('selected_city');
+      await prefs.remove('localReadNotificationIds');
+      await prefs.remove('localReadRequestIds');
+      await prefs.remove('biometric_enabled');
+    } catch (e) {
+      debugPrint('Error clearing prefs during clearAuthToken: $e');
+    }
   }
 
   static Future<void> logout() async {
@@ -2121,29 +2142,30 @@ class ApiService {
   }
 
   static String? get currentUserId {
-    if (cachedCurrentUser?.id != null && cachedCurrentUser!.id.isNotEmpty) {
+    if (_authToken != null && _authToken!.trim().isNotEmpty) {
+      try {
+        final parts = _authToken!.split('.');
+        if (parts.length == 3) {
+          final payload = utf8.decode(
+            base64Url.decode(base64Url.normalize(parts[1])),
+          );
+          final data = jsonDecode(payload);
+          final rawId = data['userId']?.toString() ??
+              data['id']?.toString() ??
+              data['_id']?.toString() ??
+              data['sub']?.toString();
+          if (rawId != null && rawId != 'undefined' && rawId != 'null' && rawId.trim().isNotEmpty) {
+            return rawId;
+          }
+        }
+      } catch (e) {
+        debugPrint('Error decoding JWT: $e');
+      }
+    }
+    if (cachedCurrentUser?.id != null && cachedCurrentUser!.id.trim().isNotEmpty) {
       return cachedCurrentUser!.id;
     }
-    if (_authToken == null || _authToken!.isEmpty) return null;
-    try {
-      final parts = _authToken!.split('.');
-      if (parts.length != 3) return null;
-      final payload = utf8.decode(
-        base64Url.decode(base64Url.normalize(parts[1])),
-      );
-      final data = jsonDecode(payload);
-      final rawId = data['userId']?.toString() ??
-          data['id']?.toString() ??
-          data['_id']?.toString() ??
-          data['sub']?.toString();
-      if (rawId == null || rawId == 'undefined' || rawId == 'null' || rawId.trim().isEmpty) {
-        return null;
-      }
-      return rawId;
-    } catch (e) {
-      debugPrint('Error decoding JWT: $e');
-      return null;
-    }
+    return null;
   }
 
   // ─── Notifications & Local Persistent Read State ────────────────────────────

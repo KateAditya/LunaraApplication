@@ -455,6 +455,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         const SizedBox(height: 16),
         GestureDetector(
+          onTap: () async {
+            await ApiService.logout();
+            if (mounted) {
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const WelcomeCarousel()),
+                (route) => false,
+              );
+            }
+          },
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.15)),
+            ),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.logout_rounded,
+                  color: LunaraTheme.electricViolet,
+                  size: 20,
+                ),
+                SizedBox(width: 12),
+                Text(
+                  'LOG OUT',
+                  style: TextStyle(
+                    color: LunaraTheme.electricViolet,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        GestureDetector(
           onTap: () => _showDeleteAccountDialog(),
           child: Container(
             padding: const EdgeInsets.all(16),

@@ -3604,49 +3604,6 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     return;
                                   }
 
-                                  // Validate unique plan per day constraint
-                                  try {
-                                    final existingPlans =
-                                        await ApiService.fetchMyPartyPlans();
-                                    final targetDateStr = DateFormat(
-                                      'yyyy-MM-dd',
-                                    ).format(selectedDate!);
-                                    final alreadyHasPlan = existingPlans.any((
-                                      p,
-                                    ) {
-                                      final pStatus = p['status']
-                                          ?.toString()
-                                          .toLowerCase();
-                                      if (pStatus == 'cancelled') return false;
-
-                                      final pDtStr = p['planDateTime'];
-                                      if (pDtStr == null) return false;
-                                      try {
-                                        final pDt = _parseToKolkata(pDtStr);
-                                        final pDateStr = DateFormat(
-                                          'yyyy-MM-dd',
-                                        ).format(pDt);
-                                        return pDateStr == targetDateStr;
-                                      } catch (_) {
-                                        return false;
-                                      }
-                                    });
-
-                                    if (alreadyHasPlan) {
-                                      if (!mounted) return;
-                                      setSheetState(() {
-                                        isPosting = false;
-                                        sheetErrorMsg =
-                                            'You already have a party plan scheduled for this day. limit: 1 plan per day.';
-                                      });
-                                      return;
-                                    }
-                                  } catch (e) {
-                                    debugPrint(
-                                      'Error validating unique plan: $e',
-                                    );
-                                  }
-
                                   try {
                                     final response = await ApiService.post(
                                       '/api/mobile/party-plans',

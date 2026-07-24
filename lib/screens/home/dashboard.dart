@@ -84,9 +84,9 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     });
     _updateAppBadge(0 + _chatCount);
     try {
-      await ApiService.clearAllNotifications();
+      _liveFeedKey.currentState?.markAllNotificationsAsRead();
     } catch (e) {
-      debugPrint('Error auto-clearing live feed notifications: $e');
+      debugPrint('Error marking live feed notifications read: $e');
     }
     // Background sync to reconcile chat count from server
     _fetchBadges();
