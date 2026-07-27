@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/theme.dart';
 import '../../models/venue.dart';
 import 'post_detail_screen.dart';
 import '../../services/api_service.dart';
+
 
 class AllPostsScreen extends StatefulWidget {
   final List<Map<String, dynamic>> posts;
@@ -189,7 +191,7 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
     ImageProvider? bgImage;
     if (coverImageUrl != null && coverImageUrl.isNotEmpty) {
       if (coverImageUrl.startsWith('http')) {
-        bgImage = NetworkImage(coverImageUrl);
+        bgImage = CachedNetworkImageProvider(coverImageUrl);
       } else if (coverImageUrl.startsWith('assets/')) {
         bgImage = AssetImage(coverImageUrl);
       }
@@ -206,13 +208,14 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
                 image: bgImage,
                 fit: BoxFit.cover,
                 colorFilter: ColorFilter.mode(
-                  Colors.black.withValues(alpha: 0.3),
+                  Colors.black.withValues(alpha: 0.5),
                   BlendMode.darken,
                 ),
                 onError: (e, s) {},
               )
             : null,
-        gradient: bgImage == null ? LunaraTheme.cardGradient : null,
+        gradient: bgImage == null ? LunaraTheme.deepPurpleGradient : null,
+
         color: bgImage == null ? null : Colors.black,
         boxShadow: [
           BoxShadow(

@@ -305,6 +305,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                 final smVenueCoverImg = venue['coverImageUrl'] ??
                     venue['imageUrl'] ??
                     venue['image'] ??
+                    meet['coverImageUrl'] ??
+                    meet['venueImage'] ??
+                    meet['bannerUrl'] ??
+                    meet['bannerImage'] ??
                     (venue['coverImage'] is Map ? venue['coverImage']['url'] ?? venue['coverImage']['filePath'] : null) ??
                     (venue['images'] is List && (venue['images'] as List).isNotEmpty
                         ? ((venue['images'] as List).first is Map
@@ -322,7 +326,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   'city': venue['city'] ?? user['city'] ?? 'Unknown',
                   'bio': user['bio'] ?? '',
                   'gender': user['gender'] ?? 'Unknown',
-                  'venue': venue['name'] ?? 'Unknown',
+                  'venue': venue['name'] ?? meet['venueName'] ?? (meet['venue'] is String ? meet['venue'] : null) ?? 'Unknown',
                   'content': meet['tagline'] ?? meet['subject'] ?? '',
                   'time': timeStr,
                   'coverImageUrl': smVenueCoverImg?.toString() ?? '',
@@ -330,6 +334,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   'user': user,
                   'createdAt': meet['createdAt'],
                 };
+
               }),
             );
           }
@@ -2125,13 +2130,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
           // Handle nested user object or flat structure
           final userObj = feed['user'] is Map ? feed['user'] as Map : feed;
-          final String? imageUrl = ApiService.formatImageUrl(
-            userObj['profilePhotoUrl'] ??
-            userObj['profileImageUrl'] ??
-            userObj['photoUrl'] ??
-            userObj['profilePhoto'] ??
-            feed['image'],
-          );
+
 
           // Resolve venue name
           String venueName = '';
@@ -2175,6 +2174,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           }
 
           final String? coverImageUrl = ApiService.formatImageUrl(rawCover?.toString());
+          final bool hasValidCover = coverImageUrl != null && coverImageUrl.trim().isNotEmpty;
 
           return RepaintBoundary(
             child: Container(
@@ -2182,12 +2182,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               height: 240,
               margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
               decoration: BoxDecoration(
-                gradient: (coverImageUrl == null || coverImageUrl.isEmpty)
-                    ? LunaraTheme.cardGradient
+                gradient: !hasValidCover
+                    ? LunaraTheme.deepPurpleGradient
                     : null,
-                image: (coverImageUrl != null && coverImageUrl.isNotEmpty)
+                image: hasValidCover
                     ? DecorationImage(
                         image: CachedNetworkImageProvider(coverImageUrl),
+
                         fit: BoxFit.cover,
                         colorFilter: ColorFilter.mode(
                           Colors.black.withValues(alpha: 0.6),
@@ -2196,16 +2197,15 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                       )
                     : null,
                 borderRadius: BorderRadius.circular(24),
-
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF7F00FF).withValues(alpha: 0.06),
+                    color: const Color(0xFF7F00FF).withValues(alpha: 0.2),
                     blurRadius: 16,
                     offset: const Offset(0, 6),
                   ),
                 ],
                 border: Border.all(
-                  color: const Color(0xFF7F00FF).withValues(alpha: 0.08),
+                  color: Colors.white.withValues(alpha: 0.15),
                   width: 1.2,
                 ),
               ),
@@ -2240,36 +2240,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     children: [
                       Row(
                         children: [
-                          Container(
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: const Color(
-                                  0xFF7F00FF,
-                                ).withValues(alpha: 0.15),
-                                width: 1.5,
-                              ),
-                            ),
-                            child: ClipOval(
-                              child: (imageUrl != null && imageUrl.isNotEmpty)
-                                  ? Image.network(
-                                      imageUrl,
-                                      fit: BoxFit.cover,
-                                      errorBuilder:
-                                          (context, error, stackTrace) =>
-                                              Image.asset(
-                                                LunaraTheme.defaultAvatar,
-                                                fit: BoxFit.cover,
-                                              ),
-                                    )
-                                  : Image.asset(
-                                      LunaraTheme.defaultAvatar,
-                                      fit: BoxFit.cover,
-                                    ),
-                            ),
+                          LunaraProfileImage(
+                            userData: userObj,
+                            radius: 18,
                           ),
+
                           const SizedBox(width: 10),
                           Expanded(
                             child: Column(
@@ -2281,12 +2256,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                           userObj['lastName'] != null)
                                       ? '${userObj['firstName']} ${userObj['lastName']}'
                                       : (userObj['userName'] ?? 'Lunara User'),
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 13,
-                                    color: coverImageUrl != null
-                                        ? Colors.white
-                                        : Colors.black,
+                                    color: Colors.white,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -2294,10 +2267,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                 const SizedBox(height: 2),
                                 Text(
                                   feed['time'] ?? '',
-                                  style: TextStyle(
-                                    color: coverImageUrl != null
-                                        ? Colors.white70
-                                        : Colors.grey,
+                                  style: const TextStyle(
+                                    color: Colors.white70,
                                     fontSize: 9,
                                   ),
                                 ),
@@ -2310,12 +2281,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                       Expanded(
                         child: Text(
                           feed['content'] ?? feed['message'] ?? '',
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 12.5,
                             height: 1.4,
-                            color: coverImageUrl != null
-                                ? Colors.white
-                                : Colors.black87,
+                            color: Colors.white,
                           ),
                           maxLines: 4,
                           overflow: TextOverflow.ellipsis,
@@ -2332,7 +2301,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                               ),
                               margin: const EdgeInsets.only(right: 8),
                               decoration: BoxDecoration(
-                                color: Colors.amber.withValues(alpha: 0.15),
+                                color: Colors.amber.withValues(alpha: 0.25),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: const Text(
@@ -2352,27 +2321,27 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                 vertical: 6,
                               ),
                               decoration: BoxDecoration(
-                                color: const Color(
-                                  0xFF7F00FF,
-                                ).withValues(alpha: 0.05),
+                                color: Colors.black.withValues(alpha: 0.35),
                                 borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.2),
+                                  width: 0.8,
+                                ),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   const Icon(
                                     Icons.star_rounded,
-                                    color: Color(0xFF7F00FF),
+                                    color: Colors.amber,
                                     size: 12,
                                   ),
                                   const SizedBox(width: 4),
                                   Flexible(
                                     child: Text(
                                       venueName.toUpperCase(),
-                                      style: TextStyle(
-                                        color: coverImageUrl != null
-                                            ? Colors.white
-                                            : const Color(0xFF7F00FF),
+                                      style: const TextStyle(
+                                        color: Colors.white,
                                         fontSize: 9,
                                         fontWeight: FontWeight.w900,
                                         letterSpacing: 0.5,

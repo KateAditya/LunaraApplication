@@ -89,10 +89,14 @@ function formatRequest(r: StrangersMeetRequest) {
         if (primary?.filePath) userPhotoUrl = '/' + primary.filePath.replace(/\\/g, '/');
     }
 
-    let venueImageUrl = null;
-    if (venue?.images?.length > 0 && venue.images[0]?.filePath) {
-        venueImageUrl = '/' + venue.images[0].filePath.replace(/\\/g, '/');
+    let venueImageUrl = venue?.imageUrl ?? null;
+    if (!venueImageUrl && venue?.images?.length > 0) {
+        const primary = venue.images?.find((img: any) => img.isPrimary) || venue.images[0];
+        if (primary?.filePath) {
+            venueImageUrl = '/' + primary.filePath.replace(/\\/g, '/');
+        }
     }
+
 
     // Dynamic calculations
     const joinedJoiners = joiners.filter((j: any) => j.status === 'accepted' || j.status === 'paid' || j.paymentStatus === 'paid');
