@@ -254,18 +254,7 @@ Booking.hasMany(Payment, {
     foreignKey: 'bookingId',
     as: 'payments',
 });
-Payment.belongsTo(Booking, {
-    foreignKey: 'bookingId',
-    as: 'booking',
-});
-Payment.belongsTo(User, {
-    foreignKey: 'userId',
-    as: 'payer',
-});
-Payment.belongsTo(User, {
-    foreignKey: 'userId',
-    as: 'user',
-});
+
 
 
 // Booking -> TablePackages
@@ -316,6 +305,12 @@ Payment.belongsTo(User, {
     foreignKey: 'userId',
     as: 'payer',
 });
+
+Payment.belongsTo(User, {
+    foreignKey: 'userId',
+    as: 'user',
+});
+
 
 // ============================================================================
 // User Profile Associations
