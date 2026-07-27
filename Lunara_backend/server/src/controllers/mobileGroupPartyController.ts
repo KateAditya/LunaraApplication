@@ -6,7 +6,7 @@ import UserProfile from '../models/UserProfile';
 import UserPhoto from '../models/UserPhoto';
 import { logger } from '../config/logger';
 import { generateTicketForGroupPartyHelper } from '../services/ticketService';
-import { GroupPartyService } from '../services/GroupPartyService';
+import { GroupPartyService, PartyType } from '../services/GroupPartyService';
 
 // Calculate pricing
 export const calculatePricing = async (req: Request, res: Response): Promise<void> => {
@@ -60,7 +60,7 @@ export const createGroupParty = async (req: Request, res: Response): Promise<voi
             currency: result.currency || 'INR'
         });
 
-        if (result.partyType === 'large_party_request' || Number(numberOfFriends) > 20) {
+        if ((result.partyType as string) === 'large_party_request' || result.partyType === PartyType.LARGE || Number(numberOfFriends) > 20) {
             try {
                 const { io } = require('../server');
                 io.to('admin').emit('admin_notification', {

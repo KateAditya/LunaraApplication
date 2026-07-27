@@ -620,7 +620,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: isDark ? Colors.black26 : Colors.black.withOpacity(0.04),
+              color: isDark ? Colors.black26 : Colors.black.withValues(alpha: 0.04),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -689,7 +689,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: isDark ? Colors.black26 : Colors.black.withOpacity(0.04),
+              color: isDark ? Colors.black26 : Colors.black.withValues(alpha: 0.04),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -757,7 +757,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           }
         },
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildSwitch(String label, bool value, ValueChanged<bool> onChanged) {
