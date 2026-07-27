@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme.dart';
+import '../../services/google_places_service.dart';
 import '../../widgets/action_button.dart';
 import '../../widgets/lunara_profile_image.dart';
 import '../../services/api_service.dart';
@@ -467,17 +468,12 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
 
     String distanceText = '';
     if (_currentPosition != null && lat != null && lng != null && lat != 0.0 && lng != 0.0) {
-      double distanceInMeters = Geolocator.distanceBetween(
+      distanceText = GooglePlacesService.formatRoadDistance(
         _currentPosition!.latitude,
         _currentPosition!.longitude,
         lat,
         lng,
       );
-      if (distanceInMeters < 1000) {
-        distanceText = '${distanceInMeters.toStringAsFixed(0)} m';
-      } else {
-        distanceText = '${(distanceInMeters / 1000).toStringAsFixed(1)} km';
-      }
     }
 
     final screenWidth = MediaQuery.of(context).size.width;

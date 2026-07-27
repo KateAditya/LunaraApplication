@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import '../../services/google_places_service.dart';
 import '../../core/theme.dart';
 import '../../models/venue.dart';
 import 'venue_detail_screen.dart';
@@ -123,7 +124,7 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
         // Radius matching
         bool matchesRadius = true;
         if (_currentPosition != null && v.latitude != null && v.longitude != null) {
-          final distance = Geolocator.distanceBetween(
+          final distance = GooglePlacesService.calculateRoadDistanceInMeters(
             _currentPosition!.latitude,
             _currentPosition!.longitude,
             v.latitude!,

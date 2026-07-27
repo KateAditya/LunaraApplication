@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import '../../services/google_places_service.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -332,17 +333,12 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
 
     String distanceText = '';
     if (_currentPosition != null && lat != null && lng != null && lat != 0.0 && lng != 0.0) {
-      double distanceInMeters = Geolocator.distanceBetween(
+      distanceText = GooglePlacesService.formatRoadDistance(
         _currentPosition!.latitude,
         _currentPosition!.longitude,
         lat,
         lng,
       );
-      if (distanceInMeters < 1000) {
-        distanceText = '${distanceInMeters.toStringAsFixed(0)} m';
-      } else {
-        distanceText = '${(distanceInMeters / 1000).toStringAsFixed(1)} km';
-      }
     }
 
     const lightBgColor = Color(0xFFF6F7FB);
