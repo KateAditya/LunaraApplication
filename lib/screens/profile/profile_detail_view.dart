@@ -1545,11 +1545,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
         child: Container(
           height: 56,
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [LunaraTheme.electricViolet, LunaraTheme.cyberCyan],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+            gradient: LunaraTheme.purpleGradient,
             borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(

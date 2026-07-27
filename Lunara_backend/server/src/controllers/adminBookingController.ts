@@ -951,8 +951,28 @@ export const getVenueWiseBookingSummary = async (req: Request, res: Response) =>
             totalCancelled: 0,
             totalAmount: 0,
             totalPaid: 0,
-            totalPending: 0
+            totalPending: 0,
+            todaysBookingCount: 0,
+            todaysBookingAmount: 0,
+            soloBookingCount: 0,
+            soloBookingAmount: 0,
+            partyPlansCount: 0,
+            partyPlansAmount: 0,
+            partyRequestsCount: 0,
+            partyRequestsAmount: 0,
+            groupPartyBookingCount: 0,
+            groupPartyBookingAmount: 0,
+            largePartiesCount: 0,
+            largePartiesAmount: 0,
+            upcomingNightBookingCount: 0,
+            upcomingNightBookingAmount: 0
         };
+
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const todayEnd = new Date();
+        todayEnd.setHours(23, 59, 59, 999);
+
 
         bookings.forEach(b => {
             const vStat = venueMap.get(b.venueId);
@@ -960,6 +980,39 @@ export const getVenueWiseBookingSummary = async (req: Request, res: Response) =>
 
             vStat.totalBookings++;
             grandTotals.totalBookings++;
+
+            const bAmount = Number(b.totalAmount) || 0;
+
+            if (b.createdAt && b.createdAt >= todayStart && b.createdAt <= todayEnd) {
+                grandTotals.todaysBookingCount++;
+                grandTotals.todaysBookingAmount += bAmount;
+            }
+
+            if (b.goingMode === 'solo') {
+                grandTotals.soloBookingCount++;
+                grandTotals.soloBookingAmount += bAmount;
+            } else if (b.goingMode === 'plan') {
+                grandTotals.partyPlansCount++;
+                grandTotals.partyPlansAmount += bAmount;
+            } else if (b.goingMode === 'party_request') {
+                grandTotals.partyRequestsCount++;
+                grandTotals.partyRequestsAmount += bAmount;
+            }
+
+            if (b.isGroupBooking) {
+                grandTotals.groupPartyBookingCount++;
+                grandTotals.groupPartyBookingAmount += bAmount;
+            }
+
+            if (b.isLargePartyRequest) {
+                grandTotals.largePartiesCount++;
+                grandTotals.largePartiesAmount += bAmount;
+            }
+
+            if (b.isUpcomingNight) {
+                grandTotals.upcomingNightBookingCount++;
+                grandTotals.upcomingNightBookingAmount += bAmount;
+            }
 
             if (b.status === 'confirmed') {
                 vStat.confirmedBookings++;
@@ -974,7 +1027,6 @@ export const getVenueWiseBookingSummary = async (req: Request, res: Response) =>
             }
 
             // Amounts
-            const bAmount = Number(b.totalAmount) || 0;
             vStat.totalBookingAmount += bAmount;
             grandTotals.totalAmount += bAmount;
 

@@ -1983,7 +1983,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                   decoration: BoxDecoration(
-                                    gradient: LunaraTheme.primaryGradient,
+                                    gradient: LunaraTheme.purpleGradient,
                                     borderRadius: BorderRadius.circular(12),
                                     boxShadow: [
                                       BoxShadow(
