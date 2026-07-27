@@ -65,7 +65,9 @@ export type NotificationCategory =
     | 'messages'
     | 'payments'
     | 'events'
-    | 'system';
+    | 'system'
+    | 'alert'
+    | 'activity';
 
 export type NotificationPriority = 'CRITICAL' | 'HIGH' | 'NORMAL' | 'LOW';
 

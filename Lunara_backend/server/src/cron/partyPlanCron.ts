@@ -371,12 +371,16 @@ async function relistPartyPlanInSocket(planId: string) {
     }
 }
 
+import { NotificationService } from '../services/NotificationService';
+import StrangersMeetRequest from '../models/StrangersMeetRequest';
+import StrangersMeetJoiner from '../models/StrangersMeetJoiner';
+import PlanTimeLock from '../models/PlanTimeLock';
+
 export const startNotificationJobCron = () => {
     cron.schedule('* * * * *', async () => {
         try {
             const now = new Date();
             const NotificationJob = require('../models/NotificationJob').default;
-            const User = require('../models/User').default;
 
             const pendingJobs = await NotificationJob.findAll({
                 where: {
@@ -391,43 +395,17 @@ export const startNotificationJobCron = () => {
 
             for (const job of pendingJobs) {
                 try {
-                    const recipient = await User.findByPk(job.userId);
-                    if (!recipient) {
-                        await job.update({ status: 'failed' });
-                        continue;
-                    }
-
-                    // 1. Send foreground WebSocket notification
-                    try {
-                        const socketPayload = {
-                            id: `lock_expired_${job.id}`,
-                            title: job.title,
-                            body: job.body,
-                            createdAt: new Date().toISOString(),
-                            read: false,
-                            data: { type: 'lock_expired' }
-                        };
-                        const { io } = require('../server');
-                        if (io) {
-                            io.to(`user_${job.userId}`).emit('notification_created', socketPayload);
-                        }
-                    } catch (wsErr: any) {
-                        logger.warn(`WS failed for job ${job.id}: ${wsErr.message}`);
-                    }
-
-                    // 2. Send background FCM push notification
-                    if (recipient.fcmToken) {
-                        try {
-                            const { sendMulticastPushNotification } = require('../services/fcmService');
-                            await sendMulticastPushNotification([recipient.fcmToken], {
-                                title: job.title,
-                                body: job.body,
-                                data: { type: 'lock_expired' }
-                            });
-                        } catch (fcmErr: any) {
-                            logger.warn(`FCM failed for job ${job.id}: ${fcmErr.message}`);
-                        }
-                    }
+                    await NotificationService.dispatch({
+                        recipientUserId: job.userId,
+                        eventType: 'lock_expired',
+                        category: 'alert',
+                        entityType: 'NotificationJob',
+                        entityId: job.id,
+                        title: job.title,
+                        body: job.body,
+                        priority: 'HIGH',
+                        idempotencyKey: `job_dispatch_${job.id}`,
+                    });
 
                     await job.update({ status: 'sent' });
                 } catch (jobErr: any) {
@@ -437,6 +415,178 @@ export const startNotificationJobCron = () => {
             }
         } catch (cronErr: any) {
             logger.error('Notification Job Cron error:', cronErr);
+        }
+    });
+};
+
+export const startExpiringPlanAlertCron = () => {
+    // Run every 3 minutes
+    cron.schedule('*/3 * * * *', async () => {
+        try {
+            const now = new Date();
+            const in15Mins = new Date(now.getTime() + 15 * 60 * 1000);
+            const in45Mins = new Date(now.getTime() + 45 * 60 * 1000);
+            const in10Mins = new Date(now.getTime() + 10 * 60 * 1000);
+
+            // 1. Party Plans starting in ~30 mins (between 15m and 45m from now)
+            const startingPlans = await PartyPlan.findAll({
+                where: {
+                    status: PartyPlanStatus.ACTIVE,
+                    planDateTime: {
+                        [Op.gte]: in15Mins,
+                        [Op.lte]: in45Mins,
+                    }
+                },
+                include: [{ model: Venue, as: 'venue', attributes: ['name'] }]
+            });
+
+            for (const plan of startingPlans) {
+                const venueName = (plan as any).venue?.name || 'Venue';
+                // Notify Host
+                await NotificationService.dispatch({
+                    recipientUserId: plan.userId,
+                    eventType: 'party_plan_starting_soon',
+                    category: 'alert',
+                    entityType: 'PartyPlan',
+                    entityId: plan.id,
+                    title: '⏰ Party Plan Starting Soon!',
+                    body: `Your party plan at ${venueName} starts in ~30 minutes! Open your ticket to prepare for check-in.`,
+                    priority: 'HIGH',
+                    idempotencyKey: `alert_plan_start_${plan.id}_${plan.userId}`,
+                    deepLink: `/party-plan-ticket/${plan.id}`,
+                    actionType: 'view_ticket',
+                });
+
+                // Notify Accepted Joiners
+                const requests = await PartyPlanRequest.findAll({
+                    where: { planId: plan.id, status: PartyPlanRequestStatus.ACCEPTED }
+                });
+                for (const req of requests) {
+                    await NotificationService.dispatch({
+                        recipientUserId: req.requesterId,
+                        eventType: 'party_plan_starting_soon',
+                        category: 'alert',
+                        entityType: 'PartyPlan',
+                        entityId: plan.id,
+                        title: '⏰ Party Plan Starting Soon!',
+                        body: `Your party plan at ${venueName} starts in ~30 minutes! Show your ticket at the venue.`,
+                        priority: 'HIGH',
+                        idempotencyKey: `alert_plan_start_${plan.id}_${req.requesterId}`,
+                        deepLink: `/party-plan-ticket/${plan.id}`,
+                        actionType: 'view_ticket',
+                    });
+                }
+            }
+
+            // 2. Strangers Meet starting in ~30 mins (between 15m and 45m from now)
+            const startingMeets = await StrangersMeetRequest.findAll({
+                where: {
+                    status: 'approved',
+                    eventDateTime: {
+                        [Op.gte]: in15Mins,
+                        [Op.lte]: in45Mins,
+                    }
+                },
+                include: [{ model: Venue, as: 'venue', attributes: ['name'] }]
+            });
+
+            for (const meet of startingMeets) {
+                const venueName = (meet as any).venue?.name || 'Venue';
+                // Notify Host
+                await NotificationService.dispatch({
+                    recipientUserId: meet.userId,
+                    eventType: 'strangers_meet_starting_soon',
+                    category: 'alert',
+                    entityType: 'StrangersMeetRequest',
+                    entityId: meet.id,
+                    title: '⏰ Stranger Meet Starting Soon!',
+                    body: `Your meet "${meet.subject}" at ${venueName} starts in ~30 minutes!`,
+                    priority: 'HIGH',
+                    idempotencyKey: `alert_meet_start_${meet.id}_${meet.userId}`,
+                    deepLink: `/strangers-meet-ticket/${meet.id}`,
+                    actionType: 'view_ticket',
+                });
+
+                // Notify Joiners
+                const joiners = await StrangersMeetJoiner.findAll({
+                    where: { strangersMeetRequestId: meet.id, paymentStatus: 'paid' }
+                });
+                for (const j of joiners) {
+                    await NotificationService.dispatch({
+                        recipientUserId: j.userId,
+                        eventType: 'strangers_meet_starting_soon',
+                        category: 'alert',
+                        entityType: 'StrangersMeetRequest',
+                        entityId: meet.id,
+                        title: '⏰ Stranger Meet Starting Soon!',
+                        body: `Your meet "${meet.subject}" at ${venueName} starts in ~30 minutes!`,
+                        priority: 'HIGH',
+                        idempotencyKey: `alert_meet_start_${meet.id}_${j.userId}`,
+                        deepLink: `/strangers-meet-ticket/${meet.id}`,
+                        actionType: 'view_ticket',
+                    });
+                }
+            }
+
+            // 3. Time Lock Cooldown Ending (within next 10 minutes)
+            const expiringLocks = await PlanTimeLock.findAll({
+                where: {
+                    status: 'active',
+                    lockEndAt: {
+                        [Op.gte]: now,
+                        [Op.lte]: in10Mins,
+                    }
+                }
+            });
+
+            for (const lock of expiringLocks) {
+                await NotificationService.dispatch({
+                    recipientUserId: lock.userId,
+                    eventType: 'cooldown_expiring_soon',
+                    category: 'alert',
+                    entityType: 'PlanTimeLock',
+                    entityId: lock.id,
+                    title: '⚡ Cooldown Expiring Soon',
+                    body: 'Your plan creation cooldown expires in a few minutes. Get ready to post your next party!',
+                    priority: 'NORMAL',
+                    idempotencyKey: `alert_cooldown_${lock.id}_${lock.userId}`,
+                    actionType: 'open_plans',
+                });
+            }
+
+            // 4. Payment Window Closing Soon (10 minutes remaining)
+            const pendingRequests = await PartyPlanRequest.findAll({
+                where: {
+                    status: PartyPlanRequestStatus.PAYMENT_PENDING,
+                    paymentTimeoutAt: {
+                        [Op.gte]: now,
+                        [Op.lte]: in10Mins,
+                    }
+                },
+                include: [{ model: PartyPlan, as: 'plan', include: [{ model: Venue, as: 'venue', attributes: ['name'] }] }]
+            });
+
+            for (const req of pendingRequests) {
+                const plan = (req as any).plan;
+                const venueName = plan?.venue?.name || 'Venue';
+                const recipientId = req.joinerPaymentStatus !== 'paid' ? req.requesterId : plan?.userId;
+                if (recipientId) {
+                    await NotificationService.dispatch({
+                        recipientUserId: recipientId,
+                        eventType: 'payment_window_expiring',
+                        category: 'alert',
+                        entityType: 'PartyPlanRequest',
+                        entityId: req.id,
+                        title: '💳 Payment Window Closing Soon',
+                        body: `Only ~10 minutes left to complete payment for party plan at ${venueName}. Complete payment to lock your spot!`,
+                        priority: 'HIGH',
+                        idempotencyKey: `alert_pay_timeout_${req.id}_${recipientId}`,
+                        actionType: 'pay_now',
+                    });
+                }
+            }
+        } catch (alertErr: any) {
+            logger.error('Expiring Plan Alert Cron Error:', alertErr);
         }
     });
 };

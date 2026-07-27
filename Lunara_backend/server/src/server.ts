@@ -18,7 +18,7 @@ import User from './models/User';
 import Message, { MessageStatus } from './models/Message';
 import Conversation from './models/Conversation';
 import { Op } from 'sequelize';
-import { startPartyPlanCron, startNotificationJobCron } from './cron/partyPlanCron';
+import { startPartyPlanCron, startNotificationJobCron, startExpiringPlanAlertCron } from './cron/partyPlanCron';
 
 // Load environment variables
 dotenv.config();
@@ -335,6 +335,7 @@ const startServer = async () => {
         if (isMasterProcess && isFirstPm2Instance) {
             startPartyPlanCron();
             startNotificationJobCron();
+            startExpiringPlanAlertCron();
             ExpiredTicketCleanupWorker.startWorker();
             logger.info('Background Cron Jobs & ExpiredTicketCleanupWorker started on process/instance.');
         } else {
@@ -368,6 +369,7 @@ if (process.env.NODE_ENV !== 'test') {
             connectDatabase().then(() => {
                 startPartyPlanCron();
                 startNotificationJobCron();
+                startExpiringPlanAlertCron();
                 ExpiredTicketCleanupWorker.startWorker();
                 logger.info('Primary process database connected & initiated background Cron Jobs.');
             }).catch((err) => {
