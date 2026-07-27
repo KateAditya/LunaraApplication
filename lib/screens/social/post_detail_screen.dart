@@ -7,6 +7,8 @@ import '../../models/user.dart';
 import '../../services/api_service.dart';
 import '../discovery/venue_detail_screen.dart';
 import '../../models/strangers_meet_request.dart';
+import '../../widgets/lunara_network_image.dart';
+
 
 class PostDetailScreen extends StatefulWidget {
   final Map<String, dynamic> post;
@@ -1831,34 +1833,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         background: Stack(
           fit: StackFit.expand,
           children: [
-            if (bannerPhoto != null && bannerPhoto.isNotEmpty && bannerPhoto.startsWith('http'))
-              Image.network(
-                bannerPhoto,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => Container(
-                  decoration: const BoxDecoration(
-                    gradient: LunaraTheme.deepPurpleGradient,
-                  ),
-                  child: const Center(
-                    child: Icon(Icons.nightlife_rounded, size: 80, color: Colors.white24),
-                  ),
-                ),
-              )
-            else if (bannerPhoto != null && bannerPhoto.isNotEmpty && bannerPhoto.startsWith('assets'))
-              Image.asset(bannerPhoto, fit: BoxFit.cover)
-            else
-              Container(
-                decoration: const BoxDecoration(
-                  gradient: LunaraTheme.deepPurpleGradient,
-                ),
-                child: Center(
-                  child: Icon(
-                    Icons.groups_rounded,
-                    size: 90,
-                    color: Colors.white.withValues(alpha: 0.15),
-                  ),
-                ),
-              ),
+            LunaraNetworkImage(
+              imageUrl: bannerPhoto,
+              fit: BoxFit.cover,
+            ),
+
 
             // Gradient Overlay
             Container(

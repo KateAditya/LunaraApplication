@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+
 import 'package:geolocator/geolocator.dart';
 import '../../services/google_places_service.dart';
 import 'package:carousel_slider/carousel_slider.dart';
@@ -2139,22 +2141,40 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             venueName = feed['venue']?.toString() ?? '';
           }
 
-          // Try to get cover image: from mapped field first, then look up _allVenues
-          String? coverImageUrl = ApiService.formatImageUrl(
-            feed['coverImageUrl']?.toString().isNotEmpty == true
-                ? feed['coverImageUrl']
-                : null,
-          );
-          if (coverImageUrl == null && venueName.isNotEmpty) {
-            final matchedVenue = _allVenues.firstWhere(
-              (v) => v.name.toLowerCase() == venueName.toLowerCase(),
-              orElse: () => _allVenues.isNotEmpty ? _allVenues.first : Venue(
-                id: '0', name: venueName, city: '', addressLine1: '',
-                averageRating: 0.0,
-              ),
-            );
-            coverImageUrl = ApiService.formatImageUrl(matchedVenue.imageUrl);
+          // Try to get cover image from all possible fields and venue lookup
+          String? rawCover = feed['coverImageUrl']?.toString().isNotEmpty == true
+              ? feed['coverImageUrl']
+              : (feed['venueImage'] ?? feed['bannerUrl'] ?? feed['bannerImage']);
+
+          if ((rawCover == null || rawCover.toString().isEmpty) && feed['venue'] is Map) {
+            final vMap = feed['venue'] as Map;
+            if (vMap['images'] is List && (vMap['images'] as List).isNotEmpty) {
+              final first = (vMap['images'] as List).first;
+              rawCover = first is Map ? (first['url'] ?? first['imageUrl'] ?? first['filePath']) : first?.toString();
+            }
+            rawCover ??= (vMap['imageUrl'] ?? vMap['coverImage'] ?? vMap['photoUrl'] ?? vMap['image'])?.toString();
           }
+
+          if ((rawCover == null || rawCover.toString().isEmpty) && venueName.isNotEmpty) {
+            final vNameLower = venueName.toLowerCase().trim();
+            Venue? matchedVenue;
+            for (final v in _allVenues) {
+              final nameLower = v.name.toLowerCase().trim();
+              if (nameLower == vNameLower || nameLower.contains(vNameLower) || vNameLower.contains(nameLower)) {
+                matchedVenue = v;
+                break;
+              }
+            }
+            if (matchedVenue != null) {
+              rawCover = matchedVenue.imageUrl;
+              if ((rawCover == null || rawCover.isEmpty) && matchedVenue.images != null && matchedVenue.images!.isNotEmpty) {
+                final firstImg = matchedVenue.images!.first;
+                rawCover = firstImg is Map ? (firstImg['url'] ?? firstImg['imageUrl']) : firstImg?.toString();
+              }
+            }
+          }
+
+          final String? coverImageUrl = ApiService.formatImageUrl(rawCover?.toString());
 
           return RepaintBoundary(
             child: Container(
@@ -2162,12 +2182,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               height: 240,
               margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
               decoration: BoxDecoration(
-                gradient: coverImageUrl == null
+                gradient: (coverImageUrl == null || coverImageUrl.isEmpty)
                     ? LunaraTheme.cardGradient
                     : null,
-                image: coverImageUrl != null
+                image: (coverImageUrl != null && coverImageUrl.isNotEmpty)
                     ? DecorationImage(
-                        image: NetworkImage(coverImageUrl),
+                        image: CachedNetworkImageProvider(coverImageUrl),
                         fit: BoxFit.cover,
                         colorFilter: ColorFilter.mode(
                           Colors.black.withValues(alpha: 0.6),
@@ -2176,6 +2196,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                       )
                     : null,
                 borderRadius: BorderRadius.circular(24),
+
                 boxShadow: [
                   BoxShadow(
                     color: const Color(0xFF7F00FF).withValues(alpha: 0.06),
