@@ -7,8 +7,6 @@ import '../../models/venue.dart';
 import '../../widgets/venue_timing_error_dialog.dart';
 import 'night_partner_discovery_screen.dart';
 import 'night_invite_partner_screen.dart';
-import '../social/friends_list_screen.dart';
-
 
 class BookingProcessScreen extends StatefulWidget {
   final Map<dynamic, dynamic> venue;
@@ -78,8 +76,15 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
     });
   }
 
-  bool _isTimeWithinVenueHours(TimeOfDay time, String? openingStr, String? closingStr) {
-    if (openingStr == null || openingStr.isEmpty || closingStr == null || closingStr.isEmpty) {
+  bool _isTimeWithinVenueHours(
+    TimeOfDay time,
+    String? openingStr,
+    String? closingStr,
+  ) {
+    if (openingStr == null ||
+        openingStr.isEmpty ||
+        closingStr == null ||
+        closingStr.isEmpty) {
       return true; // no timing constraint
     }
 
@@ -108,7 +113,11 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
 
   bool _isTimeSlotValid(TimeOfDay time) {
     final venueObj = Venue.fromJson(Map<String, dynamic>.from(widget.venue));
-    if (!_isTimeWithinVenueHours(time, venueObj.openingTime, venueObj.closingTime)) {
+    if (!_isTimeWithinVenueHours(
+      time,
+      venueObj.openingTime,
+      venueObj.closingTime,
+    )) {
       return false;
     }
     final selectedDateTime = DateTime(
@@ -132,7 +141,20 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
     } catch (_) {}
     try {
       final clean = dateStr.toUpperCase();
-      final monthsList = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+      final monthsList = [
+        'JAN',
+        'FEB',
+        'MAR',
+        'APR',
+        'MAY',
+        'JUN',
+        'JUL',
+        'AUG',
+        'SEP',
+        'OCT',
+        'NOV',
+        'DEC',
+      ];
       int? foundMonth;
       for (int i = 0; i < monthsList.length; i++) {
         if (clean.contains(monthsList[i])) {
@@ -147,7 +169,9 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
           final day = int.parse(dayMatch.group(1)!);
           final yearRegex = RegExp(r'\b(20\d{2})\b');
           final yearMatch = yearRegex.firstMatch(clean);
-          final year = yearMatch != null ? int.parse(yearMatch.group(1)!) : DateTime.now().year;
+          final year = yearMatch != null
+              ? int.parse(yearMatch.group(1)!)
+              : DateTime.now().year;
           return DateTime(year, foundMonth, day);
         }
       }
@@ -157,9 +181,17 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
       final parts = clean.split('-');
       if (parts.length == 3) {
         if (parts[0].length == 4) {
-          return DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
+          return DateTime(
+            int.parse(parts[0]),
+            int.parse(parts[1]),
+            int.parse(parts[2]),
+          );
         } else {
-          return DateTime(int.parse(parts[2]), int.parse(parts[1]), int.parse(parts[0]));
+          return DateTime(
+            int.parse(parts[2]),
+            int.parse(parts[1]),
+            int.parse(parts[0]),
+          );
         }
       }
     } catch (_) {}
@@ -187,19 +219,25 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
         _selectedDate = initialDate;
       }
 
-      if (widget.upcomingNightTime != null && widget.upcomingNightTime!.isNotEmpty) {
+      if (widget.upcomingNightTime != null &&
+          widget.upcomingNightTime!.isNotEmpty) {
         String timeStr = widget.upcomingNightTime!;
-        if (timeStr.toUpperCase().contains('PM') || timeStr.toUpperCase().contains('AM')) {
+        if (timeStr.toUpperCase().contains('PM') ||
+            timeStr.toUpperCase().contains('AM')) {
           final clean = timeStr.toUpperCase();
           final isPm = clean.contains('PM');
-          final timeOnly = clean.replaceAll('AM', '').replaceAll('PM', '').trim();
+          final timeOnly = clean
+              .replaceAll('AM', '')
+              .replaceAll('PM', '')
+              .trim();
           final parts = timeOnly.split(':');
           if (parts.isNotEmpty) {
             int h = int.tryParse(parts[0]) ?? 20;
             int m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
             if (isPm && h < 12) h += 12;
             if (!isPm && h == 12) h = 0;
-            _selectedTime = '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
+            _selectedTime =
+                '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
           }
         } else {
           _selectedTime = timeStr;
@@ -219,7 +257,7 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
       _selectedDate = initialDate;
 
       final venueObj = Venue.fromJson(Map<String, dynamic>.from(widget.venue));
-      
+
       String? defaultTime;
       final openingStr = venueObj.openingTime;
       if (openingStr != null && openingStr.contains(':')) {
@@ -227,7 +265,7 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
         final hour = int.tryParse(parts[0]) ?? 20;
         final minute = int.tryParse(parts[1]) ?? 0;
         final tod = TimeOfDay(hour: hour, minute: minute);
-        
+
         final selectedDateTime = DateTime(
           _selectedDate.year,
           _selectedDate.month,
@@ -236,9 +274,14 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
           tod.minute,
         );
         final minAllowedDateTime = DateTime.now().add(const Duration(hours: 1));
-        if (_isTimeWithinVenueHours(tod, venueObj.openingTime, venueObj.closingTime) &&
+        if (_isTimeWithinVenueHours(
+              tod,
+              venueObj.openingTime,
+              venueObj.closingTime,
+            ) &&
             !selectedDateTime.isBefore(minAllowedDateTime)) {
-          defaultTime = '${tod.hour.toString().padLeft(2, '0')}:${tod.minute.toString().padLeft(2, '0')}';
+          defaultTime =
+              '${tod.hour.toString().padLeft(2, '0')}:${tod.minute.toString().padLeft(2, '0')}';
         }
       }
 
@@ -260,11 +303,18 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
             tod.hour,
             tod.minute,
           );
-          final minAllowedDateTime = DateTime.now().add(const Duration(hours: 1));
-          
-          if (_isTimeWithinVenueHours(tod, venueObj.openingTime, venueObj.closingTime) &&
+          final minAllowedDateTime = DateTime.now().add(
+            const Duration(hours: 1),
+          );
+
+          if (_isTimeWithinVenueHours(
+                tod,
+                venueObj.openingTime,
+                venueObj.closingTime,
+              ) &&
               !selectedDateTime.isBefore(minAllowedDateTime)) {
-            defaultTime = '${tod.hour.toString().padLeft(2, '0')}:${tod.minute.toString().padLeft(2, '0')}';
+            defaultTime =
+                '${tod.hour.toString().padLeft(2, '0')}:${tod.minute.toString().padLeft(2, '0')}';
             break;
           }
         }
@@ -369,8 +419,13 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                             child: GestureDetector(
                               onTap: () {
                                 final yyyy = _selectedDate.year;
-                                final mm = _selectedDate.month.toString().padLeft(2, '0');
-                                final dd = _selectedDate.day.toString().padLeft(2, '0');
+                                final mm = _selectedDate.month
+                                    .toString()
+                                    .padLeft(2, '0');
+                                final dd = _selectedDate.day.toString().padLeft(
+                                  2,
+                                  '0',
+                                );
                                 final dateStr = '$yyyy-$mm-$dd';
                                 final timeStr = _selectedTime ?? '20:00';
 
@@ -390,7 +445,9 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                 decoration: BoxDecoration(
                                   color: Colors.grey[50],
                                   borderRadius: BorderRadius.circular(18),
-                                  border: Border.all(color: const Color(0x1A7F00FF)),
+                                  border: Border.all(
+                                    color: const Color(0x1A7F00FF),
+                                  ),
                                 ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -398,10 +455,15 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                     Container(
                                       padding: const EdgeInsets.all(8),
                                       decoration: BoxDecoration(
-                                        color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                                        color: LunaraTheme.electricViolet
+                                            .withValues(alpha: 0.1),
                                         borderRadius: BorderRadius.circular(10),
                                       ),
-                                      child: const Icon(Icons.person_add_rounded, color: LunaraTheme.electricViolet, size: 20),
+                                      child: const Icon(
+                                        Icons.person_add_rounded,
+                                        color: LunaraTheme.electricViolet,
+                                        size: 20,
+                                      ),
                                     ),
                                     const SizedBox(height: 12),
                                     const Text(
@@ -429,10 +491,16 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                           Expanded(
                             child: GestureDetector(
                               onTap: () async {
-                                final venueId = widget.venue['id']?.toString() ?? '';
+                                final venueId =
+                                    widget.venue['id']?.toString() ?? '';
                                 final yyyy = _selectedDate.year;
-                                final mm = _selectedDate.month.toString().padLeft(2, '0');
-                                final dd = _selectedDate.day.toString().padLeft(2, '0');
+                                final mm = _selectedDate.month
+                                    .toString()
+                                    .padLeft(2, '0');
+                                final dd = _selectedDate.day.toString().padLeft(
+                                  2,
+                                  '0',
+                                );
                                 final dateStr = '$yyyy-$mm-$dd';
                                 final timeStr = _selectedTime ?? '20:00';
 
@@ -460,10 +528,16 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                 padding: const EdgeInsets.all(16),
                                 decoration: BoxDecoration(
                                   gradient: const LinearGradient(
-                                    colors: [Color(0xFFF3EEFF), Color(0xFFF8F4FF)],
+                                    colors: [
+                                      Color(0xFFF3EEFF),
+                                      Color(0xFFF8F4FF),
+                                    ],
                                   ),
                                   borderRadius: BorderRadius.circular(18),
-                                  border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.3)),
+                                  border: Border.all(
+                                    color: LunaraTheme.electricViolet
+                                        .withValues(alpha: 0.3),
+                                  ),
                                 ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -474,7 +548,11 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                         color: LunaraTheme.electricViolet,
                                         borderRadius: BorderRadius.circular(10),
                                       ),
-                                      child: const Icon(Icons.favorite_rounded, color: Colors.white, size: 20),
+                                      child: const Icon(
+                                        Icons.favorite_rounded,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
                                     ),
                                     const SizedBox(height: 12),
                                     const Text(
@@ -522,11 +600,27 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
 
   String _getFormattedSelectedDate() {
     final List<String> months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     final List<String> weekdays = [
-      'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'
+      'Mon',
+      'Tue',
+      'Wed',
+      'Thu',
+      'Fri',
+      'Sat',
+      'Sun',
     ];
     final weekday = weekdays[_selectedDate.weekday - 1];
     final month = months[_selectedDate.month - 1];
@@ -727,7 +821,11 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
 
   Widget _buildDateSelection() {
     final List<DateTime> openDates = [];
-    DateTime checkDate = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+    DateTime checkDate = DateTime(
+      DateTime.now().year,
+      DateTime.now().month,
+      DateTime.now().day,
+    );
     while (openDates.length < 7) {
       if (_isVenueOpenOnDate(checkDate)) {
         openDates.add(checkDate);
@@ -763,7 +861,9 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
               return GestureDetector(
                 onTap: () {
                   if (!isOpen) {
-                    final venueObj = Venue.fromJson(Map<String, dynamic>.from(widget.venue));
+                    final venueObj = Venue.fromJson(
+                      Map<String, dynamic>.from(widget.venue),
+                    );
                     VenueTimingErrorDialog.show(
                       context,
                       venueName: venueObj.name,
@@ -776,7 +876,8 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                   }
                   setState(() {
                     _selectedDate = date;
-                    _selectedTime = null; // reset selected time to force new validation
+                    _selectedTime =
+                        null; // reset selected time to force new validation
                   });
                 },
                 child: Container(
@@ -786,8 +887,8 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                     color: !isOpen
                         ? Colors.grey[200]?.withValues(alpha: 0.5)
                         : isSelected
-                            ? LunaraTheme.electricViolet
-                            : Colors.grey[100],
+                        ? LunaraTheme.electricViolet
+                        : Colors.grey[100],
                     borderRadius: BorderRadius.circular(16),
                     border: !isOpen
                         ? Border.all(color: Colors.grey[300]!, width: 1)
@@ -822,7 +923,9 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w900,
-                            color: isSelected ? Colors.white70 : Colors.grey[500],
+                            color: isSelected
+                                ? Colors.white70
+                                : Colors.grey[500],
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -868,13 +971,17 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
       const TimeOfDay(hour: 21, minute: 0), // 9 PM
       const TimeOfDay(hour: 22, minute: 0), // 10 PM
       const TimeOfDay(hour: 23, minute: 0), // 11 PM
-      const TimeOfDay(hour: 0, minute: 0),  // 12 AM
+      const TimeOfDay(hour: 0, minute: 0), // 12 AM
     ];
 
-    final validTimes = predefinedTimes.where((t) => _isTimeSlotValid(t)).toList();
+    final validTimes = predefinedTimes
+        .where((t) => _isTimeSlotValid(t))
+        .toList();
 
     String formatTimeOfDay(TimeOfDay tod) {
-      final hour = tod.hour == 0 ? 12 : (tod.hour > 12 ? tod.hour - 12 : tod.hour);
+      final hour = tod.hour == 0
+          ? 12
+          : (tod.hour > 12 ? tod.hour - 12 : tod.hour);
       final ampm = tod.hour >= 12 ? 'PM' : 'AM';
       return '$hour:00 $ampm';
     }
@@ -883,7 +990,8 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
       return GestureDetector(
         onTap: () {
           setState(() {
-            _selectedTime = '${tod.hour.toString().padLeft(2, '0')}:${tod.minute.toString().padLeft(2, '0')}';
+            _selectedTime =
+                '${tod.hour.toString().padLeft(2, '0')}:${tod.minute.toString().padLeft(2, '0')}';
           });
         },
         child: Container(
@@ -892,7 +1000,9 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
             color: isSelected ? LunaraTheme.electricViolet : Colors.grey[50],
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isSelected ? LunaraTheme.electricViolet : Colors.grey[300]!,
+              color: isSelected
+                  ? LunaraTheme.electricViolet
+                  : Colors.grey[300]!,
               width: 1,
             ),
           ),
@@ -915,7 +1025,9 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
       if (parts.length >= 2) {
         final selHour = int.tryParse(parts[0]) ?? -1;
         final selMin = int.tryParse(parts[1]) ?? -1;
-        isCustomSelected = !validTimes.any((t) => t.hour == selHour && t.minute == selMin);
+        isCustomSelected = !validTimes.any(
+          (t) => t.hour == selHour && t.minute == selMin,
+        );
       }
     }
 
@@ -940,7 +1052,8 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
               ...validTimes.map((tod) {
                 final label = formatTimeOfDay(tod);
                 final parts = _selectedTime?.split(':');
-                final isSelected = parts != null &&
+                final isSelected =
+                    parts != null &&
                     parts.length >= 2 &&
                     int.tryParse(parts[0]) == tod.hour &&
                     int.tryParse(parts[1]) == tod.minute;
@@ -979,7 +1092,9 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                   );
                   if (picked != null) {
                     if (!_isTimeSlotValid(picked)) {
-                      final venueObj = Venue.fromJson(Map<String, dynamic>.from(widget.venue));
+                      final venueObj = Venue.fromJson(
+                        Map<String, dynamic>.from(widget.venue),
+                      );
                       VenueTimingErrorDialog.show(
                         context,
                         venueName: venueObj.name,
@@ -991,17 +1106,25 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                       return;
                     }
                     setState(() {
-                      _selectedTime = '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+                      _selectedTime =
+                          '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
                     });
                   }
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
-                    color: isCustomSelected ? LunaraTheme.electricViolet : Colors.grey[50],
+                    color: isCustomSelected
+                        ? LunaraTheme.electricViolet
+                        : Colors.grey[50],
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: isCustomSelected ? LunaraTheme.electricViolet : Colors.grey[300]!,
+                      color: isCustomSelected
+                          ? LunaraTheme.electricViolet
+                          : Colors.grey[300]!,
                       width: 1,
                     ),
                   ),
@@ -1015,9 +1138,13 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        isCustomSelected ? _formatTimeOfBooking(_selectedTime) : 'Custom',
+                        isCustomSelected
+                            ? _formatTimeOfBooking(_selectedTime)
+                            : 'Custom',
                         style: TextStyle(
-                          color: isCustomSelected ? Colors.white : Colors.black87,
+                          color: isCustomSelected
+                              ? Colors.white
+                              : Colors.black87,
                           fontWeight: FontWeight.bold,
                           fontSize: 12,
                         ),
@@ -1283,13 +1410,18 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                 decoration: BoxDecoration(
                                   gradient: LinearGradient(
                                     colors: [
-                                      LunaraTheme.electricViolet.withValues(alpha: 0.08),
-                                      LunaraTheme.electricViolet.withValues(alpha: 0.03),
+                                      LunaraTheme.electricViolet.withValues(
+                                        alpha: 0.08,
+                                      ),
+                                      LunaraTheme.electricViolet.withValues(
+                                        alpha: 0.03,
+                                      ),
                                     ],
                                   ),
                                   borderRadius: BorderRadius.circular(20),
                                   border: Border.all(
-                                    color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
+                                    color: LunaraTheme.electricViolet
+                                        .withValues(alpha: 0.2),
                                     width: 1.5,
                                   ),
                                 ),
@@ -1299,7 +1431,8 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                     Container(
                                       padding: const EdgeInsets.all(8),
                                       decoration: BoxDecoration(
-                                        color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                                        color: LunaraTheme.electricViolet
+                                            .withValues(alpha: 0.1),
                                         shape: BoxShape.circle,
                                       ),
                                       child: const Icon(
@@ -1311,7 +1444,8 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                     const SizedBox(width: 16),
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           const Text(
                                             'LARGE GROUP BOOKING (21+)',
@@ -1350,8 +1484,7 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                               const SizedBox(height: 12),
                               TextField(
                                 controller: _partySubjectController,
-                                decoration:
-                                    _inputDecoration('Party Subject *'),
+                                decoration: _inputDecoration('Party Subject *'),
                               ),
                               const SizedBox(height: 12),
                               TextField(
@@ -1364,8 +1497,9 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                               TextField(
                                 controller: _partyDescriptionController,
                                 maxLines: 3,
-                                decoration:
-                                    _inputDecoration('Description (optional)'),
+                                decoration: _inputDecoration(
+                                  'Description (optional)',
+                                ),
                               ),
                               const SizedBox(height: 12),
                               // ── Contact Details ─────────────────────
@@ -1382,27 +1516,29 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                               TextField(
                                 controller: _partyMobileController,
                                 keyboardType: TextInputType.phone,
-                                decoration: _inputDecoration(
-                                    'Mobile Number *').copyWith(
-                                  prefixIcon: const Icon(
-                                    Icons.phone_rounded,
-                                    color: LunaraTheme.electricViolet,
-                                    size: 20,
-                                  ),
-                                ),
+                                decoration: _inputDecoration('Mobile Number *')
+                                    .copyWith(
+                                      prefixIcon: const Icon(
+                                        Icons.phone_rounded,
+                                        color: LunaraTheme.electricViolet,
+                                        size: 20,
+                                      ),
+                                    ),
                               ),
                               const SizedBox(height: 12),
                               TextField(
                                 controller: _partyOptMobileController,
                                 keyboardType: TextInputType.phone,
-                                decoration: _inputDecoration(
-                                    'Additional Mobile (optional)').copyWith(
-                                  prefixIcon: const Icon(
-                                    Icons.phone_android_rounded,
-                                    color: LunaraTheme.electricViolet,
-                                    size: 20,
-                                  ),
-                                ),
+                                decoration:
+                                    _inputDecoration(
+                                      'Additional Mobile (optional)',
+                                    ).copyWith(
+                                      prefixIcon: const Icon(
+                                        Icons.phone_android_rounded,
+                                        color: LunaraTheme.electricViolet,
+                                        size: 20,
+                                      ),
+                                    ),
                               ),
                               const SizedBox(height: 32),
                             ],
@@ -1524,8 +1660,8 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                     return;
                                   }
                                   if (_partyMobileController.text
-                                          .trim()
-                                          .isEmpty) {
+                                      .trim()
+                                      .isEmpty) {
                                     ScaffoldMessenger.of(
                                       outerContext,
                                     ).showSnackBar(
@@ -1562,15 +1698,16 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                             _partyRequirementController.text,
                                         description:
                                             _partyDescriptionController.text,
-                                        mobileNumber:
-                                            _partyMobileController.text.trim(),
+                                        mobileNumber: _partyMobileController
+                                            .text
+                                            .trim(),
                                         optionalMobileNumber:
                                             _partyOptMobileController.text
-                                                    .trim()
-                                                    .isEmpty
-                                                ? null
-                                                : _partyOptMobileController.text
-                                                    .trim(),
+                                                .trim()
+                                                .isEmpty
+                                            ? null
+                                            : _partyOptMobileController.text
+                                                  .trim(),
                                       );
 
                                   if (!success) {
@@ -1611,27 +1748,42 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                   return;
                                 }
 
-                                String chargesStr = totalPrice.toStringAsFixed(0);
+                                String chargesStr = totalPrice.toStringAsFixed(
+                                  0,
+                                );
                                 Navigator.pop(bottomSheetCtx); // close popup
 
                                 // Create booking in database
                                 String? createdBookingId;
                                 final bookingRes = await ApiService.createBooking(
                                   venueId: widget.venue['id']?.toString() ?? '',
-                                  bookingDate: '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
+                                  bookingDate:
+                                      '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
                                   startTime: _selectedTime ?? '22:00',
                                   tablePackage: 'Confirmation Charges',
                                   goingMode: isSolo ? 'solo' : 'party_request',
                                   numberOfGuests: isSolo ? 1 : guests,
                                   isUpcomingNight: widget.isUpcomingNight,
-                                  partySubject: isLargeParty ? _partySubjectController.text.trim() : null,
-                                  partyRequirement: isLargeParty ? _partyRequirementController.text.trim() : null,
-                                  partyDescription: isLargeParty ? _partyDescriptionController.text.trim() : null,
-                                  mobileNumber: isLargeParty ? _partyMobileController.text.trim() : null,
-                                  optionalMobileNumber: isLargeParty ? _partyOptMobileController.text.trim() : null,
+                                  partySubject: isLargeParty
+                                      ? _partySubjectController.text.trim()
+                                      : null,
+                                  partyRequirement: isLargeParty
+                                      ? _partyRequirementController.text.trim()
+                                      : null,
+                                  partyDescription: isLargeParty
+                                      ? _partyDescriptionController.text.trim()
+                                      : null,
+                                  mobileNumber: isLargeParty
+                                      ? _partyMobileController.text.trim()
+                                      : null,
+                                  optionalMobileNumber: isLargeParty
+                                      ? _partyOptMobileController.text.trim()
+                                      : null,
                                 );
-                                if (bookingRes != null && bookingRes['bookingId'] != null) {
-                                  createdBookingId = bookingRes['bookingId'].toString();
+                                if (bookingRes != null &&
+                                    bookingRes['bookingId'] != null) {
+                                  createdBookingId = bookingRes['bookingId']
+                                      .toString();
                                 }
 
                                 if (!outerContext.mounted) return;

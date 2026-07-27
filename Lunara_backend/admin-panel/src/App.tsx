@@ -23,6 +23,8 @@ import { LegalTerms } from './pages/LegalTerms';
 import ChatSettings from './pages/ChatSettings';
 import { SubscriptionManagement } from './pages/SubscriptionManagement';
 import { SafetyChecks } from './pages/SafetyChecks';
+import { Payments } from './pages/Payments';
+import { VenueBookingSummary } from './pages/reports/VenueBookingSummary';
 import { ThemeProvider, useThemeMode } from './context/ThemeContext';
 
 // Create React Query client
@@ -86,6 +88,8 @@ function AppContent() {
             <Route path="party-requests" element={<LargePartyRequests />} />
             <Route path="group-parties" element={<GroupParties />} />
             <Route path="analytics" element={<Analytics />} />
+            <Route path="reports/venue-summary" element={<VenueBookingSummary />} />
+            <Route path="payments" element={<Payments />} />
             <Route path="compliance" element={<Compliance />} />
             <Route path="strangers-meet" element={<StrangersMeet />} />
             <Route path="safety-checks" element={<SafetyChecks />} />

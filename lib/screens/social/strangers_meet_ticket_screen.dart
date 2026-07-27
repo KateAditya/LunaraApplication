@@ -835,11 +835,12 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: const [
-                                    Text(
-                                      'TICKET TYPE',
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: const [
+                                      Text(
+                                        'TICKET TYPE',
                                       style: TextStyle(
                                         color: grayTextColor,
                                         fontSize: 8.5,
@@ -857,6 +858,7 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                                       ),
                                     ),
                                   ],
+                                ),
                                 ),
                               ],
                             ),
@@ -877,11 +879,12 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'BOOKED ON',
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'BOOKED ON',
                                       style: TextStyle(
                                         color: grayTextColor,
                                         fontSize: 8.5,
@@ -899,6 +902,7 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                                       ),
                                     ),
                                   ],
+                                ),
                                 ),
                               ],
                             ),

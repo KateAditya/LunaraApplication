@@ -881,28 +881,30 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: const [
-                                    Text(
-                                      'TICKET TYPE',
-                                      style: TextStyle(
-                                        color: grayTextColor,
-                                        fontSize: 8.5,
-                                        fontWeight: FontWeight.w800,
-                                        letterSpacing: 0.5,
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: const [
+                                      Text(
+                                        'TICKET TYPE',
+                                        style: TextStyle(
+                                          color: grayTextColor,
+                                          fontSize: 8.5,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 0.5,
+                                        ),
                                       ),
-                                    ),
-                                    SizedBox(height: 1),
-                                    Text(
-                                      'Group Party Entry',
-                                      style: TextStyle(
-                                        color: darkTextColor,
-                                        fontSize: 11.5,
-                                        fontWeight: FontWeight.bold,
+                                      SizedBox(height: 1),
+                                      Text(
+                                        'Group Party Entry',
+                                        style: TextStyle(
+                                          color: darkTextColor,
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ],
                             ),
@@ -923,28 +925,30 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'BOOKED ON',
-                                      style: TextStyle(
-                                        color: grayTextColor,
-                                        fontSize: 8.5,
-                                        fontWeight: FontWeight.w800,
-                                        letterSpacing: 0.5,
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'BOOKED ON',
+                                        style: TextStyle(
+                                          color: grayTextColor,
+                                          fontSize: 8.5,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 0.5,
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(height: 1),
-                                    Text(
-                                      '${DateFormat('MMM dd, yyyy').format(bookingCreatedDate)} • ${DateFormat('hh:mm a').format(bookingCreatedDate)}',
-                                      style: const TextStyle(
-                                        color: darkTextColor,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
+                                      const SizedBox(height: 1),
+                                      Text(
+                                        '${DateFormat('MMM dd, yyyy').format(bookingCreatedDate)} • ${DateFormat('hh:mm a').format(bookingCreatedDate)}',
+                                        style: const TextStyle(
+                                          color: darkTextColor,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ],
                             ),

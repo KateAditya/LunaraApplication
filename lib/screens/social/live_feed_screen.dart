@@ -22,7 +22,12 @@ class LiveFeedScreen extends StatefulWidget {
   final bool isTab;
   final VoidCallback? onCountChanged;
   final int initialTabIndex;
-  const LiveFeedScreen({super.key, this.isTab = false, this.onCountChanged, this.initialTabIndex = 0});
+  const LiveFeedScreen({
+    super.key,
+    this.isTab = false,
+    this.onCountChanged,
+    this.initialTabIndex = 0,
+  });
 
   @override
   State<LiveFeedScreen> createState() => LiveFeedScreenState();
@@ -42,10 +47,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   Timer? _pollingTimer;
 
   // Sub-filter selection states for tabs
-  int _subFilterIndexTab0 = 0; // Stranger Meet: 0: All, 1: Requests, 2: Bookings, 3: Chats, 4: Activity
-  int _subFilterIndexTab1 = 0; // Party Plan: 0: All, 1: Requests, 2: Bookings, 3: Chats, 4: Activity
-  int _subFilterIndexTab2 = 0; // Group Parties: 0: All, 1: Invites, 2: Joined, 3: Bookings, 4: Activity
-  int _subFilterIndexTab3 = 0; // Other: 0: All, 1: System, 2: Alerts, 3: Activity
+  int _subFilterIndexTab0 =
+      0; // Stranger Meet: 0: All, 1: Requests, 2: Bookings, 3: Chats, 4: Activity
+  int _subFilterIndexTab1 =
+      0; // Party Plan: 0: All, 1: Requests, 2: Bookings, 3: Chats, 4: Activity
+  int _subFilterIndexTab2 =
+      0; // Group Parties: 0: All, 1: Invites, 2: Joined, 3: Bookings, 4: Activity
+  int _subFilterIndexTab3 =
+      0; // Other: 0: All, 1: System, 2: Alerts, 3: Activity
 
   // Razorpay for large party payments
   Razorpay? _razorpay;
@@ -56,11 +65,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   final Set<String> _clearedFeedItemIds = {};
 
   String _sanitizeDisplayText(String rawText) {
-    if (rawText.isEmpty || rawText == 'null' || rawText == 'undefined') return '';
+    if (rawText.isEmpty || rawText == 'null' || rawText == 'undefined')
+      return '';
     final trimmed = rawText.trim();
     // Check if string is a raw UUID or random debug code (e.g. rxtxc6c6, hcidhdhd)
-    final isUuid = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$').hasMatch(trimmed);
-    final isRandomCode = RegExp(r'^[a-z0-9]{6,10}$').hasMatch(trimmed) && !trimmed.contains(' ');
+    final isUuid = RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    ).hasMatch(trimmed);
+    final isRandomCode =
+        RegExp(r'^[a-z0-9]{6,10}$').hasMatch(trimmed) && !trimmed.contains(' ');
     if (isUuid || isRandomCode) {
       return '';
     }
@@ -73,20 +86,28 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   List<Map<String, dynamic>> _getJoinRequestsForMeet(String meetId) {
-    return _feedItems.where((i) =>
-      i['type'] == 'incoming_request' &&
-      i['requestType'] == 'stranger_meet' &&
-      i['planId']?.toString() == meetId
-    ).toList();
+    return _feedItems
+        .where(
+          (i) =>
+              i['type'] == 'incoming_request' &&
+              i['requestType'] == 'stranger_meet' &&
+              i['planId']?.toString() == meetId,
+        )
+        .toList();
   }
 
   Set<String> get _readRequestIds => ApiService.localReadRequestIds;
-  Set<String> get _localReadNotificationIds => ApiService.localReadNotificationIds;
+  Set<String> get _localReadNotificationIds =>
+      ApiService.localReadNotificationIds;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this, initialIndex: widget.initialTabIndex);
+    _tabController = TabController(
+      length: 4,
+      vsync: this,
+      initialIndex: widget.initialTabIndex,
+    );
     _tabController.addListener(_handleTabChange);
     _pulseController = AnimationController(
       vsync: this,
@@ -126,23 +147,50 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   void _initSocketListeners() {
     ApiService.addSocketListener('party_plan_created', _onPartyPlanCreated);
     ApiService.addSocketListener('party_plan_deleted', _onPartyPlanDeleted);
-    ApiService.addSocketListener('party_plan_request_accepted', _onPartyPlanRequestAccepted);
-    ApiService.addSocketListener('party_plan_match_success', _onPartyPlanMatchSuccess);
+    ApiService.addSocketListener(
+      'party_plan_request_accepted',
+      _onPartyPlanRequestAccepted,
+    );
+    ApiService.addSocketListener(
+      'party_plan_match_success',
+      _onPartyPlanMatchSuccess,
+    );
     ApiService.addSocketListener('party_plan_host_paid', _onPartyPlanHostPaid);
-    ApiService.addSocketListener('party_plan_joiner_paid', _onPartyPlanJoinerPaid);
+    ApiService.addSocketListener(
+      'party_plan_joiner_paid',
+      _onPartyPlanJoinerPaid,
+    );
     ApiService.addSocketListener('plan_unavailable', _onPlanUnavailable);
-    ApiService.addSocketListener('notification_created', _onNotificationCreated);
+    ApiService.addSocketListener(
+      'notification_created',
+      _onNotificationCreated,
+    );
   }
 
   void _disposeSocketListeners() {
     ApiService.removeSocketListener('party_plan_created', _onPartyPlanCreated);
     ApiService.removeSocketListener('party_plan_deleted', _onPartyPlanDeleted);
-    ApiService.removeSocketListener('party_plan_request_accepted', _onPartyPlanRequestAccepted);
-    ApiService.removeSocketListener('party_plan_match_success', _onPartyPlanMatchSuccess);
-    ApiService.removeSocketListener('party_plan_host_paid', _onPartyPlanHostPaid);
-    ApiService.removeSocketListener('party_plan_joiner_paid', _onPartyPlanJoinerPaid);
+    ApiService.removeSocketListener(
+      'party_plan_request_accepted',
+      _onPartyPlanRequestAccepted,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_match_success',
+      _onPartyPlanMatchSuccess,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_host_paid',
+      _onPartyPlanHostPaid,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_joiner_paid',
+      _onPartyPlanJoinerPaid,
+    );
     ApiService.removeSocketListener('plan_unavailable', _onPlanUnavailable);
-    ApiService.removeSocketListener('notification_created', _onNotificationCreated);
+    ApiService.removeSocketListener(
+      'notification_created',
+      _onNotificationCreated,
+    );
   }
 
   void _onNotificationCreated(dynamic data) {
@@ -155,7 +203,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     try {
       final map = Map<String, dynamic>.from(data);
       setState(() {
-        final exists = _feedItems.any((item) => item['id']?.toString() == map['id']?.toString());
+        final exists = _feedItems.any(
+          (item) => item['id']?.toString() == map['id']?.toString(),
+        );
         if (!exists) {
           _feedItems.insert(0, map);
         }
@@ -171,10 +221,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final planId = data['planId']?.toString();
       if (planId != null) {
         setState(() {
-          _feedItems.removeWhere((item) => 
-            (item['planId']?.toString() == planId) || 
-            (item['id']?.toString() == planId && item['type'] == 'party_plan') ||
-            (item['plan'] != null && item['plan']['id']?.toString() == planId)
+          _feedItems.removeWhere(
+            (item) =>
+                (item['planId']?.toString() == planId) ||
+                (item['id']?.toString() == planId &&
+                    item['type'] == 'party_plan') ||
+                (item['plan'] != null &&
+                    item['plan']['id']?.toString() == planId),
           );
         });
       }
@@ -212,14 +265,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final planId = data['planId']?.toString();
       setState(() {
         for (var item in _feedItems) {
-          if (item['id']?.toString() == reqId || (item['plan'] != null && item['plan']['id']?.toString() == planId)) {
+          if (item['id']?.toString() == reqId ||
+              (item['plan'] != null &&
+                  item['plan']['id']?.toString() == planId)) {
             item['status'] = 'paid';
           }
         }
       });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('🎉 Party Match Confirmed! Both host and guest have paid.'),
+          content: Text(
+            '🎉 Party Match Confirmed! Both host and guest have paid.',
+          ),
           backgroundColor: Colors.green,
           duration: Duration(seconds: 5),
         ),
@@ -277,10 +334,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         }
         // Also remove any lingering plan card for that planId
         if (planId != null) {
-          _feedItems.removeWhere((item) =>
-              (item['id']?.toString() == planId && item['type'] == 'party_plan') ||
-              (item['plan'] != null && item['plan']['id']?.toString() == planId &&
-               item['status'] != 'accepted' && item['status'] != 'paid'));
+          _feedItems.removeWhere(
+            (item) =>
+                (item['id']?.toString() == planId &&
+                    item['type'] == 'party_plan') ||
+                (item['plan'] != null &&
+                    item['plan']['id']?.toString() == planId &&
+                    item['status'] != 'accepted' &&
+                    item['status'] != 'paid'),
+          );
         }
       });
     } catch (e) {
@@ -311,7 +373,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   // ── Razorpay handlers for large party payments ─────────────────────────────
 
   Future<void> _initiateLargePartyPayment(Map<String, dynamic> booking) async {
-    final bookingId = booking['id']?.toString() ?? booking['bookingId']?.toString();
+    final bookingId =
+        booking['id']?.toString() ?? booking['bookingId']?.toString();
     if (bookingId == null) return;
 
     try {
@@ -319,27 +382,33 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (!mounted) return;
       if (result == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to initiate payment. Please try again.'), backgroundColor: Colors.red),
+          const SnackBar(
+            content: Text('Failed to initiate payment. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
         );
         return;
       }
 
       final orderData = result['order'] ?? result['data'] ?? result;
-      final razorpayKey = result['razorpayKeyId']?.toString() ??
-          orderData['key']?.toString() ?? '';
+      final razorpayKey =
+          result['razorpayKeyId']?.toString() ??
+          orderData['key']?.toString() ??
+          '';
       _pendingLargePartyBookingId = bookingId;
 
       bool razorpayOpened = false;
       try {
         _razorpay?.open({
           'key': razorpayKey,
-          'order_id': orderData['razorpayOrderId']?.toString() ?? orderData['id']?.toString(),
+          'order_id':
+              orderData['razorpayOrderId']?.toString() ??
+              orderData['id']?.toString(),
           'amount': orderData['amount'],
           'name': 'Lunara – Group Party',
-          'description': 'Group Party at ${booking['venue']?['name'] ?? booking['venueName'] ?? 'venue'}',
-          'prefill': {
-            'contact': booking['mobileNumber']?.toString() ?? '',
-          },
+          'description':
+              'Group Party at ${booking['venue']?['name'] ?? booking['venueName'] ?? 'venue'}',
+          'prefill': {'contact': booking['mobileNumber']?.toString() ?? ''},
           'theme': {'color': '#7C3AED'},
         });
         razorpayOpened = true;
@@ -352,9 +421,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           context: context,
           barrierDismissible: false,
           builder: (ctx) => const Center(
-            child: CircularProgressIndicator(
-              color: LunaraTheme.electricViolet,
-            ),
+            child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
           ),
         );
         Future.delayed(const Duration(seconds: 2), () async {
@@ -362,7 +429,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           Navigator.pop(context); // Close loader
           _handleLargePartySuccess(
             paymentId: 'mock_payment',
-            orderId: orderData['razorpayOrderId']?.toString() ?? orderData['id']?.toString() ?? 'mock_order_id',
+            orderId:
+                orderData['razorpayOrderId']?.toString() ??
+                orderData['id']?.toString() ??
+                'mock_order_id',
             signature: 'mock_signature',
           );
         });
@@ -371,7 +441,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       debugPrint('_initiateLargePartyPayment error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Payment error: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Payment error: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -407,7 +480,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         await _loadGroupPartyBookings();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('🎉 Payment Successful! Your group party is confirmed.'),
+            content: Text(
+              '🎉 Payment Successful! Your group party is confirmed.',
+            ),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 4),
           ),
@@ -432,7 +507,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Payment verification failed. Please contact support.'), backgroundColor: Colors.orange),
+          const SnackBar(
+            content: Text(
+              'Payment verification failed. Please contact support.',
+            ),
+            backgroundColor: Colors.orange,
+          ),
         );
       }
     } catch (e) {
@@ -455,7 +535,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     _pendingLargePartyBookingId = null;
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('External wallet selected: ${response.walletName}')),
+      SnackBar(
+        content: Text('External wallet selected: ${response.walletName}'),
+      ),
     );
   }
 
@@ -510,7 +592,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   Future<void> _markNotificationAsRead(Map<String, dynamic> notif) async {
     final nId = notif['id']?.toString() ?? '';
-    final isRead = notif['isRead'] == true ||
+    final isRead =
+        notif['isRead'] == true ||
         notif['read'] == true ||
         _localReadNotificationIds.contains(nId);
     if (isRead) return;
@@ -536,8 +619,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: LunaraTheme.darkSurface,
-        title: const Text('Clear All', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: const Text('Are you sure you want to clear all notifications?', style: TextStyle(color: Colors.white70)),
+        title: const Text(
+          'Clear All',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        content: const Text(
+          'Are you sure you want to clear all notifications?',
+          style: TextStyle(color: Colors.white70),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -545,7 +634,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('CLEAR', style: TextStyle(color: LunaraTheme.electricViolet, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'CLEAR',
+              style: TextStyle(
+                color: LunaraTheme.electricViolet,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
         shape: RoundedRectangleBorder(
@@ -685,40 +780,59 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (isLargeParty || isStrangerMeet || isStrangerMeetJoin) return false;
 
     return (plan['visibility'] == 'private' || plan['visibility'] == 'both') &&
-        (plan['selectedUsers'] is List && (plan['selectedUsers'] as List).contains(ApiService.currentUserId));
+        (plan['selectedUsers'] is List &&
+            (plan['selectedUsers'] as List).contains(ApiService.currentUserId));
   }
 
   @override
   Widget build(BuildContext context) {
     final strangerMeetUnreadCount = _feedItems.where((i) {
       final rType = i['requestType'];
-      if (rType != 'table_plan' && rType != 'stranger_meet' && rType != 'stranger_meet_join') return false;
+      if (rType != 'table_plan' &&
+          rType != 'stranger_meet' &&
+          rType != 'stranger_meet_join')
+        return false;
       if (_readRequestIds.contains(i['id']?.toString() ?? '')) return false;
-      if (i['type'] == 'incoming_request' && i['status'] == 'pending') return true;
+      if (i['type'] == 'incoming_request' && i['status'] == 'pending')
+        return true;
       if (i['type'] == 'my_request' &&
-          (i['status'] == 'accepted' || i['paymentStatus'] == 'pending')) return true;
+          (i['status'] == 'accepted' || i['paymentStatus'] == 'pending')) {
+        return true;
+      }
       return false;
     }).length;
 
     final partyPlanUnreadCount = _feedItems.where((i) {
       if (i['requestType'] != 'party_plan') return false;
       if (_readRequestIds.contains(i['id']?.toString() ?? '')) return false;
-      if (i['type'] == 'incoming_request' && i['status'] == 'pending') return true;
+      if (i['type'] == 'incoming_request' && i['status'] == 'pending')
+        return true;
       if ((i['type'] == 'my_request' || _isInvite(i)) &&
-          (i['status'] == 'accepted' || i['joinerPaymentStatus'] == 'unpaid')) return true;
+          (i['status'] == 'accepted' || i['joinerPaymentStatus'] == 'unpaid')) {
+        return true;
+      }
       return false;
     }).length;
 
-    final otherUnreadCount = _notifications.where((n) =>
-        n['isRead'] != true && n['read'] != true).length;
+    final otherUnreadCount = _notifications
+        .where((n) => n['isRead'] != true && n['read'] != true)
+        .length;
 
     // Group Parties badge: bookings awaiting host payment
     final groupPartyAwaitingCount = _largePartyBookings.where((b) {
-      final st = (b['status'] ?? b['bookingStatus'] ?? '').toString().toLowerCase();
-      return st == 'approved' || st == 'approved_awaiting_payment' || st == 'awaiting_payment';
+      final st = (b['status'] ?? b['bookingStatus'] ?? '')
+          .toString()
+          .toLowerCase();
+      return st == 'approved' ||
+          st == 'approved_awaiting_payment' ||
+          st == 'awaiting_payment';
     }).length;
 
-    final totalUnreadCount = strangerMeetUnreadCount + partyPlanUnreadCount + groupPartyAwaitingCount + otherUnreadCount;
+    final totalUnreadCount =
+        strangerMeetUnreadCount +
+        partyPlanUnreadCount +
+        groupPartyAwaitingCount +
+        otherUnreadCount;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -801,7 +915,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 onPressed: () async {
                   await Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const NotificationCenterScreen()),
+                    MaterialPageRoute(
+                      builder: (_) => const NotificationCenterScreen(),
+                    ),
                   );
                   _loadFeed(showLoader: false);
                 },
@@ -811,17 +927,27 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   top: 6,
                   right: 6,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.red,
                       borderRadius: BorderRadius.circular(10),
                       boxShadow: [
-                        BoxShadow(color: Colors.red.withValues(alpha: 0.5), blurRadius: 4),
+                        BoxShadow(
+                          color: Colors.red.withValues(alpha: 0.5),
+                          blurRadius: 4,
+                        ),
                       ],
                     ),
                     child: Text(
                       totalUnreadCount > 9 ? '9+' : '$totalUnreadCount',
-                      style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
@@ -837,11 +963,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                       width: 8,
                       height: 8,
                       decoration: BoxDecoration(
-                        color: Colors.red.withValues(alpha: _pulseAnimation.value),
+                        color: Colors.red.withValues(
+                          alpha: _pulseAnimation.value,
+                        ),
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.red.withValues(alpha: _pulseAnimation.value * 0.6),
+                            color: Colors.red.withValues(
+                              alpha: _pulseAnimation.value * 0.6,
+                            ),
                             blurRadius: 6,
                           ),
                         ],
@@ -876,7 +1006,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   Widget _buildSectionHeaderRow(String title) {
     return Padding(
-      padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 12.0, bottom: 8.0),
+      padding: const EdgeInsets.only(
+        left: 16.0,
+        right: 16.0,
+        top: 12.0,
+        bottom: 8.0,
+      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -895,11 +1030,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               onTap: _markCurrentTabItemsAsRead,
               borderRadius: BorderRadius.circular(20),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFF3E8FF),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.25)),
+                  border: Border.all(
+                    color: LunaraTheme.electricViolet.withValues(alpha: 0.25),
+                  ),
                   boxShadow: [
                     BoxShadow(
                       color: LunaraTheme.electricViolet.withValues(alpha: 0.08),
@@ -911,7 +1051,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: const [
-                    Icon(Icons.done_all_rounded, color: LunaraTheme.electricViolet, size: 15),
+                    Icon(
+                      Icons.done_all_rounded,
+                      color: LunaraTheme.electricViolet,
+                      size: 15,
+                    ),
                     SizedBox(width: 5),
                     Text(
                       'Mark all as read',
@@ -932,7 +1076,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     );
   }
 
-  Widget _buildSubFilterPills(List<String> options, int selectedIndex, ValueChanged<int> onSelected) {
+  Widget _buildSubFilterPills(
+    List<String> options,
+    int selectedIndex,
+    ValueChanged<int> onSelected,
+  ) {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -945,7 +1093,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               onTap: () => onSelected(entry.key),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 7,
+                ),
                 decoration: BoxDecoration(
                   color: isSelected
                       ? LunaraTheme.electricViolet
@@ -960,7 +1111,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   boxShadow: isSelected
                       ? [
                           BoxShadow(
-                            color: LunaraTheme.electricViolet.withValues(alpha: 0.25),
+                            color: LunaraTheme.electricViolet.withValues(
+                              alpha: 0.25,
+                            ),
                             blurRadius: 6,
                             offset: const Offset(0, 2),
                           ),
@@ -990,7 +1143,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       decoration: BoxDecoration(
         color: const Color(0xFFF8F9FE),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.15)),
+        border: Border.all(
+          color: LunaraTheme.electricViolet.withValues(alpha: 0.15),
+        ),
         boxShadow: const [
           BoxShadow(
             color: Color(0x06000000),
@@ -1017,15 +1172,40 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildWhyItem(Icons.bolt_rounded, 'Smart & Instant', 'Real-time updates so you never miss important actions.', const Color(0xFF7F00FF)),
+                _buildWhyItem(
+                  Icons.bolt_rounded,
+                  'Smart & Instant',
+                  'Real-time updates so you never miss important actions.',
+                  const Color(0xFF7F00FF),
+                ),
                 const SizedBox(width: 16),
-                _buildWhyItem(Icons.track_changes_rounded, 'Action Oriented', 'Clear actions right in the notification card.', const Color(0xFFE100FF)),
+                _buildWhyItem(
+                  Icons.track_changes_rounded,
+                  'Action Oriented',
+                  'Clear actions right in the notification card.',
+                  const Color(0xFFE100FF),
+                ),
                 const SizedBox(width: 16),
-                _buildWhyItem(Icons.layers_rounded, 'Organized', 'Filter by type to see what matters most to you.', const Color(0xFF10B981)),
+                _buildWhyItem(
+                  Icons.layers_rounded,
+                  'Organized',
+                  'Filter by type to see what matters most to you.',
+                  const Color(0xFF10B981),
+                ),
                 const SizedBox(width: 16),
-                _buildWhyItem(Icons.devices_rounded, 'Context Aware', 'Every notification shows the full context.', const Color(0xFF0284C7)),
+                _buildWhyItem(
+                  Icons.devices_rounded,
+                  'Context Aware',
+                  'Every notification shows the full context.',
+                  const Color(0xFF0284C7),
+                ),
                 const SizedBox(width: 16),
-                _buildWhyItem(Icons.shield_outlined, 'Reliable & Secure', 'Only relevant notifications, no spam.', const Color(0xFFF59E0B)),
+                _buildWhyItem(
+                  Icons.shield_outlined,
+                  'Reliable & Secure',
+                  'Only relevant notifications, no spam.',
+                  const Color(0xFFF59E0B),
+                ),
               ],
             ),
           ),
@@ -1034,7 +1214,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     );
   }
 
-  Widget _buildWhyItem(IconData icon, String title, String subtitle, Color color) {
+  Widget _buildWhyItem(
+    IconData icon,
+    String title,
+    String subtitle,
+    Color color,
+  ) {
     return SizedBox(
       width: 110,
       child: Column(
@@ -1051,13 +1236,21 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           Text(
             title,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF0F172A),
+            ),
           ),
           const SizedBox(height: 4),
           Text(
             subtitle,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 9.5, color: Color(0xFF64748B), height: 1.2),
+            style: const TextStyle(
+              fontSize: 9.5,
+              color: Color(0xFF64748B),
+              height: 1.2,
+            ),
           ),
         ],
       ),
@@ -1071,23 +1264,30 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final id = item['id']?.toString() ?? '';
       if (_clearedFeedItemIds.contains(id)) return false;
 
-      final isMatch = type == 'table_plan' ||
+      final isMatch =
+          type == 'table_plan' ||
           ((type == 'incoming_request' || type == 'my_request') &&
-              (reqType == 'table_plan' || reqType == 'stranger_meet' || reqType == 'stranger_meet_join'));
+              (reqType == 'table_plan' ||
+                  reqType == 'stranger_meet' ||
+                  reqType == 'stranger_meet_join'));
       if (!isMatch) return false;
 
       // Apply sub-filter: 0: All, 1: Pending, 2: Incoming, 3: My Requests, 4: Confirmed
       if (_subFilterIndexTab0 == 1) {
         final status = item['status']?.toString().toLowerCase() ?? '';
         final pStatus = item['paymentStatus']?.toString().toLowerCase() ?? '';
-        return status == 'pending' || pStatus == 'pending' || pStatus == 'unpaid';
+        return status == 'pending' ||
+            pStatus == 'pending' ||
+            pStatus == 'unpaid';
       } else if (_subFilterIndexTab0 == 2) {
         return type == 'incoming_request';
       } else if (_subFilterIndexTab0 == 3) {
         return type == 'my_request';
       } else if (_subFilterIndexTab0 == 4) {
         final status = item['status']?.toString().toLowerCase() ?? '';
-        return status == 'accepted' || status == 'paid' || status == 'confirmed';
+        return status == 'accepted' ||
+            status == 'paid' ||
+            status == 'confirmed';
       }
       return true;
     }).toList();
@@ -1126,11 +1326,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   Widget _buildPartyPlanFeed() {
     final confirmedPlanIds = <String>{};
     for (final item in _feedItems) {
-      if ((item['type'] == 'my_request' || item['type'] == 'incoming_request') &&
+      if ((item['type'] == 'my_request' ||
+              item['type'] == 'incoming_request') &&
           item['requestType'] == 'party_plan') {
         final status = item['status']?.toString().toLowerCase() ?? '';
         if (status != 'rejected' && status != 'cancelled') {
-          final planId = (item['plan']?['id'] ?? item['plan']?['planId'] ?? '').toString();
+          final planId = (item['plan']?['id'] ?? item['plan']?['planId'] ?? '')
+              .toString();
           if (planId.isNotEmpty) confirmedPlanIds.add(planId);
         }
       }
@@ -1145,7 +1347,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         final planId = (item['planId'] ?? item['id'] ?? '').toString();
         if (confirmedPlanIds.contains(planId)) return false;
       }
-      final isMatch = type == 'party_plan' ||
+      final isMatch =
+          type == 'party_plan' ||
           ((type == 'incoming_request' || type == 'my_request') &&
               reqType == 'party_plan');
       if (!isMatch) return false;
@@ -1154,8 +1357,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (_subFilterIndexTab1 == 1) {
         final status = item['status']?.toString().toLowerCase() ?? '';
         final pStatus = item['paymentStatus']?.toString().toLowerCase() ?? '';
-        final jStatus = item['joinerPaymentStatus']?.toString().toLowerCase() ?? '';
-        return status == 'pending' || pStatus == 'pending' || jStatus == 'unpaid' || status == 'host_paid';
+        final jStatus =
+            item['joinerPaymentStatus']?.toString().toLowerCase() ?? '';
+        return status == 'pending' ||
+            pStatus == 'pending' ||
+            jStatus == 'unpaid' ||
+            status == 'host_paid';
       } else if (_subFilterIndexTab1 == 2) {
         return type == 'party_plan';
       } else if (_subFilterIndexTab1 == 3) {
@@ -1164,7 +1371,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         return type == 'my_request';
       } else if (_subFilterIndexTab1 == 5) {
         final status = item['status']?.toString().toLowerCase() ?? '';
-        return status == 'accepted' || status == 'paid' || status == 'confirmed';
+        return status == 'accepted' ||
+            status == 'paid' ||
+            status == 'confirmed';
       }
       return true;
     }).toList();
@@ -1175,7 +1384,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         children: [
           _buildSectionHeaderRow('Party Plans'),
           _buildSubFilterPills(
-            ['All', 'Pending', 'Public Feed', 'My Invites', 'My Requests', 'Confirmed'],
+            [
+              'All',
+              'Pending',
+              'Public Feed',
+              'My Invites',
+              'My Requests',
+              'Confirmed',
+            ],
             _subFilterIndexTab1,
             (idx) => setState(() => _subFilterIndexTab1 = idx),
           ),
@@ -1208,16 +1424,27 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   Widget _buildGroupPartiesFeed() {
     final filteredBookings = _largePartyBookings.where((booking) {
       if (_subFilterIndexTab2 == 0) return true;
-      final rawStatus = (booking['adminApprovalStatus'] ??
-              booking['admin_approval_status'] ??
-              booking['status'] ??
-              booking['bookingStatus'] ??
-              'pending')
-          .toString()
-          .toLowerCase();
-      if (_subFilterIndexTab2 == 1) return rawStatus == 'pending' || rawStatus == 'unpaid' || rawStatus == 'submitted'; // Pending
-      if (_subFilterIndexTab2 == 2) return rawStatus == 'approved' || rawStatus == 'approved_awaiting_payment' || rawStatus == 'awaiting_payment' || rawStatus == 'payment_sent'; // Approved
-      if (_subFilterIndexTab2 == 3) return rawStatus == 'paid' || rawStatus == 'confirmed' || rawStatus == 'payment_done'; // Confirmed Bookings
+      final rawStatus =
+          (booking['adminApprovalStatus'] ??
+                  booking['admin_approval_status'] ??
+                  booking['status'] ??
+                  booking['bookingStatus'] ??
+                  'pending')
+              .toString()
+              .toLowerCase();
+      if (_subFilterIndexTab2 == 1)
+        return rawStatus == 'pending' ||
+            rawStatus == 'unpaid' ||
+            rawStatus == 'submitted'; // Pending
+      if (_subFilterIndexTab2 == 2)
+        return rawStatus == 'approved' ||
+            rawStatus == 'approved_awaiting_payment' ||
+            rawStatus == 'awaiting_payment' ||
+            rawStatus == 'payment_sent'; // Approved
+      if (_subFilterIndexTab2 == 3)
+        return rawStatus == 'paid' ||
+            rawStatus == 'confirmed' ||
+            rawStatus == 'payment_done'; // Confirmed Bookings
       return true;
     }).toList();
 
@@ -1236,7 +1463,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 ? const Center(child: CircularProgressIndicator())
                 : _buildGroupedItemList(
                     items: filteredBookings,
-                    emptyText: 'No group party requests yet.\nSubmit one from the Plan Hub!',
+                    emptyText:
+                        'No group party requests yet.\nSubmit one from the Plan Hub!',
                     emptyIcon: Icons.groups_rounded,
                     onRefresh: () => _loadGroupPartyBookings(),
                     itemBuilder: (b) => _buildGroupPartyCard(b),
@@ -1249,46 +1477,69 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   Widget _buildGroupPartyCard(Map<String, dynamic> booking) {
     final venue = booking['venue'];
-    final venueName = (venue is Map ? venue['name'] : null) ??
+    final venueName =
+        (venue is Map ? venue['name'] : null) ??
         booking['venueName']?.toString() ??
         booking['venue_name']?.toString() ??
         'Venue';
-    final venueAddress = (venue is Map ? (venue['address'] ?? venue['addressLine1'] ?? venue['address_line1'] ?? venue['city'] ?? '') : null)?.toString() ??
+    final venueAddress =
+        (venue is Map
+                ? (venue['address'] ??
+                      venue['addressLine1'] ??
+                      venue['address_line1'] ??
+                      venue['city'] ??
+                      '')
+                : null)
+            ?.toString() ??
         booking['venueAddress']?.toString() ??
         booking['venue_address']?.toString() ??
         '';
-    final venueImage = (venue is Map ? (venue['images'] is List && (venue['images'] as List).isNotEmpty
-        ? (venue['images'] as List).first?.toString()
-        : (venue['imageUrl'] ?? venue['image_url'])?.toString()) : null);
+    final venueImage = (venue is Map
+        ? (venue['images'] is List && (venue['images'] as List).isNotEmpty
+              ? (venue['images'] as List).first?.toString()
+              : (venue['imageUrl'] ?? venue['image_url'])?.toString())
+        : null);
 
-    final rawStatus = (booking['adminApprovalStatus'] ??
-            booking['admin_approval_status'] ??
-            booking['status'] ??
-            booking['bookingStatus'] ??
-            booking['booking_status'] ??
-            'pending')
-        .toString()
-        .toLowerCase();
-    final guests = (booking['numberOfGuests'] ?? booking['number_of_guests'] ?? '?').toString();
-    final rawSubject = (booking['partySubject'] ?? booking['party_subject'] ?? '').toString();
+    final rawStatus =
+        (booking['adminApprovalStatus'] ??
+                booking['admin_approval_status'] ??
+                booking['status'] ??
+                booking['bookingStatus'] ??
+                booking['booking_status'] ??
+                'pending')
+            .toString()
+            .toLowerCase();
+    final guests =
+        (booking['numberOfGuests'] ?? booking['number_of_guests'] ?? '?')
+            .toString();
+    final rawSubject =
+        (booking['partySubject'] ?? booking['party_subject'] ?? '').toString();
     final subject = _sanitizeDisplayText(rawSubject);
-    final bookingDate = (booking['bookingDate'] ?? booking['booking_date'])?.toString();
-    final startTime = (booking['startTime'] ?? booking['start_time'] ?? '').toString();
-    final approvedAmount = booking['approvedAmount'] ??
+    final bookingDate = (booking['bookingDate'] ?? booking['booking_date'])
+        ?.toString();
+    final startTime = (booking['startTime'] ?? booking['start_time'] ?? '')
+        .toString();
+    final approvedAmount =
+        booking['approvedAmount'] ??
         booking['approved_amount'] ??
         booking['charges'] ??
         booking['totalAmount'] ??
         booking['total_amount'] ??
         booking['adminPaymentAmount'] ??
         booking['admin_payment_amount'];
-    final createdAt = (booking['createdAt'] ?? booking['created_at'])?.toString();
+    final createdAt = (booking['createdAt'] ?? booking['created_at'])
+        ?.toString();
 
     // Normalise status
-    final isAwaitingPayment = rawStatus == 'approved' ||
+    final isAwaitingPayment =
+        rawStatus == 'approved' ||
         rawStatus == 'approved_awaiting_payment' ||
         rawStatus == 'awaiting_payment' ||
         rawStatus == 'payment_sent';
-    final isPaid = rawStatus == 'paid' || rawStatus == 'confirmed' || rawStatus == 'payment_done';
+    final isPaid =
+        rawStatus == 'paid' ||
+        rawStatus == 'confirmed' ||
+        rawStatus == 'payment_done';
     final isRejected = rawStatus == 'rejected' || rawStatus == 'cancelled';
 
     Color statusColor;
@@ -1327,7 +1578,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     String cleanLocation = '';
     if (venue is Map) {
       final city = venue['city']?.toString() ?? '';
-      final area = venue['area']?.toString() ?? venue['addressLine1']?.toString() ?? '';
+      final area =
+          venue['area']?.toString() ?? venue['addressLine1']?.toString() ?? '';
       if (area.isNotEmpty && city.isNotEmpty && area != city) {
         cleanLocation = '$area, $city';
       } else if (city.isNotEmpty) {
@@ -1340,250 +1592,310 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       cleanLocation = venueAddress.split(',').take(2).join(', ').trim();
     }
 
-    final bookingId = booking['id']?.toString() ?? booking['bookingId']?.toString() ?? '';
+    final bookingId =
+        booking['id']?.toString() ?? booking['bookingId']?.toString() ?? '';
     final isRead = _localReadNotificationIds.contains(bookingId);
 
     return Opacity(
       opacity: isRead ? 0.6 : 1.0,
       child: Card(
         margin: const EdgeInsets.only(bottom: 16),
-      elevation: 2,
-      shadowColor: const Color(0x06000000),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(
-          color: isAwaitingPayment
-              ? Colors.orange.withValues(alpha: 0.5)
-              : isPaid
-                  ? Colors.green.withValues(alpha: 0.4)
-                  : LunaraTheme.electricViolet.withValues(alpha: 0.2),
-          width: 1.5,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Venue image / header ──────────────────────────────────────
-          ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            child: Container(
-              height: 100,
-              width: double.infinity,
-              color: LunaraTheme.electricViolet.withValues(alpha: 0.12),
-              child: venueImage != null && venueImage.isNotEmpty
-                  ? Image.network(venueImage, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _groupPartyHeaderPlaceholder(venueName))
-                  : _groupPartyHeaderPlaceholder(venueName),
-            ),
+        elevation: 2,
+        shadowColor: const Color(0x06000000),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(
+            color: isAwaitingPayment
+                ? Colors.orange.withValues(alpha: 0.5)
+                : isPaid
+                ? Colors.green.withValues(alpha: 0.4)
+                : LunaraTheme.electricViolet.withValues(alpha: 0.2),
+            width: 1.5,
           ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Venue image / header ──────────────────────────────────────
+            ClipRRect(
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(20),
+              ),
+              child: Container(
+                height: 100,
+                width: double.infinity,
+                color: LunaraTheme.electricViolet.withValues(alpha: 0.12),
+                child: venueImage != null && venueImage.isNotEmpty
+                    ? Image.network(
+                        venueImage,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) =>
+                            _groupPartyHeaderPlaceholder(venueName),
+                      )
+                    : _groupPartyHeaderPlaceholder(venueName),
+              ),
+            ),
 
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // ── Category Badge + Time Ago ─────────────────────────────
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.3)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: const [
-                          Icon(Icons.groups_rounded, size: 12, color: LunaraTheme.electricViolet),
-                          SizedBox(width: 4),
-                          Text(
-                            'GROUP PARTY',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w900,
-                              color: LunaraTheme.electricViolet,
-                              letterSpacing: 0.8,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Spacer(),
-                    if (createdAt != null)
-                      Text(
-                        _formatTimeAgo(createdAt),
-                        style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontWeight: FontWeight.w500),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-
-                // ── Venue Name & Clean Location ────────────────────────
-                Text(
-                  venueName.toUpperCase(),
-                  style: const TextStyle(
-                    fontFamily: 'AllroundGothic',
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                if (cleanLocation.isNotEmpty) ...[
-                  const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── Category Badge + Time Ago ─────────────────────────────
                   Row(
                     children: [
-                      const Icon(Icons.location_on_rounded, size: 14, color: LunaraTheme.cyberCyan),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          cleanLocation.toUpperCase(),
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Color(0xFF64748B),
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.4,
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: LunaraTheme.electricViolet.withValues(
+                            alpha: 0.1,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-
-                const SizedBox(height: 12),
-                const Divider(height: 1),
-                const SizedBox(height: 12),
-
-                // ── Details Grid Chips ──────────────────────────────────────
-                Wrap(
-                  spacing: 16,
-                  runSpacing: 8,
-                  children: [
-                    _infoChip(Icons.calendar_today_outlined, dateDisplay),
-                    _infoChip(Icons.people_outline, '$guests guests'),
-                    if (subject.isNotEmpty) _infoChip(Icons.label_outline, subject),
-                    if (approvedAmount != null)
-                      _infoChip(Icons.currency_rupee_rounded,
-                          '₹${(approvedAmount is num ? approvedAmount.toStringAsFixed(0) : approvedAmount)}'),
-                  ],
-                ),
-
-                const SizedBox(height: 14),
-
-                // ── Status Badge ──────────────────────────────────────
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: statusColor.withValues(alpha: 0.4)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(statusIcon, size: 16, color: statusColor),
-                      const SizedBox(width: 8),
-                      Text(
-                        statusLabel,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w900,
-                          color: statusColor,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 14),
-
-                // ── Action Buttons ────────────────────────────────────
-                if (isAwaitingPayment && approvedAmount != null)
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        widget.onCountChanged?.call();
-                        _initiateLargePartyPayment(booking);
-                      },
-                      icon: const Icon(Icons.payment_rounded, size: 18),
-                      label: Text(
-                        'PAY ₹${(approvedAmount is num ? approvedAmount.toStringAsFixed(0) : approvedAmount)} TO CONFIRM',
-                        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 0.8),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange[700],
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                        elevation: 3,
-                      ),
-                    ),
-                  ),
-
-                if (isPaid)
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        widget.onCountChanged?.call();
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => LargePartyTicketScreen(
-                              booking: booking,
-                              venue: Map<dynamic, dynamic>.from(
-                                booking['venue'] is Map ? booking['venue'] : {},
-                              ),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: LunaraTheme.electricViolet.withValues(
+                              alpha: 0.3,
                             ),
                           ),
-                        );
-                      },
-                      icon: const Icon(Icons.confirmation_number_rounded, size: 18),
-                      label: const Text(
-                        'VIEW TICKET',
-                        style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 1.0),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(
+                              Icons.groups_rounded,
+                              size: 12,
+                              color: LunaraTheme.electricViolet,
+                            ),
+                            SizedBox(width: 4),
+                            Text(
+                              'GROUP PARTY',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                color: LunaraTheme.electricViolet,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: LunaraTheme.electricViolet,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                        elevation: 3,
-                      ),
+                      const Spacer(),
+                      if (createdAt != null)
+                        Text(
+                          _formatTimeAgo(createdAt),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF94A3B8),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+
+                  // ── Venue Name & Clean Location ────────────────────────
+                  Text(
+                    venueName.toUpperCase(),
+                    style: const TextStyle(
+                      fontFamily: 'AllroundGothic',
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.5,
                     ),
                   ),
-
-                if (isAwaitingPayment && approvedAmount == null)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Row(
+                  if (cleanLocation.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Row(
                       children: [
-                        Icon(Icons.info_outline, size: 15, color: Colors.orange),
-                        SizedBox(width: 6),
+                        const Icon(
+                          Icons.location_on_rounded,
+                          size: 14,
+                          color: LunaraTheme.cyberCyan,
+                        ),
+                        const SizedBox(width: 4),
                         Expanded(
                           child: Text(
-                            'Admin will send you the payment link shortly.',
-                            style: TextStyle(fontSize: 12, color: Colors.orange),
+                            cleanLocation.toUpperCase(),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF64748B),
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.4,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+
+                  const SizedBox(height: 12),
+                  const Divider(height: 1),
+                  const SizedBox(height: 12),
+
+                  // ── Details Grid Chips ──────────────────────────────────────
+                  Wrap(
+                    spacing: 16,
+                    runSpacing: 8,
+                    children: [
+                      _infoChip(Icons.calendar_today_outlined, dateDisplay),
+                      _infoChip(Icons.people_outline, '$guests guests'),
+                      if (subject.isNotEmpty)
+                        _infoChip(Icons.label_outline, subject),
+                      if (approvedAmount != null)
+                        _infoChip(
+                          Icons.currency_rupee_rounded,
+                          '₹${(approvedAmount is num ? approvedAmount.toStringAsFixed(0) : approvedAmount)}',
+                        ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  // ── Status Badge ──────────────────────────────────────
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: statusColor.withValues(alpha: 0.4),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(statusIcon, size: 16, color: statusColor),
+                        const SizedBox(width: 8),
+                        Text(
+                          statusLabel,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
+                            color: statusColor,
+                            letterSpacing: 0.5,
                           ),
                         ),
                       ],
                     ),
                   ),
-              ],
+
+                  const SizedBox(height: 14),
+
+                  // ── Action Buttons ────────────────────────────────────
+                  if (isAwaitingPayment && approvedAmount != null)
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          widget.onCountChanged?.call();
+                          _initiateLargePartyPayment(booking);
+                        },
+                        icon: const Icon(Icons.payment_rounded, size: 18),
+                        label: Text(
+                          'PAY ₹${(approvedAmount is num ? approvedAmount.toStringAsFixed(0) : approvedAmount)} TO CONFIRM',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 13,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange[700],
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          elevation: 3,
+                        ),
+                      ),
+                    ),
+
+                  if (isPaid)
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          widget.onCountChanged?.call();
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => LargePartyTicketScreen(
+                                booking: booking,
+                                venue: Map<dynamic, dynamic>.from(
+                                  booking['venue'] is Map
+                                      ? booking['venue']
+                                      : {},
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                        icon: const Icon(
+                          Icons.confirmation_number_rounded,
+                          size: 18,
+                        ),
+                        label: const Text(
+                          'VIEW TICKET',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 13,
+                            letterSpacing: 1.0,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: LunaraTheme.electricViolet,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          elevation: 3,
+                        ),
+                      ),
+                    ),
+
+                  if (isAwaitingPayment && approvedAmount == null)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            size: 15,
+                            color: Colors.orange,
+                          ),
+                          SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Admin will send you the payment link shortly.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.orange,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
+    );
   }
 
   Widget _groupPartyHeaderPlaceholder(String venueName) {
@@ -1593,20 +1905,25 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.groups_rounded, color: LunaraTheme.electricViolet, size: 32),
+            const Icon(
+              Icons.groups_rounded,
+              color: LunaraTheme.electricViolet,
+              size: 32,
+            ),
             const SizedBox(height: 4),
-            Text(venueName,
-                style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: LunaraTheme.electricViolet)),
+            Text(
+              venueName,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: LunaraTheme.electricViolet,
+              ),
+            ),
           ],
         ),
       ),
     );
   }
-
-
 
   Widget _infoChip(IconData icon, String label) {
     return Row(
@@ -1614,8 +1931,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       children: [
         Icon(icon, size: 13, color: Colors.grey),
         const SizedBox(width: 4),
-        Text(label,
-            style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
       ],
     );
   }
@@ -1623,10 +1939,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   Widget _buildNotificationsFeed() {
     final filteredNotifications = _notifications.where((n) {
       if (_subFilterIndexTab3 == 0) return true;
-      final category = (n['category'] ?? n['type'] ?? '').toString().toLowerCase();
+      final category = (n['category'] ?? n['type'] ?? '')
+          .toString()
+          .toLowerCase();
       if (_subFilterIndexTab3 == 1) return category.contains('system');
-      if (_subFilterIndexTab3 == 2) return category.contains('alert') || category.contains('reminder');
-      if (_subFilterIndexTab3 == 3) return category.contains('activity') || category.contains('event');
+      if (_subFilterIndexTab3 == 2)
+        return category.contains('alert') || category.contains('reminder');
+      if (_subFilterIndexTab3 == 3)
+        return category.contains('activity') || category.contains('event');
       return true;
     }).toList();
 
@@ -1667,10 +1987,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     final sortedItems = List<Map<String, dynamic>>.from(items);
     sortedItems.sort((a, b) {
-      final rawA = a['createdAt'] ?? a['postedAt'] ?? a['created_at'] ?? a['timestamp'];
-      final rawB = b['createdAt'] ?? b['postedAt'] ?? b['created_at'] ?? b['timestamp'];
-      final dtA = rawA != null ? (DateTime.tryParse(rawA.toString())?.toLocal() ?? DateTime.fromMillisecondsSinceEpoch(0)) : DateTime.fromMillisecondsSinceEpoch(0);
-      final dtB = rawB != null ? (DateTime.tryParse(rawB.toString())?.toLocal() ?? DateTime.fromMillisecondsSinceEpoch(0)) : DateTime.fromMillisecondsSinceEpoch(0);
+      final rawA =
+          a['createdAt'] ?? a['postedAt'] ?? a['created_at'] ?? a['timestamp'];
+      final rawB =
+          b['createdAt'] ?? b['postedAt'] ?? b['created_at'] ?? b['timestamp'];
+      final dtA = rawA != null
+          ? (DateTime.tryParse(rawA.toString())?.toLocal() ??
+                DateTime.fromMillisecondsSinceEpoch(0))
+          : DateTime.fromMillisecondsSinceEpoch(0);
+      final dtB = rawB != null
+          ? (DateTime.tryParse(rawB.toString())?.toLocal() ??
+                DateTime.fromMillisecondsSinceEpoch(0))
+          : DateTime.fromMillisecondsSinceEpoch(0);
       return dtB.compareTo(dtA);
     });
 
@@ -1681,7 +2009,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final Map<String, List<Map<String, dynamic>>> grouped = {};
 
     for (final item in sortedItems) {
-      final rawDate = item['createdAt'] ?? item['postedAt'] ?? item['created_at'] ?? item['timestamp'];
+      final rawDate =
+          item['createdAt'] ??
+          item['postedAt'] ??
+          item['created_at'] ??
+          item['timestamp'];
       DateTime dt = DateTime.now();
       if (rawDate != null) {
         dt = DateTime.tryParse(rawDate.toString())?.toLocal() ?? DateTime.now();
@@ -1689,7 +2021,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final itemDate = DateTime(dt.year, dt.month, dt.day);
 
       String groupKey;
-      if (itemDate.isAtSameMomentAs(todayStart) || itemDate.isAfter(todayStart)) {
+      if (itemDate.isAtSameMomentAs(todayStart) ||
+          itemDate.isAfter(todayStart)) {
         groupKey = 'TODAY';
       } else if (itemDate.isAtSameMomentAs(yesterdayStart)) {
         groupKey = 'YESTERDAY';
@@ -1712,7 +2045,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           child: Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
@@ -1747,16 +2083,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     );
 
     if (onRefresh != null) {
-      return RefreshIndicator(
-        onRefresh: onRefresh,
-        child: listView,
-      );
+      return RefreshIndicator(onRefresh: onRefresh, child: listView);
     }
 
     return listView;
   }
 
-  Widget _buildEmptyState(String text, {IconData icon = Icons.notifications_none_rounded}) {
+  Widget _buildEmptyState(
+    String text, {
+    IconData icon = Icons.notifications_none_rounded,
+  }) {
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
@@ -1797,12 +2133,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final host = post['host'] ?? {};
     final venue = post['venue'] ?? {};
     final isMyPost = host['id']?.toString() == ApiService.currentUserId;
-    final formattedDate = _formatPlanDate(post['planDateTime'] ?? post['planDate']);
+    final formattedDate = _formatPlanDate(
+      post['planDateTime'] ?? post['planDate'],
+    );
     final timeAgo = _formatTimeAgo(post['postedAt']);
     String planTime = '21:00';
     if (post['planDateTime'] != null) {
       try {
-        final parsedDt = DateTime.parse(post['planDateTime'].toString()).toLocal();
+        final parsedDt = DateTime.parse(
+          post['planDateTime'].toString(),
+        ).toLocal();
         planTime = DateFormat('hh:mm a').format(parsedDt);
       } catch (_) {}
     } else if (post['startTime'] != null) {
@@ -1816,9 +2156,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         decoration: BoxDecoration(
           color: LunaraTheme.darkSurface,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.05),
-          ),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
           boxShadow: LunaraTheme.premiumShadow,
         ),
         child: Column(
@@ -1888,7 +2226,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   const SizedBox(width: 10),
                   Builder(
                     builder: (context) {
-                      final planId = post['planId']?.toString() ?? post['id']?.toString() ?? '';
+                      final planId =
+                          post['planId']?.toString() ??
+                          post['id']?.toString() ??
+                          '';
                       // Find if I have requested this plan
                       final myReq = _feedItems.firstWhere(
                         (item) =>
@@ -1902,11 +2243,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
                       if (myReq.isNotEmpty) {
                         final reqId = myReq['id']?.toString() ?? '';
-                        final reqStatus = _optimisticStates[reqId] ??
+                        final reqStatus =
+                            _optimisticStates[reqId] ??
                             myReq['status']?.toString().toLowerCase() ??
                             'pending';
-                        final joinerPaid = myReq['joinerPaymentStatus']?.toString().toLowerCase() == 'paid' ||
-                                           myReq['joinerPaymentStatus']?.toString().toLowerCase() == 'confirmed';
+                        final joinerPaid =
+                            myReq['joinerPaymentStatus']
+                                    ?.toString()
+                                    .toLowerCase() ==
+                                'paid' ||
+                            myReq['joinerPaymentStatus']
+                                    ?.toString()
+                                    .toLowerCase() ==
+                                'confirmed';
 
                         if (reqStatus == 'pending') {
                           return Expanded(
@@ -1941,7 +2290,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                             ),
                           );
                         } else if ((reqStatus == 'accepted' ||
-                            reqStatus == 'payment_pending') && !joinerPaid) {
+                                reqStatus == 'payment_pending') &&
+                            !joinerPaid) {
                           return Expanded(
                             child: CountdownPayButton(
                               myReq: myReq,
@@ -2025,7 +2375,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                           color: LunaraTheme.primaryDeep,
                           outline: false,
                           onTap: () async {
-                            final planId = post['planId']?.toString() ??
+                            final planId =
+                                post['planId']?.toString() ??
                                 post['id']?.toString() ??
                                 '';
                             if (planId.isEmpty) return;
@@ -2072,12 +2423,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final host = plan['host'] ?? {};
     final venue = plan['venue'] ?? {};
     final isMyPost = host['id']?.toString() == ApiService.currentUserId;
-    final formattedDate = _formatPlanDate(plan['planDateTime'] ?? plan['planDate']);
+    final formattedDate = _formatPlanDate(
+      plan['planDateTime'] ?? plan['planDate'],
+    );
     final timeAgo = _formatTimeAgo(plan['postedAt']);
     String planTime = '21:00';
     if (plan['planDateTime'] != null) {
       try {
-        final parsedDt = DateTime.parse(plan['planDateTime'].toString()).toLocal();
+        final parsedDt = DateTime.parse(
+          plan['planDateTime'].toString(),
+        ).toLocal();
         planTime = DateFormat('hh:mm a').format(parsedDt);
       } catch (_) {}
     } else if (plan['startTime'] != null) {
@@ -2133,7 +2488,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                         decoration: BoxDecoration(
                           color: Colors.amber.withValues(alpha: 0.25),
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.amber.withValues(alpha: 0.5)),
+                          border: Border.all(
+                            color: Colors.amber.withValues(alpha: 0.5),
+                          ),
                         ),
                         child: const Text(
                           'HOSTED BY YOU',
@@ -2155,7 +2512,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                         decoration: BoxDecoration(
                           color: Colors.green.withValues(alpha: 0.25),
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.green.withValues(alpha: 0.5)),
+                          border: Border.all(
+                            color: Colors.green.withValues(alpha: 0.5),
+                          ),
                         ),
                         child: const Text(
                           'PAID BY HOST',
@@ -2223,56 +2582,70 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               style: const TextStyle(color: Colors.white70, fontSize: 12),
             ),
             const SizedBox(height: 14),
-            if (isMyPost && plan['hostPaymentStatus']?.toString().toLowerCase() != 'paid') ...([
-              Builder(
-                builder: (context) {
-                  final planId = plan['id']?.toString() ?? '';
-                  final isSelfPay = plan['paymentType'] == 'self_pay';
-                  final depositAmount = plan['depositAmount'] != null 
-                      ? double.tryParse(plan['depositAmount'].toString())?.toInt() ?? (isSelfPay ? 198 : 99)
-                      : (isSelfPay ? 198 : 99);
-                  // Only show Pay Now if the host hasn't paid yet
-                  return SizedBox(
-                    width: double.infinity,
-                    child: GestureDetector(
-                      onTap: () => _startHostPayment(planId, plan),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [LunaraTheme.electricViolet, LunaraTheme.electricViolet],
-                          ),
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: LunaraTheme.electricViolet.withValues(alpha: 0.35),
-                              blurRadius: 8,
-                              offset: const Offset(0, 3),
-                            )
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.payment_rounded, color: Colors.white, size: 15),
-                            const SizedBox(width: 8),
-                            Text(
-                              'PAY HOST DEPOSIT (₹$depositAmount)',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
+            if (isMyPost &&
+                plan['hostPaymentStatus']?.toString().toLowerCase() != 'paid')
+              ...([
+                Builder(
+                  builder: (context) {
+                    final planId = plan['id']?.toString() ?? '';
+                    final isSelfPay = plan['paymentType'] == 'self_pay';
+                    final depositAmount = plan['depositAmount'] != null
+                        ? double.tryParse(
+                                plan['depositAmount'].toString(),
+                              )?.toInt() ??
+                              (isSelfPay ? 198 : 99)
+                        : (isSelfPay ? 198 : 99);
+                    // Only show Pay Now if the host hasn't paid yet
+                    return SizedBox(
+                      width: double.infinity,
+                      child: GestureDetector(
+                        onTap: () => _startHostPayment(planId, plan),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [
+                                LunaraTheme.electricViolet,
+                                LunaraTheme.electricViolet,
+                              ],
                             ),
-                          ],
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: LunaraTheme.electricViolet.withValues(
+                                  alpha: 0.35,
+                                ),
+                                blurRadius: 8,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(
+                                Icons.payment_rounded,
+                                color: Colors.white,
+                                size: 15,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'PAY HOST DEPOSIT (₹$depositAmount)',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 10),
-            ]),
+                    );
+                  },
+                ),
+                const SizedBox(height: 10),
+              ]),
             Row(
               children: [
                 Expanded(
@@ -2295,7 +2668,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   const SizedBox(width: 10),
                   Builder(
                     builder: (context) {
-                      final planId = plan['planId']?.toString() ?? plan['id']?.toString() ?? '';
+                      final planId =
+                          plan['planId']?.toString() ??
+                          plan['id']?.toString() ??
+                          '';
                       // Find if I have requested this plan
                       final myReq = _feedItems.firstWhere(
                         (item) =>
@@ -2309,11 +2685,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
                       if (myReq.isNotEmpty) {
                         final reqId = myReq['id']?.toString() ?? '';
-                        final reqStatus = _optimisticStates[reqId] ??
+                        final reqStatus =
+                            _optimisticStates[reqId] ??
                             myReq['status']?.toString().toLowerCase() ??
                             'pending';
-                        final joinerPaid = myReq['joinerPaymentStatus']?.toString().toLowerCase() == 'paid' ||
-                                           myReq['joinerPaymentStatus']?.toString().toLowerCase() == 'confirmed';
+                        final joinerPaid =
+                            myReq['joinerPaymentStatus']
+                                    ?.toString()
+                                    .toLowerCase() ==
+                                'paid' ||
+                            myReq['joinerPaymentStatus']
+                                    ?.toString()
+                                    .toLowerCase() ==
+                                'confirmed';
 
                         if (reqStatus == 'pending') {
                           return Expanded(
@@ -2347,23 +2731,41 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                               ),
                             ),
                           );
-                        } else if (reqStatus == 'accepted' || reqStatus == 'payment_pending') {
+                        } else if (reqStatus == 'accepted' ||
+                            reqStatus == 'payment_pending') {
                           if (!joinerPaid) {
-                            final hostPaid = myReq['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'paid' ||
-                                myReq['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'refunded';
+                            final hostPaid =
+                                myReq['plan']?['hostPaymentStatus']
+                                        ?.toString()
+                                        .toLowerCase() ==
+                                    'paid' ||
+                                myReq['plan']?['hostPaymentStatus']
+                                        ?.toString()
+                                        .toLowerCase() ==
+                                    'refunded';
                             if (!hostPaid) {
                               return Expanded(
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 11),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 11,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: Colors.orange.withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
+                                    border: Border.all(
+                                      color: Colors.orange.withValues(
+                                        alpha: 0.5,
+                                      ),
+                                    ),
                                   ),
                                   child: const Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      Icon(Icons.hourglass_empty_rounded, color: Colors.orange, size: 15),
+                                      Icon(
+                                        Icons.hourglass_empty_rounded,
+                                        color: Colors.orange,
+                                        size: 15,
+                                      ),
                                       SizedBox(width: 6),
                                       Text(
                                         'AWAITING HOST PAYMENT',
@@ -2389,21 +2791,38 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                             );
                           } else {
                             // Joiner has paid
-                            final hostPaid = myReq['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'paid' ||
-                                myReq['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'refunded';
+                            final hostPaid =
+                                myReq['plan']?['hostPaymentStatus']
+                                        ?.toString()
+                                        .toLowerCase() ==
+                                    'paid' ||
+                                myReq['plan']?['hostPaymentStatus']
+                                        ?.toString()
+                                        .toLowerCase() ==
+                                    'refunded';
                             if (!hostPaid) {
                               return Expanded(
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 11),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 11,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: Colors.orange.withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
+                                    border: Border.all(
+                                      color: Colors.orange.withValues(
+                                        alpha: 0.5,
+                                      ),
+                                    ),
                                   ),
                                   child: const Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      Icon(Icons.hourglass_empty_rounded, color: Colors.orange, size: 15),
+                                      Icon(
+                                        Icons.hourglass_empty_rounded,
+                                        color: Colors.orange,
+                                        size: 15,
+                                      ),
                                       SizedBox(width: 6),
                                       Text(
                                         'AWAITING HOST PAYMENT',
@@ -2419,42 +2838,76 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                               );
                             }
                             // Both paid! Show CHAT only (VIEW TICKET is host-only).
-                            if (myReq['plan']?['creator'] != null || plan['host'] != null) {
+                            if (myReq['plan']?['creator'] != null ||
+                                plan['host'] != null) {
                               return Expanded(
                                 child: ElevatedButton.icon(
                                   onPressed: () {
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(
-                                        builder: (_) => ChatScreen(user: {
-                                          ...(myReq['plan']?['creator'] ?? plan['host'] ?? {}),
-                                          'contextType': 'party_plan',
-                                          'planId': myReq['plan']?['id']?.toString() ?? plan['id']?.toString(),
-                                        }),
+                                        builder: (_) => ChatScreen(
+                                          user: {
+                                            ...(myReq['plan']?['creator'] ??
+                                                plan['host'] ??
+                                                {}),
+                                            'contextType': 'party_plan',
+                                            'planId':
+                                                myReq['plan']?['id']
+                                                    ?.toString() ??
+                                                plan['id']?.toString(),
+                                          },
+                                        ),
                                       ),
                                     );
                                   },
-                                  icon: const Icon(Icons.chat_bubble_outline_rounded, size: 14, color: Colors.white),
-                                  label: const Text('CHAT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+                                  icon: const Icon(
+                                    Icons.chat_bubble_outline_rounded,
+                                    size: 14,
+                                    color: Colors.white,
+                                  ),
+                                  label: const Text(
+                                    'CHAT',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: LunaraTheme.hotPink,
                                     foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(vertical: 11),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 11,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
                                   ),
                                 ),
                               );
                             }
                             return Expanded(
                               child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 11),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 11,
+                                ),
                                 decoration: BoxDecoration(
                                   color: Colors.green.withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: Colors.green.withValues(alpha: 0.5)),
+                                  border: Border.all(
+                                    color: Colors.green.withValues(alpha: 0.5),
+                                  ),
                                 ),
                                 child: const Center(
-                                  child: Text('MATCH CONFIRMED', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green)),
+                                  child: Text(
+                                    'MATCH CONFIRMED',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.green,
+                                    ),
+                                  ),
                                 ),
                               ),
                             );
@@ -2501,7 +2954,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                           color: LunaraTheme.primaryDeep,
                           outline: false,
                           onTap: () async {
-                            final planId = plan['planId']?.toString() ??
+                            final planId =
+                                plan['planId']?.toString() ??
                                 plan['id']?.toString() ??
                                 '';
                             if (planId.isEmpty) return;
@@ -2565,9 +3019,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     } catch (_) {}
 
     final isSelfPay = plan['paymentType'] == 'self_pay';
-    final resolvedAmount = amount ?? (plan['depositAmount'] != null 
-        ? double.tryParse(plan['depositAmount'].toString())?.toInt() ?? (isSelfPay ? 198 : 99)
-        : (isSelfPay ? 198 : 99));
+    final resolvedAmount =
+        amount ??
+        (plan['depositAmount'] != null
+            ? double.tryParse(plan['depositAmount'].toString())?.toInt() ??
+                  (isSelfPay ? 198 : 99)
+            : (isSelfPay ? 198 : 99));
 
     Navigator.push(
       context,
@@ -2581,13 +3038,22 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           guests: isSelfPay ? 'Host + Guest (Self-Pay)' : '1 Head',
           totalPrice: '₹$resolvedAmount',
           showSplitBill: false,
-          razorpayOrderId: hostRazorpayOrderId ?? plan['hostRazorpayOrderId']?.toString(),
+          razorpayOrderId:
+              hostRazorpayOrderId ?? plan['hostRazorpayOrderId']?.toString(),
           razorpayKeyId: razorpayKeyId,
           razorpayAmount: resolvedAmount * 100,
           onRazorpayPaymentSuccess: (paymentId, signature) async {
             try {
-              final orderId = hostRazorpayOrderId ?? plan['hostRazorpayOrderId']?.toString() ?? 'mock_order';
-              final success = await ApiService.verifyHostPayment(planId, orderId, paymentId, signature);
+              final orderId =
+                  hostRazorpayOrderId ??
+                  plan['hostRazorpayOrderId']?.toString() ??
+                  'mock_order';
+              final success = await ApiService.verifyHostPayment(
+                planId,
+                orderId,
+                paymentId,
+                signature,
+              );
               if (!mounted) return;
               if (success) {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -2600,7 +3066,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Payment verification failed. Please contact support.'),
+                    content: Text(
+                      'Payment verification failed. Please contact support.',
+                    ),
                     backgroundColor: Colors.red,
                   ),
                 );
@@ -2611,8 +3079,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           },
           onPaymentSuccess: () async {
             try {
-              final orderId = hostRazorpayOrderId ?? plan['hostRazorpayOrderId']?.toString() ?? 'mock_order';
-              final success = await ApiService.verifyHostPayment(planId, orderId, 'mock_payment', 'mock_signature');
+              final orderId =
+                  hostRazorpayOrderId ??
+                  plan['hostRazorpayOrderId']?.toString() ??
+                  'mock_order';
+              final success = await ApiService.verifyHostPayment(
+                planId,
+                orderId,
+                'mock_payment',
+                'mock_signature',
+              );
               if (!mounted) return;
               if (success) {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -2625,7 +3101,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Payment verification failed. Please contact support.'),
+                    content: Text(
+                      'Payment verification failed. Please contact support.',
+                    ),
                     backgroundColor: Colors.red,
                   ),
                 );
@@ -2643,7 +3121,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (planId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Could not identify plan. Please refresh and try again.'),
+          content: Text(
+            'Could not identify plan. Please refresh and try again.',
+          ),
           backgroundColor: Colors.red,
         ),
       );
@@ -2675,8 +3155,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final razorpayKeyId = data['razorpayKeyId']?.toString();
       final amount = data['amount'] is int
           ? data['amount'] as int
-          : (data['amount'] is double ? (data['amount'] as double).toInt() : 99);
-      _onHostPayDeposit(plan, orderId, razorpayKeyId: razorpayKeyId, amount: amount);
+          : (data['amount'] is double
+                ? (data['amount'] as double).toInt()
+                : 99);
+      _onHostPayDeposit(
+        plan,
+        orderId,
+        razorpayKeyId: razorpayKeyId,
+        amount: amount,
+      );
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2698,27 +3185,36 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         req['status']?.toString().toLowerCase() ??
         'pending';
 
-    final requesterFirstName = (requester['firstName'] ?? requester['name'] ?? 'User').toString();
+    final requesterFirstName =
+        (requester['firstName'] ?? requester['name'] ?? 'User').toString();
     final requesterLastName = (requester['lastName'] ?? '').toString();
     final requesterFullName = '$requesterFirstName $requesterLastName'.trim();
-    final cleanRequesterName = requesterFullName.isNotEmpty ? requesterFullName : 'Guest User';
+    final cleanRequesterName = requesterFullName.isNotEmpty
+        ? requesterFullName
+        : 'Guest User';
 
     final plan = req['plan'] ?? req['planDetails'] ?? {};
     final venue = plan['venue'] ?? {};
-    final venueName = (venue is Map ? venue['name'] : null) ?? plan['venueName'] ?? 'Venue';
+    final venueName =
+        (venue is Map ? venue['name'] : null) ?? plan['venueName'] ?? 'Venue';
     final requestType = req['requestType']?.toString() ?? 'table_plan';
     final requestTypeLabel = requestType == 'party_plan'
         ? 'Party Plan Request'
         : (requestType == 'stranger_meet' || requestType == 'stranger_meet_join'
-            ? 'Stranger Meet Request'
-            : 'Join Request');
+              ? 'Stranger Meet Request'
+              : 'Join Request');
 
-    final hostPaid = req['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'paid' ||
-                     req['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'refunded' ||
-                     req['planDetails']?['hostPaymentStatus']?.toString().toLowerCase() == 'paid' ||
-                     req['planDetails']?['hostPaymentStatus']?.toString().toLowerCase() == 'refunded';
-    final joinerPaid = req['joinerPaymentStatus']?.toString().toLowerCase() == 'paid' ||
-                       req['joinerPaymentStatus']?.toString().toLowerCase() == 'confirmed';
+    final hostPaid =
+        req['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'paid' ||
+        req['plan']?['hostPaymentStatus']?.toString().toLowerCase() ==
+            'refunded' ||
+        req['planDetails']?['hostPaymentStatus']?.toString().toLowerCase() ==
+            'paid' ||
+        req['planDetails']?['hostPaymentStatus']?.toString().toLowerCase() ==
+            'refunded';
+    final joinerPaid =
+        req['joinerPaymentStatus']?.toString().toLowerCase() == 'paid' ||
+        req['joinerPaymentStatus']?.toString().toLowerCase() == 'confirmed';
 
     final isRead = _readRequestIds.contains(reqId);
 
@@ -2727,306 +3223,387 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       child: Padding(
         padding: const EdgeInsets.only(bottom: 16),
         child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: const Color(0xFFF1F5F9),
-            width: 1.2,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFF1F5F9), width: 1.2),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x06000000),
+                blurRadius: 12,
+                offset: Offset(0, 4),
+              ),
+            ],
           ),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x06000000),
-              blurRadius: 12,
-              offset: Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                LunaraProfileImage(
-                  userData: requester is Map ? Map<String, dynamic>.from(requester) : {},
-                  radius: 22,
-                  isInteractive: true,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      GestureDetector(
-                        onTap: () {
-                          try {
-                            final userObj = User.fromJson(requester);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => ProfileScreen(user: userObj),
-                              ),
-                            );
-                          } catch (e) {
-                            debugPrint('Error navigating to profile screen: $e');
-                          }
-                        },
-                        child: Text(
-                          '$cleanRequesterName requested to join',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 14,
-                            color: Color(0xFF0F172A),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        '$requestTypeLabel • $venueName',
-                        style: const TextStyle(
-                          color: LunaraTheme.electricViolet,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        timeAgo,
-                        style: const TextStyle(
-                          color: Color(0xFF94A3B8),
-                          fontSize: 10.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            if (currentStatus == 'pending') ...[
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Row(
                 children: [
-                  Expanded(
-                    child: _actionButton(
-                      icon: Icons.check,
-                      label: 'ACCEPT',
-                      color: Colors.green,
-                      outline: false,
-                      onTap: () async {
-                        setState(() => _optimisticStates[reqId] = 'accepted');
-                        if (req['requestType'] == 'stranger_meet') {
-                          final planId = req['planId']?.toString() ?? '';
-                          final success = await ApiService.handleStrangersMeetJoinRequest(planId, reqId, 'accept');
-                          if (success) {
-                            _loadFeed(showLoader: false);
-                          } else {
-                            setState(() => _optimisticStates.remove(reqId));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Failed to accept request')),
-                            );
-                          }
-                        } else {
-                          final result = await ApiService.acceptPartyPlanRequest(reqId);
-                          if (result != null) {
-                            final hostOrderId = result['hostRazorpayOrderId']?.toString();
-                            if (hostOrderId != null) {
-                              final plan = req['plan'] ?? {};
-                              _onHostPayDeposit(plan, hostOrderId);
-                            } else {
-                              _loadFeed(showLoader: false);
-                            }
-                          } else {
-                            _loadFeed(showLoader: false);
-                          }
-                        }
-                      },
-                    ),
+                  LunaraProfileImage(
+                    userData: requester is Map
+                        ? Map<String, dynamic>.from(requester)
+                        : {},
+                    radius: 22,
+                    isInteractive: true,
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 12),
                   Expanded(
-                    child: _actionButton(
-                      icon: Icons.close,
-                      label: 'REJECT',
-                      color: Colors.red,
-                      outline: true,
-                      onTap: () async {
-                        setState(() => _optimisticStates[reqId] = 'rejected');
-                        if (req['requestType'] == 'stranger_meet') {
-                          final planId = req['planId']?.toString() ?? '';
-                          final success = await ApiService.handleStrangersMeetJoinRequest(planId, reqId, 'reject');
-                          if (success) {
-                            _loadFeed(showLoader: false);
-                          } else {
-                            setState(() => _optimisticStates.remove(reqId));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Failed to reject request')),
-                            );
-                          }
-                        } else {
-                          await ApiService.rejectPartyPlanRequest(reqId);
-                          _loadFeed(showLoader: false);
-                        }
-                      },
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        GestureDetector(
+                          onTap: () {
+                            try {
+                              final userObj = User.fromJson(requester);
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      ProfileScreen(user: userObj),
+                                ),
+                              );
+                            } catch (e) {
+                              debugPrint(
+                                'Error navigating to profile screen: $e',
+                              );
+                            }
+                          },
+                          child: Text(
+                            '$cleanRequesterName requested to join',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 14,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '$requestTypeLabel • $venueName',
+                          style: const TextStyle(
+                            color: LunaraTheme.electricViolet,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          timeAgo,
+                          style: const TextStyle(
+                            color: Color(0xFF94A3B8),
+                            fontSize: 10.5,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
-            ] else if (currentStatus == 'accepted' || currentStatus == 'paid' || currentStatus == 'payment_pending') ...[
-              if (hostPaid && joinerPaid) ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    children: [
-                      const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.check_circle, color: Colors.green, size: 16),
-                          SizedBox(width: 6),
-                          Text(
-                            'BOOKING CONFIRMED 🎉',
-                            style: TextStyle(
-                              color: Colors.green,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: () {
+              const SizedBox(height: 14),
+              if (currentStatus == 'pending') ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: _actionButton(
+                        icon: Icons.check,
+                        label: 'ACCEPT',
+                        color: Colors.green,
+                        outline: false,
+                        onTap: () async {
+                          setState(() => _optimisticStates[reqId] = 'accepted');
+                          if (req['requestType'] == 'stranger_meet') {
+                            final planId = req['planId']?.toString() ?? '';
+                            final success =
+                                await ApiService.handleStrangersMeetJoinRequest(
+                                  planId,
+                                  reqId,
+                                  'accept',
+                                );
+                            if (success) {
+                              _loadFeed(showLoader: false);
+                            } else {
+                              setState(() => _optimisticStates.remove(reqId));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Failed to accept request'),
+                                ),
+                              );
+                            }
+                          } else {
+                            final result =
+                                await ApiService.acceptPartyPlanRequest(reqId);
+                            if (result != null) {
+                              final hostOrderId = result['hostRazorpayOrderId']
+                                  ?.toString();
+                              if (hostOrderId != null) {
                                 final plan = req['plan'] ?? {};
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => PartyPlanTicketScreen(
-                                      request: req,
-                                      plan: plan,
-                                      isHost: true,
-                                    ),
-                                  ),
-                                );
-                              },
-                              icon: const Icon(Icons.qr_code_rounded, size: 16, color: Colors.white),
-                              label: const Text(
-                                'VIEW TICKET',
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: LunaraTheme.electricViolet,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => ChatScreen(user: {
-                                      ...requester,
-                                      'contextType': 'party_plan',
-                                      'planId': req['plan']?['id']?.toString(),
-                                    }),
-                                  ),
-                                );
-                              },
-                              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16, color: Colors.white),
-                              label: const Text(
-                                'CHAT',
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: LunaraTheme.hotPink,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              ),
-                            ),
-                          ),
-                        ],
+                                _onHostPayDeposit(plan, hostOrderId);
+                              } else {
+                                _loadFeed(showLoader: false);
+                              }
+                            } else {
+                              _loadFeed(showLoader: false);
+                            }
+                          }
+                        },
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _actionButton(
+                        icon: Icons.close,
+                        label: 'REJECT',
+                        color: Colors.red,
+                        outline: true,
+                        onTap: () async {
+                          setState(() => _optimisticStates[reqId] = 'rejected');
+                          if (req['requestType'] == 'stranger_meet') {
+                            final planId = req['planId']?.toString() ?? '';
+                            final success =
+                                await ApiService.handleStrangersMeetJoinRequest(
+                                  planId,
+                                  reqId,
+                                  'reject',
+                                );
+                            if (success) {
+                              _loadFeed(showLoader: false);
+                            } else {
+                              setState(() => _optimisticStates.remove(reqId));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Failed to reject request'),
+                                ),
+                              );
+                            }
+                          } else {
+                            await ApiService.rejectPartyPlanRequest(reqId);
+                            _loadFeed(showLoader: false);
+                          }
+                        },
+                      ),
+                    ),
+                  ],
                 ),
-              ] else if (!hostPaid) ...[
-                Builder(
-                  builder: (context) {
-                    final plan = req['plan'] ?? {};
-                    final isSelfPay = plan['paymentType'] == 'self_pay';
-                    final depositAmount = plan['depositAmount'] != null 
-                        ? double.tryParse(plan['depositAmount'].toString())?.toInt() ?? (isSelfPay ? 198 : 99)
-                        : (isSelfPay ? 198 : 99);
-                    return Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: LunaraTheme.accentVivid.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Column(
-                        children: [
-                          const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.warning_amber_rounded, color: LunaraTheme.accentVivid, size: 16),
-                              SizedBox(width: 6),
-                              Text(
-                                'HOST DEPOSIT UNPAID',
-                                style: TextStyle(
-                                  color: LunaraTheme.accentVivid,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
+              ] else if (currentStatus == 'accepted' ||
+                  currentStatus == 'paid' ||
+                  currentStatus == 'payment_pending') ...[
+                if (hostPaid && joinerPaid) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      children: [
+                        const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.check_circle,
+                              color: Colors.green,
+                              size: 16,
+                            ),
+                            SizedBox(width: 6),
+                            Text(
+                              'BOOKING CONFIRMED 🎉',
+                              style: TextStyle(
+                                color: Colors.green,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  final plan = req['plan'] ?? {};
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => PartyPlanTicketScreen(
+                                        request: req,
+                                        plan: plan,
+                                        isHost: true,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(
+                                  Icons.qr_code_rounded,
+                                  size: 16,
+                                  color: Colors.white,
+                                ),
+                                label: const Text(
+                                  'VIEW TICKET',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: LunaraTheme.electricViolet,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
                                 ),
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 40,
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                final planId = (req['planId']?.toString().isNotEmpty == true
-                                    ? req['planId'].toString()
-                                    : plan['id']?.toString() ?? '');
-                                _startHostPayment(planId, plan);
-                              },
-                              icon: const Icon(Icons.payment, size: 16, color: Colors.white),
-                              label: Text(
-                                'PAY NOW (₹$depositAmount)',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: LunaraTheme.electricViolet,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => ChatScreen(
+                                        user: {
+                                          ...requester,
+                                          'contextType': 'party_plan',
+                                          'planId': req['plan']?['id']
+                                              ?.toString(),
+                                        },
+                                      ),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(
+                                  Icons.chat_bubble_outline_rounded,
+                                  size: 16,
+                                  color: Colors.white,
+                                ),
+                                label: const Text(
+                                  'CHAT',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: LunaraTheme.hotPink,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else if (!hostPaid) ...[
+                  Builder(
+                    builder: (context) {
+                      final plan = req['plan'] ?? {};
+                      final isSelfPay = plan['paymentType'] == 'self_pay';
+                      final depositAmount = plan['depositAmount'] != null
+                          ? double.tryParse(
+                                  plan['depositAmount'].toString(),
+                                )?.toInt() ??
+                                (isSelfPay ? 198 : 99)
+                          : (isSelfPay ? 198 : 99);
+                      return Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: LunaraTheme.accentVivid.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          children: [
+                            const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.warning_amber_rounded,
+                                  color: LunaraTheme.accentVivid,
+                                  size: 16,
+                                ),
+                                SizedBox(width: 6),
+                                Text(
+                                  'HOST DEPOSIT UNPAID',
+                                  style: TextStyle(
+                                    color: LunaraTheme.accentVivid,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 40,
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  final planId =
+                                      (req['planId']?.toString().isNotEmpty ==
+                                          true
+                                      ? req['planId'].toString()
+                                      : plan['id']?.toString() ?? '');
+                                  _startHostPayment(planId, plan);
+                                },
+                                icon: const Icon(
+                                  Icons.payment,
+                                  size: 16,
+                                  color: Colors.white,
+                                ),
+                                label: Text(
+                                  'PAY NOW (₹$depositAmount)',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: LunaraTheme.electricViolet,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ] else ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'AWAITING PARTICIPANT PAYMENT',
+                        style: TextStyle(
+                          color: Colors.orange,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
                       ),
-                    );
-                  },
-                ),
+                    ),
+                  ),
+                ],
               ] else ...[
                 Container(
                   padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Center(
+                  child: Center(
                     child: Text(
-                      'AWAITING PARTICIPANT PAYMENT',
-                      style: TextStyle(
-                        color: Colors.orange,
+                      currentStatus.toUpperCase(),
+                      style: const TextStyle(
+                        color: Colors.grey,
                         fontWeight: FontWeight.bold,
                         fontSize: 12,
                       ),
@@ -3034,26 +3611,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   ),
                 ),
               ],
-            ] else ...[
-              Container(
-                padding: const EdgeInsets.all(12),
-                child: Center(
-                  child: Text(
-                    currentStatus.toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.grey,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-              ),
             ],
-          ],
+          ),
         ),
       ),
-    ),
-  );
+    );
   }
 
   // My Request = Current user requested to join someone else's plan
@@ -3068,8 +3630,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final venue = isLargeParty
         ? (booking['venue'] ?? {})
         : (isStrangerMeet
-            ? (req['venue'] ?? {})
-            : (isStrangerMeetJoin ? (req['plan']?['venue'] ?? {}) : (plan['venue'] ?? {})));
+              ? (req['venue'] ?? {})
+              : (isStrangerMeetJoin
+                    ? (req['plan']?['venue'] ?? {})
+                    : (plan['venue'] ?? {})));
 
     final isInvite = _isInvite(req);
 
@@ -3088,810 +3652,121 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       child: Padding(
         padding: const EdgeInsets.only(bottom: 16),
         child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF101E24) : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isDark 
-                ? LunaraTheme.electricViolet.withValues(alpha: 0.4) 
-                : LunaraTheme.electricViolet.withValues(alpha: 0.3),
-            width: 1.5,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF101E24) : Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isDark
+                  ? LunaraTheme.electricViolet.withValues(alpha: 0.4)
+                  : LunaraTheme.electricViolet.withValues(alpha: 0.3),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: LunaraTheme.electricViolet.withValues(
+                  alpha: isDark ? 0.12 : 0.05,
+                ),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
-          boxShadow: [
-            BoxShadow(
-              color: LunaraTheme.electricViolet.withValues(alpha: isDark ? 0.12 : 0.05),
-              blurRadius: 16,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.send,
-                    color: LunaraTheme.electricViolet,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        isStrangerMeet
-                            ? 'You created a Stranger Meet'
-                            : 'You requested to join',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                          color: isDark ? Colors.white : Colors.black87,
-                        ),
-                      ),
-                      Text(
-                        isLargeParty
-                            ? 'Group Booking at ${venue['name'] ?? 'Venue'}'
-                            : isStrangerMeet
-                                ? 'Stranger Meet: "${req['subject'] ?? 'Subject'}" at ${venue['name'] ?? 'Venue'}'
-                                : isStrangerMeetJoin
-                                    ? 'Stranger Meet: "${req['plan']?['subject'] ?? 'Subject'}" at ${venue['name'] ?? 'Venue'}'
-                                    : '${plan['type'] == 'table_plan' ? 'Table Plan' : 'Party Plan'} at ${venue['name'] ?? 'Venue'}',
-                        style: TextStyle(
-                          color: isDark ? Colors.white70 : Colors.black87,
-                          fontSize: 12,
-                        ),
-                      ),
-                      Text(
-                        timeAgo,
-                        style: TextStyle(
-                          color: isDark ? Colors.white38 : Colors.black54,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (isLargeParty) ...[
-              if (currentStatus == 'pending') ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: Colors.yellow.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.yellow.withValues(alpha: 0.3)),
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'PENDING ADMIN APPROVAL',
-                      style: TextStyle(
-                        color: Colors.yellow,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 11,
-                      ),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.send,
+                      color: LunaraTheme.electricViolet,
+                      size: 20,
                     ),
                   ),
-                ),
-              ] else if (currentStatus == 'approved') ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
-                  ),
-                  child: Column(
-                    children: [
-                      Text(
-                        'APPROVED! PAYMENT REQUIRED: ₹${booking['totalAmount'] ?? '0'}',
-                        style: const TextStyle(
-                          color: Colors.blue,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _actionButton(
-                              icon: Icons.payment,
-                              label: 'PAY NOW',
-                              color: Colors.blue,
-                              outline: false,
-                              onTap: () async {
-                                final bookingId = booking['id']?.toString() ?? '';
-                                if (bookingId.isEmpty) return;
-
-                                // Show loading spinner
-                                showDialog(
-                                  context: context,
-                                  barrierDismissible: false,
-                                  builder: (context) => const Center(
-                                    child: CircularProgressIndicator(
-                                      color: LunaraTheme.electricViolet,
-                                    ),
-                                  ),
-                                );
-
-                                final paymentInfo = await ApiService.initiateLargePartyPayment(bookingId);
-
-                                if (!mounted) return;
-                                Navigator.pop(context); // Close loading spinner
-
-                                if (paymentInfo != null && paymentInfo['success'] == true) {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => PaymentConfirmationScreen(
-                                        venue: venue,
-                                        date: booking['bookingDate'] != null
-                                            ? DateFormat('dd/MM/yyyy').format(DateTime.parse(booking['bookingDate']).toLocal())
-                                            : 'Tonight',
-                                        package: 'Large Party Booking Deposit',
-                                        time: booking['startTime'] ?? '21:00',
-                                        table: 'Large Party Table',
-                                        guests: '${booking['numberOfGuests'] ?? 1} Guests',
-                                        totalPrice: '₹${booking['totalAmount'] ?? '0'}',
-                                        showSplitBill: false,
-                                        razorpayOrderId: paymentInfo['razorpayOrderId'],
-                                        razorpayKeyId: paymentInfo['razorpayKeyId'],
-                                        razorpayAmount: paymentInfo['amount'],
-                                        onRazorpayPaymentSuccess: (paymentId, signature) async {
-                                          final success = await ApiService.verifyLargePartyPayment(
-                                            bookingId,
-                                            razorpayOrderId: paymentInfo['razorpayOrderId'],
-                                            razorpayPaymentId: paymentId,
-                                            razorpaySignature: signature,
-                                          );
-                                          if (!mounted) return;
-                                          if (success) {
-                                            setState(() {
-                                              _optimisticStates[reqId] = 'payment_done';
-                                            });
-                                            _loadFeed(showLoader: false);
-                                          } else {
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              const SnackBar(
-                                                content: Text('Payment Verification Failed.'),
-                                                backgroundColor: Colors.red,
-                                              ),
-                                            );
-                                          }
-                                        },
-                                      ),
-                                    ),
-                                  );
-                                } else {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Failed to initiate payment. Please try again.'),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                }
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ] else if (currentStatus == 'payment_sent') ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    children: [
-                      Text(
-                        'PAYMENT REQUIRED: ₹${booking['adminPaymentAmount'] ?? booking['totalAmount'] ?? '0'}',
-                        style: const TextStyle(
-                          color: Colors.green,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _actionButton(
-                              icon: Icons.payment,
-                              label: 'PAY NOW',
-                              color: Colors.green,
-                              outline: false,
-                              onTap: () async {
-                                final urlStr = booking['adminPaymentLink'] ?? '';
-                                if (urlStr.isNotEmpty) {
-                                  final url = Uri.parse(urlStr);
-                                  if (await canLaunchUrl(url)) {
-                                    await launchUrl(url, mode: LaunchMode.externalApplication);
-                                  }
-                                }
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ] else if (currentStatus == 'payment_done') ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: Colors.green.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
-                  ),
-                  child: Column(
-                    children: [
-                      const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.check_circle, color: Colors.green, size: 16),
-                          SizedBox(width: 6),
-                          Text(
-                            'BOOKING CONFIRMED 🎉',
-                            style: TextStyle(
-                              color: Colors.green,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => LargePartyTicketScreen(
-                                      booking: booking,
-                                      venue: venue,
-                                    ),
-                                  ),
-                                );
-                              },
-                              icon: const Icon(Icons.qr_code_2_rounded, size: 16, color: Colors.white),
-                              label: const Text(
-                                'VIEW TICKET',
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: LunaraTheme.electricViolet,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                final chatTarget = venue['user'] ?? venue['creator'] ?? venue['admin'] ?? {
-                                  'id': 'venue_support',
-                                  'firstName': venue['name'] ?? 'Venue Support',
-                                  'lastName': '',
-                                  'username': 'support',
-                                };
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => ChatScreen(user: {
-                                      ...Map<String, dynamic>.from(chatTarget),
-                                      'contextType': 'large_party',
-                                      'bookingId': booking['id']?.toString(),
-                                    }),
-                                  ),
-                                );
-                              },
-                              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16, color: Colors.white),
-                              label: const Text(
-                                'CHAT',
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: LunaraTheme.hotPink,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ] else ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
-                  ),
-                  child: Center(
-                    child: Text(
-                      currentStatus.toUpperCase(),
-                      style: const TextStyle(
-                        color: Colors.grey,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ] else if (isStrangerMeet) ...[
-              if (currentStatus == 'pending') ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: Colors.yellow.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.yellow.withValues(alpha: 0.3)),
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'PENDING ADMIN APPROVAL',
-                      style: TextStyle(
-                        color: Colors.yellow,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ),
-                ),
-              ] else if (currentStatus == 'rejected') ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: Colors.red.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
-                  ),
-                  child: Center(
-                    child: Text(
-                      'REJECTED: ${req['adminNotes'] ?? 'No notes provided'}',
-                      style: const TextStyle(
-                        color: Colors.red,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ),
-                ),
-              ] else if (currentStatus == 'approved' && req['paymentStatus'] != 'paid') ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.3)),
-                  ),
-                  child: Column(
-                    children: [
-                      Text(
-                        'APPROVED! PLATFORM DEPOSIT REQUIRED: ₹${req['paymentAmount'] ?? '0'}',
-                        style: const TextStyle(
-                          color: LunaraTheme.electricViolet,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _actionButton(
-                              icon: Icons.payment,
-                              label: 'PAY NOW',
-                              color: LunaraTheme.electricViolet,
-                              outline: false,
-                              onTap: () {
-                                final meetReq = StrangersMeetRequest.fromJson(req);
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => StrangersMeetPaymentScreen(
-                                      request: meetReq,
-                                      onPaymentSuccess: () {
-                                        setState(() {
-                                          _optimisticStates[reqId] = 'paid';
-                                        });
-                                        _loadFeed(showLoader: false);
-                                      },
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ] else ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.check_circle, color: Colors.blue, size: 16),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          currentStatus == 'completed' ? 'COMPLETED' : 'PAYMENT CONFIRMED & PUBLISHED',
-                          style: const TextStyle(
-                            color: Colors.blue,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-              if (currentStatus == 'approved' || currentStatus == 'paid' || currentStatus == 'completed') ...[
-                Builder(
-                  builder: (context) {
-                    final meetRequests = _getJoinRequestsForMeet(reqId);
-                    if (meetRequests.isEmpty) return const SizedBox.shrink();
-                    return Column(
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const SizedBox(height: 12),
-                        const Divider(color: Colors.white10),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'JOIN REQUESTS',
+                        Text(
+                          isStrangerMeet
+                              ? 'You created a Stranger Meet'
+                              : 'You requested to join',
                           style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 11,
                             fontWeight: FontWeight.bold,
-                            letterSpacing: 1.0,
+                            fontSize: 14,
+                            color: isDark ? Colors.white : Colors.black87,
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        ...meetRequests.map((joinReq) {
-                          final joinReqId = joinReq['id']?.toString() ?? '';
-                          final joiner = joinReq['requester'] ?? {};
-                          final joinerStatus = _optimisticStates[joinReqId] ?? joinReq['status']?.toString().toLowerCase() ?? 'pending';
-                          final joinerPayment = joinReq['joinerPaymentStatus']?.toString().toLowerCase() ?? 'pending';
-
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.03),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
-                            ),
-                            child: Row(
-                              children: [
-                                LunaraProfileImage(
-                                  userData: joiner,
-                                  radius: 16,
-                                  isInteractive: false,
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        joiner['firstName'] ?? 'User',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        joinerStatus == 'paid' || joinerPayment == 'paid'
-                                            ? 'PAID & JOINED'
-                                            : joinerStatus.toUpperCase(),
-                                        style: TextStyle(
-                                          color: joinerStatus == 'paid' || joinerPayment == 'paid'
-                                              ? Colors.green
-                                              : (joinerStatus == 'accepted' ? Colors.orange : Colors.grey),
-                                          fontSize: 9,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                if (joinerStatus == 'pending') ...[
-                                  IconButton(
-                                    icon: const Icon(Icons.check_circle_outline, color: Colors.green, size: 22),
-                                    onPressed: () async {
-                                      setState(() => _optimisticStates[joinReqId] = 'accepted');
-                                      final success = await ApiService.handleStrangersMeetJoinRequest(reqId, joinReqId, 'accept');
-                                      if (success) {
-                                        _loadFeed(showLoader: false);
-                                      } else {
-                                        setState(() => _optimisticStates.remove(joinReqId));
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Failed to accept request')),
-                                        );
-                                      }
-                                    },
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.cancel_outlined, color: Colors.red, size: 22),
-                                    onPressed: () async {
-                                      setState(() => _optimisticStates[joinReqId] = 'rejected');
-                                      final success = await ApiService.handleStrangersMeetJoinRequest(reqId, joinReqId, 'reject');
-                                      if (success) {
-                                        _loadFeed(showLoader: false);
-                                      } else {
-                                        setState(() => _optimisticStates.remove(joinReqId));
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Failed to reject request')),
-                                        );
-                                      }
-                                    },
-                                  ),
-                                ],
-                                if (joinerStatus == 'paid' || joinerPayment == 'paid') ...[
-                                  IconButton(
-                                    icon: const Icon(Icons.chat_bubble_outline_rounded, color: LunaraTheme.hotPink, size: 22),
-                                    onPressed: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) => ChatScreen(user: {
-                                            ...joiner,
-                                            'contextType': 'stranger_meet',
-                                            'planId': reqId,
-                                          }),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ],
-                              ],
-                            ),
-                          );
-                        }).toList(),
+                        Text(
+                          isLargeParty
+                              ? 'Group Booking at ${venue['name'] ?? 'Venue'}'
+                              : isStrangerMeet
+                              ? 'Stranger Meet: "${req['subject'] ?? 'Subject'}" at ${venue['name'] ?? 'Venue'}'
+                              : isStrangerMeetJoin
+                              ? 'Stranger Meet: "${req['plan']?['subject'] ?? 'Subject'}" at ${venue['name'] ?? 'Venue'}'
+                              : '${plan['type'] == 'table_plan' ? 'Table Plan' : 'Party Plan'} at ${venue['name'] ?? 'Venue'}',
+                          style: TextStyle(
+                            color: isDark ? Colors.white70 : Colors.black87,
+                            fontSize: 12,
+                          ),
+                        ),
+                        Text(
+                          timeAgo,
+                          style: TextStyle(
+                            color: isDark ? Colors.white38 : Colors.black54,
+                            fontSize: 10,
+                          ),
+                        ),
                       ],
-                    );
-                  }
-                ),
-              ],
-            ] else if (isStrangerMeetJoin) ...[
-              if (currentStatus == 'pending') ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: Colors.yellow.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.yellow.withValues(alpha: 0.3)),
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'PENDING HOST APPROVAL',
-                      style: TextStyle(
-                        color: Colors.yellow,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 11,
-                      ),
                     ),
                   ),
-                ),
-              ] else if (currentStatus == 'rejected') ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: Colors.red.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'REJECTED BY HOST',
-                      style: TextStyle(
-                        color: Colors.red,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 11,
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (isLargeParty) ...[
+                if (currentStatus == 'pending') ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.yellow.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.yellow.withValues(alpha: 0.3),
                       ),
                     ),
-                  ),
-                ),
-              ] else if (currentStatus == 'accepted' || currentStatus == 'payment_pending') ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.3)),
-                  ),
-                  child: Column(
-                    children: [
-                      Text(
-                        'ACCEPTED! CHARGES PER HEAD: ₹${req['chargesPerHead'] ?? '0'}',
-                        style: const TextStyle(
-                          color: LunaraTheme.electricViolet,
+                    child: const Center(
+                      child: Text(
+                        'PENDING ADMIN APPROVAL',
+                        style: TextStyle(
+                          color: Colors.yellow,
                           fontWeight: FontWeight.bold,
-                          fontSize: 12,
+                          fontSize: 11,
                         ),
                       ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _actionButton(
-                              icon: Icons.payment,
-                              label: 'PAY NOW',
-                              color: LunaraTheme.electricViolet,
-                              outline: false,
-                              onTap: () {
-                                final meetPlan = StrangersMeetRequest.fromJson(req['plan'] ?? {});
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => StrangersMeetPaymentScreen(
-                                      request: meetPlan,
-                                      isJoinPayment: true,
-                                      onPaymentSuccess: () {
-                                        setState(() {
-                                          _optimisticStates[reqId] = 'paid';
-                                        });
-                                        _loadFeed(showLoader: false);
-                                      },
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-              ] else ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: Colors.green.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
-                  ),
-                  child: Column(
-                    children: [
-                      const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.check_circle, color: Colors.green, size: 16),
-                          SizedBox(width: 6),
-                          Text(
-                            'BOOKING CONFIRMED 🎉',
-                            style: TextStyle(
-                              color: Colors.green,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (req['plan']?['ticketId'] != null) ...[
-                        const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          if (req['plan']?['ticketId'] != null) ...[
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: () {
-                                  final meetPlan = StrangersMeetRequest.fromJson(req['plan']);
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => StrangersMeetTicketScreen(
-                                        request: meetPlan,
-                                      ),
-                                    ),
-                                  );
-                                },
-                                icon: const Icon(Icons.qr_code_rounded, size: 16, color: Colors.white),
-                                label: const Text(
-                                  'VIEW TICKET',
-                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
-                                ),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: LunaraTheme.electricViolet,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                ),
-                              ),
-                            ),
-                          ],
-                          if (req['plan']?['user'] != null) ...[
-                            if (req['plan']?['ticketId'] != null) const SizedBox(width: 8),
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => ChatScreen(user: {
-                                        ...req['plan']?['user'],
-                                        'contextType': 'stranger_meet',
-                                        'planId': req['plan']?['id']?.toString(),
-                                      }),
-                                    ),
-                                  );
-                                },
-                                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16, color: Colors.white),
-                                label: const Text(
-                                  'CHAT',
-                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
-                                ),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: LunaraTheme.hotPink,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ] else ...[
-              if (currentStatus == 'pending') ...[
-                if (isInvite) ...[
+                ] else if (currentStatus == 'approved') ...[
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: Colors.blue.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                      border: Border.all(
+                        color: Colors.blue.withValues(alpha: 0.3),
+                      ),
                     ),
                     child: Column(
                       children: [
-                        const Text(
-                          'YOU WERE INVITED!',
-                          style: TextStyle(
+                        Text(
+                          'APPROVED! PAYMENT REQUIRED: ₹${booking['totalAmount'] ?? '0'}',
+                          style: const TextStyle(
                             color: Colors.blue,
                             fontWeight: FontWeight.bold,
                             fontSize: 12,
@@ -3902,37 +3777,410 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                           children: [
                             Expanded(
                               child: _actionButton(
-                                icon: Icons.check_circle,
-                                label: 'ACCEPT',
+                                icon: Icons.payment,
+                                label: 'PAY NOW',
+                                color: Colors.blue,
+                                outline: false,
+                                onTap: () async {
+                                  final bookingId =
+                                      booking['id']?.toString() ?? '';
+                                  if (bookingId.isEmpty) return;
+
+                                  // Show loading spinner
+                                  showDialog(
+                                    context: context,
+                                    barrierDismissible: false,
+                                    builder: (context) => const Center(
+                                      child: CircularProgressIndicator(
+                                        color: LunaraTheme.electricViolet,
+                                      ),
+                                    ),
+                                  );
+
+                                  final paymentInfo =
+                                      await ApiService.initiateLargePartyPayment(
+                                        bookingId,
+                                      );
+
+                                  if (!mounted) return;
+                                  Navigator.pop(
+                                    context,
+                                  ); // Close loading spinner
+
+                                  if (paymentInfo != null &&
+                                      paymentInfo['success'] == true) {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => PaymentConfirmationScreen(
+                                          venue: venue,
+                                          date: booking['bookingDate'] != null
+                                              ? DateFormat('dd/MM/yyyy').format(
+                                                  DateTime.parse(
+                                                    booking['bookingDate'],
+                                                  ).toLocal(),
+                                                )
+                                              : 'Tonight',
+                                          package:
+                                              'Large Party Booking Deposit',
+                                          time: booking['startTime'] ?? '21:00',
+                                          table: 'Large Party Table',
+                                          guests:
+                                              '${booking['numberOfGuests'] ?? 1} Guests',
+                                          totalPrice:
+                                              '₹${booking['totalAmount'] ?? '0'}',
+                                          showSplitBill: false,
+                                          razorpayOrderId:
+                                              paymentInfo['razorpayOrderId'],
+                                          razorpayKeyId:
+                                              paymentInfo['razorpayKeyId'],
+                                          razorpayAmount: paymentInfo['amount'],
+                                          onRazorpayPaymentSuccess:
+                                              (paymentId, signature) async {
+                                                final success =
+                                                    await ApiService.verifyLargePartyPayment(
+                                                      bookingId,
+                                                      razorpayOrderId:
+                                                          paymentInfo['razorpayOrderId'],
+                                                      razorpayPaymentId:
+                                                          paymentId,
+                                                      razorpaySignature:
+                                                          signature,
+                                                    );
+                                                if (!mounted) return;
+                                                if (success) {
+                                                  setState(() {
+                                                    _optimisticStates[reqId] =
+                                                        'payment_done';
+                                                  });
+                                                  _loadFeed(showLoader: false);
+                                                } else {
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    const SnackBar(
+                                                      content: Text(
+                                                        'Payment Verification Failed.',
+                                                      ),
+                                                      backgroundColor:
+                                                          Colors.red,
+                                                    ),
+                                                  );
+                                                }
+                                              },
+                                        ),
+                                      ),
+                                    );
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Failed to initiate payment. Please try again.',
+                                        ),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else if (currentStatus == 'payment_sent') ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          'PAYMENT REQUIRED: ₹${booking['adminPaymentAmount'] ?? booking['totalAmount'] ?? '0'}',
+                          style: const TextStyle(
+                            color: Colors.green,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _actionButton(
+                                icon: Icons.payment,
+                                label: 'PAY NOW',
                                 color: Colors.green,
                                 outline: false,
                                 onTap: () async {
-                                  setState(() => _optimisticStates[reqId] = 'accepted');
-                                  final res = await ApiService.acceptPartyPlanInvite(reqId);
-                                  if (res != null) {
-                                    _loadFeed(showLoader: false);
-                                  } else {
-                                    setState(() => _optimisticStates.remove(reqId));
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('Failed to accept invite')),
+                                  final urlStr =
+                                      booking['adminPaymentLink'] ?? '';
+                                  if (urlStr.isNotEmpty) {
+                                    final url = Uri.parse(urlStr);
+                                    if (await canLaunchUrl(url)) {
+                                      await launchUrl(
+                                        url,
+                                        mode: LaunchMode.externalApplication,
                                       );
                                     }
                                   }
                                 },
                               ),
                             ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else if (currentStatus == 'payment_done') ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.green.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.check_circle,
+                              color: Colors.green,
+                              size: 16,
+                            ),
+                            SizedBox(width: 6),
+                            Text(
+                              'BOOKING CONFIRMED 🎉',
+                              style: TextStyle(
+                                color: Colors.green,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => LargePartyTicketScreen(
+                                        booking: booking,
+                                        venue: venue,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(
+                                  Icons.qr_code_2_rounded,
+                                  size: 16,
+                                  color: Colors.white,
+                                ),
+                                label: const Text(
+                                  'VIEW TICKET',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: LunaraTheme.electricViolet,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                              ),
+                            ),
                             const SizedBox(width: 8),
                             Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  final chatTarget =
+                                      venue['user'] ??
+                                      venue['creator'] ??
+                                      venue['admin'] ??
+                                      {
+                                        'id': 'venue_support',
+                                        'firstName':
+                                            venue['name'] ?? 'Venue Support',
+                                        'lastName': '',
+                                        'username': 'support',
+                                      };
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => ChatScreen(
+                                        user: {
+                                          ...Map<String, dynamic>.from(
+                                            chatTarget,
+                                          ),
+                                          'contextType': 'large_party',
+                                          'bookingId': booking['id']
+                                              ?.toString(),
+                                        },
+                                      ),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(
+                                  Icons.chat_bubble_outline_rounded,
+                                  size: 16,
+                                  color: Colors.white,
+                                ),
+                                label: const Text(
+                                  'CHAT',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: LunaraTheme.hotPink,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.grey.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        currentStatus.toUpperCase(),
+                        style: const TextStyle(
+                          color: Colors.grey,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ] else if (isStrangerMeet) ...[
+                if (currentStatus == 'pending') ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.yellow.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.yellow.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'PENDING ADMIN APPROVAL',
+                        style: TextStyle(
+                          color: Colors.yellow,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ),
+                ] else if (currentStatus == 'rejected') ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.red.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.red.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        'REJECTED: ${req['adminNotes'] ?? 'No notes provided'}',
+                        style: const TextStyle(
+                          color: Colors.red,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ),
+                ] else if (currentStatus == 'approved' &&
+                    req['paymentStatus'] != 'paid') ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: LunaraTheme.electricViolet.withValues(
+                          alpha: 0.3,
+                        ),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          'APPROVED! PLATFORM DEPOSIT REQUIRED: ₹${req['paymentAmount'] ?? '0'}',
+                          style: const TextStyle(
+                            color: LunaraTheme.electricViolet,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
                               child: _actionButton(
-                                icon: Icons.cancel,
-                                label: 'DECLINE',
-                                color: Colors.red,
-                                outline: true,
-                                onTap: () async {
-                                  setState(() => _optimisticStates[reqId] = 'cancelled');
-                                  await ApiService.rejectPartyPlanRequest(reqId);
-                                  _loadFeed(showLoader: false);
+                                icon: Icons.payment,
+                                label: 'PAY NOW',
+                                color: LunaraTheme.electricViolet,
+                                outline: false,
+                                onTap: () {
+                                  final meetReq = StrangersMeetRequest.fromJson(
+                                    req,
+                                  );
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          StrangersMeetPaymentScreen(
+                                            request: meetReq,
+                                            onPaymentSuccess: () {
+                                              setState(() {
+                                                _optimisticStates[reqId] =
+                                                    'paid';
+                                              });
+                                              _loadFeed(showLoader: false);
+                                            },
+                                          ),
+                                    ),
+                                  );
                                 },
                               ),
                             ),
@@ -3946,9 +4194,246 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     padding: const EdgeInsets.all(12),
                     width: double.infinity,
                     decoration: BoxDecoration(
+                      color: Colors.blue.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.blue.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(
+                          Icons.check_circle,
+                          color: Colors.blue,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            currentStatus == 'completed'
+                                ? 'COMPLETED'
+                                : 'PAYMENT CONFIRMED & PUBLISHED',
+                            style: const TextStyle(
+                              color: Colors.blue,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                if (currentStatus == 'approved' ||
+                    currentStatus == 'paid' ||
+                    currentStatus == 'completed') ...[
+                  Builder(
+                    builder: (context) {
+                      final meetRequests = _getJoinRequestsForMeet(reqId);
+                      if (meetRequests.isEmpty) return const SizedBox.shrink();
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 12),
+                          const Divider(color: Colors.white10),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'JOIN REQUESTS',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          ...meetRequests.map((joinReq) {
+                            final joinReqId = joinReq['id']?.toString() ?? '';
+                            final joiner = joinReq['requester'] ?? {};
+                            final joinerStatus =
+                                _optimisticStates[joinReqId] ??
+                                joinReq['status']?.toString().toLowerCase() ??
+                                'pending';
+                            final joinerPayment =
+                                joinReq['joinerPaymentStatus']
+                                    ?.toString()
+                                    .toLowerCase() ??
+                                'pending';
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.03),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.05),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  LunaraProfileImage(
+                                    userData: joiner,
+                                    radius: 16,
+                                    isInteractive: false,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          joiner['firstName'] ?? 'User',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          joinerStatus == 'paid' ||
+                                                  joinerPayment == 'paid'
+                                              ? 'PAID & JOINED'
+                                              : joinerStatus.toUpperCase(),
+                                          style: TextStyle(
+                                            color:
+                                                joinerStatus == 'paid' ||
+                                                    joinerPayment == 'paid'
+                                                ? Colors.green
+                                                : (joinerStatus == 'accepted'
+                                                      ? Colors.orange
+                                                      : Colors.grey),
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (joinerStatus == 'pending') ...[
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.check_circle_outline,
+                                        color: Colors.green,
+                                        size: 22,
+                                      ),
+                                      onPressed: () async {
+                                        setState(
+                                          () => _optimisticStates[joinReqId] =
+                                              'accepted',
+                                        );
+                                        final success =
+                                            await ApiService.handleStrangersMeetJoinRequest(
+                                              reqId,
+                                              joinReqId,
+                                              'accept',
+                                            );
+                                        if (success) {
+                                          _loadFeed(showLoader: false);
+                                        } else {
+                                          setState(
+                                            () => _optimisticStates.remove(
+                                              joinReqId,
+                                            ),
+                                          );
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                'Failed to accept request',
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      },
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.cancel_outlined,
+                                        color: Colors.red,
+                                        size: 22,
+                                      ),
+                                      onPressed: () async {
+                                        setState(
+                                          () => _optimisticStates[joinReqId] =
+                                              'rejected',
+                                        );
+                                        final success =
+                                            await ApiService.handleStrangersMeetJoinRequest(
+                                              reqId,
+                                              joinReqId,
+                                              'reject',
+                                            );
+                                        if (success) {
+                                          _loadFeed(showLoader: false);
+                                        } else {
+                                          setState(
+                                            () => _optimisticStates.remove(
+                                              joinReqId,
+                                            ),
+                                          );
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                'Failed to reject request',
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      },
+                                    ),
+                                  ],
+                                  if (joinerStatus == 'paid' ||
+                                      joinerPayment == 'paid') ...[
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.chat_bubble_outline_rounded,
+                                        color: LunaraTheme.hotPink,
+                                        size: 22,
+                                      ),
+                                      onPressed: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => ChatScreen(
+                                              user: {
+                                                ...joiner,
+                                                'contextType': 'stranger_meet',
+                                                'planId': reqId,
+                                              },
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            );
+                          }),
+                        ],
+                      );
+                    },
+                  ),
+                ],
+              ] else if (isStrangerMeetJoin) ...[
+                if (currentStatus == 'pending') ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    width: double.infinity,
+                    decoration: BoxDecoration(
                       color: Colors.yellow.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.yellow.withValues(alpha: 0.3)),
+                      border: Border.all(
+                        color: Colors.yellow.withValues(alpha: 0.3),
+                      ),
                     ),
                     child: const Center(
                       child: Text(
@@ -3961,204 +4446,574 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                       ),
                     ),
                   ),
-                ],
-              ] else if ((currentStatus == 'accepted' || currentStatus == 'payment_pending') &&
-                  req['joinerPaymentStatus']?.toString().toLowerCase() != 'confirmed' &&
-                  req['joinerPaymentStatus']?.toString().toLowerCase() != 'paid') ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    children: [
-                      const Text(
-                        'YOUR REQUEST WAS ACCEPTED!',
+                ] else if (currentStatus == 'rejected') ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.red.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.red.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'REJECTED BY HOST',
                         style: TextStyle(
-                          color: Colors.green,
+                          color: Colors.red,
                           fontWeight: FontWeight.bold,
-                          fontSize: 12,
+                          fontSize: 11,
                         ),
                       ),
-                      const SizedBox(height: 10),
-                      Builder(
-                        builder: (context) {
-                          final hostPaid = req['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'paid' ||
-                              req['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'refunded';
-                          if (!hostPaid) {
-                            return Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(11),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
-                              ),
-                              child: const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.hourglass_empty_rounded, color: Colors.orange, size: 15),
-                                  SizedBox(width: 6),
-                                  Text(
-                                    'AWAITING HOST PAYMENT',
-                                    style: TextStyle(
-                                      color: Colors.orange,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }
-                          return Row(
-                            children: [
-                              Expanded(
-                                child: CountdownPayButton(
-                                  myReq: req,
-                                  venue: venue,
-                                  plan: plan,
-                                  onPaymentSuccess: () =>
-                                      _loadFeed(showLoader: false),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: _actionButton(
-                                  icon: Icons.cancel,
-                                  label: 'CANCEL',
-                                  color: Colors.red,
-                                  outline: true,
-                                  onTap: () async {
-                                    setState(
-                                      () => _optimisticStates[reqId] = 'cancelled',
-                                    );
-                                    await ApiService.rejectPartyPlanRequest(reqId);
-                                    _loadFeed(showLoader: false);
-                                  },
-                                ),
-                              ),
-                            ],
-                          );
-                        }
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-              ] else if (currentStatus == 'paid' || 
-                         req['joinerPaymentStatus']?.toString().toLowerCase() == 'paid' ||
-                         req['joinerPaymentStatus']?.toString().toLowerCase() == 'confirmed') ...[
-                Builder(
-                  builder: (context) {
-                    final hostPaid = req['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'paid' ||
-                        req['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'refunded';
-                    if (!hostPaid) {
-                      return Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
+                ] else if (currentStatus == 'accepted' ||
+                    currentStatus == 'payment_pending') ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: LunaraTheme.electricViolet.withValues(
+                          alpha: 0.3,
                         ),
-                        child: const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          'ACCEPTED! CHARGES PER HEAD: ₹${req['chargesPerHead'] ?? '0'}',
+                          style: const TextStyle(
+                            color: LunaraTheme.electricViolet,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
                           children: [
-                            Icon(Icons.hourglass_empty_rounded, color: Colors.orange, size: 15),
-                            SizedBox(width: 6),
-                            Text(
-                              'AWAITING HOST PAYMENT',
-                              style: TextStyle(
-                                color: Colors.orange,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
+                            Expanded(
+                              child: _actionButton(
+                                icon: Icons.payment,
+                                label: 'PAY NOW',
+                                color: LunaraTheme.electricViolet,
+                                outline: false,
+                                onTap: () {
+                                  final meetPlan =
+                                      StrangersMeetRequest.fromJson(
+                                        req['plan'] ?? {},
+                                      );
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          StrangersMeetPaymentScreen(
+                                            request: meetPlan,
+                                            isJoinPayment: true,
+                                            onPaymentSuccess: () {
+                                              setState(() {
+                                                _optimisticStates[reqId] =
+                                                    'paid';
+                                              });
+                                              _loadFeed(showLoader: false);
+                                            },
+                                          ),
+                                    ),
+                                  );
+                                },
                               ),
                             ),
                           ],
                         ),
-                      );
-                    }
-                    return Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.green.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(12),
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.green.withValues(alpha: 0.3),
                       ),
-                      child: Column(
-                        children: [
-                          const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.check_circle, color: Colors.green, size: 16),
-                              SizedBox(width: 6),
-                              Text(
-                                'PARTY PLAN CONFIRMED 🎉',
-                                style: TextStyle(
-                                  color: Colors.green,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                ),
+                    ),
+                    child: Column(
+                      children: [
+                        const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.check_circle,
+                              color: Colors.green,
+                              size: 16,
+                            ),
+                            SizedBox(width: 6),
+                            Text(
+                              'BOOKING CONFIRMED 🎉',
+                              style: TextStyle(
+                                color: Colors.green,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
+                        ),
+                        if (req['plan']?['ticketId'] != null) ...[
                           const SizedBox(height: 10),
                           Row(
                             children: [
-                              if (req['plan']?['creator'] != null)
+                              if (req['plan']?['ticketId'] != null) ...[
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    onPressed: () {
+                                      final meetPlan =
+                                          StrangersMeetRequest.fromJson(
+                                            req['plan'],
+                                          );
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              StrangersMeetTicketScreen(
+                                                request: meetPlan,
+                                              ),
+                                        ),
+                                      );
+                                    },
+                                    icon: const Icon(
+                                      Icons.qr_code_rounded,
+                                      size: 16,
+                                      color: Colors.white,
+                                    ),
+                                    label: const Text(
+                                      'VIEW TICKET',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor:
+                                          LunaraTheme.electricViolet,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              if (req['plan']?['user'] != null) ...[
+                                if (req['plan']?['ticketId'] != null)
+                                  const SizedBox(width: 8),
                                 Expanded(
                                   child: ElevatedButton.icon(
                                     onPressed: () {
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (_) => ChatScreen(user: {
-                                            ...req['plan']?['creator'],
-                                            'contextType': 'party_plan',
-                                            'planId': req['plan']?['id']?.toString(),
-                                          }),
+                                          builder: (_) => ChatScreen(
+                                            user: {
+                                              ...req['plan']?['user'],
+                                              'contextType': 'stranger_meet',
+                                              'planId': req['plan']?['id']
+                                                  ?.toString(),
+                                            },
+                                          ),
                                         ),
                                       );
                                     },
-                                    icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16, color: Colors.white),
+                                    icon: const Icon(
+                                      Icons.chat_bubble_outline_rounded,
+                                      size: 16,
+                                      color: Colors.white,
+                                    ),
                                     label: const Text(
                                       'CHAT',
-                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                        color: Colors.white,
+                                      ),
                                     ),
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: LunaraTheme.hotPink,
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
                                     ),
                                   ),
                                 ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ] else ...[
+                if (currentStatus == 'pending') ...[
+                  if (isInvite) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.blue.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          const Text(
+                            'YOU WERE INVITED!',
+                            style: TextStyle(
+                              color: Colors.blue,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _actionButton(
+                                  icon: Icons.check_circle,
+                                  label: 'ACCEPT',
+                                  color: Colors.green,
+                                  outline: false,
+                                  onTap: () async {
+                                    setState(
+                                      () =>
+                                          _optimisticStates[reqId] = 'accepted',
+                                    );
+                                    final res =
+                                        await ApiService.acceptPartyPlanInvite(
+                                          reqId,
+                                        );
+                                    if (res != null) {
+                                      _loadFeed(showLoader: false);
+                                    } else {
+                                      setState(
+                                        () => _optimisticStates.remove(reqId),
+                                      );
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              'Failed to accept invite',
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: _actionButton(
+                                  icon: Icons.cancel,
+                                  label: 'DECLINE',
+                                  color: Colors.red,
+                                  outline: true,
+                                  onTap: () async {
+                                    setState(
+                                      () => _optimisticStates[reqId] =
+                                          'cancelled',
+                                    );
+                                    await ApiService.rejectPartyPlanRequest(
+                                      reqId,
+                                    );
+                                    _loadFeed(showLoader: false);
+                                  },
+                                ),
+                              ),
                             ],
                           ),
                         ],
                       ),
-                    );
-                  }
-                ),
-              ] else ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  child: Center(
-                    child: Text(
-                      currentStatus.toUpperCase(),
-                      style: const TextStyle(
-                        color: Colors.grey,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
+                    ),
+                  ] else ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.yellow.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.yellow.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          'PENDING HOST APPROVAL',
+                          style: TextStyle(
+                            color: Colors.yellow,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ] else if ((currentStatus == 'accepted' ||
+                        currentStatus == 'payment_pending') &&
+                    req['joinerPaymentStatus']?.toString().toLowerCase() !=
+                        'confirmed' &&
+                    req['joinerPaymentStatus']?.toString().toLowerCase() !=
+                        'paid') ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      children: [
+                        const Text(
+                          'YOUR REQUEST WAS ACCEPTED!',
+                          style: TextStyle(
+                            color: Colors.green,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Builder(
+                          builder: (context) {
+                            final hostPaid =
+                                req['plan']?['hostPaymentStatus']
+                                        ?.toString()
+                                        .toLowerCase() ==
+                                    'paid' ||
+                                req['plan']?['hostPaymentStatus']
+                                        ?.toString()
+                                        .toLowerCase() ==
+                                    'refunded';
+                            if (!hostPaid) {
+                              return Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(11),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: Colors.orange.withValues(alpha: 0.5),
+                                  ),
+                                ),
+                                child: const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.hourglass_empty_rounded,
+                                      color: Colors.orange,
+                                      size: 15,
+                                    ),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      'AWAITING HOST PAYMENT',
+                                      style: TextStyle(
+                                        color: Colors.orange,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+                            return Row(
+                              children: [
+                                Expanded(
+                                  child: CountdownPayButton(
+                                    myReq: req,
+                                    venue: venue,
+                                    plan: plan,
+                                    onPaymentSuccess: () =>
+                                        _loadFeed(showLoader: false),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: _actionButton(
+                                    icon: Icons.cancel,
+                                    label: 'CANCEL',
+                                    color: Colors.red,
+                                    outline: true,
+                                    onTap: () async {
+                                      setState(
+                                        () => _optimisticStates[reqId] =
+                                            'cancelled',
+                                      );
+                                      await ApiService.rejectPartyPlanRequest(
+                                        reqId,
+                                      );
+                                      _loadFeed(showLoader: false);
+                                    },
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else if (currentStatus == 'paid' ||
+                    req['joinerPaymentStatus']?.toString().toLowerCase() ==
+                        'paid' ||
+                    req['joinerPaymentStatus']?.toString().toLowerCase() ==
+                        'confirmed') ...[
+                  Builder(
+                    builder: (context) {
+                      final hostPaid =
+                          req['plan']?['hostPaymentStatus']
+                                  ?.toString()
+                                  .toLowerCase() ==
+                              'paid' ||
+                          req['plan']?['hostPaymentStatus']
+                                  ?.toString()
+                                  .toLowerCase() ==
+                              'refunded';
+                      if (!hostPaid) {
+                        return Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.orange.withValues(alpha: 0.5),
+                            ),
+                          ),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.hourglass_empty_rounded,
+                                color: Colors.orange,
+                                size: 15,
+                              ),
+                              SizedBox(width: 6),
+                              Text(
+                                'AWAITING HOST PAYMENT',
+                                style: TextStyle(
+                                  color: Colors.orange,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                      return Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          children: [
+                            const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.check_circle,
+                                  color: Colors.green,
+                                  size: 16,
+                                ),
+                                SizedBox(width: 6),
+                                Text(
+                                  'PARTY PLAN CONFIRMED 🎉',
+                                  style: TextStyle(
+                                    color: Colors.green,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                if (req['plan']?['creator'] != null)
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      onPressed: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => ChatScreen(
+                                              user: {
+                                                ...req['plan']?['creator'],
+                                                'contextType': 'party_plan',
+                                                'planId': req['plan']?['id']
+                                                    ?.toString(),
+                                              },
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                      icon: const Icon(
+                                        Icons.chat_bubble_outline_rounded,
+                                        size: 16,
+                                        color: Colors.white,
+                                      ),
+                                      label: const Text(
+                                        'CHAT',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: LunaraTheme.hotPink,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ] else ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    child: Center(
+                      child: Text(
+                        currentStatus.toUpperCase(),
+                        style: const TextStyle(
+                          color: Colors.grey,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
                       ),
                     ),
                   ),
-                ),
+                ],
               ],
             ],
-          ],
+          ),
         ),
       ),
-    ),
-  );
+    );
   }
 
   Widget _buildNotificationCard(Map<String, dynamic> notif) {
@@ -4174,7 +5029,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     IconData icon = Icons.notifications_rounded;
     Color color = LunaraTheme.electricViolet;
     final lowerTitle = title.toLowerCase();
-    
+
     if (lowerTitle.contains('super')) {
       icon = Icons.star_rounded;
       color = const Color(0xFFFFB800);
@@ -4182,9 +5037,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       icon = Icons.favorite_rounded;
       color = LunaraTheme.hotPink;
     } else if (lowerTitle.contains('booking confirmed') ||
-               lowerTitle.contains('spot confirmed') ||
-               lowerTitle.contains('payment successful') || 
-               lowerTitle.contains('payment confirmed')) {
+        lowerTitle.contains('spot confirmed') ||
+        lowerTitle.contains('payment successful') ||
+        lowerTitle.contains('payment confirmed')) {
       icon = Icons.check_circle_rounded;
       color = const Color(0xFF00E676);
     } else if (lowerTitle.contains('awaiting payment')) {
@@ -4199,38 +5054,43 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     } else if (lowerTitle.contains('visit') || lowerTitle.contains('view')) {
       icon = Icons.visibility_rounded;
       color = LunaraTheme.electricViolet;
-    } else if (lowerTitle.contains('invite accepted') || 
-               lowerTitle.contains('accepted') || 
-               lowerTitle.contains('approved')) {
+    } else if (lowerTitle.contains('invite accepted') ||
+        lowerTitle.contains('accepted') ||
+        lowerTitle.contains('approved')) {
       icon = Icons.verified_rounded;
       color = const Color(0xFF00E676);
-    } else if (lowerTitle.contains('declined') || 
-               lowerTitle.contains('rejected') || 
-               lowerTitle.contains('cancelled') ||
-               lowerTitle.contains('failed')) {
+    } else if (lowerTitle.contains('declined') ||
+        lowerTitle.contains('rejected') ||
+        lowerTitle.contains('cancelled') ||
+        lowerTitle.contains('failed')) {
       icon = Icons.cancel_outlined;
       color = const Color(0xFFFF5252);
     } else if (lowerTitle.contains('invite')) {
       icon = Icons.mail_outline_rounded;
       color = const Color(0xFFE040FB);
-    } else if (lowerTitle.contains('new join request') || 
-               lowerTitle.contains('join requests') ||
-               lowerTitle.contains('requested to join')) {
+    } else if (lowerTitle.contains('new join request') ||
+        lowerTitle.contains('join requests') ||
+        lowerTitle.contains('requested to join')) {
       icon = Icons.person_add_alt_1_rounded;
       color = const Color(0xFF00B0FF);
-    } else if (lowerTitle.contains('participant joined') || lowerTitle.contains('joined')) {
+    } else if (lowerTitle.contains('participant joined') ||
+        lowerTitle.contains('joined')) {
       icon = Icons.group_add_rounded;
       color = const Color(0xFF00E676);
-    } else if (lowerTitle.contains('safety check') || lowerTitle.contains('safety')) {
+    } else if (lowerTitle.contains('safety check') ||
+        lowerTitle.contains('safety')) {
       icon = Icons.security_rounded;
       color = const Color(0xFF2979FF);
-    } else if (lowerTitle.contains('large party') || lowerTitle.contains('group party')) {
+    } else if (lowerTitle.contains('large party') ||
+        lowerTitle.contains('group party')) {
       icon = Icons.celebration_rounded;
       color = const Color(0xFFFF6D00);
-    } else if (lowerTitle.contains('submitted') || lowerTitle.contains('initiated')) {
+    } else if (lowerTitle.contains('submitted') ||
+        lowerTitle.contains('initiated')) {
       icon = Icons.hourglass_empty_rounded;
       color = const Color(0xFFFFB300);
-    } else if (lowerTitle.contains('stranger meet') || lowerTitle.contains('meet')) {
+    } else if (lowerTitle.contains('stranger meet') ||
+        lowerTitle.contains('meet')) {
       icon = Icons.people_alt_rounded;
       color = LunaraTheme.electricViolet;
     }
@@ -4242,7 +5102,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ? (isRead ? const Color(0xFF16161E) : const Color(0xFF1D1430))
         : (isRead ? Colors.white : const Color(0xFFF8F4FF));
     final borderCol = isRead
-        ? (isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05))
+        ? (isDark
+              ? Colors.white.withValues(alpha: 0.05)
+              : Colors.black.withValues(alpha: 0.05))
         : color.withValues(alpha: 0.35);
 
     return Opacity(
@@ -4251,314 +5113,399 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         padding: const EdgeInsets.only(bottom: 12),
         child: GestureDetector(
           onTap: () => _markNotificationAsRead(notif),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: cardBg,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: borderCol,
-              width: isRead ? 1.0 : 1.5,
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: cardBg,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: borderCol, width: isRead ? 1.0 : 1.5),
+              boxShadow: isRead
+                  ? null
+                  : [
+                      BoxShadow(
+                        color: color.withValues(alpha: isDark ? 0.18 : 0.07),
+                        blurRadius: 14,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
             ),
-            boxShadow: isRead 
-                ? null 
-                : [
-                    BoxShadow(
-                      color: color.withValues(alpha: isDark ? 0.18 : 0.07),
-                      blurRadius: 14,
-                      offset: const Offset(0, 5),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Avatar + icon badge
+                    if (hasSender)
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          LunaraProfileImage(
+                            userData: sender,
+                            radius: 22,
+                            showGradientBorder: !isRead,
+                            isInteractive: true,
+                          ),
+                          Positioned(
+                            bottom: -2,
+                            right: -2,
+                            child: Container(
+                              padding: const EdgeInsets.all(3),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? const Color(0xFF1D1430)
+                                    : Colors.white,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: isDark
+                                      ? const Color(0xFF1D1430)
+                                      : Colors.white,
+                                  width: 1.5,
+                                ),
+                              ),
+                              child: Icon(
+                                icon,
+                                color: isRead
+                                    ? color.withValues(alpha: 0.6)
+                                    : color,
+                                size: 11,
+                              ),
+                            ),
+                          ),
+                          // Group count badge
+                          if (grouped && groupCount > 1)
+                            Positioned(
+                              top: -4,
+                              right: -4,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 5,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: color,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: isDark
+                                        ? const Color(0xFF1D1430)
+                                        : Colors.white,
+                                    width: 1.5,
+                                  ),
+                                ),
+                                child: Text(
+                                  '+$groupCount',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      )
+                    else
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              color.withValues(alpha: 0.2),
+                              color.withValues(alpha: 0.08),
+                            ],
+                          ),
+                          border: Border.all(
+                            color: color.withValues(alpha: 0.3),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Center(
+                          child: Icon(
+                            icon,
+                            color: isRead
+                                ? color.withValues(alpha: 0.6)
+                                : color,
+                            size: 22,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(width: 14),
+
+                    // Text content
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  title,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13.5,
+                                    color: isDark
+                                        ? (isRead
+                                              ? Colors.white70
+                                              : Colors.white)
+                                        : Colors.black87,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              if (!isRead)
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    color: color,
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: color,
+                                        blurRadius: 4,
+                                        spreadRadius: 1,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            body,
+                            style: TextStyle(
+                              color: isDark
+                                  ? (isRead ? Colors.white54 : Colors.white70)
+                                  : (isRead ? Colors.black54 : Colors.black87),
+                              fontSize: 12.5,
+                              height: 1.4,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            timeAgo,
+                            style: TextStyle(
+                              color: isDark ? Colors.white38 : Colors.black38,
+                              fontSize: 10.5,
+                              fontWeight: isRead
+                                  ? FontWeight.normal
+                                  : FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Avatar + icon badge
-                  if (hasSender)
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        LunaraProfileImage(
-                          userData: sender,
-                          radius: 22,
-                          showGradientBorder: !isRead,
-                          isInteractive: true,
-                        ),
-                        Positioned(
-                          bottom: -2,
-                          right: -2,
-                          child: Container(
-                            padding: const EdgeInsets.all(3),
-                            decoration: BoxDecoration(
-                              color: isDark ? const Color(0xFF1D1430) : Colors.white,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: isDark ? const Color(0xFF1D1430) : Colors.white,
-                                width: 1.5,
-                              ),
-                            ),
-                            child: Icon(icon, color: isRead ? color.withValues(alpha: 0.6) : color, size: 11),
-                          ),
-                        ),
-                        // Group count badge
-                        if (grouped && groupCount > 1)
-                          Positioned(
-                            top: -4,
-                            right: -4,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: color,
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: isDark ? const Color(0xFF1D1430) : Colors.white, width: 1.5),
-                              ),
-                              child: Text(
-                                '+$groupCount',
-                                style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                          ),
-                      ],
-                    )
-                  else
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            color.withValues(alpha: 0.2),
-                            color.withValues(alpha: 0.08),
-                          ],
-                        ),
-                        border: Border.all(color: color.withValues(alpha: 0.3), width: 1.5),
-                      ),
-                      child: Center(
-                        child: Icon(icon, color: isRead ? color.withValues(alpha: 0.6) : color, size: 22),
+                ),
+
+                // ── Event Detail Chips ─────────────────────────────────────────
+                if (eventDetails != null && eventDetails.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? color.withValues(alpha: 0.07)
+                          : color.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: color.withValues(alpha: isDark ? 0.2 : 0.15),
                       ),
                     ),
-                  const SizedBox(width: 14),
-
-                  // Text content
-                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                title,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13.5,
-                                  color: isDark 
-                                      ? (isRead ? Colors.white70 : Colors.white)
-                                      : Colors.black87,
+                        // Subject / Event name
+                        if (eventDetails['subject'] != null)
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.event_note_rounded,
+                                size: 13,
+                                color: color.withValues(alpha: 0.8),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  eventDetails['subject'].toString(),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: isDark
+                                        ? Colors.white
+                                        : Colors.black87,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
+                            ],
+                          ),
+                        if (eventDetails['tagline'] != null &&
+                            (eventDetails['tagline'] as String).isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 19),
+                            child: Text(
+                              eventDetails['tagline'].toString(),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isDark ? Colors.white54 : Colors.black54,
+                                fontStyle: FontStyle.italic,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            const SizedBox(width: 6),
-                            if (!isRead)
-                              Container(
-                                width: 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  color: color,
-                                  shape: BoxShape.circle,
-                                  boxShadow: [BoxShadow(color: color, blurRadius: 4, spreadRadius: 1)],
-                                ),
+                          ),
+                        ],
+                        const SizedBox(height: 8),
+                        // Info chips row
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          children: [
+                            if (eventDetails['eventDate'] != null)
+                              _notifChip(
+                                Icons.calendar_today_rounded,
+                                eventDetails['eventDate'].toString(),
+                                color,
+                                isDark,
+                              ),
+                            if (eventDetails['venue'] != null)
+                              _notifChip(
+                                Icons.location_on_rounded,
+                                eventDetails['venue'].toString(),
+                                color,
+                                isDark,
+                              ),
+                            if (eventDetails['chargesPerHead'] != null &&
+                                double.tryParse(
+                                      eventDetails['chargesPerHead'].toString(),
+                                    ) !=
+                                    null &&
+                                double.parse(
+                                      eventDetails['chargesPerHead'].toString(),
+                                    ) >
+                                    0)
+                              _notifChip(
+                                Icons.currency_rupee_rounded,
+                                '₹${double.parse(eventDetails['chargesPerHead'].toString()).toStringAsFixed(0)} / person',
+                                color,
+                                isDark,
+                              ),
+                            if (eventDetails['totalSeats'] != null)
+                              _notifChip(
+                                Icons.people_alt_rounded,
+                                '${eventDetails['totalSeats']} seats',
+                                color,
+                                isDark,
                               ),
                           ],
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          body,
-                          style: TextStyle(
-                            color: isDark 
-                                ? (isRead ? Colors.white54 : Colors.white70)
-                                : (isRead ? Colors.black54 : Colors.black87),
-                            fontSize: 12.5,
-                            height: 1.4,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          timeAgo,
-                          style: TextStyle(
-                            color: isDark ? Colors.white38 : Colors.black38,
-                            fontSize: 10.5,
-                            fontWeight: isRead ? FontWeight.normal : FontWeight.w500,
-                          ),
                         ),
                       ],
                     ),
                   ),
                 ],
-              ),
 
-              // ── Event Detail Chips ─────────────────────────────────────────
-              if (eventDetails != null && eventDetails.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: isDark 
-                        ? color.withValues(alpha: 0.07)
-                        : color.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: color.withValues(alpha: isDark ? 0.2 : 0.15),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Subject / Event name
-                      if (eventDetails['subject'] != null)
-                        Row(
-                          children: [
-                            Icon(Icons.event_note_rounded, size: 13, color: color.withValues(alpha: 0.8)),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                eventDetails['subject'].toString(),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: isDark ? Colors.white : Colors.black87,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
+                // ── View Profile button (if sender) ───────────────────────────
+                if (hasSender) ...[
+                  const SizedBox(height: 10),
+                  GestureDetector(
+                    onTap: () {
+                      try {
+                        final userObj = User.fromJson(
+                          Map<String, dynamic>.from(sender),
+                        );
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => ProfileScreen(user: userObj),
+                          ),
+                        );
+                      } catch (e) {
+                        debugPrint('Error navigating to profile: $e');
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [
+                            LunaraTheme.electricViolet,
+                            LunaraTheme.hotPink,
                           ],
                         ),
-                      if (eventDetails['tagline'] != null && (eventDetails['tagline'] as String).isNotEmpty) ...[
-                        const SizedBox(height: 3),
-                        Padding(
-                          padding: const EdgeInsets.only(left: 19),
-                          child: Text(
-                            eventDetails['tagline'].toString(),
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: isDark ? Colors.white54 : Colors.black54,
-                              fontStyle: FontStyle.italic,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: LunaraTheme.electricViolet.withValues(
+                              alpha: 0.22,
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
                           ),
-                        ),
-                      ],
-                      const SizedBox(height: 8),
-                      // Info chips row
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        children: [
-                          if (eventDetails['eventDate'] != null)
-                            _notifChip(
-                              Icons.calendar_today_rounded,
-                              eventDetails['eventDate'].toString(),
-                              color, isDark,
-                            ),
-                          if (eventDetails['venue'] != null)
-                            _notifChip(
-                              Icons.location_on_rounded,
-                              eventDetails['venue'].toString(),
-                              color, isDark,
-                            ),
-                          if (eventDetails['chargesPerHead'] != null && 
-                              double.tryParse(eventDetails['chargesPerHead'].toString()) != null &&
-                              double.parse(eventDetails['chargesPerHead'].toString()) > 0)
-                            _notifChip(
-                              Icons.currency_rupee_rounded,
-                              '₹${double.parse(eventDetails['chargesPerHead'].toString()).toStringAsFixed(0)} / person',
-                              color, isDark,
-                            ),
-                          if (eventDetails['totalSeats'] != null)
-                            _notifChip(
-                              Icons.people_alt_rounded,
-                              '${eventDetails['totalSeats']} seats',
-                              color, isDark,
-                            ),
                         ],
                       ),
-                    ],
-                  ),
-                ),
-              ],
-
-              // ── View Profile button (if sender) ───────────────────────────
-              if (hasSender) ...[
-                const SizedBox(height: 10),
-                GestureDetector(
-                  onTap: () {
-                    try {
-                      final userObj = User.fromJson(Map<String, dynamic>.from(sender));
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => ProfileScreen(user: userObj)),
-                      );
-                    } catch (e) {
-                      debugPrint('Error navigating to profile: $e');
-                    }
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [LunaraTheme.electricViolet, LunaraTheme.hotPink],
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.person_outline_rounded,
+                            size: 12,
+                            color: Colors.white,
+                          ),
+                          SizedBox(width: 4),
+                          Text(
+                            'View Profile',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
                       ),
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: LunaraTheme.electricViolet.withValues(alpha: 0.22),
-                          blurRadius: 6,
-                          offset: const Offset(0, 2),
-                        )
-                      ],
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.person_outline_rounded, size: 12, color: Colors.white),
-                        SizedBox(width: 4),
-                        Text(
-                          'View Profile',
-                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 0.5),
-                        ),
-                      ],
                     ),
                   ),
-                ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
-    ),
-  );
+    );
   }
 
   Widget _notifChip(IconData icon, String label, Color color, bool isDark) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: isDark ? color.withValues(alpha: 0.12) : color.withValues(alpha: 0.1),
+        color: isDark
+            ? color.withValues(alpha: 0.12)
+            : color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: color.withValues(alpha: isDark ? 0.3 : 0.2)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 10, color: color.withValues(alpha: isDark ? 0.9 : 0.8)),
+          Icon(
+            icon,
+            size: 10,
+            color: color.withValues(alpha: isDark ? 0.9 : 0.8),
+          ),
           const SizedBox(width: 4),
           Text(
             label,
@@ -4572,6 +5519,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       ),
     );
   }
+
   Widget _actionButton({
     required IconData icon,
     required String label,
@@ -4703,26 +5651,34 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
     }
 
     final planDate = widget.plan['planDateTime'] != null
-        ? DateFormat('dd/MM/yyyy').format(DateTime.parse(widget.plan['planDateTime'].toString()).toLocal())
+        ? DateFormat('dd/MM/yyyy').format(
+            DateTime.parse(widget.plan['planDateTime'].toString()).toLocal(),
+          )
         : 'Tonight';
     final planTime = widget.plan['planDateTime'] != null
-        ? DateFormat('hh:mm a').format(DateTime.parse(widget.plan['planDateTime'].toString()).toLocal())
+        ? DateFormat('hh:mm a').format(
+            DateTime.parse(widget.plan['planDateTime'].toString()).toLocal(),
+          )
         : '21:00';
     final reqId = widget.myReq['id']?.toString() ?? '';
-    final isSelfPay = widget.plan['paymentType'] == 'self_pay' || 
-                      widget.myReq['plan']?['paymentType'] == 'self_pay';
+    final isSelfPay =
+        widget.plan['paymentType'] == 'self_pay' ||
+        widget.myReq['plan']?['paymentType'] == 'self_pay';
     final label = isSelfPay
         ? 'CONFIRM JOIN 🎉'
         : (_secondsLeft > 0
-            ? 'PAY NOW (${_formatDuration(_secondsLeft)})'
-            : 'PAY NOW');
+              ? 'PAY NOW (${_formatDuration(_secondsLeft)})'
+              : 'PAY NOW');
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () async {
         if (reqId.isEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Invalid request ID.'), backgroundColor: Colors.red),
+            const SnackBar(
+              content: Text('Invalid request ID.'),
+              backgroundColor: Colors.red,
+            ),
           );
           return;
         }
@@ -4733,7 +5689,9 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
             context: context,
             barrierDismissible: false,
             builder: (context) => const Center(
-              child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+              child: CircularProgressIndicator(
+                color: LunaraTheme.electricViolet,
+              ),
             ),
           );
           try {
@@ -4745,16 +5703,25 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => ChatScreen(user: {
-                    ...(widget.myReq['plan']?['creator'] ?? widget.plan['host'] ?? {}),
-                    'contextType': 'party_plan',
-                    'planId': widget.myReq['plan']?['id']?.toString() ?? widget.plan['id']?.toString(),
-                  }),
+                  builder: (_) => ChatScreen(
+                    user: {
+                      ...(widget.myReq['plan']?['creator'] ??
+                          widget.plan['host'] ??
+                          {}),
+                      'contextType': 'party_plan',
+                      'planId':
+                          widget.myReq['plan']?['id']?.toString() ??
+                          widget.plan['id']?.toString(),
+                    },
+                  ),
                 ),
               );
             } else {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Failed to confirm join.'), backgroundColor: Colors.red),
+                const SnackBar(
+                  content: Text('Failed to confirm join.'),
+                  backgroundColor: Colors.red,
+                ),
               );
             }
           } catch (e) {
@@ -4789,8 +5756,8 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
           final razorpayAmount = data['amount'] is int
               ? (data['amount'] as int) * 100
               : int.tryParse(data['amount']?.toString() ?? '') != null
-                  ? (int.parse(data['amount'].toString())) * 100
-                  : 9900;
+              ? (int.parse(data['amount'].toString())) * 100
+              : 9900;
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -4811,11 +5778,16 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
                       context: context,
                       barrierDismissible: false,
                       builder: (context) => const Center(
-                        child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+                        child: CircularProgressIndicator(
+                          color: LunaraTheme.electricViolet,
+                        ),
                       ),
                     );
                     final success = await ApiService.verifyJoinerPayment(
-                      reqId, freshOrderId, paymentId, signature,
+                      reqId,
+                      freshOrderId,
+                      paymentId,
+                      signature,
                     );
                     if (!mounted) return;
                     Navigator.pop(context); // Close verification spinner
@@ -4824,16 +5796,25 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
                       Navigator.pushReplacement(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => ChatScreen(user: {
-                            ...(widget.myReq['plan']?['creator'] ?? widget.plan['host'] ?? {}),
-                            'contextType': 'party_plan',
-                            'planId': widget.myReq['plan']?['id']?.toString() ?? widget.plan['id']?.toString(),
-                          }),
+                          builder: (_) => ChatScreen(
+                            user: {
+                              ...(widget.myReq['plan']?['creator'] ??
+                                  widget.plan['host'] ??
+                                  {}),
+                              'contextType': 'party_plan',
+                              'planId':
+                                  widget.myReq['plan']?['id']?.toString() ??
+                                  widget.plan['id']?.toString(),
+                            },
+                          ),
                         ),
                       );
                     } else {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Payment Verification Failed.'), backgroundColor: Colors.red),
+                        const SnackBar(
+                          content: Text('Payment Verification Failed.'),
+                          backgroundColor: Colors.red,
+                        ),
                       );
                     }
                   } catch (e) {
@@ -4847,11 +5828,16 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
                       context: context,
                       barrierDismissible: false,
                       builder: (context) => const Center(
-                        child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+                        child: CircularProgressIndicator(
+                          color: LunaraTheme.electricViolet,
+                        ),
                       ),
                     );
                     final success = await ApiService.verifyJoinerPayment(
-                      reqId, freshOrderId, 'mock_payment', 'mock_signature',
+                      reqId,
+                      freshOrderId,
+                      'mock_payment',
+                      'mock_signature',
                     );
                     if (!mounted) return;
                     Navigator.pop(context); // Close verification spinner
@@ -4860,16 +5846,25 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
                       Navigator.pushReplacement(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => ChatScreen(user: {
-                            ...(widget.myReq['plan']?['creator'] ?? widget.plan['host'] ?? {}),
-                            'contextType': 'party_plan',
-                            'planId': widget.myReq['plan']?['id']?.toString() ?? widget.plan['id']?.toString(),
-                          }),
+                          builder: (_) => ChatScreen(
+                            user: {
+                              ...(widget.myReq['plan']?['creator'] ??
+                                  widget.plan['host'] ??
+                                  {}),
+                              'contextType': 'party_plan',
+                              'planId':
+                                  widget.myReq['plan']?['id']?.toString() ??
+                                  widget.plan['id']?.toString(),
+                            },
+                          ),
                         ),
                       );
                     } else {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Payment Verification Failed.'), backgroundColor: Colors.red),
+                        const SnackBar(
+                          content: Text('Payment Verification Failed.'),
+                          backgroundColor: Colors.red,
+                        ),
                       );
                     }
                   } catch (e) {
@@ -4902,7 +5897,7 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
               color: Colors.green.withValues(alpha: 0.4),
               blurRadius: 8,
               offset: const Offset(0, 3),
-            )
+            ),
           ],
         ),
         child: Row(
@@ -4924,4 +5919,3 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
     );
   }
 }
-

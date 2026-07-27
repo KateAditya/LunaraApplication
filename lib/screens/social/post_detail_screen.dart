@@ -38,7 +38,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     if (widget.post['type'] == 'strangers_meet') {
       _loadStrangersMeetDetails();
-      ApiService.addSocketListener('strangers_meet_updated', _onStrangersMeetUpdated);
+      ApiService.addSocketListener(
+        'strangers_meet_updated',
+        _onStrangersMeetUpdated,
+      );
     } else {
       _isLoading = false;
       _loadPartyPlanDetails();
@@ -51,7 +54,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       final targetPlanId = widget.post['id']?.toString() ?? '';
       bool requested = false;
       for (final req in myRequests) {
-        final planId = req['partyPlanId']?.toString() ?? req['planId']?.toString();
+        final planId =
+            req['partyPlanId']?.toString() ?? req['planId']?.toString();
         if (planId == targetPlanId) {
           requested = true;
           break;
@@ -80,16 +84,23 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   void dispose() {
     _razorpay.clear();
     if (widget.post['type'] == 'strangers_meet') {
-      ApiService.removeSocketListener('strangers_meet_updated', _onStrangersMeetUpdated);
+      ApiService.removeSocketListener(
+        'strangers_meet_updated',
+        _onStrangersMeetUpdated,
+      );
     }
     super.dispose();
   }
 
-  Future<void> _loadStrangersMeetDetails({bool showFullScreenLoader = true}) async {
+  Future<void> _loadStrangersMeetDetails({
+    bool showFullScreenLoader = true,
+  }) async {
     if (showFullScreenLoader) {
       setState(() => _isLoading = true);
     }
-    final req = await ApiService.fetchStrangersMeetRequestById(widget.post['id']);
+    final req = await ApiService.fetchStrangersMeetRequestById(
+      widget.post['id'],
+    );
     if (mounted) {
       setState(() {
         _meetRequest = req;
@@ -131,7 +142,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     setState(() => _isProcessing = true);
 
     // Call checkout / initiate endpoint on backend
-    final checkoutData = await ApiService.initiateStrangersMeetJoinPayment(_meetRequest!.id);
+    final checkoutData = await ApiService.initiateStrangersMeetJoinPayment(
+      _meetRequest!.id,
+    );
 
     if (checkoutData == null) {
       if (!mounted) return;
@@ -150,7 +163,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (charges > 0) {
       final String orderId = checkoutData['razorpayOrderId'];
       _lastOrderId = orderId;
-      final String razorpayKeyId = checkoutData['razorpayKeyId'] ?? 'rzp_test_123';
+      final String razorpayKeyId =
+          checkoutData['razorpayKeyId'] ?? 'rzp_test_123';
       final int amount = checkoutData['amount'];
 
       var options = {
@@ -159,10 +173,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         'name': 'Lunara',
         'description': 'Join Strangers Meet - ${_meetRequest!.subject}',
         'order_id': orderId,
-        'prefill': {
-          'contact': '8888888888',
-          'email': 'test@razorpay.com'
-        }
+        'prefill': {'contact': '8888888888', 'email': 'test@razorpay.com'},
       };
 
       bool razorpayOpened = false;
@@ -170,7 +181,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         _razorpay.open(options);
         razorpayOpened = true;
       } catch (e) {
-        debugPrint('Error opening Razorpay, falling back to simulated payment: $e');
+        debugPrint(
+          'Error opening Razorpay, falling back to simulated payment: $e',
+        );
       }
 
       if (!razorpayOpened) {
@@ -181,12 +194,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       }
     } else {
       // Free join flow
-      final String orderId = checkoutData['razorpayOrderId'] ?? 'free_order_${DateTime.now().millisecondsSinceEpoch}';
+      final String orderId =
+          checkoutData['razorpayOrderId'] ??
+          'free_order_${DateTime.now().millisecondsSinceEpoch}';
       _confirmJoinPayment(orderId, 'free', 'free');
     }
   }
 
-  Future<void> _confirmJoinPayment(String orderId, String paymentId, String signature) async {
+  Future<void> _confirmJoinPayment(
+    String orderId,
+    String paymentId,
+    String signature,
+  ) async {
     if (_meetRequest == null) return;
     final messenger = ScaffoldMessenger.of(context);
     final result = await ApiService.payStrangersMeetJoin(
@@ -275,11 +294,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     style: TextStyle(fontSize: 12, color: Colors.black54),
                   ),
                   const SizedBox(height: 20),
-                  
+
                   // Food preference dropdown
                   const Text(
                     'Food Preference',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Container(
@@ -291,17 +314,32 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ),
                     child: DropdownButtonHideUnderline(
                       child: DropdownButtonFormField<String>(
-                        value: foodPref,
+                        initialValue: foodPref,
                         decoration: const InputDecoration(
-                          prefixIcon: Icon(Icons.restaurant, color: LunaraTheme.electricViolet, size: 18),
-                          prefixIconConstraints: BoxConstraints(minWidth: 28, minHeight: 18),
+                          prefixIcon: Icon(
+                            Icons.restaurant,
+                            color: LunaraTheme.electricViolet,
+                            size: 18,
+                          ),
+                          prefixIconConstraints: BoxConstraints(
+                            minWidth: 28,
+                            minHeight: 18,
+                          ),
                           border: InputBorder.none,
                           contentPadding: EdgeInsets.symmetric(vertical: 10),
                         ),
-                        items: const ['Veg', 'Non-Veg', 'Both'].map((String val) {
+                        items: const ['Veg', 'Non-Veg', 'Both'].map((
+                          String val,
+                        ) {
                           return DropdownMenuItem<String>(
                             value: val,
-                            child: Text(val, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                            child: Text(
+                              val,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
                           );
                         }).toList(),
                         onChanged: (val) {
@@ -313,11 +351,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  
+
                   // Drink preference dropdown
                   const Text(
                     'Drink Preference',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Container(
@@ -329,19 +371,34 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ),
                     child: DropdownButtonHideUnderline(
                       child: DropdownButtonFormField<String>(
-                        value: drinkPref,
+                        initialValue: drinkPref,
                         decoration: const InputDecoration(
-                          prefixIcon: Icon(Icons.local_bar, color: LunaraTheme.electricViolet, size: 18),
-                          prefixIconConstraints: BoxConstraints(minWidth: 28, minHeight: 18),
+                          prefixIcon: Icon(
+                            Icons.local_bar,
+                            color: LunaraTheme.electricViolet,
+                            size: 18,
+                          ),
+                          prefixIconConstraints: BoxConstraints(
+                            minWidth: 28,
+                            minHeight: 18,
+                          ),
                           border: InputBorder.none,
                           contentPadding: EdgeInsets.symmetric(vertical: 10),
                         ),
-                        items: const ['Alcoholic', 'Non-Alcoholic', 'Both'].map((String val) {
-                          return DropdownMenuItem<String>(
-                            value: val,
-                            child: Text(val, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
-                          );
-                        }).toList(),
+                        items: const ['Alcoholic', 'Non-Alcoholic', 'Both'].map(
+                          (String val) {
+                            return DropdownMenuItem<String>(
+                              value: val,
+                              child: Text(
+                                val,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            );
+                          },
+                        ).toList(),
                         onChanged: (val) {
                           if (val != null) {
                             setStateSheet(() => drinkPref = val);
@@ -351,14 +408,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  
+
                   // Proceed Button
                   SizedBox(
                     width: double.infinity,
                     height: 50,
                     child: ElevatedButton(
                       onPressed: () {
-                        Navigator.pop(ctx, {'food': foodPref, 'drink': drinkPref});
+                        Navigator.pop(ctx, {
+                          'food': foodPref,
+                          'drink': drinkPref,
+                        });
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: LunaraTheme.electricViolet,
@@ -391,7 +451,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
-  Future<void> _sendJoinRequestWithPreferences(String foodPref, String drinkPref) async {
+  Future<void> _sendJoinRequestWithPreferences(
+    String foodPref,
+    String drinkPref,
+  ) async {
     if (_meetRequest == null) return;
     setState(() => _isProcessing = true);
     final success = await ApiService.sendStrangersMeetJoinRequest(
@@ -405,7 +468,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Join request sent successfully! Waiting for host approval. 🤞'),
+          content: Text(
+            'Join request sent successfully! Waiting for host approval. 🤞',
+          ),
           backgroundColor: Colors.green,
         ),
       );
@@ -422,7 +487,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Future<void> _completeMeetFlow() async {
     if (_meetRequest == null) return;
-    
+
     final messenger = ScaffoldMessenger.of(context);
 
     // Show confirmation dialog
@@ -430,7 +495,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Complete Meet'),
-        content: const Text('Are you sure you want to mark this Strangers Meet as successfully completed? This action is permanent.'),
+        content: const Text(
+          'Are you sure you want to mark this Strangers Meet as successfully completed? This action is permanent.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -438,8 +505,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: LunaraTheme.electricViolet),
-            child: const Text('COMPLETE', style: TextStyle(color: Colors.white)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: LunaraTheme.electricViolet,
+            ),
+            child: const Text(
+              'COMPLETE',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -502,13 +574,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final String hostLastName = hostUserMap['lastName'] ?? 'User';
     final String? hostPhoto = hostUserMap['photoUrl'];
 
-    final bool isMyPost = hostUserMap['id']?.toString() == ApiService.currentUserId;
+    final bool isMyPost =
+        hostUserMap['id']?.toString() == ApiService.currentUserId;
     final String currentUserId = ApiService.currentUserId ?? '';
 
     Map<String, dynamic>? myJoinerInfo;
     if (req.joiners != null) {
       for (var j in req.joiners!) {
-        if (j is Map && (j['userId']?.toString() == currentUserId || j['id']?.toString() == currentUserId)) {
+        if (j is Map &&
+            (j['userId']?.toString() == currentUserId ||
+                j['id']?.toString() == currentUserId)) {
           myJoinerInfo = Map<String, dynamic>.from(j);
           break;
         }
@@ -556,7 +631,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       if (isFastFilling) ...[
                         const SizedBox(width: 12),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(
                               colors: [Colors.orange, Colors.redAccent],
@@ -567,13 +645,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 color: Colors.orange.withValues(alpha: 0.3),
                                 blurRadius: 8,
                                 offset: const Offset(0, 3),
-                              )
-                            ]
+                              ),
+                            ],
                           ),
                           child: const Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.whatshot, color: Colors.white, size: 12),
+                              Icon(
+                                Icons.whatshot,
+                                color: Colors.white,
+                                size: 12,
+                              ),
                               SizedBox(width: 4),
                               Text(
                                 'FAST FILLING',
@@ -627,7 +709,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             Container(
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                                color: LunaraTheme.electricViolet.withValues(
+                                  alpha: 0.1,
+                                ),
                                 shape: BoxShape.circle,
                               ),
                               child: const Icon(
@@ -667,7 +751,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (_) => VenueDetailScreen(venue: widget.venue!),
+                                      builder: (_) => VenueDetailScreen(
+                                        venue: widget.venue!,
+                                      ),
                                     ),
                                   );
                                 },
@@ -716,9 +802,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     ),
                                   ),
                                   Text(
-                                    charges > 0 ? '₹${charges.toStringAsFixed(0)}' : 'FREE ENTRY',
+                                    charges > 0
+                                        ? '₹${charges.toStringAsFixed(0)}'
+                                        : 'FREE ENTRY',
                                     style: TextStyle(
-                                      color: charges > 0 ? Colors.black : Colors.green,
+                                      color: charges > 0
+                                          ? Colors.black
+                                          : Colors.green,
                                       fontSize: 16,
                                       fontWeight: FontWeight.bold,
                                     ),
@@ -814,12 +904,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         children: [
                           CircleAvatar(
                             radius: 24,
-                            backgroundColor: LunaraTheme.electricViolet.withValues(alpha: 0.1),
-                            backgroundImage: hostPhoto != null && hostPhoto.isNotEmpty
-                                ? NetworkImage(hostPhoto.startsWith('http') ? hostPhoto : '${ApiService.baseUrl}$hostPhoto')
+                            backgroundColor: LunaraTheme.electricViolet
+                                .withValues(alpha: 0.1),
+                            backgroundImage:
+                                hostPhoto != null && hostPhoto.isNotEmpty
+                                ? NetworkImage(
+                                    hostPhoto.startsWith('http')
+                                        ? hostPhoto
+                                        : '${ApiService.baseUrl}$hostPhoto',
+                                  )
                                 : null,
                             child: hostPhoto == null || hostPhoto.isEmpty
-                                ? const Icon(Icons.person, color: LunaraTheme.electricViolet)
+                                ? const Icon(
+                                    Icons.person,
+                                    color: LunaraTheme.electricViolet,
+                                  )
                                 : null,
                           ),
                           const SizedBox(width: 16),
@@ -829,14 +928,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               children: [
                                 Text(
                                   '$hostFirstName $hostLastName',
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
                                 ),
-                                if (hostUserMap['bio'] != null && hostUserMap['bio'].toString().isNotEmpty)
+                                if (hostUserMap['bio'] != null &&
+                                    hostUserMap['bio'].toString().isNotEmpty)
                                   Text(
                                     hostUserMap['bio'],
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 12,
+                                    ),
                                   ),
                               ],
                             ),
@@ -848,9 +954,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   ),
 
                   // Pending Requests Section (only for Host)
-                  if (isMyPost) ...[
-                    _buildPendingRequestsSection(),
-                  ],
+                  if (isMyPost) ...[_buildPendingRequestsSection()],
 
                   // Participants Section
                   _buildParticipantsSection(),
@@ -864,7 +968,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-          child: _buildStrangersMeetActionButton(isMyPost, myJoinerInfo, slotsFilled, maxPersons, req.status, req.eventDateTime, charges),
+          child: _buildStrangersMeetActionButton(
+            isMyPost,
+            myJoinerInfo,
+            slotsFilled,
+            maxPersons,
+            req.status,
+            req.eventDateTime,
+            charges,
+          ),
         ),
       ),
     );
@@ -910,7 +1022,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               final name = ju['firstName'] ?? 'User';
               final photo = ju['photoUrl'];
               String? finalPhoto = photo;
-              if (finalPhoto != null && finalPhoto.startsWith('/') && !finalPhoto.startsWith('assets')) {
+              if (finalPhoto != null &&
+                  finalPhoto.startsWith('/') &&
+                  !finalPhoto.startsWith('assets')) {
                 finalPhoto = '${ApiService.baseUrl}$finalPhoto';
               }
 
@@ -934,18 +1048,28 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     children: [
                       CircleAvatar(
                         radius: 26,
-                        backgroundColor: LunaraTheme.electricViolet.withValues(alpha: 0.08),
-                        backgroundImage: finalPhoto != null && finalPhoto.isNotEmpty
+                        backgroundColor: LunaraTheme.electricViolet.withValues(
+                          alpha: 0.08,
+                        ),
+                        backgroundImage:
+                            finalPhoto != null && finalPhoto.isNotEmpty
                             ? NetworkImage(finalPhoto)
                             : null,
                         child: finalPhoto == null || finalPhoto.isEmpty
-                            ? const Icon(Icons.person, color: LunaraTheme.electricViolet)
+                            ? const Icon(
+                                Icons.person,
+                                color: LunaraTheme.electricViolet,
+                              )
                             : null,
                       ),
                       const SizedBox(height: 6),
                       Text(
                         name,
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.black87),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
@@ -996,10 +1120,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             final ju = joiner['user'] as Map<String, dynamic>?;
             if (ju == null) return const SizedBox.shrink();
 
-            final name = '${ju['firstName'] ?? ''} ${ju['lastName'] ?? ''}'.trim();
+            final name = '${ju['firstName'] ?? ''} ${ju['lastName'] ?? ''}'
+                .trim();
             final photo = ju['photoUrl'];
             String? finalPhoto = photo;
-            if (finalPhoto != null && finalPhoto.startsWith('/') && !finalPhoto.startsWith('assets')) {
+            if (finalPhoto != null &&
+                finalPhoto.startsWith('/') &&
+                !finalPhoto.startsWith('assets')) {
               finalPhoto = '${ApiService.baseUrl}$finalPhoto';
             }
 
@@ -1017,12 +1144,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 children: [
                   CircleAvatar(
                     radius: 22,
-                    backgroundColor: LunaraTheme.electricViolet.withOpacity(0.08),
+                    backgroundColor: LunaraTheme.electricViolet.withValues(
+                      alpha: 0.08,
+                    ),
                     backgroundImage: finalPhoto != null && finalPhoto.isNotEmpty
                         ? NetworkImage(finalPhoto)
                         : null,
                     child: finalPhoto == null || finalPhoto.isEmpty
-                        ? const Icon(Icons.person, color: LunaraTheme.electricViolet)
+                        ? const Icon(
+                            Icons.person,
+                            color: LunaraTheme.electricViolet,
+                          )
                         : null,
                   ),
                   const SizedBox(width: 12),
@@ -1032,12 +1164,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       children: [
                         Text(
                           name.isEmpty ? 'User' : name,
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
                         ),
-                        if (ju['phone'] != null && ju['phone'].toString().isNotEmpty)
+                        if (ju['phone'] != null &&
+                            ju['phone'].toString().isNotEmpty)
                           Text(
                             ju['phone'].toString(),
-                            style: TextStyle(color: Colors.grey[600], fontSize: 11),
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 11,
+                            ),
                           ),
                       ],
                     ),
@@ -1049,8 +1188,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     icon: const Icon(Icons.close_rounded, color: Colors.red),
                     tooltip: 'Reject',
                     style: IconButton.styleFrom(
-                      backgroundColor: Colors.red.withOpacity(0.1),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      backgroundColor: Colors.red.withValues(alpha: 0.1),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -1060,8 +1201,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     icon: const Icon(Icons.check_rounded, color: Colors.green),
                     tooltip: 'Accept',
                     style: IconButton.styleFrom(
-                      backgroundColor: Colors.green.withOpacity(0.1),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      backgroundColor: Colors.green.withValues(alpha: 0.1),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
                   ),
                 ],
@@ -1086,7 +1229,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(action == 'accept' ? 'Join request accepted!' : 'Join request rejected.'),
+          content: Text(
+            action == 'accept'
+                ? 'Join request accepted!'
+                : 'Join request rejected.',
+          ),
           backgroundColor: action == 'accept' ? Colors.green : Colors.grey[800],
         ),
       );
@@ -1176,7 +1323,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.transparent,
                 shadowColor: Colors.transparent,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
               ),
               icon: const Icon(Icons.done_all_rounded, color: Colors.white),
               label: const Text(
@@ -1297,7 +1446,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           );
         } else if (jStatus == 'accepted') {
-          final payText = charges > 0 ? 'PAY TO JOIN (₹${charges.toStringAsFixed(0)})' : 'CONFIRM JOIN (FREE)';
+          final payText = charges > 0
+              ? 'PAY TO JOIN (₹${charges.toStringAsFixed(0)})'
+              : 'CONFIRM JOIN (FREE)';
           return Container(
             width: double.infinity,
             height: 60,
@@ -1317,7 +1468,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.transparent,
                 shadowColor: Colors.transparent,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -1411,13 +1564,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.transparent,
             shadowColor: Colors.transparent,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
           ),
           child: const Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(Icons.person_add_alt_1_rounded, color: Colors.white),
-              const SizedBox(width: 12),
+              SizedBox(width: 12),
               Text(
                 'REQUEST TO JOIN',
                 style: TextStyle(
@@ -1444,21 +1599,33 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final String content = widget.post['content'] ?? '';
     final String time = widget.post['time'] ?? '';
 
-    final String? photo = widget.post['profilePhotoUrl'] ??
+    final String? photo =
+        widget.post['profilePhotoUrl'] ??
         widget.post['profileImageUrl'] ??
         widget.post['photoUrl'] ??
         widget.post['profilePhoto'] ??
         (widget.post['user'] is Map ? widget.post['user']['photoUrl'] : null) ??
-        (widget.post['user'] is Map ? widget.post['user']['profilePhotoUrl'] : null) ??
+        (widget.post['user'] is Map
+            ? widget.post['user']['profilePhotoUrl']
+            : null) ??
         widget.post['image'];
-    final bool isMyPost = widget.post['userId']?.toString() == ApiService.currentUserId ||
-        (widget.post['user'] != null && widget.post['user']['id']?.toString() == ApiService.currentUserId);
+    final bool isMyPost =
+        widget.post['userId']?.toString() == ApiService.currentUserId ||
+        (widget.post['user'] != null &&
+            widget.post['user']['id']?.toString() == ApiService.currentUserId);
 
     return Scaffold(
       backgroundColor: Colors.white,
       body: CustomScrollView(
         slivers: [
-          _buildSliverAppBar(context, firstName, lastName, time, photo, widget.post),
+          _buildSliverAppBar(
+            context,
+            firstName,
+            lastName,
+            time,
+            photo,
+            widget.post,
+          ),
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -1501,7 +1668,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             Container(
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                                color: LunaraTheme.electricViolet.withValues(
+                                  alpha: 0.1,
+                                ),
                                 shape: BoxShape.circle,
                               ),
                               child: const Icon(
@@ -1541,7 +1710,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (_) => VenueDetailScreen(venue: widget.venue!),
+                                      builder: (_) => VenueDetailScreen(
+                                        venue: widget.venue!,
+                                      ),
                                     ),
                                   );
                                 },
@@ -1586,11 +1757,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         child: FittedBox(
                           fit: BoxFit.scaleDown,
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16.0,
+                            ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                const Icon(Icons.check_circle_rounded, color: Colors.green),
+                                const Icon(
+                                  Icons.check_circle_rounded,
+                                  color: Colors.green,
+                                ),
                                 const SizedBox(width: 12),
                                 Text(
                                   'REQUEST SENT — AWAITING HOST APPROVAL',
@@ -1622,7 +1798,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               ? null
                               : [
                                   BoxShadow(
-                                    color: const Color(0xFFb952eb).withValues(alpha: 0.3),
+                                    color: const Color(
+                                      0xFFb952eb,
+                                    ).withValues(alpha: 0.3),
                                     blurRadius: 20,
                                     offset: const Offset(0, 10),
                                   ),
@@ -1633,10 +1811,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               ? null
                               : () async {
                                   setState(() => _isProcessing = true);
-                                  final messenger = ScaffoldMessenger.of(context);
-                                  final success = await ApiService.requestToJoinPartyPlan(
-                                    widget.post['id'],
+                                  final messenger = ScaffoldMessenger.of(
+                                    context,
                                   );
+                                  final success =
+                                      await ApiService.requestToJoinPartyPlan(
+                                        widget.post['id'],
+                                      );
                                   if (mounted) {
                                     setState(() => _isProcessing = false);
                                   }
@@ -1657,11 +1838,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                             vertical: 16,
                                           ),
                                           decoration: BoxDecoration(
-                                            gradient: LunaraTheme.purpleGradient,
-                                            borderRadius: BorderRadius.circular(16),
+                                            gradient:
+                                                LunaraTheme.purpleGradient,
+                                            borderRadius: BorderRadius.circular(
+                                              16,
+                                            ),
                                             boxShadow: [
                                               BoxShadow(
-                                                color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                                                color: LunaraTheme
+                                                    .electricViolet
+                                                    .withValues(alpha: 0.3),
                                                 blurRadius: 15,
                                                 offset: const Offset(0, 8),
                                               ),
@@ -1679,7 +1865,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                                 child: Text(
                                                   'YOUR REQUEST TO JOIN THE VIBE HAS BEEN SENT!',
                                                   style: TextStyle(
-                                                    fontFamily: 'AllroundGothic',
+                                                    fontFamily:
+                                                        'AllroundGothic',
                                                     color: Colors.white,
                                                     fontSize: 12,
                                                     fontWeight: FontWeight.bold,
@@ -1725,7 +1912,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   : const Icon(Icons.bolt, color: Colors.white),
                               const SizedBox(width: 12),
                               Text(
-                                _isProcessing ? 'SENDING REQUEST...' : 'JOIN THE VIBE',
+                                _isProcessing
+                                    ? 'SENDING REQUEST...'
+                                    : 'JOIN THE VIBE',
                                 style: const TextStyle(
                                   fontFamily: 'AllroundGothic',
                                   color: Colors.white,
@@ -1767,13 +1956,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         final dob = DateTime.tryParse(dobRaw.toString());
         if (dob != null) {
           final today = DateTime.now();
-          age = today.year - dob.year -
-              ((today.month < dob.month || (today.month == dob.month && today.day < dob.day)) ? 1 : 0);
+          age =
+              today.year -
+              dob.year -
+              ((today.month < dob.month ||
+                      (today.month == dob.month && today.day < dob.day))
+                  ? 1
+                  : 0);
         }
       }
     }
 
-    final bool isVerified = post['isVerified'] == true || post['verified'] == true;
+    final bool isVerified =
+        post['isVerified'] == true || post['verified'] == true;
 
     return SliverAppBar(
       expandedHeight: 450,
@@ -1820,7 +2015,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         background: Stack(
           fit: StackFit.expand,
           children: [
-            if (finalPhoto != null && finalPhoto.isNotEmpty && finalPhoto.startsWith('http'))
+            if (finalPhoto != null &&
+                finalPhoto.isNotEmpty &&
+                finalPhoto.startsWith('http'))
               Image.network(
                 finalPhoto,
                 fit: BoxFit.cover,
@@ -1830,7 +2027,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   ),
                 ),
               )
-            else if (finalPhoto != null && finalPhoto.isNotEmpty && finalPhoto.startsWith('assets'))
+            else if (finalPhoto != null &&
+                finalPhoto.isNotEmpty &&
+                finalPhoto.startsWith('assets'))
               Image.asset(finalPhoto, fit: BoxFit.cover)
             else
               Container(

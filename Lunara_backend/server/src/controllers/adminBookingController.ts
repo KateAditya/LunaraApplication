@@ -4,6 +4,7 @@ import { PlanEligibilityService } from '../services/PlanEligibilityService';
 import User from '../models/User';
 import Venue from '../models/Venue';
 import GroupParty, { GroupPartyStatus, GroupPartyPaymentStatus } from '../models/GroupParty';
+import Payment from '../models/Payment';
 import { logger } from '../config/logger';
 import { Op } from 'sequelize';
 
@@ -398,7 +399,13 @@ export const getBookings = async (req: Request, res: Response) => {
         }
 
         if (status) where.status = status;
-        if (goingMode) where.goingMode = goingMode;
+        if (goingMode) {
+            if (goingMode === 'solo') {
+                where.goingMode = { [Op.or]: ['solo', { [Op.is]: null }] };
+            } else {
+                where.goingMode = goingMode;
+            }
+        }
         if (isGroupBooking !== undefined) where.isGroupBooking = String(isGroupBooking) === 'true';
         if (isLargePartyRequest !== undefined) where.isLargePartyRequest = String(isLargePartyRequest) === 'true';
         if (isUpcomingNight !== undefined) where.isUpcomingNight = String(isUpcomingNight) === 'true';
@@ -847,6 +854,182 @@ export const markNoShow = async (req: Request, res: Response) => {
     } catch (err: any) {
         logger.error('markNoShow error:', err);
         return res.status(500).json({ success: false, message: err.message });
+    }
+};
+
+export const getVenueWiseBookingSummary = async (req: Request, res: Response) => {
+    try {
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 10;
+        const offset = (page - 1) * limit;
+
+        const { fromDate, toDate, venueId, bookingStatus, paymentStatus, search } = req.query;
+
+        // Build Venue where clause for search
+        let venueWhere: any = {};
+        if (venueId && venueId !== 'all') {
+            venueWhere.id = venueId;
+        }
+        if (search) {
+            venueWhere.name = { [Op.iLike]: `%${search}%` };
+        }
+
+        // 1. Fetch paginated venues
+        const { rows: venues, count: totalVenues } = await Venue.findAndCountAll({
+            where: venueWhere,
+            attributes: ['id', 'name', 'city'],
+            order: [['name', 'ASC']],
+            limit,
+            offset
+        });
+
+        if (venues.length === 0) {
+            return res.json({
+                success: true,
+                data: {
+                    summary: { totalVenues: 0, totalBookings: 0, totalConfirmed: 0, totalCancelled: 0, totalAmount: 0, totalPaid: 0, totalPending: 0 },
+                    venues: [],
+                    pagination: { total: 0, page, limit, totalPages: 0 }
+                }
+            });
+        }
+
+        const venueIds = venues.map(v => v.id);
+
+        // Build Booking where clause
+        let bookingWhere: any = { venueId: { [Op.in]: venueIds } };
+        
+        if (fromDate && toDate) {
+            bookingWhere.bookingDate = { [Op.between]: [fromDate, toDate] };
+        } else if (fromDate) {
+            bookingWhere.bookingDate = { [Op.gte]: fromDate };
+        } else if (toDate) {
+            bookingWhere.bookingDate = { [Op.lte]: toDate };
+        }
+
+        if (bookingStatus && bookingStatus !== 'all') {
+            bookingWhere.status = bookingStatus;
+        }
+        if (paymentStatus && paymentStatus !== 'all') {
+            bookingWhere.paymentStatus = paymentStatus;
+        }
+
+        // 2. Fetch all bookings for these venues
+        const bookings = await Booking.findAll({
+            where: bookingWhere,
+            include: [
+                {
+                    model: Payment,
+                    as: 'payments',
+                    attributes: ['amount', 'refundAmount', 'status']
+                }
+            ]
+        });
+
+        // 3. Aggregate data per venue
+        const venueMap = new Map();
+        venues.forEach(v => {
+            venueMap.set(v.id, {
+                venueId: v.id,
+                venueName: `${v.name} (${v.city})`,
+                totalBookings: 0,
+                confirmedBookings: 0,
+                pendingBookings: 0,
+                cancelledBookings: 0,
+                completedBookings: 0,
+                totalBookingAmount: 0,
+                paidAmount: 0,
+                pendingAmount: 0,
+                refundAmount: 0,
+            });
+        });
+
+        let grandTotals = {
+            totalVenues: totalVenues,
+            totalBookings: 0,
+            totalConfirmed: 0,
+            totalCancelled: 0,
+            totalAmount: 0,
+            totalPaid: 0,
+            totalPending: 0
+        };
+
+        bookings.forEach(b => {
+            const vStat = venueMap.get(b.venueId);
+            if (!vStat) return;
+
+            vStat.totalBookings++;
+            grandTotals.totalBookings++;
+
+            if (b.status === 'confirmed') {
+                vStat.confirmedBookings++;
+                grandTotals.totalConfirmed++;
+            } else if (b.status === 'pending') {
+                vStat.pendingBookings++;
+            } else if (b.status === 'cancelled') {
+                vStat.cancelledBookings++;
+                grandTotals.totalCancelled++;
+            } else if (b.status === 'completed') {
+                vStat.completedBookings++;
+            }
+
+            // Amounts
+            const bAmount = Number(b.totalAmount) || 0;
+            vStat.totalBookingAmount += bAmount;
+            grandTotals.totalAmount += bAmount;
+
+            // Calculate paid & refund from payments
+            let bPaid = 0;
+            let bRefund = 0;
+
+            const bookingData: any = b;
+
+            if (bookingData.payments && bookingData.payments.length > 0) {
+                bookingData.payments.forEach((p: any) => {
+                    if (p.status === 'successful') {
+                        bPaid += Number(p.amount) || 0;
+                    }
+                    bRefund += Number(p.refundAmount) || 0;
+                });
+            } else {
+                // fallback if no payment record exists but booking says paid
+                if (b.paymentStatus === 'paid') {
+                    bPaid = bAmount;
+                } else {
+                    bPaid = Number(b.depositAmount) || 0;
+                }
+            }
+
+            vStat.paidAmount += bPaid;
+            grandTotals.totalPaid += bPaid;
+
+            vStat.refundAmount += bRefund;
+            
+            // pending is whatever is not paid from total
+            const bPending = Math.max(0, bAmount - bPaid);
+            vStat.pendingAmount += bPending;
+            grandTotals.totalPending += bPending;
+        });
+
+        const sortedVenues = Array.from(venueMap.values());
+
+        return res.json({
+            success: true,
+            data: {
+                summary: grandTotals,
+                venues: sortedVenues,
+                pagination: {
+                    total: totalVenues,
+                    page,
+                    limit,
+                    totalPages: Math.ceil(totalVenues / limit)
+                }
+            }
+        });
+
+    } catch (error: any) {
+        logger.error('getVenueWiseBookingSummary error:', error);
+        return res.status(500).json({ success: false, message: error.message });
     }
 };
 

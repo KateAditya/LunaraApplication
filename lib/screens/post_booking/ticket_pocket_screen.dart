@@ -3,7 +3,6 @@ import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../discovery/digital_ticket_screen.dart';
-import 'checkin_assist_screen.dart';
 
 class TicketPocketScreen extends StatefulWidget {
   const TicketPocketScreen({super.key});
@@ -47,7 +46,10 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
   bool _isActiveBooking(Map<String, dynamic> booking) {
     try {
       final status = booking['status']?.toString().toLowerCase();
-      if (status == 'cancelled' || status == 'completed' || status == 'no_show' || status == 'expired') {
+      if (status == 'cancelled' ||
+          status == 'completed' ||
+          status == 'no_show' ||
+          status == 'expired') {
         return false;
       }
       final dateStr = booking['bookingDate']?.toString();
@@ -56,9 +58,14 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
       final bookingDate = DateTime.parse(dateStr).toLocal();
       final now = DateTime.now();
       final todayStart = DateTime(now.year, now.month, now.day);
-      final bookingDateStart = DateTime(bookingDate.year, bookingDate.month, bookingDate.day);
+      final bookingDateStart = DateTime(
+        bookingDate.year,
+        bookingDate.month,
+        bookingDate.day,
+      );
 
-      return bookingDateStart.isAtSameMomentAs(todayStart) || bookingDateStart.isAfter(todayStart);
+      return bookingDateStart.isAtSameMomentAs(todayStart) ||
+          bookingDateStart.isAfter(todayStart);
     } catch (_) {
       return true;
     }
@@ -66,7 +73,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
 
   String _getVenueImageUrl(Map<String, dynamic>? venue) {
     if (venue == null) return 'https://picsum.photos/seed/venue/600/400';
-    
+
     String normalize(String path) {
       final clean = path.replaceAll('\\', '/');
       if (clean.startsWith('http://') || clean.startsWith('https://')) {
@@ -76,19 +83,20 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     }
 
     if (venue['coverImage'] != null && venue['coverImage'] is Map) {
-      final path = venue['coverImage']['url'] ?? venue['coverImage']['filePath'];
+      final path =
+          venue['coverImage']['url'] ?? venue['coverImage']['filePath'];
       if (path != null && path.toString().isNotEmpty) {
         return normalize(path.toString());
       }
     }
-    
+
     if (venue['imageUrl'] != null && venue['imageUrl'].toString().isNotEmpty) {
       return normalize(venue['imageUrl'].toString());
     }
     if (venue['image'] != null && venue['image'].toString().isNotEmpty) {
       return normalize(venue['image'].toString());
     }
-    
+
     final images = venue['images'];
     if (images is List && images.isNotEmpty) {
       final img = images[0];
@@ -112,7 +120,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         }
       }
     }
-    
+
     final idHash = (venue['name']?.toString() ?? 'venue').hashCode.abs() % 20;
     return 'https://picsum.photos/seed/$idHash/600/400';
   }
@@ -124,8 +132,16 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
       final hour = int.parse(timeParts[0]);
       final minute = int.parse(timeParts[1]);
 
-      final fullDateTime = DateTime(date.year, date.month, date.day, hour, minute);
-      final formattedDate = DateFormat('EEE, MMM d').format(fullDateTime).toUpperCase();
+      final fullDateTime = DateTime(
+        date.year,
+        date.month,
+        date.day,
+        hour,
+        minute,
+      );
+      final formattedDate = DateFormat(
+        'EEE, MMM d',
+      ).format(fullDateTime).toUpperCase();
       final formattedTime = DateFormat('h:mm a').format(fullDateTime);
       return '$formattedDate • $formattedTime';
     } catch (_) {
@@ -154,7 +170,10 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     }
   }
 
-  Widget _buildExpirationTimelineBar(Map<String, dynamic> booking, bool isActive) {
+  Widget _buildExpirationTimelineBar(
+    Map<String, dynamic> booking,
+    bool isActive,
+  ) {
     final dateStr = booking['bookingDate']?.toString();
     final startTimeStr = booking['startTime']?.toString() ?? '20:00';
 
@@ -169,12 +188,19 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         final h = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 20 : 20;
         final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
 
-        final eventDateTime = DateTime(bDate.year, bDate.month, bDate.day, h, m);
+        final eventDateTime = DateTime(
+          bDate.year,
+          bDate.month,
+          bDate.day,
+          h,
+          m,
+        );
         final expirationTime = eventDateTime.add(const Duration(hours: 3));
         final now = DateTime.now();
 
         if (now.isAfter(expirationTime)) {
-          timelineText = 'EXPIRED ON ${DateFormat('MMM d, h:mm a').format(expirationTime)}';
+          timelineText =
+              'EXPIRED ON ${DateFormat('MMM d, h:mm a').format(expirationTime)}';
           timelineColor = Colors.red.shade400;
           progressRatio = 1.0;
         } else if (now.isAfter(eventDateTime)) {
@@ -187,7 +213,8 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         } else {
           final remaining = eventDateTime.difference(now);
           if (remaining.inDays > 0) {
-            timelineText = 'EVENT IN ${remaining.inDays} DAYS (${DateFormat('MMM d').format(eventDateTime)})';
+            timelineText =
+                'EVENT IN ${remaining.inDays} DAYS (${DateFormat('MMM d').format(eventDateTime)})';
           } else {
             final hrs = remaining.inHours;
             final mins = remaining.inMinutes % 60;
@@ -275,10 +302,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                     )
                   : TabBarView(
                       controller: _tabController,
-                      children: [
-                        _buildActiveTickets(),
-                        _buildPastTickets(),
-                      ],
+                      children: [_buildActiveTickets(), _buildPastTickets()],
                     ),
             ),
           ],
@@ -430,7 +454,10 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     );
   }
 
-  Widget _buildTicketCard(Map<String, dynamic> booking, {required bool isActive}) {
+  Widget _buildTicketCard(
+    Map<String, dynamic> booking, {
+    required bool isActive,
+  }) {
     final status = _getBookingStatus(booking, isActive);
     final statusColor = switch (status) {
       'CONFIRMED' => LunaraTheme.electricViolet,
@@ -441,7 +468,10 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     };
 
     final venue = booking['venue'] as Map<String, dynamic>?;
-    final venueName = venue?['name']?.toString() ?? booking['venueName']?.toString() ?? 'GENERAL VENUE';
+    final venueName =
+        venue?['name']?.toString() ??
+        booking['venueName']?.toString() ??
+        'GENERAL VENUE';
     final imageUrl = _getVenueImageUrl(venue);
     final bookingDate = booking['bookingDate']?.toString() ?? '';
     final startTime = booking['startTime']?.toString() ?? '';
@@ -462,8 +492,12 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                 table: table,
                 guests: guests.toString(),
                 package: table,
-                totalPrice: booking['totalAmount']?.toString() ?? booking['paymentAmount']?.toString(),
-                ticketId: booking['ticketCode'] ?? booking['id']?.toString().substring(0, 8),
+                totalPrice:
+                    booking['totalAmount']?.toString() ??
+                    booking['paymentAmount']?.toString(),
+                ticketId:
+                    booking['ticketCode'] ??
+                    booking['id']?.toString().substring(0, 8),
                 ticketUrl: booking['ticketUrl'] ?? booking['ticket_url'],
               ),
             ),
@@ -474,7 +508,9 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
             gradient: LunaraTheme.cardGradient,
             borderRadius: BorderRadius.circular(24),
             boxShadow: LunaraTheme.premiumCardShadow,
-            border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.08)),
+            border: Border.all(
+              color: LunaraTheme.electricViolet.withValues(alpha: 0.08),
+            ),
           ),
           child: Column(
             children: [
@@ -544,7 +580,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                             BoxShadow(
                               color: statusColor.withValues(alpha: 0.2),
                               blurRadius: 8,
-                            )
+                            ),
                           ],
                         ),
                         child: Text(
@@ -578,7 +614,9 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                             vertical: 8,
                           ),
                           decoration: BoxDecoration(
-                            gradient: isActive ? LunaraTheme.primaryGradient : null,
+                            gradient: isActive
+                                ? LunaraTheme.primaryGradient
+                                : null,
                             color: isActive ? null : Colors.grey[200],
                             borderRadius: BorderRadius.circular(14),
                           ),
