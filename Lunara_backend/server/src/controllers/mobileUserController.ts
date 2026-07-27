@@ -17,6 +17,8 @@ import { getUserGalleryDir } from '../middleware/upload';
 import SocialConnection, { ConnectionStatus } from '../models/SocialConnection';
 import UserPenalty from '../models/UserPenalty';
 
+import { azureFaceService } from '../services/azureFaceService';
+
 // ─── Image compression constants ──────────────────────────────────────────────
 const PHOTO_MAX_WIDTH = 1080;   // px
 const PHOTO_MAX_HEIGHT = 1080;   // px
@@ -29,29 +31,13 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
     try {
         const userId = req.body.userId || req.user?.id;
         if (!userId) {
-            return res.status(401).json({ success: false, message: 'Unauthorized: userId is required in body' });
+            return res.status(400).json({ success: false, message: 'userId is required' });
         }
 
         const files = req.files as Express.Multer.File[];
 
         if (!files || files.length < 1) {
             return res.status(400).json({ success: false, message: 'Please upload at least 1 photo' });
-        }
-
-        // Validate that each uploaded file is not more than 500KB
-        for (const file of files) {
-            if (file.size > 500 * 1024) {
-                // Clean up all temp files created by multer for this request
-                for (const f of files) {
-                    if (f.path && fs.existsSync(f.path)) {
-                        try { fs.unlinkSync(f.path); } catch {}
-                    }
-                }
-                return res.status(400).json({
-                    success: false,
-                    message: `Profile picture "${file.originalname}" size should not be more than 500KB.`
-                });
-            }
         }
 
         const galleryDir = getUserGalleryDir(userId);
@@ -61,9 +47,6 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
         const hasPrimary = await UserPhoto.findOne({ where: { userId, isPrimary: true } });
         
         // Decide if the first uploaded file in this request should be primary
-        // It should be primary if:
-        // 1. the client explicitly requested isPrimary (req.body.isPrimary === 'true')
-        // 2. OR the user does not have any primary photo yet
         const makePrimary = (req.body.isPrimary === 'true') || !hasPrimary;
 
         if (makePrimary) {
@@ -79,7 +62,7 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
 
             const fileBuffer = file.buffer || fs.readFileSync(file.path);
 
-            // ── Compress with sharp ──────────────────────────────────────────
+            // ── Auto-Compress with sharp ─────────────────────────────────────
             const randomHex = crypto.randomBytes(8).toString('hex');
             const filename = `${Date.now()}_${randomHex}.jpg`;
             const absolutePath = path.join(galleryDir, filename);
@@ -94,6 +77,14 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
                 })
                 .jpeg({ quality: PHOTO_QUALITY, progressive: true })
                 .toBuffer();
+
+            // ── Perform Backend Face Verification Scan ────────────────────────
+            try {
+                const faceScan = await azureFaceService.detectFace(compressedBuffer);
+                logger.info(`[PhotoUpload] Face verification scan for "${file.originalname}": hasFace=${faceScan.hasFace}, faces=${faceScan.faceCount}`);
+            } catch (faceErr: any) {
+                logger.warn(`[PhotoUpload] Face verification scan warning for "${file.originalname}": ${faceErr.message}`);
+            }
 
             fs.writeFileSync(absolutePath, compressedBuffer);
 
@@ -592,6 +583,9 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
         const userIds = rows.map(u => u.id);
         const superLikesMap: Record<string, number> = {};
         const plansMap: Record<string, number> = {};
+        const tierMap: Record<string, string> = {};
+        const tierRankMap: Record<string, number> = { FREE: 0, CORE: 1, PLUS: 2, PRO: 3, ELITE: 4 };
+        const boostsMap: Record<string, number> = {};
 
         if (userIds.length > 0) {
             const superLikesCounts = await UserMatch.findAll({
@@ -662,6 +656,29 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
             });
         }
 
+        // ── Batch-fetch real subscription tiers ──────────────────────────────
+        if (userIds.length > 0) {
+            const now = new Date();
+            const activeSubs = await UserSubscription.findAll({
+                where: {
+                    userId: { [Op.in]: userIds },
+                    status: SubscriptionStatus.ACTIVE,
+                    endDate: { [Op.gt]: now },
+                },
+                include: [{ model: SubscriptionPackage, as: 'package', attributes: ['tier'] }],
+                order: [['createdAt', 'DESC']],
+            });
+            // Keep only the latest active sub per user
+            const seenUsers = new Set<string>();
+            for (const sub of activeSubs) {
+                if (!seenUsers.has(sub.userId)) {
+                    seenUsers.add(sub.userId);
+                    tierMap[sub.userId] = (sub as any).package?.tier ?? 'FREE';
+                    boostsMap[sub.userId] = sub.boostsRemaining ?? 0;
+                }
+            }
+        }
+
         const data = rows.map(user => {
             const u = user as any;
             const age = user.dateOfBirth
@@ -692,8 +709,19 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                 preferences: u.preferences ?? null,
                 superLikesCount: superLikesMap[user.id] || 0,
                 plansCount: plansMap[user.id] || 0,
-                subscriptionTier: 'FREE', // Individual fetch avoided in list; resolved per user in profile detail
+                subscriptionTier: tierMap[user.id] ?? 'FREE',
+                tierRank: tierRankMap[tierMap[user.id] ?? 'FREE'] ?? 0,
+                boostsRemaining: boostsMap[user.id] ?? 0,
+                isBoosted: (boostsMap[user.id] ?? 0) > 0,
             };
+        });
+
+        // ── Tier-ranked sort: ELITE > PRO > PLUS > CORE > FREE, boosted first within tier
+        const sorted = data.sort((a, b) => {
+            const rankDiff = (b.tierRank ?? 0) - (a.tierRank ?? 0);
+            if (rankDiff !== 0) return rankDiff;
+            // Within same tier, boosted users come first
+            return (b.boostsRemaining ?? 0) - (a.boostsRemaining ?? 0);
         });
 
         return res.status(200).json({
@@ -702,7 +730,7 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
             page,
             limit,
             totalPages,
-            data,
+            data: sorted,
         });
     } catch (error: any) {
         logger.error('[MobileUser] Error fetching customers:', error);

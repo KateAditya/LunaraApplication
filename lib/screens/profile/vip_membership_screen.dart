@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
+import '../../services/subscription_provider.dart';
 
 class VIPMembershipScreen extends StatefulWidget {
   const VIPMembershipScreen({super.key});
@@ -291,6 +292,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
     setState(() => _isProcessing = false);
 
     if (data != null) {
+      SubscriptionProvider.instance.refreshAfterPurchase();
       _showSuccessDialog('Subscription Activated!', 'You have successfully upgraded your tier.');
       _loadData();
     } else {
@@ -315,6 +317,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
     setState(() => _isProcessing = false);
 
     if (data != null) {
+      SubscriptionProvider.instance.refreshAfterPurchase();
       _showSuccessDialog('Boosts Credited!', '$boostCount profile boosts have been added to your account.');
       _loadData();
     } else {
@@ -334,6 +337,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
       final result = await ApiService.useBoost();
       setState(() => _isProcessing = false);
       if (result != null && result['success'] == true) {
+        SubscriptionProvider.instance.refreshAfterPurchase();
         _showSuccessDialog(
           'Profile Boosted! ⚡',
           'Your profile is now boosted for the next 30 minutes! Get ready for more matches and views.',

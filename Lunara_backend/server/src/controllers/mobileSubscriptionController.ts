@@ -70,6 +70,22 @@ export const getAvailablePackages = async (_req: Request, res: Response): Promis
     }
 };
 
+// ─── Unified Status Endpoint ─────────────────────────────────────────────────
+
+// @route GET /api/mobile/subscriptions/status
+// Returns everything the Flutter app needs in ONE call:
+// tier, tierRank, planName, daily limits/usage, superlikes, boosts, feature flags.
+export const getSubscriptionStatus = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const userId = (req as any).user.id;
+        const status = await SubscriptionService.getFullStatus(userId);
+        res.status(200).json({ success: true, data: status });
+    } catch (error: any) {
+        logger.error('Error fetching subscription status:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
 // ─── Current Subscription ─────────────────────────────────────────────────────
 
 // @route GET /api/mobile/subscriptions/current

@@ -1,14 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:record/record.dart';
-import 'package:audioplayers/audioplayers.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import '../../services/api_service.dart';
+import '../../services/push_notification_service.dart';
 import 'icebreaker_modal.dart';
 import '../../services/block_service.dart';
 
@@ -30,7 +24,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool _isLoading = true;
   bool _isSending = false;
   bool _isLoadingMore = false;
-  bool _showEmoji = false;
   bool _isBlocked = false;
 
   String? _conversationId;
@@ -41,19 +34,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool? _isOnline;
   String? _lastActive;
 
-  bool _isRecording = false;
-  int _recordingDuration = 0;
-  Timer? _recordingTimer;
-  final AudioRecorder _audioRecorder = AudioRecorder();
-  final AudioPlayer _audioPlayer = AudioPlayer();
-  String? _recordedPath;
-
   bool _isRecipientTyping = false;
   Timer? _typingDebounceTimer;
 
   // ── Chat Session / Subscription state ───────────────────────────────────────
-  // NOTE: These are ALWAYS loaded from admin-panel settings via the API.
-  // No hardcoded defaults — if admin hasn't configured yet, UI shows disabled state.
   bool _chatSessionLoaded = false;
   bool _canChat = true; // optimistic default until API responds
   int _daysLeft = 0;
@@ -65,280 +49,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   DateTime? _chatExpiresAt;
   bool _adminSettingsAvailable = false; // true only when admin responded
 
-  String? _playingMessageId;
-  double _playbackProgress = 0.0;
-  int _playbackSeconds = 0;
-  Timer? _playbackTimer;
-
-  final List<String> _emojis = [
-    '😀',
-    '😃',
-    '😄',
-    '😁',
-    '😆',
-    '😅',
-    '😂',
-    '🤣',
-    '😊',
-    '😇',
-    '🙂',
-    '🙃',
-    '😉',
-    '😌',
-    '😍',
-    '🥰',
-    '😘',
-    '😗',
-    '😙',
-    '😚',
-    '😋',
-    '😛',
-    '😝',
-    '😜',
-    '🤪',
-    '🤨',
-    '🧐',
-    '🤓',
-    '😎',
-    '🥸',
-    '🤩',
-    '🥳',
-    '😏',
-    '😒',
-    '😞',
-    '😔',
-    '😟',
-    '😕',
-    '🙁',
-    '☹️',
-    '😣',
-    '😖',
-    '😫',
-    '😩',
-    '🥺',
-    '😢',
-    '😭',
-    '😤',
-    '😠',
-    '😡',
-    '🤬',
-    '🤯',
-    '😳',
-    '🥵',
-    '🥶',
-    '😱',
-    '😨',
-    '😰',
-    '😥',
-    '😓',
-    '🤗',
-    '🤔',
-    '🫣',
-    '🤭',
-    '🤫',
-    '🤥',
-    '😶',
-    '😶‍🌫️',
-    '😐',
-    '😑',
-    '😬',
-    '🫨',
-    '🫠',
-    '😴',
-    '😷',
-    '🤒',
-    '🤕',
-    '🤢',
-    '🤮',
-    '🤧',
-    '🥴',
-    '😵',
-    '😵‍💫',
-    '🤠',
-    '👿',
-    '💀',
-    '☠️',
-    '💩',
-    '🤡',
-    '👹',
-    '👺',
-    '👻',
-    '👽',
-    '👾',
-    '🤖',
-    '👋',
-    '🤚',
-    '🖐️',
-    '👌',
-    '🤌',
-    '🤏',
-    '✌️',
-    '🤞',
-    '🫰',
-    '🤟',
-    '🤘',
-    '🤙',
-    '👈',
-    '👉',
-    '👆',
-    '🖕',
-    '👇',
-    '☝️',
-    '👍',
-    '👎',
-    '✊',
-    '👊',
-    '🤛',
-    '🤜',
-    '👏',
-    '🙌',
-    '👐',
-    '🤲',
-    '🤝',
-    '🙏',
-    '✍️',
-    '💅',
-    '🤳',
-    '💪',
-    '🦾',
-    '🦿',
-    '🦵',
-    '🦶',
-    '👂',
-    '🦻',
-    '👃',
-    '🧠',
-    '🫀',
-    '🫁',
-    '🦷',
-    '🦴',
-    '👀',
-    '👁️',
-    '👅',
-    '👄',
-    '💋',
-    '🩸',
-    '❤️',
-    '🧡',
-    '💛',
-    '💚',
-    '💙',
-    '💜',
-    '🖤',
-    '🤍',
-    '🤎',
-    '💔',
-    '❤️‍🔥',
-    '❤️‍🩹',
-    '❣️',
-    '💕',
-    '💞',
-    '💓',
-    '💗',
-    '💖',
-    '💘',
-    '💝',
-    '💟',
-  ];
-
-  void _onEmojiSelected(String emoji) {
-    final text = _messageController.text;
-    final selection = _messageController.selection;
-    final newText = text.replaceRange(
-      selection.start == -1 ? text.length : selection.start,
-      selection.end == -1 ? text.length : selection.end,
-      emoji,
-    );
-    _messageController.text = newText;
-    _messageController.selection = TextSelection.fromPosition(
-      TextPosition(
-        offset:
-            (selection.start == -1 ? text.length : selection.start) +
-            emoji.length,
-      ),
-    );
-    setState(() {});
+  String _safeString(dynamic val, [String fallback = '']) {
+    if (val == null) return fallback;
+    return val.toString();
   }
 
-  void _onBackspacePressed() {
-    final text = _messageController.text;
-    final selection = _messageController.selection;
-    if (text.isEmpty) return;
-    int start = selection.start;
-    int end = selection.end;
-    if (start == -1) {
-      start = text.length;
-      end = text.length;
-    }
-
-    if (start == end) {
-      if (start == 0) return;
-      final beforeCursor = text.substring(0, start);
-      final afterCursor = text.substring(end);
-      final beforeChars = beforeCursor.characters;
-      if (beforeChars.isEmpty) return;
-      final newBefore = beforeChars.skipLast(1).toString();
-      _messageController.text = newBefore + afterCursor;
-      _messageController.selection = TextSelection.fromPosition(
-        TextPosition(offset: newBefore.length),
-      );
-    } else {
-      _messageController.text = text.replaceRange(start, end, '');
-      _messageController.selection = TextSelection.fromPosition(
-        TextPosition(offset: start),
-      );
-    }
-    setState(() {});
-  }
-
-  Widget _buildEmojiPicker() {
-    if (!_showEmoji) return const SizedBox.shrink();
-
-    return Container(
-      height: 250,
-      color: const Color(0xFFF4F4F4),
-      child: Column(
-        children: [
-          Expanded(
-            child: GridView.builder(
-              padding: const EdgeInsets.all(8),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 8,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-              ),
-              itemCount: _emojis.length,
-              itemBuilder: (context, index) {
-                final emoji = _emojis[index];
-                return InkWell(
-                  onTap: () => _onEmojiSelected(emoji),
-                  borderRadius: BorderRadius.circular(8),
-                  child: Center(
-                    child: Text(emoji, style: const TextStyle(fontSize: 24)),
-                  ),
-                );
-              },
-            ),
-          ),
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                IconButton(
-                  icon: const Icon(
-                    Icons.backspace_outlined,
-                    color: Color(0xFF008069),
-                  ),
-                  onPressed: _onBackspacePressed,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
+  int _safeInt(dynamic val, [int fallback = 0]) {
+    if (val == null) return fallback;
+    if (val is int) return val;
+    if (val is double) return val.toInt();
+    return int.tryParse(val.toString()) ?? fallback;
   }
 
   @override
@@ -357,105 +77,126 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   void _initSocketListeners() {
-    ApiService.socket?.on('new_message', (data) {
-      if (!mounted || data == null) return;
-      if (data['conversationId'] == _conversationId) {
-        final incoming = _mapApiMessage(Map<String, dynamic>.from(data));
-        final clientMsgId = incoming['clientMessageId']?.toString();
-        final msgId = incoming['id']?.toString();
+    ApiService.addSocketListener('new_message', _onNewMessageSocket);
+    ApiService.addSocketListener('messages_read', _onMessagesReadSocket);
+    ApiService.addSocketListener('user_status_changed', _onUserStatusSocket);
+    ApiService.addSocketListener('messages_delivered', _onMessagesDeliveredSocket);
+    ApiService.addSocketListener('typing_started', _onTypingStartedSocket);
+    ApiService.addSocketListener('typing_stopped', _onTypingStoppedSocket);
+  }
 
-        setState(() {
-          final existingIdx = _messages.indexWhere((m) =>
-              (msgId != null && msgId.isNotEmpty && m['id'] == msgId) ||
-              (clientMsgId != null && clientMsgId.isNotEmpty && m['clientMessageId'] == clientMsgId) ||
-              (clientMsgId != null && clientMsgId.isNotEmpty && m['id'] == clientMsgId));
+  void _removeSocketListeners() {
+    ApiService.removeSocketListener('new_message', _onNewMessageSocket);
+    ApiService.removeSocketListener('messages_read', _onMessagesReadSocket);
+    ApiService.removeSocketListener('user_status_changed', _onUserStatusSocket);
+    ApiService.removeSocketListener('messages_delivered', _onMessagesDeliveredSocket);
+    ApiService.removeSocketListener('typing_started', _onTypingStartedSocket);
+    ApiService.removeSocketListener('typing_stopped', _onTypingStoppedSocket);
+  }
 
-          if (existingIdx != -1) {
-            _messages[existingIdx] = incoming;
-          } else {
-            _messages.insert(0, incoming);
+  void _onNewMessageSocket(dynamic rawData) {
+    if (!mounted || rawData == null) return;
+    final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
+    final msgConvId = _safeString(data['conversationId']);
+
+    if (msgConvId.isNotEmpty && msgConvId == _conversationId) {
+      final incoming = _mapApiMessage(data);
+      final clientMsgId = _safeString(incoming['clientMessageId']);
+      final msgId = _safeString(incoming['id']);
+
+      setState(() {
+        final existingIdx = _messages.indexWhere((m) =>
+            (msgId.isNotEmpty && _safeString(m['id']) == msgId) ||
+            (clientMsgId.isNotEmpty && _safeString(m['clientMessageId']) == clientMsgId) ||
+            (clientMsgId.isNotEmpty && _safeString(m['id']) == clientMsgId));
+
+        if (existingIdx != -1) {
+          _messages[existingIdx] = incoming;
+        } else {
+          _messages.insert(0, incoming);
+        }
+        _sortMessages();
+      });
+      _markAsRead();
+    }
+  }
+
+  void _onMessagesReadSocket(dynamic rawData) {
+    if (!mounted || rawData == null) return;
+    final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
+    final msgConvId = _safeString(data['conversationId']);
+    if (msgConvId == _conversationId) {
+      setState(() {
+        for (var i = 0; i < _messages.length; i++) {
+          if (_messages[i]['isSent'] == true) {
+            _messages[i]['status'] = 'read';
           }
-          _sortMessages();
-        });
-        _markAsRead();
-      }
-    });
+        }
+      });
+    }
+  }
 
-    ApiService.socket?.on('messages_read', (data) {
-      if (!mounted) return;
-      if (data['conversationId'] == _conversationId) {
-        setState(() {
-          for (var i = 0; i < _messages.length; i++) {
-            if (_messages[i]['isSent'] == true) {
-              _messages[i]['status'] = 'read';
-            }
+  void _onUserStatusSocket(dynamic rawData) {
+    if (!mounted || rawData == null) return;
+    final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
+    final targetUserId = _safeString(widget.user['id']);
+    if (_safeString(data['userId']) == targetUserId) {
+      setState(() {
+        _isOnline = data['isOnline'] == true;
+        _lastActive = _safeString(data['lastActiveAt']);
+      });
+    }
+  }
+
+  void _onMessagesDeliveredSocket(dynamic rawData) {
+    if (!mounted || rawData == null) return;
+    final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
+    final msgConvId = _safeString(data['conversationId']);
+    if (msgConvId == _conversationId) {
+      setState(() {
+        for (var i = 0; i < _messages.length; i++) {
+          if (_messages[i]['isSent'] == true &&
+              _safeString(_messages[i]['status']) == 'sent') {
+            _messages[i]['status'] = 'delivered';
           }
-        });
-      }
-    });
+        }
+      });
+    }
+  }
 
-    ApiService.socket?.on('user_status_changed', (data) {
-      if (!mounted) return;
-      if (data['userId'] == widget.user['id']) {
-        setState(() {
-          _isOnline = data['isOnline'] == true;
-          _lastActive = data['lastActiveAt']?.toString();
-        });
-      }
-    });
+  void _onTypingStartedSocket(dynamic rawData) {
+    if (!mounted || rawData == null) return;
+    final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
+    if (_safeString(data['conversationId']) == _conversationId) {
+      setState(() => _isRecipientTyping = true);
+    }
+  }
 
-    ApiService.socket?.on('messages_delivered', (data) {
-      if (!mounted) return;
-      if (data['conversationId'] == _conversationId) {
-        setState(() {
-          for (var i = 0; i < _messages.length; i++) {
-            if (_messages[i]['isSent'] == true &&
-                _messages[i]['status'] == 'sent') {
-              _messages[i]['status'] = 'delivered';
-            }
-          }
-        });
-      }
-    });
-
-    ApiService.socket?.on('typing_started', (data) {
-      if (!mounted) return;
-      if (data['conversationId'] == _conversationId) {
-        setState(() => _isRecipientTyping = true);
-      }
-    });
-
-    ApiService.socket?.on('typing_stopped', (data) {
-      if (!mounted) return;
-      if (data['conversationId'] == _conversationId) {
-        setState(() => _isRecipientTyping = false);
-      }
-    });
+  void _onTypingStoppedSocket(dynamic rawData) {
+    if (!mounted || rawData == null) return;
+    final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
+    if (_safeString(data['conversationId']) == _conversationId) {
+      setState(() => _isRecipientTyping = false);
+    }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _markAsRead();
-      _fetchUserStatus(); // Refresh status when app comes to foreground
+      _fetchUserStatus();
     }
   }
 
   @override
   void dispose() {
+    if (PushNotificationService.activeConversationId == _conversationId) {
+      PushNotificationService.activeConversationId = null;
+    }
     WidgetsBinding.instance.removeObserver(this);
-    ApiService.socket?.off('new_message');
-    ApiService.socket?.off('messages_read');
-    ApiService.socket?.off('user_status_changed');
-    ApiService.socket?.off('messages_delivered');
-    ApiService.socket?.off('typing_started');
-    ApiService.socket?.off('typing_stopped');
+    _removeSocketListeners();
     _statusTimer?.cancel();
-    _recordingTimer?.cancel();
-    _playbackTimer?.cancel();
     _typingDebounceTimer?.cancel();
-    _audioRecorder.dispose();
-    _audioPlayer.dispose();
     _messageController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
@@ -605,6 +346,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     if (!mounted) return;
     _conversationId = convId;
+    PushNotificationService.activeConversationId = convId;
 
     if (convId == null) {
       setState(() => _isLoading = false);
@@ -715,27 +457,27 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   /// Normalise a raw API message into our local map format.
   Map<String, dynamic> _mapApiMessage(Map<String, dynamic> m) {
-    final senderId = m['senderId']?.toString() ?? m['sender']?.toString() ?? '';
-    final type = (m['type'] ?? 'text').toString();
-    final invStatus = m['invitationStatus']?.toString() ?? 'pending';
+    final senderId = _safeString(m['senderId'] ?? m['sender']);
+    final type = _safeString(m['type'], 'text');
+    final invStatus = _safeString(m['invitationStatus'], 'pending');
 
     return {
-      'id': m['id']?.toString() ?? m['_id']?.toString() ?? '',
+      'id': _safeString(m['id'] ?? m['_id']),
       'clientMessageId': m['clientMessageId']?.toString(),
       'type': type,
-      'text': m['content']?.toString() ?? m['text']?.toString() ?? '',
+      'text': _safeString(m['content'] ?? m['text']),
       'mediaUrl': m['mediaUrl']?.toString(),
       'mediaMimeType': m['mediaMimeType']?.toString(),
       'duration': type == 'voice' || type == 'audio'
-          ? (int.tryParse(m['duration']?.toString() ?? m['content']?.toString() ?? '5') ?? 5)
+          ? _safeInt(m['duration'] ?? m['content'], 5)
           : null,
       'fileSize': m['fileSize'],
       'waveformData': m['waveformData']?.toString(),
       'replyToMessageId': m['replyToMessageId']?.toString(),
-      'isSent': senderId == _currentUserId,
+      'isSent': senderId.isNotEmpty && senderId == _currentUserId,
       'createdAt': m['createdAt']?.toString(),
       'isDeleted': m['isDeleted'] == true || m['deletedAt'] != null,
-      'status': m['status']?.toString() ?? 'sent',
+      'status': _safeString(m['status'], 'sent'),
       // Invitation fields
       if (type == 'invitation') ...{
         'isInvitation': true,
@@ -773,11 +515,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // Optimistic insert
     final optimistic = {
       'id': tempId,
+      'clientMessageId': tempId,
       'type': type,
       'text': text,
       'isSent': true,
       'createdAt': DateTime.now().toIso8601String(),
       'isDeleted': false,
+      'status': 'sent',
       if (type == 'icebreaker') ...{'isIcebreaker': true},
     };
 
@@ -794,11 +538,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         senderId: userId,
         type: type,
         content: text,
+        clientMessageId: tempId,
       );
 
       if (result != null && mounted) {
         // Replace temp with real message
-        final idx = _messages.indexWhere((m) => m['id'] == tempId);
+        final idx = _messages.indexWhere((m) =>
+            m['id'] == tempId || m['clientMessageId'] == tempId);
         if (idx != -1) {
           setState(() {
             _messages[idx] = _mapApiMessage(result);
@@ -810,361 +556,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       debugPrint('_sendMessage error: $e');
       // Roll back optimistic
       if (mounted) {
-        setState(() => _messages.removeWhere((m) => m['id'] == tempId));
+        setState(() => _messages.removeWhere((m) =>
+            m['id'] == tempId || m['clientMessageId'] == tempId));
       }
     } finally {
       if (mounted) setState(() => _isSending = false);
-    }
-  }
-
-  Future<void> _sendImageMessage(String imagePath) async {
-    final convId = _conversationId;
-    final userId = _currentUserId;
-    if (convId == null || userId == null) return;
-
-    final tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
-
-    // Optimistic insert
-    final optimistic = {
-      'id': tempId,
-      'type': 'image',
-      'mediaUrl': imagePath,
-      'isSent': true,
-      'createdAt': DateTime.now().toIso8601String(),
-      'isDeleted': false,
-    };
-
-    setState(() {
-      _messages.insert(0, optimistic);
-      _sortMessages();
-      _isSending = true;
-    });
-
-    try {
-      final result = await ApiService.sendMessage(
-        convId,
-        senderId: userId,
-        type: 'image',
-        mediaUrl: imagePath,
-      );
-
-      if (result != null && mounted) {
-        final idx = _messages.indexWhere((m) => m['id'] == tempId);
-        if (idx != -1) {
-          setState(() {
-            _messages[idx] = _mapApiMessage(result);
-            _sortMessages();
-          });
-        }
-      }
-    } catch (e) {
-      debugPrint('_sendImageMessage error: $e');
-      if (mounted) {
-        setState(() => _messages.removeWhere((m) => m['id'] == tempId));
-      }
-    } finally {
-      if (mounted) setState(() => _isSending = false);
-    }
-  }
-
-  Future<void> _showCameraOptions() async {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (BuildContext context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(
-                  Icons.camera_alt_rounded,
-                  color: Color(0xFF008069),
-                ),
-                title: const Text(
-                  'Take a Photo',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _pickAndSendImage(ImageSource.camera);
-                },
-              ),
-              ListTile(
-                leading: const Icon(
-                  Icons.photo_library_rounded,
-                  color: Color(0xFF008069),
-                ),
-                title: const Text(
-                  'Choose from Gallery',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _pickAndSendImage(ImageSource.gallery);
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _pickAndSendImage(ImageSource source) async {
-    try {
-      final picker = ImagePicker();
-      final image = await picker.pickImage(
-        source: source,
-        maxWidth: 1080,
-        maxHeight: 1080,
-        imageQuality: 85,
-      );
-      if (image == null) return;
-
-      await _sendImageMessage(image.path);
-    } catch (e) {
-      debugPrint('Error picking image: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error picking image: $e'),
-            backgroundColor: const Color(0xFF7F00FF),
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _startRecording() async {
-    FocusScope.of(context).unfocus();
-    final status = await Permission.microphone.request();
-    if (!status.isGranted) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Microphone permission is required to record voice messages.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-      return;
-    }
-
-    final hasPermission = await _audioRecorder.hasPermission();
-    if (!hasPermission) return;
-
-    final dir = await getTemporaryDirectory();
-    final path = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
-
-    try {
-      await _audioRecorder.start(
-        const RecordConfig(encoder: AudioEncoder.aacLc),
-        path: path,
-      );
-    } catch (e) {
-      debugPrint('AudioRecorder.start error: $e');
-    }
-
-    if (mounted) {
-      setState(() {
-        _recordedPath = path;
-        _showEmoji = false;
-        _isRecording = true;
-        _recordingDuration = 0;
-      });
-    }
-
-    _recordingTimer?.cancel();
-    _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) {
-        setState(() {
-          _recordingDuration++;
-        });
-      }
-    });
-  }
-
-  Future<void> _cancelRecording() async {
-    _recordingTimer?.cancel();
-    try {
-      final path = await _audioRecorder.stop();
-      if (path != null) {
-        final file = File(path);
-        if (await file.exists()) {
-          await file.delete();
-        }
-      }
-    } catch (e) {
-      debugPrint('_cancelRecording error: $e');
-    }
-    if (mounted) {
-      setState(() {
-        _isRecording = false;
-        _recordingDuration = 0;
-        _recordedPath = null;
-      });
-    }
-  }
-
-  Future<void> _stopAndSendRecording() async {
-    _recordingTimer?.cancel();
-    String? filePath;
-    try {
-      filePath = await _audioRecorder.stop();
-    } catch (e) {
-      debugPrint('AudioRecorder.stop error: $e');
-    }
-
-    final duration = _recordingDuration > 0 ? _recordingDuration : 1;
-    setState(() {
-      _isRecording = false;
-      _recordingDuration = 0;
-    });
-
-    final convId = _conversationId;
-    final userId = _currentUserId;
-    if (convId == null || userId == null) return;
-
-    final tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
-    final min = (duration / 60).floor();
-    final sec = (duration % 60).toString().padLeft(2, '0');
-    final voiceText = '🎙 Voice message ($min:$sec)';
-    final finalAudioPath = filePath ?? _recordedPath ?? 'voice_note.m4a';
-
-    // Optimistic insert
-    final optimistic = {
-      'id': tempId,
-      'type': 'voice',
-      'text': voiceText,
-      'mediaUrl': finalAudioPath,
-      'isSent': true,
-      'createdAt': DateTime.now().toIso8601String(),
-      'isDeleted': false,
-      'duration': duration,
-    };
-
-    setState(() {
-      _messages.insert(0, optimistic);
-      _sortMessages();
-      _isSending = true;
-    });
-
-    try {
-      final result = await ApiService.sendMessage(
-        convId,
-        senderId: userId,
-        type: 'voice',
-        content: voiceText,
-        mediaUrl: finalAudioPath,
-      );
-
-      if (result != null && mounted) {
-        final idx = _messages.indexWhere((m) => m['id'] == tempId);
-        if (idx != -1) {
-          setState(() {
-            _messages[idx] = {
-              ..._messages[idx],
-              'id': result['id']?.toString() ?? tempId,
-              'status': 'sent',
-              'type': 'voice',
-              'duration': duration,
-              'mediaUrl': finalAudioPath,
-            };
-            _sortMessages();
-          });
-        }
-      }
-    } catch (e) {
-      debugPrint('_stopAndSendRecording error: $e');
-      if (mounted) {
-        setState(() => _messages.removeWhere((m) => m['id'] == tempId));
-      }
-    } finally {
-      if (mounted) setState(() => _isSending = false);
-    }
-  }
-
-  Future<void> _togglePlayback(String messageId, String? mediaUrl, int durationSeconds) async {
-    if (_playingMessageId == messageId) {
-      await _audioPlayer.pause();
-      _playbackTimer?.cancel();
-      if (mounted) {
-        setState(() {
-          _playingMessageId = null;
-        });
-      }
-    } else {
-      await _audioPlayer.stop();
-      _playbackTimer?.cancel();
-      if (mounted) {
-        setState(() {
-          _playingMessageId = messageId;
-          _playbackProgress = 0.0;
-          _playbackSeconds = 0;
-        });
-      }
-
-      _audioPlayer.onPositionChanged.listen((pos) {
-        if (_playingMessageId == messageId && mounted) {
-          setState(() {
-            _playbackSeconds = pos.inSeconds;
-            _playbackProgress = durationSeconds > 0
-                ? (pos.inMilliseconds / (durationSeconds * 1000)).clamp(0.0, 1.0)
-                : 0.0;
-          });
-        }
-      });
-
-      _audioPlayer.onPlayerComplete.listen((_) {
-        if (_playingMessageId == messageId && mounted) {
-          setState(() {
-            _playingMessageId = null;
-            _playbackProgress = 0.0;
-            _playbackSeconds = 0;
-          });
-        }
-      });
-
-      try {
-        if (mediaUrl != null && (mediaUrl.startsWith('http://') || mediaUrl.startsWith('https://'))) {
-          await _audioPlayer.play(UrlSource(mediaUrl));
-        } else if (mediaUrl != null && mediaUrl.isNotEmpty && File(mediaUrl).existsSync()) {
-          await _audioPlayer.play(DeviceFileSource(mediaUrl));
-        } else {
-          // Simulated fallback timer if audio file is mock/local missing
-          final totalTicks = (durationSeconds > 0 ? durationSeconds : 5) * 10;
-          int tick = 0;
-          _playbackTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
-            tick++;
-            if (tick > totalTicks) {
-              timer.cancel();
-              if (mounted) {
-                setState(() {
-                  _playingMessageId = null;
-                  _playbackProgress = 0.0;
-                  _playbackSeconds = 0;
-                });
-              }
-            } else if (mounted) {
-              setState(() {
-                _playbackProgress = tick / totalTicks;
-                _playbackSeconds = (tick / 10).floor();
-              });
-            }
-          });
-        }
-      } catch (e) {
-        debugPrint('AudioPlayer error: $e');
-      }
     }
   }
 
   Future<void> _openIcebreakers() async {
-    // Chat is free — no session expiry check needed
     final selected = await IcebreakerModal.show(context);
     if (selected != null && selected.isNotEmpty) {
       await _sendMessage(type: 'icebreaker', content: selected);
@@ -1389,8 +789,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   _buildExpiredInputBar()
                 else if (_canChat || !_chatSessionLoaded)
                   _buildInputArea(context),
-                if (!_isBlocked && (_canChat || !_chatSessionLoaded))
-                  _buildEmojiPicker(),
               ],
             ),
           ),
@@ -2051,21 +1449,29 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               );
             }
             final msg = _messages[index];
-            final type = msg['type'] ?? 'text';
+            final type = _safeString(msg['type'], 'text');
 
-            if (type == 'invitation') {
-              return _buildInvitationCard(msg);
+            try {
+              if (type == 'invitation') {
+                return _buildInvitationCard(msg);
+              }
+              if (type == 'pay_request') {
+                return _buildPayRequestCard(msg);
+              }
+              if (type == 'system') {
+                return _buildSystemMessage(msg);
+              }
+              return _buildMessageBubble(msg);
+            } catch (e) {
+              debugPrint('Error rendering chat message at index $index: $e');
+              return _buildMessageBubble({
+                'isSent': msg['isSent'] == true,
+                'text': _safeString(msg['text'] ?? msg['content'], 'Message'),
+                'type': 'text',
+                'createdAt': msg['createdAt'],
+                'status': 'sent',
+              });
             }
-            if (type == 'audio' || type == 'voice') {
-              return _buildAudioBubble(msg);
-            }
-            if (type == 'pay_request') {
-              return _buildPayRequestCard(msg);
-            }
-            if (type == 'system') {
-              return _buildSystemMessage(msg);
-            }
-            return _buildMessageBubble(msg);
           },
         ),
         if (_isSending)
@@ -2139,7 +1545,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final isSent = msg['isSent'] == true;
     Map<String, dynamic> payload = {};
     try {
-      final raw = msg['text'] as String? ?? '';
+      final raw = _safeString(msg['text']);
       if (raw.startsWith('{')) {
         payload = Map<String, dynamic>.from(
           (jsonDecode(raw) as Map<dynamic, dynamic>).cast<String, dynamic>(),
@@ -2147,13 +1553,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       }
     } catch (_) {}
 
-    final requesterName = payload['requesterName'] ?? 'Your match';
-    final extensionDays =
-        (payload['extensionDays'] as num?)?.toInt() ?? _extensionDays ?? 7;
-    final extensionPrice =
-        (payload['extensionPrice'] as num?)?.toDouble() ??
-        _extensionPrice ??
-        100.0;
+    final requesterName = _safeString(payload['requesterName'], 'Your match');
+    final extensionDays = _safeInt(payload['extensionDays'], _extensionDays ?? 7);
+    final extensionPrice = (payload['extensionPrice'] as num?)?.toDouble() ?? _extensionPrice ?? 100.0;
     final requesterId = payload['requesterId']?.toString();
 
     return Padding(
@@ -2249,12 +1651,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Widget _buildMessageBubble(Map<String, dynamic> msg) {
     final isSent = msg['isSent'] == true;
     final isDeleted = msg['isDeleted'] == true;
-    final type = msg['type'] ?? 'text';
+    final type = _safeString(msg['type'], 'text');
     final isIcebreaker = type == 'icebreaker';
-    final mediaUrl = msg['mediaUrl'] as String?;
-    final text = msg['text'] as String? ?? '';
-    final msgId = msg['id'] as String? ?? '';
-    final status = msg['status']?.toString() ?? 'sent';
+    final text = _safeString(msg['text']);
+    final msgId = _safeString(msg['id']);
+    final status = _safeString(msg['status'], 'sent');
     final timeStr = _formatMessageTime(msg['createdAt']?.toString());
 
     return GestureDetector(
@@ -2326,16 +1727,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     ],
                   ),
                 )
-              : (type == 'voice' || type == 'audio')
-              ? _buildAudioBubble(msg)
-              : (mediaUrl != null || type == 'image' || type == 'sticker')
-              ? _buildMediaBubbleContent(
-                  type,
-                  mediaUrl,
-                  timeStr,
-                  isSent,
-                  status,
-                )
               : _buildTextBubbleContent(
                   text,
                   timeStr,
@@ -2402,223 +1793,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildMediaBubbleContent(
-    String type,
-    String? mediaUrl,
-    String timeStr,
-    bool isSent,
-    String status,
-  ) {
-    if (mediaUrl == null) return const SizedBox.shrink();
-
-    final isNetworkUrl =
-        mediaUrl.startsWith('http://') || mediaUrl.startsWith('https://');
-
-    Widget imageWidget;
-    if (isNetworkUrl) {
-      imageWidget = Image.network(
-        mediaUrl,
-        fit: type == 'sticker' ? BoxFit.contain : BoxFit.cover,
-        width: type == 'sticker' ? 120 : 260,
-        height: type == 'sticker' ? null : 180,
-        loadingBuilder: (context, child, progress) {
-          if (progress == null) return child;
-          return Container(
-            height: 180,
-            width: 260,
-            color: Colors.grey[100],
-            child: const Center(
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          );
-        },
-        errorBuilder: (context, error, stack) => Container(
-          height: 120,
-          width: 200,
-          color: Colors.grey[100],
-          child: const Icon(
-            Icons.broken_image_outlined,
-            color: Color(0xFF800080),
-          ),
-        ),
-      );
-    } else {
-      imageWidget = kIsWeb
-          ? Image.network(
-              mediaUrl,
-              fit: type == 'sticker' ? BoxFit.contain : BoxFit.cover,
-              width: type == 'sticker' ? 120 : 260,
-              height: type == 'sticker' ? null : 180,
-            )
-          : Image.file(
-              File(mediaUrl),
-              fit: type == 'sticker' ? BoxFit.contain : BoxFit.cover,
-              width: type == 'sticker' ? 120 : 260,
-              height: type == 'sticker' ? null : 180,
-              errorBuilder: (context, error, stack) => Container(
-                height: 120,
-                width: 200,
-                color: Colors.grey[100],
-                child: const Icon(
-                  Icons.broken_image_outlined,
-                  color: Color(0xFF800080),
-                ),
-              ),
-            );
-    }
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: Stack(
-        alignment: Alignment.bottomRight,
-        children: [
-          imageWidget,
-          Container(
-            margin: const EdgeInsets.all(6),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.black45,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  timeStr,
-                  style: const TextStyle(color: Colors.white, fontSize: 10),
-                ),
-                if (isSent) ...[
-                  const SizedBox(width: 4),
-                  _buildMessageStatusIcon(status, isSent: isSent),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAudioBubble(Map<String, dynamic> msg) {
-    final isSent = msg['isSent'] == true;
-    final msgId = msg['id'] as String? ?? '';
-    final msgStatus = msg['status']?.toString() ?? 'sent';
-    final timeStr = _formatMessageTime(msg['createdAt']?.toString());
-    final duration =
-        msg['duration'] as int? ??
-        int.tryParse(msg['text']?.toString() ?? '5') ??
-        5;
-
-    final isPlaying = _playingMessageId == msgId;
-    final progress = isPlaying ? _playbackProgress : 0.0;
-
-    final currentSeconds = isPlaying ? _playbackSeconds : duration;
-    final min = (currentSeconds / 60).floor();
-    final sec = (currentSeconds % 60).toString().padLeft(2, '0');
-    final totalMin = (duration / 60).floor();
-    final totalSec = (duration % 60).toString().padLeft(2, '0');
-    final durationStr = isPlaying ? '$min:$sec / $totalMin:$totalSec' : '$totalMin:$totalSec';
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 10, 14, 10),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          GestureDetector(
-            onTap: () => _togglePlayback(msgId, msg['mediaUrl'] as String?, duration),
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: isSent ? Colors.white : const Color(0xFF7C3AED),
-                shape: BoxShape.circle,
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x1A000000),
-                    blurRadius: 4,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Icon(
-                isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                color: isSent ? const Color(0xFF7C3AED) : Colors.white,
-                size: 24,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              GestureDetector(
-                onTap: () => _togglePlayback(msgId, msg['mediaUrl'] as String?, duration),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: List.generate(20, (index) {
-                    final barHeight =
-                        8.0 +
-                        (index % 4 == 0 ? 14.0 : (index % 2 == 0 ? 8.0 : 18.0));
-                    final isPlayed = index / 20.0 < progress;
-                    return Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 1.2),
-                      width: 2.8,
-                      height: barHeight,
-                      decoration: BoxDecoration(
-                        color: isSent
-                            ? (isPlayed ? Colors.white : Colors.white.withValues(alpha: 0.45))
-                            : (isPlayed ? const Color(0xFF7C3AED) : const Color(0xFFCBD5E1)),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    );
-                  }),
-                ),
-              ),
-              const SizedBox(height: 6),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.mic_rounded, size: 12, color: isSent ? Colors.white70 : const Color(0xFF7C3AED)),
-                  const SizedBox(width: 3),
-                  Text(
-                    durationStr,
-                    style: TextStyle(
-                      color: isSent ? Colors.white.withValues(alpha: 0.9) : const Color(0xFF64748B),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(width: 20),
-                  Text(
-                    timeStr,
-                    style: TextStyle(
-                      color: isSent ? Colors.white.withValues(alpha: 0.8) : const Color(0xFF94A3B8),
-                      fontSize: 10,
-                    ),
-                  ),
-                  if (isSent) ...[
-                    const SizedBox(width: 4),
-                    _buildMessageStatusIcon(msgStatus, isSent: isSent),
-                  ],
-                ],
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildInvitationCard(Map<String, dynamic> msg) {
     final isSent = msg['isSent'] == true;
-    final venue = msg['venue'] as String? ?? 'Venue Invite';
-    final date =
-        msg['date'] as String? ?? msg['invitationTime'] as String? ?? '';
-    final status = msg['invitationStatus'] as String? ?? 'pending';
-    final msgId = msg['id'] as String? ?? '';
-    final msgStatus = msg['status']?.toString() ?? 'sent';
+    final venue = _safeString(msg['venue'], 'Venue Invite');
+    final date = _safeString(msg['date'].toString().isNotEmpty ? msg['date'] : msg['invitationTime']);
+    final status = _safeString(msg['invitationStatus'], 'pending');
+    final msgId = _safeString(msg['id']);
+    final msgStatus = _safeString(msg['status'], 'sent');
     final timeStr = _formatMessageTime(msg['createdAt']?.toString());
 
     return Align(
@@ -2771,93 +1952,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildInputArea(BuildContext context) {
-    if (_isRecording) {
-      final recMin = (_recordingDuration / 60).floor();
-      final recSec = (_recordingDuration % 60).toString().padLeft(2, '0');
-      final timerText = '$recMin:$recSec';
-
-      return Container(
-        margin: const EdgeInsets.fromLTRB(14, 4, 14, 12),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(30),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x12000000),
-              blurRadius: 18,
-              offset: Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.delete_outline_rounded, color: Colors.red, size: 24),
-              onPressed: _cancelRecording,
-              tooltip: 'Cancel recording',
-            ),
-            const SizedBox(width: 4),
-            Container(
-              width: 10,
-              height: 10,
-              decoration: const BoxDecoration(
-                color: Colors.red,
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Text(
-              'Recording...',
-              style: TextStyle(
-                color: Color(0xFF0F172A),
-                fontWeight: FontWeight.bold,
-                fontSize: 13.5,
-              ),
-            ),
-            const SizedBox(width: 8),
-            // Live pulsing sound wave bars animation
-            Row(
-              children: List.generate(6, (i) {
-                final heights = [10.0, 18.0, 12.0, 22.0, 14.0, 8.0];
-                final animH = heights[(i + _recordingDuration) % heights.length];
-                return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                  width: 3,
-                  height: animH,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF7C3AED),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                );
-              }),
-            ),
-            const Spacer(),
-            Text(
-              timerText,
-              style: const TextStyle(
-                color: Color(0xFF7C3AED),
-                fontWeight: FontWeight.bold,
-                fontSize: 14.5,
-              ),
-            ),
-            const SizedBox(width: 12),
-            GestureDetector(
-              onTap: _stopAndSendRecording,
-              child: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: const BoxDecoration(
-                  color: Color(0xFF7C3AED),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.send_rounded, color: Colors.white, size: 18),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
     final hasText = _messageController.text.trim().isNotEmpty;
 
     return Container(
@@ -2876,24 +1970,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       ),
       child: Row(
         children: [
-          IconButton(
-            icon: Icon(
-              _showEmoji ? Icons.keyboard_rounded : Icons.sentiment_satisfied_alt_rounded,
-              color: const Color(0xFF7C3AED),
-              size: 24,
-            ),
-            onPressed: () {
-              if (_showEmoji) {
-                FocusScope.of(context).requestFocus(_focusNode);
-                setState(() => _showEmoji = false);
-              } else {
-                FocusScope.of(context).unfocus();
-                Future.delayed(const Duration(milliseconds: 100), () {
-                  setState(() => _showEmoji = true);
-                });
-              }
-            },
-          ),
+          const SizedBox(width: 12),
           Expanded(
             child: TextField(
               controller: _messageController,
@@ -2901,9 +1978,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               style: const TextStyle(color: Color(0xFF0F172A), fontSize: 15),
               maxLines: 4,
               minLines: 1,
-              onTap: () {
-                setState(() => _showEmoji = false);
-              },
               decoration: const InputDecoration(
                 hintText: 'Type a message...',
                 hintStyle: TextStyle(
@@ -2912,7 +1986,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 ),
                 border: InputBorder.none,
                 isDense: true,
-                contentPadding: EdgeInsets.symmetric(vertical: 8),
+                contentPadding: EdgeInsets.symmetric(vertical: 10),
               ),
               onChanged: (text) {
                 setState(() {});
@@ -2921,13 +1995,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           ),
           const SizedBox(width: 4),
           GestureDetector(
-            onTap: () {
-              if (hasText) {
-                _sendMessage();
-              } else {
-                _startRecording();
-              }
-            },
+            onTap: hasText ? _sendMessage : null,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               padding: const EdgeInsets.all(10),
@@ -2936,8 +2004,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 shape: BoxShape.circle,
               ),
               child: Icon(
-                hasText ? Icons.send_rounded : Icons.mic_rounded,
-                color: hasText ? Colors.white : const Color(0xFF7C3AED),
+                Icons.send_rounded,
+                color: hasText ? Colors.white : const Color(0xFFC4B5FD),
                 size: 20,
               ),
             ),

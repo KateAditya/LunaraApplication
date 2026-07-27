@@ -28,6 +28,9 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 class PushNotificationService {
   PushNotificationService._();
 
+  /// Currently open conversation ID — used to suppress popups for active chat screen
+  static String? activeConversationId;
+
   static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   static final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
@@ -190,6 +193,13 @@ class PushNotificationService {
 
     if (title.isEmpty && body.isEmpty) return;
 
+    // Suppress popups if the user is currently looking at this exact chat screen
+    final convId = payloadData['conversationId']?.toString();
+    if (activeConversationId != null && convId == activeConversationId) {
+      debugPrint('🔔 Suppressing in-app banner for active chat $activeConversationId');
+      return;
+    }
+
     debugPrint('🔔 Socket notification received in-app: $title - $body');
 
     TopNotificationBanner.show(
@@ -208,6 +218,12 @@ class PushNotificationService {
     final body = (notification?.body ?? message.data['body'] ?? message.data['message'] ?? '').toString();
 
     if (title.isEmpty && body.isEmpty) return;
+
+    final convId = message.data['conversationId']?.toString();
+    if (activeConversationId != null && convId == activeConversationId) {
+      debugPrint('🔔 Suppressing foreground notification for active chat $activeConversationId');
+      return;
+    }
 
     final payload = jsonEncode(message.data);
 

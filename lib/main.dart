@@ -11,6 +11,8 @@ import 'services/biometric_service.dart';
 import 'services/api_service.dart';
 import 'firebase_options.dart';
 
+import 'services/subscription_provider.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
@@ -40,7 +42,9 @@ class LunaraApp extends StatelessWidget {
           navigatorKey: NotificationNavigator.navigatorKey,
           home: const SplashScreen(),
           builder: (context, child) {
-            return AppLockWrapper(child: child ?? const SizedBox.shrink());
+            return SubscriptionScope(
+              child: AppLockWrapper(child: child ?? const SizedBox.shrink()),
+            );
           },
         );
       },

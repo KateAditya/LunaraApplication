@@ -482,7 +482,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           subtitle,
           style: TextStyle(
             fontSize: 11,
-            color: (isDark ? Colors.white : Colors.black).withOpacity(0.5),
+            color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.5),
           ),
         ),
       ],
@@ -512,8 +512,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(30),
               color: isSelected
-                  ? LunaraTheme.electricViolet.withOpacity(0.18)
-                  : (isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.04)),
+                  ? LunaraTheme.electricViolet.withValues(alpha: 0.18)
+                  : (isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.04)),
               border: Border.all(
                 color: isSelected
                     ? LunaraTheme.electricViolet
@@ -568,8 +568,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(30),
               color: isSelected
-                  ? LunaraTheme.electricViolet.withOpacity(0.18)
-                  : (isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.04)),
+                  ? LunaraTheme.electricViolet.withValues(alpha: 0.18)
+                  : (isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.04)),
               border: Border.all(
                 color: isSelected
                     ? LunaraTheme.electricViolet
@@ -644,7 +644,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: DropdownButtonFormField<String>(
-        value: selectedValue,
+        initialValue: selectedValue,
         decoration: InputDecoration(
           labelText: 'Gender',
           labelStyle: const TextStyle(fontWeight: FontWeight.bold),

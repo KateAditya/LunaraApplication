@@ -346,6 +346,102 @@ export class SubscriptionService {
         }
     }
 
+    /**
+     * Get the complete subscription status for a user — single call for UI.
+     * Returns tier, limits, usage, boosts, superlikes, feature flags.
+     */
+    static async getFullStatus(userId: string): Promise<Record<string, any>> {
+        try {
+            const entry = (await this.getFromCache(userId)) || (await this.buildCache(userId));
+            const plan = entry.plan;
+
+            // Get active subscription record (for boosts/superlikes remaining)
+            const subscription = await UserSubscription.findOne({
+                where: {
+                    userId,
+                    status: SubscriptionStatus.ACTIVE,
+                    endDate: { [Op.gt]: new Date() },
+                },
+                order: [['createdAt', 'DESC']],
+            });
+
+            // Determine tier
+            const tier = plan ? plan.tier : 'FREE';
+            const tierRankMap: Record<string, number> = {
+                FREE: 0, CORE: 1, PLUS: 2, PRO: 3, ELITE: 4,
+            };
+            const tierRank = tierRankMap[tier] ?? 0;
+
+            // Collect feature limits from cache
+            const featuresOut: Record<string, any> = {};
+            for (const [key, val] of entry.features.entries()) {
+                featuresOut[key] = {
+                    enabled: val.enabled,
+                    limit: val.value === 'unlimited' ? 'unlimited' : (val.value ?? 0),
+                };
+            }
+
+            // Get daily usage
+            const usageRecords = await SubscriptionUsage.findAll({
+                where: { userId, period: UsagePeriod.DAILY },
+            });
+            const usageMap: Record<string, number> = {};
+            for (const u of usageRecords) {
+                usageMap[u.featureKey] = u.used;
+            }
+
+            // Remaining days
+            let remainingDays = 0;
+            if (subscription) {
+                const now = new Date();
+                const end = new Date(subscription.endDate);
+                remainingDays = Math.max(0, Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+            }
+
+            return {
+                isActive: !!subscription,
+                tier,
+                tierRank,
+                planName: plan?.name ?? 'Free',
+                packageId: plan?.id ?? null,
+                remainingDays,
+                superlikesRemaining: subscription?.superlikesRemaining ?? 0,
+                superlikesPerCycle: plan?.superlikesPerCycle ?? 0,
+                boostsRemaining: subscription?.boostsRemaining ?? 0,
+                boostsPerCycle: plan?.boostsPerCycle ?? 0,
+                hasPriorityVisibility: plan?.hasPriorityVisibility ?? false,
+                hasTrustBadge: plan?.hasTrustBadge ?? false,
+                hasEliteBadge: plan?.hasEliteBadge ?? false,
+                canSeeWhoLiked: plan?.canSeeWhoLiked ?? false,
+                dailyLikesLimit: featuresOut['daily_likes']?.limit ?? 7,
+                dailyLikesUsed: usageMap['daily_likes'] ?? 0,
+                dailyMatchRequestsLimit: featuresOut['daily_match_requests']?.limit ?? 3,
+                dailyMatchRequestsUsed: usageMap['daily_match_requests'] ?? 0,
+                dailyPostsLimit: featuresOut['daily_posts']?.limit ?? 5,
+                dailyPostsUsed: usageMap['daily_posts'] ?? 0,
+                dailyBacktrackLimit: featuresOut['daily_backtracks']?.limit ?? 3,
+                dailyBacktrackUsed: usageMap['daily_backtracks'] ?? 0,
+                features: featuresOut,
+                usage: usageMap,
+            };
+        } catch (err) {
+            logger.error('SubscriptionService.getFullStatus error:', err);
+            return {
+                isActive: false,
+                tier: 'FREE',
+                tierRank: 0,
+                planName: 'Free',
+                remainingDays: 0,
+                superlikesRemaining: 0,
+                boostsRemaining: 0,
+                dailyLikesLimit: 7,
+                dailyLikesUsed: 0,
+                features: {},
+                usage: {},
+            };
+        }
+    }
+
     // ── Internal Helpers ──────────────────────────────────────────────────────
 
     private static async getOrResetUsage(userId: string, featureKey: string, period: UsagePeriod): Promise<SubscriptionUsage> {

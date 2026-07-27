@@ -13,6 +13,9 @@ router.get('/packages', ctrl.getAvailablePackages);
 // ── Current Subscription ───────────────────────────────────────────────────────
 router.get('/current', ctrl.getCurrentSubscription);
 
+// ── Unified Status (tier + limits + usage + boosts + superlikes in one call) ──
+router.get('/status', ctrl.getSubscriptionStatus);
+
 // ── Purchase Flow ──────────────────────────────────────────────────────────────
 router.post('/create-order', ctrl.createSubscriptionOrder);
 router.post('/purchase', ctrl.purchaseSubscription);

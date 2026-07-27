@@ -1876,6 +1876,7 @@ class ApiService {
     String? invitationRef,
     String? invitationRefType,
     String? invitationTime,
+    String? clientMessageId,
   }) async {
     try {
       final body = <String, dynamic>{'senderId': senderId, 'type': type};
@@ -1887,6 +1888,7 @@ class ApiService {
         body['invitationRefType'] = invitationRefType;
       }
       if (invitationTime != null) body['invitationTime'] = invitationTime;
+      if (clientMessageId != null) body['clientMessageId'] = clientMessageId;
 
       final response = await post(
         '/api/mobile/chat/conversations/$conversationId/messages',
@@ -2985,6 +2987,25 @@ class ApiService {
       }
     } catch (e) {
       debugPrint('fetchUserSubscription error: $e');
+    }
+    return {};
+  }
+
+  /// Returns the FULL subscription status in one call:
+  /// tier, tierRank, planName, daily limits/usage, superlikes, boosts, feature flags.
+  static Future<Map<String, dynamic>> fetchSubscriptionStatus() async {
+    final userId = currentUserId;
+    if (userId == null) return {};
+    try {
+      final response = await get('/api/mobile/subscriptions/status');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return Map<String, dynamic>.from(data['data']);
+        }
+      }
+    } catch (e) {
+      debugPrint('fetchSubscriptionStatus error: $e');
     }
     return {};
   }

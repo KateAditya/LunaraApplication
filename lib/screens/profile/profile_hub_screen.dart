@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import 'vip_membership_screen.dart';
-import 'points_rewards_screen.dart';
 import 'lunara_wallet_screen.dart';
 import 'settings_screen.dart';
 import 'profile_screen.dart';
@@ -10,6 +9,7 @@ import '../post_booking/ticket_pocket_screen.dart';
 import '../post_booking/booking_history_screen.dart';
 import '../onboarding/welcome_carousel.dart';
 import '../../services/api_service.dart';
+import '../../services/subscription_provider.dart';
 import '../../models/user.dart';
 import '../../widgets/lunara_profile_image.dart';
 
@@ -226,26 +226,73 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
   }
 
   Widget _buildVIPBanner(BuildContext context) {
+    final subscription = SubscriptionScope.of(context).status;
+
+    final isPaid = subscription.isPaid;
+    final tier = subscription.tier;
+    final planName = subscription.planName;
+    final remainingDays = subscription.remainingDays;
+    final superlikes = subscription.superlikesRemaining;
+    final boosts = subscription.boostsRemaining;
+
+    // Color theme per tier
+    Color primaryColor;
+    Color subTextColor;
+    List<Color> gradientColors;
+    IconData iconData;
+
+    switch (tier) {
+      case 'ELITE':
+        primaryColor = const Color(0xFFD4AF37);
+        subTextColor = const Color(0xFF927900);
+        gradientColors = [const Color(0xFFFFFDF5), const Color(0xFFFFF7D6)];
+        iconData = Icons.workspace_premium_rounded;
+        break;
+      case 'PRO':
+        primaryColor = const Color(0xFFE100FF);
+        subTextColor = const Color(0xFF7F00FF);
+        gradientColors = [const Color(0xFFFAF0FF), const Color(0xFFF3E5F5)];
+        iconData = Icons.auto_awesome_rounded;
+        break;
+      case 'PLUS':
+        primaryColor = const Color(0xFF7F00FF);
+        subTextColor = const Color(0xFF5E00B8);
+        gradientColors = [const Color(0xFFF3E5F5), const Color(0xFFEDE7F6)];
+        iconData = Icons.star_rounded;
+        break;
+      case 'CORE':
+        primaryColor = const Color(0xFF00A9FF);
+        subTextColor = const Color(0xFF0066CC);
+        gradientColors = [const Color(0xFFE3F2FD), const Color(0xFFE0F7FA)];
+        iconData = Icons.verified_user_rounded;
+        break;
+      default:
+        primaryColor = LunaraTheme.electricViolet;
+        subTextColor = Colors.black54;
+        gradientColors = [const Color(0xFFFFF5F8), const Color(0xFFF3E5F5)];
+        iconData = Icons.auto_awesome_rounded;
+    }
+
     return GestureDetector(
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => const VIPMembershipScreen()),
       ),
       child: Container(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
+          gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFFFFFDF5), Color(0xFFFFF9E6)],
+            colors: gradientColors,
           ),
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: Colors.amber.withValues(alpha: 0.2)),
+          border: Border.all(color: primaryColor.withValues(alpha: 0.3)),
           boxShadow: [
             BoxShadow(
-              color: Colors.amber.withValues(alpha: 0.05),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
+              color: primaryColor.withValues(alpha: 0.08),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
@@ -254,38 +301,62 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.amber.withValues(alpha: 0.1),
+                color: primaryColor.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.auto_awesome_rounded, color: Colors.amber, size: 24),
+              child: Icon(iconData, color: primaryColor, size: 24),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'LUNARA VIP • GOLD',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF927900),
-                      letterSpacing: 1,
-                    ),
+                  Row(
+                    children: [
+                      Text(
+                        isPaid ? 'LUNARA $planName • $tier' : 'GET LUNARA VIP',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                          color: isPaid ? primaryColor : Colors.black,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                      if (isPaid && remainingDays > 0) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: primaryColor.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '$remainingDays d left',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: primaryColor,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                  const SizedBox(height: 2),
-                  const Text(
-                    '4 active benefits • Priority entry active',
+                  const SizedBox(height: 4),
+                  Text(
+                    isPaid
+                        ? '⭐ Super Likes: $superlikes  •  ⚡ Boosts: $boosts'
+                        : 'Unlock Unlimited Likes, Super Likes & Priority Boosts',
                     style: TextStyle(
-                      color: Color(0xFFB8860B),
+                      color: subTextColor,
                       fontSize: 11,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right_rounded, color: Color(0xFF927900)),
+            Icon(Icons.chevron_right_rounded, color: primaryColor),
           ],
         ),
       ),
