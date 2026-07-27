@@ -2349,8 +2349,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                           );
                         } else if (reqStatus == 'accepted' || reqStatus == 'payment_pending') {
                           if (!joinerPaid) {
-                            final hostPaid = myReq['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'paid' ||
-                                myReq['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'refunded';
+                            final hStatus = (myReq['plan']?['hostPaymentStatus'] ?? myReq['planDetails']?['hostPaymentStatus'] ?? plan['hostPaymentStatus'])?.toString().toLowerCase();
+                            final hostPaid = hStatus == 'paid' || hStatus == 'refunded' || hStatus == 'completed' || hStatus == 'confirmed';
                             if (!hostPaid) {
                               return Expanded(
                                 child: Container(
@@ -2389,8 +2389,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                             );
                           } else {
                             // Joiner has paid
-                            final hostPaid = myReq['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'paid' ||
-                                myReq['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'refunded';
+                            final hStatus = (myReq['plan']?['hostPaymentStatus'] ?? myReq['planDetails']?['hostPaymentStatus'] ?? plan['hostPaymentStatus'])?.toString().toLowerCase();
+                            final hostPaid = hStatus == 'paid' || hStatus == 'refunded' || hStatus == 'completed' || hStatus == 'confirmed';
                             if (!hostPaid) {
                               return Expanded(
                                 child: Container(
