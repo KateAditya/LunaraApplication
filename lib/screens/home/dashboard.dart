@@ -143,17 +143,25 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   /// Immediately zeroes the live-feed badge (local-first) so the red dot
   /// disappears without waiting for a server round-trip.
   void _onLiveFeedCountChanged() {
-    _fetchBadges();
+    if (_liveFeedKey.currentState != null && mounted) {
+      setState(() {
+        _liveFeedCount = _liveFeedKey.currentState!.totalUnreadCount;
+      });
+    } else {
+      _fetchBadges();
+    }
   }
 
-  /// Called by the LiveFeedScreen whenever the user views/marks notifications.
-  /// Immediately zeroes the live-feed badge (local-first) so the red dot
-  /// disappears without waiting for a server round-trip.
   void _onLiveFeedRead() async {
     if (!mounted) return;
-    // Refresh feed data when viewing
     _liveFeedKey.currentState?.refreshFeed();
-    _fetchBadges();
+    if (_liveFeedKey.currentState != null) {
+      setState(() {
+        _liveFeedCount = _liveFeedKey.currentState!.totalUnreadCount;
+      });
+    } else {
+      _fetchBadges();
+    }
   }
 
   Future<void> _fetchBadges() async {
