@@ -1752,38 +1752,55 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     String? photo,
     Map<String, dynamic> post,
   ) {
-    String? finalPhoto = photo;
-    if (finalPhoto != null &&
-        finalPhoto.startsWith('/') &&
-        !finalPhoto.startsWith('assets')) {
-      finalPhoto = '${ApiService.baseUrl}$finalPhoto';
-    }
-
-    // Age
-    int? age = post['age'] as int?;
-    if (age == null) {
-      final dobRaw = post['dateOfBirth'] ?? post['dob'];
-      if (dobRaw != null) {
-        final dob = DateTime.tryParse(dobRaw.toString());
-        if (dob != null) {
-          final today = DateTime.now();
-          age = today.year - dob.year -
-              ((today.month < dob.month || (today.month == dob.month && today.day < dob.day)) ? 1 : 0);
+    // Determine venue/banner photo (prefer venue or event banner image, avoid host profile photo taking over full banner)
+    String? bannerPhoto;
+    final venueMap = widget.venue ?? (post['venue'] is Map ? post['venue'] as Map<String, dynamic> : null);
+    if (venueMap != null) {
+      if (venueMap['images'] is List && (venueMap['images'] as List).isNotEmpty) {
+        final firstImg = (venueMap['images'] as List).first;
+        if (firstImg is Map) {
+          final u = firstImg['url'] ?? firstImg['imageUrl'] ?? firstImg['filePath'];
+          if (u != null && u.toString().isNotEmpty) bannerPhoto = u.toString();
+        } else if (firstImg is String && firstImg.isNotEmpty) {
+          bannerPhoto = firstImg;
         }
       }
+      bannerPhoto ??= venueMap['imageUrl']?.toString() ?? venueMap['coverImage']?.toString() ?? venueMap['photoUrl']?.toString();
     }
+    bannerPhoto ??= post['venueImage']?.toString() ?? post['bannerUrl']?.toString() ?? post['bannerImage']?.toString();
+
+    if (bannerPhoto != null &&
+        bannerPhoto.startsWith('/') &&
+        !bannerPhoto.startsWith('assets')) {
+      bannerPhoto = '${ApiService.baseUrl}$bannerPhoto';
+    }
+
+    // Host photo for profile chip
+    String? hostPhoto = photo;
+    if (hostPhoto != null && hostPhoto.startsWith('/') && !hostPhoto.startsWith('assets')) {
+      hostPhoto = '${ApiService.baseUrl}$hostPhoto';
+    }
+
+    // Determine Event Title
+    final String rawSubject = (post['subject'] ?? post['title'] ?? post['message'] ?? widget.venue?['name'] ?? post['venue']?['name'] ?? 'STRANGERS MEET').toString().trim();
+    final String displayTitle = rawSubject.isNotEmpty ? rawSubject.toUpperCase() : 'STRANGERS MEET';
 
     final bool isVerified = post['isVerified'] == true || post['verified'] == true;
 
+    User? profileUser;
+    try {
+      profileUser = User.fromJson(post['user'] ?? post);
+    } catch (_) {}
+
     return SliverAppBar(
-      expandedHeight: 450,
+      expandedHeight: 340,
       pinned: true,
       backgroundColor: Colors.white,
       elevation: 0,
       leading: Padding(
         padding: const EdgeInsets.all(8.0),
         child: CircleAvatar(
-          backgroundColor: Colors.black.withValues(alpha: 0.3),
+          backgroundColor: Colors.black.withValues(alpha: 0.4),
           child: IconButton(
             icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
             onPressed: () => Navigator.pop(context),
@@ -1791,20 +1808,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
       ),
       actions: [
-        // Profile view button
         Padding(
           padding: const EdgeInsets.all(8.0),
           child: CircleAvatar(
-            backgroundColor: Colors.black.withValues(alpha: 0.3),
+            backgroundColor: Colors.black.withValues(alpha: 0.4),
             child: IconButton(
-              icon: const Icon(Icons.person, color: Colors.white),
+              icon: const Icon(Icons.person_rounded, color: Colors.white),
+              tooltip: 'Host Profile',
               onPressed: () {
-                User? profileUser;
-                try {
-                  profileUser = User.fromJson(post['user'] ?? post);
-                } catch (e) {
-                  // Fallback
-                }
                 Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -1820,110 +1831,174 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         background: Stack(
           fit: StackFit.expand,
           children: [
-            if (finalPhoto != null && finalPhoto.isNotEmpty && finalPhoto.startsWith('http'))
+            if (bannerPhoto != null && bannerPhoto.isNotEmpty && bannerPhoto.startsWith('http'))
               Image.network(
-                finalPhoto,
+                bannerPhoto,
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stackTrace) => Container(
                   decoration: const BoxDecoration(
                     gradient: LunaraTheme.deepPurpleGradient,
                   ),
+                  child: const Center(
+                    child: Icon(Icons.nightlife_rounded, size: 80, color: Colors.white24),
+                  ),
                 ),
               )
-            else if (finalPhoto != null && finalPhoto.isNotEmpty && finalPhoto.startsWith('assets'))
-              Image.asset(finalPhoto, fit: BoxFit.cover)
+            else if (bannerPhoto != null && bannerPhoto.isNotEmpty && bannerPhoto.startsWith('assets'))
+              Image.asset(bannerPhoto, fit: BoxFit.cover)
             else
               Container(
                 decoration: const BoxDecoration(
                   gradient: LunaraTheme.deepPurpleGradient,
                 ),
+                child: Center(
+                  child: Icon(
+                    Icons.groups_rounded,
+                    size: 90,
+                    color: Colors.white.withValues(alpha: 0.15),
+                  ),
+                ),
               ),
 
+            // Gradient Overlay
             Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.black.withValues(alpha: 0.4),
+                    Colors.black.withValues(alpha: 0.5),
                     Colors.transparent,
-                    Colors.transparent,
-                    Colors.black.withValues(alpha: 0.8),
+                    Colors.black.withValues(alpha: 0.85),
                   ],
                 ),
               ),
             ),
 
+            // Event Details & Host Pill
             Positioned(
-              bottom: 30,
-              left: 24,
-              right: 24,
+              bottom: 24,
+              left: 20,
+              right: 20,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Flexible(
+                      Expanded(
                         child: Text(
-                          '$firstName $lastName'.toUpperCase(),
+                          displayTitle,
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 32,
+                            fontSize: 24,
                             fontWeight: FontWeight.w900,
-                            letterSpacing: 1,
+                            letterSpacing: 0.5,
                             fontFamily: 'AllroundGothic',
+                            shadows: [
+                              Shadow(color: Colors.black54, blurRadius: 6),
+                            ],
                           ),
-                          maxLines: 1,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (age != null) ...[
-                        const SizedBox(width: 8),
-                        Text(
-                          ', $age',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 28,
-                            fontWeight: FontWeight.w700,
-                            shadows: [
-                              Shadow(color: Colors.black45, blurRadius: 4),
-                            ],
-                          ),
-                        ),
-                      ],
-                      if (isVerified) ...[
-                        const SizedBox(width: 8),
-                        const Icon(
-                          Icons.verified_rounded,
-                          color: Color(0xFF2196F3),
-                          size: 26,
-                        ),
-                      ],
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Row(
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
+                      // Date & Time Pill
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 12,
-                          vertical: 4,
+                          vertical: 5,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.2),
+                          color: LunaraTheme.electricViolet,
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.3),
-                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
                         ),
-                        child: Text(
-                          time,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.access_time_filled_rounded, color: Colors.white, size: 14),
+                            const SizedBox(width: 6),
+                            Text(
+                              time,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Hosted by Host Chip
+                      InkWell(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ProfileScreen(user: profileUser),
+                            ),
+                          );
+                        },
+                        borderRadius: BorderRadius.circular(20),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.25),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.4),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircleAvatar(
+                                radius: 10,
+                                backgroundColor: Colors.white24,
+                                backgroundImage: hostPhoto != null && hostPhoto.isNotEmpty
+                                    ? NetworkImage(hostPhoto)
+                                    : null,
+                                child: hostPhoto == null || hostPhoto.isEmpty
+                                    ? const Icon(Icons.person, size: 12, color: Colors.white)
+                                    : null,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Hosted by $firstName $lastName',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              if (isVerified) ...[
+                                const SizedBox(width: 4),
+                                const Icon(
+                                  Icons.verified_rounded,
+                                  color: Color(0xFF2196F3),
+                                  size: 14,
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                       ),
@@ -1938,3 +2013,4 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 }
+
