@@ -354,6 +354,84 @@ export const markPaymentDone = async (req: Request, res: Response) => {
     }
 };
 
+import PartyPlan from '../models/PartyPlan';
+
+function mapPartyPlanToBooking(p: any) {
+    return {
+        id: p.id,
+        bookingNumber: `PLN-${(p.id || '').substring(0, 8).toUpperCase()}`,
+        userId: p.userId,
+        venueId: p.venueId,
+        bookingDate: p.planDateTime ? new Date(p.planDateTime).toISOString().split('T')[0] : (p.createdAt ? new Date(p.createdAt).toISOString().split('T')[0] : ''),
+        startTime: p.planDateTime ? new Date(p.planDateTime).toTimeString().substring(0, 5) : '20:00',
+        numberOfGuests: p.maxParticipants || p.currentParticipants || 1,
+        totalAmount: Number(p.totalAmount || p.budgetPerPerson || 0),
+        depositAmount: 0,
+        commissionAmount: 0,
+        status: p.status === 'active' || p.status === 'approved' ? 'confirmed' : (p.status || 'pending'),
+        paymentStatus: p.hostPaymentStatus === 'paid' ? 'paid' : 'pending',
+        isGroupBooking: false,
+        isLargePartyRequest: false,
+        isUpcomingNight: false,
+        goingMode: 'plan',
+        tablePackage: p.tablePackage || p.title || 'Party Plan',
+        customer: p.creator ? {
+            id: p.creator.id,
+            firstName: p.creator.firstName,
+            lastName: p.creator.lastName,
+            email: p.creator.email,
+            phone: p.creator.phone,
+            profileImageUrl: p.creator.profileImageUrl,
+        } : undefined,
+        venue: p.venue ? {
+            id: p.venue.id,
+            name: p.venue.name,
+            city: p.venue.city,
+            category: p.venue.category,
+        } : undefined,
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt,
+    };
+}
+
+function mapGroupPartyToBooking(g: any) {
+    return {
+        id: g.id,
+        bookingNumber: `GRP-${(g.id || '').substring(0, 8).toUpperCase()}`,
+        userId: g.userId,
+        venueId: g.venueId,
+        bookingDate: g.partyDateTime ? new Date(g.partyDateTime).toISOString().split('T')[0] : (g.createdAt ? new Date(g.createdAt).toISOString().split('T')[0] : ''),
+        startTime: g.partyDateTime ? new Date(g.partyDateTime).toTimeString().substring(0, 5) : '20:00',
+        numberOfGuests: g.numberOfFriends || g.groupSize || 1,
+        totalAmount: Number(g.totalAmount || 0),
+        depositAmount: 0,
+        commissionAmount: 0,
+        status: g.status === 'approved' || g.status === 'confirmed' ? 'confirmed' : (g.status || 'pending'),
+        paymentStatus: g.paymentStatus === 'paid' ? 'paid' : 'pending',
+        isGroupBooking: true,
+        isLargePartyRequest: false,
+        isUpcomingNight: false,
+        goingMode: 'party_request',
+        tablePackage: g.title || 'Group Booking',
+        customer: g.user ? {
+            id: g.user.id,
+            firstName: g.user.firstName,
+            lastName: g.user.lastName,
+            email: g.user.email,
+            phone: g.user.phone,
+            profileImageUrl: g.user.profileImageUrl,
+        } : undefined,
+        venue: g.venue ? {
+            id: g.venue.id,
+            name: g.venue.name,
+            city: g.venue.city,
+            category: g.venue.category,
+        } : undefined,
+        createdAt: g.createdAt,
+        updatedAt: g.updatedAt,
+    };
+}
+
 /**
  * @desc    Get all bookings with filters, search, and pagination
  * @route   GET /api/admin/bookings
@@ -399,16 +477,34 @@ export const getBookings = async (req: Request, res: Response) => {
         }
 
         if (status) where.status = status;
-        if (goingMode) {
-            if (goingMode === 'solo') {
-                where.goingMode = { [Op.or]: ['solo', { [Op.is]: null }] };
-            } else {
-                where.goingMode = goingMode;
-            }
+
+        const isGroupRequested = String(isGroupBooking) === 'true';
+        const isLargeRequested = String(isLargePartyRequest) === 'true';
+        const isUpcomingRequested = String(isUpcomingNight) === 'true';
+
+        if (goingMode === 'solo') {
+            where.goingMode = { [Op.or]: ['solo', { [Op.is]: null }] };
+            where.isGroupBooking = { [Op.or]: [false, { [Op.is]: null }] };
+            where.isLargePartyRequest = { [Op.or]: [false, { [Op.is]: null }] };
+        } else if (goingMode === 'plan') {
+            where.goingMode = { [Op.or]: ['plan', 'party_plan'] };
+        } else if (goingMode === 'party_request') {
+            where[Op.or] = [
+                { goingMode: 'party_request' },
+                { isLargePartyRequest: true }
+            ];
+        } else if (goingMode) {
+            where.goingMode = goingMode;
         }
-        if (isGroupBooking !== undefined) where.isGroupBooking = String(isGroupBooking) === 'true';
-        if (isLargePartyRequest !== undefined) where.isLargePartyRequest = String(isLargePartyRequest) === 'true';
-        if (isUpcomingNight !== undefined) where.isUpcomingNight = String(isUpcomingNight) === 'true';
+
+        if (isGroupRequested) where.isGroupBooking = true;
+        if (isLargeRequested) where.isLargePartyRequest = true;
+        if (isUpcomingRequested) {
+            where[Op.or] = [
+                { isUpcomingNight: true },
+                { goingMode: 'upcoming' }
+            ];
+        }
 
         if (date === 'today') {
             const todayStr = new Date().toISOString().split('T')[0];
@@ -432,7 +528,8 @@ export const getBookings = async (req: Request, res: Response) => {
         const limitNum = Math.min(100, Math.max(1, parseInt(limit as string)));
         const offset = (pageNum - 1) * limitNum;
 
-        const { count, rows } = await Booking.findAndCountAll({
+        // 1. Fetch primary Booking records
+        let mainBookings = await Booking.findAll({
             where,
             include: [
                 {
@@ -447,19 +544,67 @@ export const getBookings = async (req: Request, res: Response) => {
                 }
             ],
             order: [[sortBy as string, sortOrder as string]],
-            limit: limitNum,
-            offset
         });
+
+        let mappedList: any[] = mainBookings.map(b => b.toJSON());
+
+        // 2. Aggregate PartyPlan records if 'plan' tab or general view
+        if (!goingMode || goingMode === 'plan') {
+            try {
+                const partyPlans = await PartyPlan.findAll({
+                    include: [
+                        { model: User, as: 'creator', attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'] },
+                        { model: Venue, as: 'venue', attributes: ['id', 'name', 'city', 'category'] }
+                    ],
+                    order: [['createdAt', 'DESC']],
+                });
+                const mappedPlans = partyPlans.map(mapPartyPlanToBooking);
+                const existingIds = new Set(mappedList.map(b => b.id));
+                for (const p of mappedPlans) {
+                    if (!existingIds.has(p.id)) {
+                        mappedList.push(p);
+                    }
+                }
+            } catch (pErr) {
+                logger.warn('Failed to fetch PartyPlans in getBookings:', pErr);
+            }
+        }
+
+        // 3. Aggregate GroupParty records if 'group' tab, 'party_request' tab, or general view
+        if (!goingMode || isGroupRequested || goingMode === 'party_request') {
+            try {
+                const groupParties = await GroupParty.findAll({
+                    include: [
+                        { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'] },
+                        { model: Venue, as: 'venue', attributes: ['id', 'name', 'city', 'category'] }
+                    ],
+                    order: [['createdAt', 'DESC']],
+                });
+                const mappedGroups = groupParties.map(mapGroupPartyToBooking);
+                const existingIds = new Set(mappedList.map(b => b.id));
+                for (const g of mappedGroups) {
+                    if (!existingIds.has(g.id)) {
+                        mappedList.push(g);
+                    }
+                }
+            } catch (gErr) {
+                logger.warn('Failed to fetch GroupParties in getBookings:', gErr);
+            }
+        }
+
+        // Apply pagination in memory over aggregated data
+        const total = mappedList.length;
+        const pagedBookings = mappedList.slice(offset, offset + limitNum);
 
         return res.json({
             success: true,
             data: {
-                bookings: rows,
+                bookings: pagedBookings,
                 pagination: {
                     page: pageNum,
                     limit: limitNum,
-                    total: count,
-                    totalPages: Math.ceil(count / limitNum)
+                    total,
+                    totalPages: Math.ceil(total / limitNum)
                 }
             }
         });

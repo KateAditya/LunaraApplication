@@ -25,7 +25,7 @@ const razorpay = new Razorpay({
 
 // ─── Shared attributes ────────────────────────────────────────────────────────
 const USER_ATTRS = ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'];
-const VENUE_ATTRS = ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'openingTime', 'closingTime', 'daysOpen', 'closedDates', 'imageUrl'];
+const VENUE_ATTRS = ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'openingTime', 'closingTime', 'daysOpen', 'closedDates'];
 const PROFILE_ATTRS = ['bio', 'occupation', 'city', 'gender'];
 
 function genTicketId(): string {
