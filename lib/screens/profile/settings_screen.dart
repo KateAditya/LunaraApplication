@@ -1048,8 +1048,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     String getFullPhotoUrl(String path) {
                       if (path.isEmpty) return '';
                       if (path.startsWith('http')) return path;
-                      if (path.startsWith('/'))
+                      if (path.startsWith('/')) {
                         return '${ApiService.baseUrl}$path';
+                      }
                       return '${ApiService.baseUrl}/$path';
                     }
 
@@ -2669,8 +2670,9 @@ class _PermissionsSheetState extends State<PermissionsSheet>
 
   String _getStatusText(PermissionStatus status) {
     if (status.isGranted) return 'Enabled';
-    if (status.isPermanentlyDenied)
+    if (status.isPermanentlyDenied) {
       return 'Permanently Denied (Tap to open Settings)';
+    }
     if (status.isDenied) return 'Denied (Tap to request)';
     if (status.isRestricted) return 'Restricted';
     return 'Not Determined';

@@ -7,7 +7,6 @@ import '../../models/venue.dart';
 import '../../widgets/venue_timing_error_dialog.dart';
 import 'night_partner_discovery_screen.dart';
 import 'night_invite_partner_screen.dart';
-import '../social/friends_list_screen.dart';
 import '../../widgets/venue_cover_charge_notice.dart';
 
 class BookingProcessScreen extends StatefulWidget {
