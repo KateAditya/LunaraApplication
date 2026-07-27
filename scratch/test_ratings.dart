@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 Future<void> main() async {
@@ -12,7 +11,8 @@ Future<void> main() async {
 
   for (var v in venues) {
     final query = Uri.encodeComponent('${v['name']} ${v['city']}');
-    final url = 'https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=$query&inputtype=textquery&fields=rating,user_ratings_total,place_id&key=$apiKey';
+    final url =
+        'https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=$query&inputtype=textquery&fields=rating,user_ratings_total,place_id&key=$apiKey';
     try {
       final response = await http.get(Uri.parse(url));
       print('Venue: ${v['name']} Status: ${response.statusCode}');

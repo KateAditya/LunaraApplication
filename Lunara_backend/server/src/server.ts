@@ -142,6 +142,7 @@ import adminSubscriptionRoutes from './routes/adminSubscription';
 import mobileSubscriptionRoutes from './routes/mobileSubscription';
 import mobileWalletRoutes from './routes/mobileWallet';
 import mobileTicketRoutes from './routes/mobileTicket';
+import adminPaymentsRoutes from './routes/adminPayments';
 import { ExpiredTicketCleanupWorker } from './services/ExpiredTicketCleanupWorker';
 import { getAdminChatSettings, updateAdminChatSettings } from './controllers/chatSubscriptionController';
 import { getAdminTimeLockSettings, updateAdminTimeLockSettings } from './controllers/mobilePlanController';
@@ -193,6 +194,7 @@ app.use('/api/admin/safety-checks', adminSafetyChecksRoutes); // Safety Checks (
 app.use('/api/mobile/subscriptions', mobileSubscriptionRoutes); // Subscriptions (Mobile)
 app.use('/api/mobile/wallet', mobileWalletRoutes);             // Wallet (Mobile)
 app.use('/api/mobile/tickets', mobileTicketRoutes);           // Digital Tickets (Mobile)
+app.use('/api/admin/payments', adminPaymentsRoutes);          // Payments (Admin)
 
 // Admin — chat subscription settings
 app.get('/api/admin/settings/chat', getAdminChatSettings);

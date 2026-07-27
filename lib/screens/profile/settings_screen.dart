@@ -9,7 +9,6 @@ import '../../models/legal_document.dart';
 import '../../services/biometric_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'edit_profile_screen.dart';
-import 'vip_membership_screen.dart';
 import '../../widgets/subscription_limit_dialog.dart';
 import '../../models/user.dart';
 import '../../services/onboarding_service.dart';
@@ -38,12 +37,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     final user = await ApiService.fetchProfile();
-    
+
     if (mounted) {
       setState(() {
         _currentUser = user;
         _biometricAuth = prefs.getBool('biometric_enabled') ?? false;
-        
+
         if (user != null) {
           // If showMeInMatching is false, then profile is hidden
           _hideProfile = !user.showMeInMatching;
@@ -80,9 +79,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => EditProfileScreen(
-                              user: _currentUser!,
-                            ),
+                            builder: (context) =>
+                                EditProfileScreen(user: _currentUser!),
                           ),
                         ).then((_) => _loadSettings());
                       }
@@ -97,7 +95,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     v,
                   ) async {
                     final prefs = await SharedPreferences.getInstance();
-                    
+
                     if (v) {
                       // Attempt to authenticate before turning on
                       final success = await BiometricService.authenticate(
@@ -128,7 +126,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('Verification failed. Cannot disable.'),
+                              content: Text(
+                                'Verification failed. Cannot disable.',
+                              ),
                               backgroundColor: Colors.red,
                             ),
                           );
@@ -369,7 +369,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           child: Row(
             children: [
-              const Icon(Icons.visibility_off_outlined, color: Colors.black, size: 20),
+              const Icon(
+                Icons.visibility_off_outlined,
+                color: Colors.black,
+                size: 20,
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: FittedBox(
@@ -377,34 +381,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   alignment: Alignment.centerLeft,
                   child: Row(
                     children: [
-                    Text(
-                      'Hide Profile',
-                      style: TextStyle(
-                        color: Colors.black,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    SizedBox(width: 6),
-                    Container(
-                      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Color(0xFF7F00FF), Color(0xFFE100FF)],
-                        ),
-                        borderRadius: BorderRadius.all(Radius.circular(6)),
-                      ),
-                      child: Text(
-                        'VIP',
+                      Text(
+                        'Hide Profile',
                         style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
                         ),
                       ),
-                    ),
-                  ],
-                ),
+                      SizedBox(width: 6),
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Color(0xFF7F00FF), Color(0xFFE100FF)],
+                          ),
+                          borderRadius: BorderRadius.all(Radius.circular(6)),
+                        ),
+                        child: Text(
+                          'VIP',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               ElevatedButton.icon(
@@ -427,7 +434,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: LunaraTheme.electricViolet,
                   elevation: 0,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -470,7 +480,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             decoration: BoxDecoration(
               color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.15)),
+              border: Border.all(
+                color: LunaraTheme.electricViolet.withValues(alpha: 0.15),
+              ),
             ),
             child: const Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -531,8 +543,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   // --- Bottom sheets and dialogs ---
-
-
 
   void _showChangePasswordSheet() {
     final oldController = TextEditingController();
@@ -631,7 +641,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     controller: oldController,
                     obscureText: obscureOld,
                     onChanged: validateOld,
-                    style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.bold,
+                    ),
                     decoration: InputDecoration(
                       labelText: 'Current Password',
                       labelStyle: const TextStyle(
@@ -645,7 +658,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
-                        borderSide: const BorderSide(color: LunaraTheme.electricViolet),
+                        borderSide: const BorderSide(
+                          color: LunaraTheme.electricViolet,
+                        ),
                       ),
                       errorBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
@@ -653,12 +668,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       focusedErrorBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
-                        borderSide: const BorderSide(color: Colors.redAccent, width: 2),
+                        borderSide: const BorderSide(
+                          color: Colors.redAccent,
+                          width: 2,
+                        ),
                       ),
-                      prefixIcon: Icon(Icons.lock_outline, color: Colors.grey[400]),
+                      prefixIcon: Icon(
+                        Icons.lock_outline,
+                        color: Colors.grey[400],
+                      ),
                       suffixIcon: IconButton(
                         icon: Icon(
-                          obscureOld ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                          obscureOld
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
                           color: Colors.grey[400],
                         ),
                         onPressed: () {
@@ -683,7 +706,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         validateConfirm(confirmController.text);
                       }
                     },
-                    style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.bold,
+                    ),
                     decoration: InputDecoration(
                       labelText: 'New Password',
                       labelStyle: const TextStyle(
@@ -697,7 +723,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
-                        borderSide: const BorderSide(color: LunaraTheme.electricViolet),
+                        borderSide: const BorderSide(
+                          color: LunaraTheme.electricViolet,
+                        ),
                       ),
                       errorBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
@@ -705,12 +733,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       focusedErrorBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
-                        borderSide: const BorderSide(color: Colors.redAccent, width: 2),
+                        borderSide: const BorderSide(
+                          color: Colors.redAccent,
+                          width: 2,
+                        ),
                       ),
-                      prefixIcon: Icon(Icons.lock_outline, color: Colors.grey[400]),
+                      prefixIcon: Icon(
+                        Icons.lock_outline,
+                        color: Colors.grey[400],
+                      ),
                       suffixIcon: IconButton(
                         icon: Icon(
-                          obscureNew ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                          obscureNew
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
                           color: Colors.grey[400],
                         ),
                         onPressed: () {
@@ -730,7 +766,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     controller: confirmController,
                     obscureText: obscureConfirm,
                     onChanged: validateConfirm,
-                    style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.bold,
+                    ),
                     decoration: InputDecoration(
                       labelText: 'Confirm Password',
                       labelStyle: const TextStyle(
@@ -744,7 +783,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
-                        borderSide: const BorderSide(color: LunaraTheme.electricViolet),
+                        borderSide: const BorderSide(
+                          color: LunaraTheme.electricViolet,
+                        ),
                       ),
                       errorBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
@@ -752,12 +793,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       focusedErrorBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
-                        borderSide: const BorderSide(color: Colors.redAccent, width: 2),
+                        borderSide: const BorderSide(
+                          color: Colors.redAccent,
+                          width: 2,
+                        ),
                       ),
-                      prefixIcon: Icon(Icons.lock_reset, color: Colors.grey[400]),
+                      prefixIcon: Icon(
+                        Icons.lock_reset,
+                        color: Colors.grey[400],
+                      ),
                       suffixIcon: IconButton(
                         icon: Icon(
-                          obscureConfirm ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                          obscureConfirm
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
                           color: Colors.grey[400],
                         ),
                         onPressed: () {
@@ -791,7 +840,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               validateNew(newController.text);
                               validateConfirm(confirmController.text);
 
-                              if (oldError != null || newError != null || confirmError != null) {
+                              if (oldError != null ||
+                                  newError != null ||
+                                  confirmError != null) {
                                 return;
                               }
 
@@ -816,7 +867,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 Navigator.pop(ctx);
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text('Password updated successfully!'),
+                                    content: Text(
+                                      'Password updated successfully!',
+                                    ),
                                     backgroundColor: Colors.green,
                                     behavior: SnackBarBehavior.floating,
                                   ),
@@ -877,15 +930,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return StatefulBuilder(
           builder: (context, setModalState) {
             if (blockedUsers == null && !isError) {
-              ApiService.getBlockedUsersDetails().then((list) {
-                setModalState(() {
-                  blockedUsers = list;
-                });
-              }).catchError((e) {
-                setModalState(() {
-                  isError = true;
-                });
-              });
+              ApiService.getBlockedUsersDetails()
+                  .then((list) {
+                    setModalState(() {
+                      blockedUsers = list;
+                    });
+                  })
+                  .catchError((e) {
+                    setModalState(() {
+                      isError = true;
+                    });
+                  });
             }
 
             Widget content;
@@ -895,11 +950,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.error_outline, color: Colors.redAccent, size: 48),
+                    const Icon(
+                      Icons.error_outline,
+                      color: Colors.redAccent,
+                      size: 48,
+                    ),
                     const SizedBox(height: 16),
                     const Text(
                       'Failed to load blocked contacts',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     TextButton(
@@ -916,7 +978,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                    )
+                    ),
                   ],
                 ),
               );
@@ -978,14 +1040,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     final firstName = user['firstName']?.toString() ?? '';
                     final lastName = user['lastName']?.toString() ?? '';
                     final fullName = '$firstName $lastName'.trim();
-                    final profileImageUrl = user['profileImageUrl']?.toString() ?? '';
+                    final profileImageUrl =
+                        user['profileImageUrl']?.toString() ?? '';
 
                     bool isUnblocking = false;
 
                     String getFullPhotoUrl(String path) {
                       if (path.isEmpty) return '';
                       if (path.startsWith('http')) return path;
-                      if (path.startsWith('/')) return '${ApiService.baseUrl}$path';
+                      if (path.startsWith('/'))
+                        return '${ApiService.baseUrl}$path';
                       return '${ApiService.baseUrl}/$path';
                     }
 
@@ -1001,7 +1065,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             borderRadius: BorderRadius.circular(20),
                             boxShadow: LunaraTheme.premiumCardShadow,
                             border: Border.all(
-                              color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
+                              color: LunaraTheme.electricViolet.withValues(
+                                alpha: 0.05,
+                              ),
                             ),
                           ),
                           child: Row(
@@ -1013,7 +1079,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     ? NetworkImage(photoUrl)
                                     : null,
                                 child: photoUrl.isEmpty
-                                    ? const Icon(Icons.person, color: Colors.grey)
+                                    ? const Icon(
+                                        Icons.person,
+                                        color: Colors.grey,
+                                      )
                                     : null,
                               ),
                               const SizedBox(width: 16),
@@ -1041,7 +1110,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   : ElevatedButton(
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: Colors.white,
-                                        foregroundColor: LunaraTheme.electricViolet,
+                                        foregroundColor:
+                                            LunaraTheme.electricViolet,
                                         elevation: 0,
                                         side: const BorderSide(
                                           color: LunaraTheme.electricViolet,
@@ -1052,7 +1122,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                           vertical: 8,
                                         ),
                                         shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(16),
+                                          borderRadius: BorderRadius.circular(
+                                            16,
+                                          ),
                                         ),
                                       ),
                                       onPressed: () async {
@@ -1060,16 +1132,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                           isUnblocking = true;
                                         });
 
-                                        final success = await ApiService.unblockUser(userId);
+                                        final success =
+                                            await ApiService.unblockUser(
+                                              userId,
+                                            );
 
                                         if (success) {
                                           setModalState(() {
                                             blockedUsers!.removeAt(index);
                                           });
                                           if (mounted) {
-                                            ScaffoldMessenger.of(context).showSnackBar(
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
                                               SnackBar(
-                                                content: Text('$fullName unblocked successfully'),
+                                                content: Text(
+                                                  '$fullName unblocked successfully',
+                                                ),
                                                 backgroundColor: Colors.green,
                                               ),
                                             );
@@ -1079,9 +1158,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                             isUnblocking = false;
                                           });
                                           if (mounted) {
-                                            ScaffoldMessenger.of(context).showSnackBar(
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
                                               const SnackBar(
-                                                content: Text('Failed to unblock user'),
+                                                content: Text(
+                                                  'Failed to unblock user',
+                                                ),
                                                 backgroundColor: Colors.red,
                                               ),
                                             );
@@ -1293,7 +1376,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    
+
                     // Reasons list
                     Wrap(
                       spacing: 8,
@@ -1306,7 +1389,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             style: TextStyle(
                               color: isSelected ? Colors.white : Colors.black87,
                               fontSize: 12,
-                              fontWeight: isSelected ? FontWeight.w900 : FontWeight.bold,
+                              fontWeight: isSelected
+                                  ? FontWeight.w900
+                                  : FontWeight.bold,
                             ),
                           ),
                           selected: isSelected,
@@ -1331,14 +1416,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       decoration: BoxDecoration(
                         color: Colors.red.withValues(alpha: 0.05),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.red.withValues(alpha: 0.2)),
+                        border: Border.all(
+                          color: Colors.red.withValues(alpha: 0.2),
+                        ),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Row(
                             children: [
-                              Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 18),
+                              Icon(
+                                Icons.warning_amber_rounded,
+                                color: Colors.redAccent,
+                                size: 18,
+                              ),
                               SizedBox(width: 8),
                               Text(
                                 'PERMANENT ACTION',
@@ -1377,7 +1468,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           });
                         }
                       },
-                      style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.bold,
+                      ),
                       decoration: InputDecoration(
                         labelText: 'Confirm Password',
                         labelStyle: const TextStyle(
@@ -1392,7 +1486,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
-                          borderSide: const BorderSide(color: Colors.redAccent, width: 2),
+                          borderSide: const BorderSide(
+                            color: Colors.redAccent,
+                            width: 2,
+                          ),
                         ),
                         errorBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
@@ -1400,12 +1497,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                         focusedErrorBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
-                          borderSide: const BorderSide(color: Colors.redAccent, width: 2),
+                          borderSide: const BorderSide(
+                            color: Colors.redAccent,
+                            width: 2,
+                          ),
                         ),
-                        prefixIcon: const Icon(Icons.lock_outline, color: Colors.grey),
+                        prefixIcon: const Icon(
+                          Icons.lock_outline,
+                          color: Colors.grey,
+                        ),
                         suffixIcon: IconButton(
                           icon: Icon(
-                            obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                            obscurePassword
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined,
                             color: Colors.grey,
                           ),
                           onPressed: () {
@@ -1429,7 +1534,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.error_outline, color: Colors.redAccent, size: 18),
+                            const Icon(
+                              Icons.error_outline,
+                              color: Colors.redAccent,
+                              size: 18,
+                            ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
@@ -1460,7 +1569,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 borderRadius: BorderRadius.circular(16),
                               ),
                             ),
-                            onPressed: isDeleting ? null : () => Navigator.pop(ctx),
+                            onPressed: isDeleting
+                                ? null
+                                : () => Navigator.pop(ctx),
                             child: const Text(
                               'CANCEL',
                               style: TextStyle(
@@ -1488,7 +1599,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     final pwd = passwordController.text.trim();
                                     if (pwd.isEmpty) {
                                       setModalState(() {
-                                        passwordError = 'Password is required to confirm';
+                                        passwordError =
+                                            'Password is required to confirm';
                                       });
                                       return;
                                     }
@@ -1499,17 +1611,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       apiErrorMessage = null;
                                     });
 
-                                    final result = await ApiService.deleteAccount(
-                                      password: pwd,
-                                      reason: selectedReason,
-                                    );
+                                    final result =
+                                        await ApiService.deleteAccount(
+                                          password: pwd,
+                                          reason: selectedReason,
+                                        );
 
                                     if (!mounted) return;
 
                                     if (result['success'] == true) {
                                       // Perform stateful immediate logout cleanup
                                       await OnboardingService.clearProgress();
-                                      final prefs = await SharedPreferences.getInstance();
+                                      final prefs =
+                                          await SharedPreferences.getInstance();
                                       await prefs.clear();
 
                                       if (mounted) {
@@ -1517,12 +1631,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         Navigator.pushAndRemoveUntil(
                                           context,
                                           MaterialPageRoute(
-                                            builder: (_) => const WelcomeCarousel(),
+                                            builder: (_) =>
+                                                const WelcomeCarousel(),
                                           ),
                                           (route) => false,
                                         );
 
-                                        ScaffoldMessenger.of(context).showSnackBar(
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
                                           const SnackBar(
                                             content: Text(
                                               'Your Lunara account has been permanently deleted.',
@@ -1535,11 +1652,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     } else {
                                       setModalState(() {
                                         isDeleting = false;
-                                        if (result['code'] == 'INVALID_PASSWORD' ||
-                                            result['code'] == 'PASSWORD_REQUIRED') {
-                                          passwordError = result['message'] ?? 'Incorrect password';
+                                        if (result['code'] ==
+                                                'INVALID_PASSWORD' ||
+                                            result['code'] ==
+                                                'PASSWORD_REQUIRED') {
+                                          passwordError =
+                                              result['message'] ??
+                                              'Incorrect password';
                                         } else {
-                                          apiErrorMessage = result['message'] ?? 'Failed to delete account';
+                                          apiErrorMessage =
+                                              result['message'] ??
+                                              'Failed to delete account';
                                         }
                                       });
                                     }
@@ -1575,10 +1698,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       },
     );
   }
-
-
 }
-
 
 class HelpCenterSheet extends StatefulWidget {
   const HelpCenterSheet({super.key});
@@ -2497,7 +2617,6 @@ class _LegalDocumentsSheetState extends State<LegalDocumentsSheet> {
   }
 }
 
-
 class PermissionsSheet extends StatefulWidget {
   const PermissionsSheet({super.key});
 
@@ -2505,7 +2624,8 @@ class PermissionsSheet extends StatefulWidget {
   State<PermissionsSheet> createState() => _PermissionsSheetState();
 }
 
-class _PermissionsSheetState extends State<PermissionsSheet> with WidgetsBindingObserver {
+class _PermissionsSheetState extends State<PermissionsSheet>
+    with WidgetsBindingObserver {
   String _locationStatus = 'Checking...';
   String _cameraStatus = 'Checking...';
   String _photoStatus = 'Checking...';
@@ -2549,7 +2669,8 @@ class _PermissionsSheetState extends State<PermissionsSheet> with WidgetsBinding
 
   String _getStatusText(PermissionStatus status) {
     if (status.isGranted) return 'Enabled';
-    if (status.isPermanentlyDenied) return 'Permanently Denied (Tap to open Settings)';
+    if (status.isPermanentlyDenied)
+      return 'Permanently Denied (Tap to open Settings)';
     if (status.isDenied) return 'Denied (Tap to request)';
     if (status.isRestricted) return 'Restricted';
     return 'Not Determined';
@@ -2565,7 +2686,12 @@ class _PermissionsSheetState extends State<PermissionsSheet> with WidgetsBinding
     }
   }
 
-  Widget _permissionTile(IconData icon, String title, String subtitle, VoidCallback onTap) {
+  Widget _permissionTile(
+    IconData icon,
+    String title,
+    String subtitle,
+    VoidCallback onTap,
+  ) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
@@ -2591,7 +2717,9 @@ class _PermissionsSheetState extends State<PermissionsSheet> with WidgetsBinding
                   Text(
                     subtitle,
                     style: TextStyle(
-                      color: subtitle.contains('Denied') ? Colors.redAccent : Colors.black54,
+                      color: subtitle.contains('Denied')
+                          ? Colors.redAccent
+                          : Colors.black54,
                       fontSize: 12,
                     ),
                   ),

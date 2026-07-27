@@ -57,10 +57,12 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
       setState(() {
         _requests = allRequests.where((req) {
           final status = (req['status'] ?? '').toString().toLowerCase();
-          if (_selectedFilter == 'accepted')
+          if (_selectedFilter == 'accepted') {
             return status == 'accepted' || status == 'payment_pending';
-          if (_selectedFilter == 'rejected')
+          }
+          if (_selectedFilter == 'rejected') {
             return status == 'rejected' || status == 'payment_failed';
+          }
           return status == 'pending';
         }).toList();
         _isLoading = false;
@@ -284,7 +286,8 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
         .trim();
 
     final isSelfPay = plan['paymentType'] == 'self_pay';
-    final joinerPaid = paymentStatus.toString().toLowerCase() == 'paid' ||
+    final joinerPaid =
+        paymentStatus.toString().toLowerCase() == 'paid' ||
         paymentStatus.toString().toLowerCase() == 'refunded' ||
         isSelfPay;
     final hostPaid =
@@ -292,10 +295,22 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
         plan['hostPaymentStatus']?.toString().toLowerCase() == 'refunded';
 
     final String lowerStatus = status.toString().toLowerCase();
-    final bool isBookingConfirmed = (lowerStatus == 'accepted' || lowerStatus == 'payment_pending') && hostPaid && joinerPaid;
-    final bool isAwaitingHost = (lowerStatus == 'accepted' || lowerStatus == 'payment_pending') && !hostPaid && !joinerPaid;
-    final bool isAwaitingJoinerPayment = (lowerStatus == 'accepted' || lowerStatus == 'payment_pending') && hostPaid && !joinerPaid;
-    final bool isJoinerPaidAwaitingHost = (lowerStatus == 'accepted' || lowerStatus == 'payment_pending') && !hostPaid && joinerPaid;
+    final bool isBookingConfirmed =
+        (lowerStatus == 'accepted' || lowerStatus == 'payment_pending') &&
+        hostPaid &&
+        joinerPaid;
+    final bool isAwaitingHost =
+        (lowerStatus == 'accepted' || lowerStatus == 'payment_pending') &&
+        !hostPaid &&
+        !joinerPaid;
+    final bool isAwaitingJoinerPayment =
+        (lowerStatus == 'accepted' || lowerStatus == 'payment_pending') &&
+        hostPaid &&
+        !joinerPaid;
+    final bool isJoinerPaidAwaitingHost =
+        (lowerStatus == 'accepted' || lowerStatus == 'payment_pending') &&
+        !hostPaid &&
+        joinerPaid;
 
     final timerText = _getTimeRemaining(req['paymentTimeoutAt']);
 
@@ -525,11 +540,13 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => ChatScreen(user: {
-                                  ...host,
-                                  'contextType': 'party_plan',
-                                  'planId': plan['id']?.toString(),
-                                }),
+                                builder: (_) => ChatScreen(
+                                  user: {
+                                    ...host,
+                                    'contextType': 'party_plan',
+                                    'planId': plan['id']?.toString(),
+                                  },
+                                ),
                               ),
                             );
                           },
@@ -576,8 +593,13 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
     String label = status.toUpperCase();
 
     final bool isSelfPay = paymentType == 'self_pay';
-    final bool hostPaid = hostPaymentStatus?.toLowerCase() == 'paid' || hostPaymentStatus?.toLowerCase() == 'refunded';
-    final bool joinerPaid = paymentStatus.toLowerCase() == 'paid' || paymentStatus.toLowerCase() == 'refunded' || isSelfPay;
+    final bool hostPaid =
+        hostPaymentStatus?.toLowerCase() == 'paid' ||
+        hostPaymentStatus?.toLowerCase() == 'refunded';
+    final bool joinerPaid =
+        paymentStatus.toLowerCase() == 'paid' ||
+        paymentStatus.toLowerCase() == 'refunded' ||
+        isSelfPay;
 
     if (lowerStatus == 'pending') {
       bg = Colors.orange.withValues(alpha: 0.1);
@@ -587,6 +609,10 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
       text = Colors.red;
       label = lowerStatus == 'payment_failed' ? 'FAILED' : 'REJECTED';
     } else if (lowerStatus == 'accepted' || lowerStatus == 'payment_pending') {
+      final joinerPaid = paymentStatus == 'paid' || paymentStatus == 'refunded';
+      final hostPaid =
+          hostPaymentStatus == 'paid' || hostPaymentStatus == 'refunded';
+
       if (joinerPaid && hostPaid) {
         bg = Colors.green.withValues(alpha: 0.1);
         text = Colors.green;

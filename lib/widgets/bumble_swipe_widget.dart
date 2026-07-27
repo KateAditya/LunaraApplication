@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import '../core/theme.dart';
 
 class BumbleSwipeController {
   void Function(bool liked)? _swipeCallback;
-  void Function(bool likedFromRight, Widget backtrackWidget)? _backtrackCallback;
+  void Function(bool likedFromRight, Widget backtrackWidget)?
+  _backtrackCallback;
 
   void swipe(bool liked) {
     _swipeCallback?.call(liked);
@@ -36,7 +36,8 @@ class BumbleSwipeWidget extends StatefulWidget {
   State<BumbleSwipeWidget> createState() => _BumbleSwipeWidgetState();
 }
 
-class _BumbleSwipeWidgetState extends State<BumbleSwipeWidget> with TickerProviderStateMixin {
+class _BumbleSwipeWidgetState extends State<BumbleSwipeWidget>
+    with TickerProviderStateMixin {
   late AnimationController _swipeAnimationController;
   late AnimationController _backtrackAnimationController;
 
@@ -77,7 +78,9 @@ class _BumbleSwipeWidgetState extends State<BumbleSwipeWidget> with TickerProvid
       if (_isBacktracking) {
         setState(() {
           final double screenWidth = MediaQuery.of(context).size.width;
-          final double startOffset = _backtrackX > 0 ? screenWidth : -screenWidth;
+          final double startOffset = _backtrackX > 0
+              ? screenWidth
+              : -screenWidth;
           _backtrackX = startOffset * _backtrackAnimation.value;
         });
       }
@@ -148,9 +151,13 @@ class _BumbleSwipeWidgetState extends State<BumbleSwipeWidget> with TickerProvid
     final double startY = _dragY;
     final double startAngle = _dragAngle;
 
-    final Animation<double> snapAnim = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(parent: _swipeAnimationController, curve: Curves.easeOutCubic),
-    );
+    final Animation<double> snapAnim = Tween<double>(begin: 1.0, end: 0.0)
+        .animate(
+          CurvedAnimation(
+            parent: _swipeAnimationController,
+            curve: Curves.easeOutCubic,
+          ),
+        );
 
     void listener() {
       setState(() {
@@ -177,9 +184,13 @@ class _BumbleSwipeWidgetState extends State<BumbleSwipeWidget> with TickerProvid
     final double targetX = liked ? width * 1.3 : -width * 1.3;
     final double targetAngle = liked ? 0.4 : -0.4;
 
-    final Animation<double> swipeAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _swipeAnimationController, curve: Curves.easeOut),
-    );
+    final Animation<double> swipeAnim = Tween<double>(begin: 0.0, end: 1.0)
+        .animate(
+          CurvedAnimation(
+            parent: _swipeAnimationController,
+            curve: Curves.easeOut,
+          ),
+        );
 
     void listener() {
       setState(() {
@@ -239,7 +250,9 @@ class _BumbleSwipeWidgetState extends State<BumbleSwipeWidget> with TickerProvid
   @override
   Widget build(BuildContext context) {
     final double width = MediaQuery.of(context).size.width;
-    final double opacity = width > 0 ? (_dragX.abs() / (width * 0.25)).clamp(0.0, 1.0) : 0.0;
+    final double opacity = width > 0
+        ? (_dragX.abs() / (width * 0.25)).clamp(0.0, 1.0)
+        : 0.0;
 
     return Stack(
       fit: StackFit.expand,
@@ -270,9 +283,7 @@ class _BumbleSwipeWidgetState extends State<BumbleSwipeWidget> with TickerProvid
                 alignment: Alignment.center,
                 child: Stack(
                   fit: StackFit.expand,
-                  children: [
-                    widget.currentWidget,
-                  ],
+                  children: [widget.currentWidget],
                 ),
               ),
             ),
@@ -280,10 +291,7 @@ class _BumbleSwipeWidgetState extends State<BumbleSwipeWidget> with TickerProvid
         else
           // Render a static copy of the current card underneath during backtrack
           Positioned.fill(
-            child: Opacity(
-              opacity: 0.6,
-              child: widget.currentWidget,
-            ),
+            child: Opacity(opacity: 0.6, child: widget.currentWidget),
           ),
 
         // 3. Backtracking card (slides back on top from off-screen)

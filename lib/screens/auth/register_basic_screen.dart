@@ -7,7 +7,6 @@ import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../services/onboarding_service.dart';
 import 'otp_screen.dart';
-import 'terms_screen.dart';
 
 /// Formats a raw 12-digit string as XXXX XXXX XXXX
 class _AadhaarFormatter extends TextInputFormatter {
@@ -70,10 +69,8 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
             _selectedCity = _indianCities.first;
           }
         });
-      } else {
-      }
-    } catch (_) {
-    }
+      } else {}
+    } catch (_) {}
   }
 
   void _showCitySelector() {
@@ -261,9 +258,12 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                 icon: Icons.badge_outlined,
                 keyboardType: TextInputType.number,
                 maxLength: 14, // 12 digits + 2 spaces
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly, _AadhaarFormatter()],
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  _AadhaarFormatter(),
+                ],
               ),
-              if (_aadhaarError != null) ...[  
+              if (_aadhaarError != null) ...[
                 const SizedBox(height: 6),
                 Padding(
                   padding: const EdgeInsets.only(left: 16),
@@ -296,21 +296,27 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                         if (firstName.isEmpty) {
                           errorMessage = 'Please enter your first name';
                         } else if (firstName.length < 2) {
-                          errorMessage = 'First name must be at least 2 characters';
+                          errorMessage =
+                              'First name must be at least 2 characters';
                         } else if (!nameRegex.hasMatch(firstName)) {
-                          errorMessage = 'First name can only contain letters (no symbols or numbers)';
+                          errorMessage =
+                              'First name can only contain letters (no symbols or numbers)';
                         } else if (lastName.isEmpty) {
                           errorMessage = 'Please enter your last name';
                         } else if (!nameRegex.hasMatch(lastName)) {
-                          errorMessage = 'Last name can only contain letters (no symbols or numbers)';
+                          errorMessage =
+                              'Last name can only contain letters (no symbols or numbers)';
                         } else if (email.isEmpty) {
                           errorMessage = 'Please enter your email address';
-                        } else if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
+                        } else if (!RegExp(
+                          r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
+                        ).hasMatch(email)) {
                           errorMessage = 'Please enter a valid email address';
                         } else if (phone.isEmpty) {
                           errorMessage = 'Please enter your phone number';
                         } else if (!RegExp(r'^[6-9]\d{9}$').hasMatch(phone)) {
-                          errorMessage = 'Please enter a valid 10-digit Indian phone number (starting with 6–9)';
+                          errorMessage =
+                              'Please enter a valid 10-digit Indian phone number (starting with 6–9)';
                         } else if (_selectedDob == null) {
                           errorMessage = 'Please select your date of birth';
                         } else if (_selectedGender.isEmpty) {
@@ -318,14 +324,27 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                         } else if (_selectedCity.isEmpty) {
                           errorMessage = 'Please select your city';
                         } else if (!_acceptedTerms) {
-                          errorMessage = 'Please read and accept the Terms and Conditions';
+                          errorMessage =
+                              'Please read and accept the Terms and Conditions';
                         } else {
                           // Validate Aadhaar if entered
-                          final aadhaarRaw = _aadhaarController.text.replaceAll(' ', '');
+                          final aadhaarRaw = _aadhaarController.text.replaceAll(
+                            ' ',
+                            '',
+                          );
                           if (aadhaarRaw.isNotEmpty) {
-                            if (aadhaarRaw.length != 12 || !RegExp(r'^[2-9][0-9]{11}$').hasMatch(aadhaarRaw)) {
-                              setState(() => _aadhaarError = 'Enter a valid 12-digit Aadhaar number (starting 2–9)');
-                              TopErrorBanner.show(context, 'Please enter a valid Aadhaar number');
+                            if (aadhaarRaw.length != 12 ||
+                                !RegExp(
+                                  r'^[2-9][0-9]{11}$',
+                                ).hasMatch(aadhaarRaw)) {
+                              setState(
+                                () => _aadhaarError =
+                                    'Enter a valid 12-digit Aadhaar number (starting 2–9)',
+                              );
+                              TopErrorBanner.show(
+                                context,
+                                'Please enter a valid Aadhaar number',
+                              );
                               return;
                             } else {
                               setState(() => _aadhaarError = null);
@@ -335,11 +354,14 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                           final birthDate = _selectedDob!;
                           final today = DateTime.now();
                           int age = today.year - birthDate.year;
-                          if (today.month < birthDate.month || (today.month == birthDate.month && today.day < birthDate.day)) {
+                          if (today.month < birthDate.month ||
+                              (today.month == birthDate.month &&
+                                  today.day < birthDate.day)) {
                             age--;
                           }
                           if (age < 18) {
-                            errorMessage = 'You must be at least 18 years old to register';
+                            errorMessage =
+                                'You must be at least 18 years old to register';
                           }
                         }
 
@@ -379,7 +401,9 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                           'email': _emailController.text.trim(),
                           'phone': _phoneController.text.trim(),
                           'dob': _selectedDob?.toIso8601String(),
-                          'aadhaarNo': _aadhaarController.text.replaceAll(' ', '').trim(),
+                          'aadhaarNo': _aadhaarController.text
+                              .replaceAll(' ', '')
+                              .trim(),
                           'profile': {
                             'displayName':
                                 '${_firstNameController.text.trim()} ${_lastNameController.text.trim()}',
@@ -389,7 +413,10 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                           'preferences': {'minAgePreference': age},
                         };
 
-                        await OnboardingService.saveProgress('otp_verification', data);
+                        await OnboardingService.saveProgress(
+                          'otp_verification',
+                          data,
+                        );
 
                         if (!mounted) return;
 
@@ -460,14 +487,19 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                 border: Border.all(
                   color: _acceptedTerms
                       ? LunaraTheme.primaryRich
-                      : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+                      : Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.3),
                   width: 2,
                 ),
               ),
               child: _acceptedTerms
                   ? const Icon(Icons.check, color: Colors.white, size: 16)
-                  : const Icon(Icons.article_outlined, size: 14,
-                      color: Colors.transparent),
+                  : const Icon(
+                      Icons.article_outlined,
+                      size: 14,
+                      color: Colors.transparent,
+                    ),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -491,20 +523,16 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                       'Tap to read and accept our Privacy Policy',
                       style: TextStyle(
                         fontSize: 11,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.54),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.54),
                       ),
                     ),
                 ],
               ),
             ),
             if (!_acceptedTerms)
-              Icon(
-                Icons.chevron_right_rounded,
-                color: LunaraTheme.primaryRich,
-              ),
+              Icon(Icons.chevron_right_rounded, color: LunaraTheme.primaryRich),
           ],
         ),
       ),
@@ -747,7 +775,8 @@ class _TermsScrollBottomSheet extends StatefulWidget {
   const _TermsScrollBottomSheet({required this.onAccepted});
 
   @override
-  State<_TermsScrollBottomSheet> createState() => _TermsScrollBottomSheetState();
+  State<_TermsScrollBottomSheet> createState() =>
+      _TermsScrollBottomSheetState();
 }
 
 class _TermsScrollBottomSheetState extends State<_TermsScrollBottomSheet> {
@@ -767,7 +796,9 @@ class _TermsScrollBottomSheetState extends State<_TermsScrollBottomSheet> {
     final doc = await ApiService.fetchLegalDocumentByType('terms_of_service');
     if (mounted) {
       setState(() {
-        _termsContent = doc?.content ?? 'Failed to load Terms and Conditions. Please try again later.';
+        _termsContent =
+            doc?.content ??
+            'Failed to load Terms and Conditions. Please try again later.';
         _isLoading = false;
       });
       WidgetsBinding.instance.addPostFrameCallback((_) => _onScroll());
@@ -782,7 +813,8 @@ class _TermsScrollBottomSheetState extends State<_TermsScrollBottomSheet> {
       return;
     }
     final pos = _scrollController.position;
-    final atBottom = pos.pixels >= pos.maxScrollExtent - 40 || pos.maxScrollExtent <= 0;
+    final atBottom =
+        pos.pixels >= pos.maxScrollExtent - 40 || pos.maxScrollExtent <= 0;
     if (atBottom && !_canAccept) setState(() => _canAccept = true);
   }
 
@@ -833,8 +865,10 @@ class _TermsScrollBottomSheetState extends State<_TermsScrollBottomSheet> {
                     const SizedBox(height: 16),
                     Row(
                       children: [
-                        const Icon(Icons.article_outlined,
-                            color: LunaraTheme.primaryRich),
+                        const Icon(
+                          Icons.article_outlined,
+                          color: LunaraTheme.primaryRich,
+                        ),
                         const SizedBox(width: 10),
                         Text(
                           'Terms & Conditions',
@@ -850,10 +884,9 @@ class _TermsScrollBottomSheetState extends State<_TermsScrollBottomSheet> {
                       'Scroll to the bottom to accept',
                       style: TextStyle(
                         fontSize: 12,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.5),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.5),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -877,7 +910,9 @@ class _TermsScrollBottomSheetState extends State<_TermsScrollBottomSheet> {
                           style: TextStyle(
                             fontSize: 13.5,
                             height: 1.6,
-                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.82),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.82),
                           ),
                         ),
                       ),
@@ -894,55 +929,58 @@ class _TermsScrollBottomSheetState extends State<_TermsScrollBottomSheet> {
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.keyboard_arrow_down_rounded,
-                                  color: LunaraTheme.primaryRich, size: 18),
+                              Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                                color: LunaraTheme.primaryRich,
+                                size: 18,
+                              ),
                               const SizedBox(width: 4),
                               Text(
                                 'Scroll down to enable acceptance',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: LunaraTheme.primaryRich,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        AnimatedOpacity(
-                          opacity: _canAccept ? 1.0 : 0.4,
-                          duration: const Duration(milliseconds: 300),
-                          child: SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: _canAccept ? widget.onAccepted : null,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: LunaraTheme.primaryRich,
-                                disabledBackgroundColor:
-                                    LunaraTheme.primaryRich.withValues(alpha: 0.4),
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: LunaraTheme.primaryRich,
                                 ),
                               ),
-                              child: const Text(
-                                'I AGREE & ACCEPT',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                  letterSpacing: 1,
-                                ),
+                            ],
+                          ),
+                        ),
+                      AnimatedOpacity(
+                        opacity: _canAccept ? 1.0 : 0.4,
+                        duration: const Duration(milliseconds: 300),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: _canAccept ? widget.onAccepted : null,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: LunaraTheme.primaryRich,
+                              disabledBackgroundColor: LunaraTheme.primaryRich
+                                  .withValues(alpha: 0.4),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            child: const Text(
+                              'I AGREE & ACCEPT',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                letterSpacing: 1,
                               ),
                             ),
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
-          );
-        },
-      );
-    }
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
+}

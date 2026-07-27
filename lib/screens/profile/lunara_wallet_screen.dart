@@ -48,9 +48,12 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
           _incompleteEvents = data['incompleteEvents'] ?? [];
           // All transactions (plan payments) minus subscription ones
           final allTxns = (data['transactions'] as List? ?? []);
-          _subscriptionTransactions = data['subscriptionTransactions'] as List? ?? [];
+          _subscriptionTransactions =
+              data['subscriptionTransactions'] as List? ?? [];
           // Filter out subscription from main list (they appear in their own tab)
-          _transactions = allTxns.where((t) => t['type'] != 'subscription').toList();
+          _transactions = allTxns
+              .where((t) => t['type'] != 'subscription')
+              .toList();
           _summary = data['summary'] ?? _summary;
           _isLoading = false;
         });
@@ -58,7 +61,9 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Failed to load wallet data. Please check connection.'),
+            content: Text(
+              'Failed to load wallet data. Please check connection.',
+            ),
             backgroundColor: Colors.redAccent,
           ),
         );
@@ -80,7 +85,6 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -128,7 +132,10 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black),
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.black,
+            ),
             onPressed: () => Navigator.pop(context),
           ),
           const Expanded(
@@ -155,8 +162,10 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
   }
 
   Widget _buildWalletCard() {
-    final double totalSpent = double.tryParse(_summary['totalSpent'].toString()) ?? 0.0;
-    final double totalRefunded = double.tryParse(_summary['totalRefunded'].toString()) ?? 0.0;
+    final double totalSpent =
+        double.tryParse(_summary['totalSpent'].toString()) ?? 0.0;
+    final double totalRefunded =
+        double.tryParse(_summary['totalRefunded'].toString()) ?? 0.0;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 24),
@@ -165,15 +174,12 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF2A1B3D),
-            Color(0xFF1E122A),
-          ],
+          colors: [Color(0xFF2A1B3D), Color(0xFF1E122A)],
         ),
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF2A1B3D).withOpacity(0.35),
+            color: const Color(0xFF2A1B3D).withValues(alpha: 0.35),
             blurRadius: 25,
             offset: const Offset(0, 12),
           ),
@@ -191,7 +197,7 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
                   Text(
                     'TOTAL SPENT',
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.5),
+                      color: Colors.white.withValues(alpha: 0.5),
                       fontSize: 10,
                       fontWeight: FontWeight.w900,
                       letterSpacing: 2,
@@ -212,7 +218,7 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.08),
+                  color: Colors.white.withValues(alpha: 0.08),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
@@ -227,11 +233,15 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _walletStatItem('TOTAL REFUNDED', '₹${totalRefunded.toStringAsFixed(2)}', const Color(0xFF10B981)),
+              _walletStatItem(
+                'TOTAL REFUNDED',
+                '₹${totalRefunded.toStringAsFixed(2)}',
+                const Color(0xFF10B981),
+              ),
               Container(
                 height: 30,
                 width: 1,
-                color: Colors.white.withOpacity(0.1),
+                color: Colors.white.withValues(alpha: 0.1),
               ),
               _walletStatItem(
                 'INCOMPLETE EVENTS',
@@ -241,7 +251,7 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
               Container(
                 height: 30,
                 width: 1,
-                color: Colors.white.withOpacity(0.1),
+                color: Colors.white.withValues(alpha: 0.1),
               ),
               _walletStatItem(
                 'VIP SPENDING',
@@ -266,7 +276,7 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
             child: Text(
               label,
               style: TextStyle(
-                color: Colors.white.withOpacity(0.4),
+                color: Colors.white.withValues(alpha: 0.4),
                 fontSize: 8,
                 fontWeight: FontWeight.w900,
                 letterSpacing: 1.5,
@@ -305,7 +315,7 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.06),
+              color: Colors.black.withValues(alpha: 0.06),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -330,12 +340,19 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
               children: [
                 const Text(
                   'VIP',
-                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.0),
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.0,
+                  ),
                 ),
                 if (_subscriptionTransactions.isNotEmpty) ...[
                   const SizedBox(width: 4),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 1,
+                    ),
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
                         colors: [Color(0xFFE100FF), Color(0xFF7F00FF)],
@@ -383,10 +400,12 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
     final venue = event['venue'] ?? {};
     final String venueName = venue['name'] ?? 'Premium Club';
     final String venueArea = venue['area'] ?? venue['city'] ?? 'City Center';
-    final double deposit = double.tryParse(event['depositAmount']?.toString() ?? '99.00') ?? 99.00;
+    final double deposit =
+        double.tryParse(event['depositAmount']?.toString() ?? '99.00') ?? 99.00;
     final String role = (event['role'] ?? 'host').toString().toUpperCase();
     final String waitingFor = event['waitingFor'] ?? 'Participant Payment';
-    final String rawCoverImage = venue['coverImage'] ?? 'https://picsum.photos/seed/lunara/600/400';
+    final String rawCoverImage =
+        venue['coverImage'] ?? 'https://picsum.photos/seed/lunara/600/400';
     final String coverImage = _normalizeUrl(rawCoverImage);
 
     final isHost = role == 'HOST';
@@ -405,10 +424,10 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.grey.withOpacity(0.12)),
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.12)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
+            color: Colors.black.withValues(alpha: 0.02),
             blurRadius: 12,
             offset: const Offset(0, 6),
           ),
@@ -435,7 +454,7 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
                     end: Alignment.bottomCenter,
                     colors: [
                       Colors.transparent,
-                      Colors.black.withOpacity(0.85),
+                      Colors.black.withValues(alpha: 0.85),
                     ],
                   ),
                 ),
@@ -475,9 +494,14 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
                       decoration: BoxDecoration(
-                        color: isHost ? LunaraTheme.electricViolet : Colors.teal,
+                        color: isHost
+                            ? LunaraTheme.electricViolet
+                            : Colors.teal,
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
@@ -503,7 +527,11 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.calendar_today_rounded, size: 14, color: Colors.grey),
+                      const Icon(
+                        Icons.calendar_today_rounded,
+                        size: 14,
+                        color: Colors.grey,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -545,9 +573,12 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
                         ],
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
                         decoration: BoxDecoration(
-                          color: Colors.amber.withOpacity(0.12),
+                          color: Colors.amber.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Row(
@@ -579,7 +610,7 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
                   const SizedBox(height: 14),
                   Divider(color: Colors.grey[100]),
                   const SizedBox(height: 6),
-                  
+
                   // Interactive info about other party
                   _buildIncompletePartyDetail(event),
                 ],
@@ -600,7 +631,11 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
       if (isHost) {
         return Row(
           children: [
-            const Icon(Icons.people_outline_rounded, size: 14, color: Colors.grey),
+            const Icon(
+              Icons.people_outline_rounded,
+              size: 14,
+              color: Colors.grey,
+            ),
             const SizedBox(width: 8),
             const Expanded(
               child: Text(
@@ -616,7 +651,9 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
         );
       } else {
         final host = event['host'];
-        final String hostName = host != null ? (host['name'] ?? 'Host') : 'Host';
+        final String hostName = host != null
+            ? (host['name'] ?? 'Host')
+            : 'Host';
         final String? avatar = host?['profileImageUrl'];
         return Row(
           children: [
@@ -680,7 +717,11 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
         final int count = event['pendingRequestCount'] ?? 0;
         return Row(
           children: [
-            const Icon(Icons.people_outline_rounded, size: 14, color: Colors.grey),
+            const Icon(
+              Icons.people_outline_rounded,
+              size: 14,
+              color: Colors.grey,
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -749,8 +790,11 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
   }
 
   Widget _buildTransactionItem(Map<String, dynamic> txn) {
-    final double amount = double.tryParse(txn['amount']?.toString() ?? '0.0') ?? 0.0;
-    final String status = (txn['status'] ?? 'successful').toString().toLowerCase();
+    final double amount =
+        double.tryParse(txn['amount']?.toString() ?? '0.0') ?? 0.0;
+    final String status = (txn['status'] ?? 'successful')
+        .toString()
+        .toLowerCase();
     final String type = txn['type'] ?? 'payment';
     final contextData = txn['context'] ?? {};
     final String venueName = contextData['venueName'] ?? 'Lunara Booking';
@@ -771,27 +815,27 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
 
     if (type == 'party_plan_deposit') {
       icon = Icons.security_rounded;
-      iconBg = Colors.amber.withOpacity(0.1);
+      iconBg = Colors.amber.withValues(alpha: 0.1);
       iconColor = Colors.amber[800]!;
       displayTitle = contextData['label'] ?? 'Safety Deposit';
     } else if (type == 'strangers_meet_deposit') {
       icon = Icons.security_rounded;
-      iconBg = Colors.purple.withOpacity(0.1);
+      iconBg = Colors.purple.withValues(alpha: 0.1);
       iconColor = Colors.purple[800]!;
       displayTitle = contextData['label'] ?? 'Host Safety Deposit';
     } else if (type == 'strangers_meet_join') {
       icon = Icons.group_add_rounded;
-      iconBg = Colors.teal.withOpacity(0.1);
+      iconBg = Colors.teal.withValues(alpha: 0.1);
       iconColor = Colors.teal[800]!;
       displayTitle = contextData['label'] ?? 'Joiner Fee';
     } else if (type == 'subscription') {
       icon = Icons.workspace_premium_rounded;
-      iconBg = const Color(0xFFE100FF).withOpacity(0.1);
+      iconBg = const Color(0xFFE100FF).withValues(alpha: 0.1);
       iconColor = const Color(0xFFE100FF);
       displayTitle = contextData['label'] ?? 'VIP Subscription';
     } else {
       icon = Icons.local_activity_rounded;
-      iconBg = LunaraTheme.electricViolet.withOpacity(0.1);
+      iconBg = LunaraTheme.electricViolet.withValues(alpha: 0.1);
       iconColor = LunaraTheme.electricViolet;
       displayTitle = 'Table Booking';
     }
@@ -811,17 +855,14 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Colors.grey.withOpacity(0.1)),
+        side: BorderSide(color: Colors.grey.withValues(alpha: 0.1)),
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         onTap: () => _showTransactionDetailsBottomSheet(txn),
         leading: Container(
           padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: iconBg,
-            shape: BoxShape.circle,
-          ),
+          decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
           child: Icon(icon, color: iconColor, size: 20),
         ),
         title: Text(
@@ -874,7 +915,7 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color: statusColor.withOpacity(0.1),
+                color: statusColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Text(
@@ -894,20 +935,28 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
   }
 
   void _showTransactionDetailsBottomSheet(Map<String, dynamic> txn) {
-    final double amount = double.tryParse(txn['amount']?.toString() ?? '0.0') ?? 0.0;
-    final double refundAmount = double.tryParse(txn['refundAmount']?.toString() ?? '0.0') ?? 0.0;
-    final String status = (txn['status'] ?? 'successful').toString().toUpperCase();
-    final String method = (txn['paymentMethod'] ?? 'razorpay').toString().toUpperCase();
+    final double amount =
+        double.tryParse(txn['amount']?.toString() ?? '0.0') ?? 0.0;
+    final double refundAmount =
+        double.tryParse(txn['refundAmount']?.toString() ?? '0.0') ?? 0.0;
+    final String status = (txn['status'] ?? 'successful')
+        .toString()
+        .toUpperCase();
+    final String method = (txn['paymentMethod'] ?? 'razorpay')
+        .toString()
+        .toUpperCase();
     final String txnId = txn['txnId'] ?? 'N/A';
     final String type = txn['type'] ?? 'booking';
     final contextData = txn['context'] ?? {};
-    
+
     // Customize text fields based on transaction type
     final isSubscription = type == 'subscription';
-    final String venueName = isSubscription 
+    final String venueName = isSubscription
         ? (contextData['planName'] ?? 'VIP Subscription')
         : (contextData['venueName'] ?? 'Lunara Partner Venue');
-    final String venueCity = isSubscription ? '' : (contextData['venueCity'] ?? '');
+    final String venueCity = isSubscription
+        ? ''
+        : (contextData['venueCity'] ?? '');
 
     String dateStr = 'N/A';
     if (txn['createdAt'] != null) {
@@ -974,31 +1023,38 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
                         color: status == 'SUCCESSFUL' || status == 'SUCCESS'
                             ? const Color(0xFF10B981)
                             : status == 'REFUNDED'
-                                ? Colors.blueAccent
-                                : Colors.redAccent,
+                            ? Colors.blueAccent
+                            : Colors.redAccent,
                       ),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 32),
-              _detailRow(isSubscription ? 'PACKAGE / ITEM' : 'VENUE', venueName),
+              _detailRow(
+                isSubscription ? 'PACKAGE / ITEM' : 'VENUE',
+                venueName,
+              ),
               if (venueCity.isNotEmpty) _detailRow('LOCATION', venueCity),
               _detailRow('TRANSACTION ID', txnId),
               _detailRow('DATE & TIME', dateStr),
               _detailRow('PAYMENT METHOD', method),
               _detailRow(
-                'TYPE', 
-                isSubscription 
+                'TYPE',
+                isSubscription
                     ? (contextData['label'] ?? 'VIP Subscription')
-                    : (type == 'party_plan_deposit' || type == 'strangers_meet_deposit' 
-                        ? 'Safety Deposit' 
-                        : type == 'strangers_meet_join' 
-                            ? 'Joiner Payment' 
-                            : 'Booking Payment'),
+                    : (type == 'party_plan_deposit' ||
+                              type == 'strangers_meet_deposit'
+                          ? 'Safety Deposit'
+                          : type == 'strangers_meet_join'
+                          ? 'Joiner Payment'
+                          : 'Booking Payment'),
               ),
               if (refundAmount > 0)
-                _detailRow('REFUND AMOUNT', '₹${refundAmount.toStringAsFixed(2)}'),
+                _detailRow(
+                  'REFUND AMOUNT',
+                  '₹${refundAmount.toStringAsFixed(2)}',
+                ),
               const SizedBox(height: 20),
             ],
           ),
@@ -1055,12 +1111,17 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
       itemCount: _subscriptionTransactions.length,
       itemBuilder: (context, index) {
         final txn = _subscriptionTransactions[index];
-        final double amount = double.tryParse(txn['amount']?.toString() ?? '0.0') ?? 0.0;
-        final String status = (txn['status'] ?? 'success').toString().toLowerCase();
+        final double amount =
+            double.tryParse(txn['amount']?.toString() ?? '0.0') ?? 0.0;
+        final String status = (txn['status'] ?? 'success')
+            .toString()
+            .toLowerCase();
         final contextData = txn['context'] ?? {};
         final String planName = contextData['planName'] ?? 'VIP Package';
         final String label = contextData['label'] ?? 'Subscription';
-        final String planTier = (contextData['planTier'] ?? 'CORE').toString().toUpperCase();
+        final String planTier = (contextData['planTier'] ?? 'CORE')
+            .toString()
+            .toUpperCase();
 
         // Color configurations based on Tier for a beautiful VIP feel
         Color tierColor = const Color(0xFF7F00FF);
@@ -1101,15 +1162,15 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: isElite || isPro
-                  ? tierColor.withOpacity(0.3)
-                  : Colors.grey.withOpacity(0.12),
+                  ? tierColor.withValues(alpha: 0.3)
+                  : Colors.grey.withValues(alpha: 0.12),
               width: isElite || isPro ? 1.5 : 1.0,
             ),
             boxShadow: [
               BoxShadow(
-                color: isElite || isPro 
-                    ? tierColor.withOpacity(0.06) 
-                    : Colors.black.withOpacity(0.01),
+                color: isElite || isPro
+                    ? tierColor.withValues(alpha: 0.06)
+                    : Colors.black.withValues(alpha: 0.01),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),
@@ -1134,7 +1195,9 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      isElite ? Icons.star_rounded : Icons.workspace_premium_rounded,
+                      isElite
+                          ? Icons.star_rounded
+                          : Icons.workspace_premium_rounded,
                       color: Colors.white,
                       size: 22,
                     ),
@@ -1157,9 +1220,12 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
                             ),
                             const SizedBox(width: 6),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 5,
+                                vertical: 1.5,
+                              ),
                               decoration: BoxDecoration(
-                                color: tierColor.withOpacity(0.12),
+                                color: tierColor.withValues(alpha: 0.12),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
@@ -1208,9 +1274,12 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
                       ),
                       const SizedBox(height: 4),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2.5,
+                        ),
                         decoration: BoxDecoration(
-                          color: statusColor.withOpacity(0.12),
+                          color: statusColor.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(

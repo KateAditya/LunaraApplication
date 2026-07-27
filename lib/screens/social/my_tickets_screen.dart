@@ -13,10 +13,17 @@ class MyTicketsScreen extends StatefulWidget {
   State<MyTicketsScreen> createState() => _MyTicketsScreenState();
 }
 
-class _MyTicketsScreenState extends State<MyTicketsScreen> with SingleTickerProviderStateMixin {
+class _MyTicketsScreenState extends State<MyTicketsScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final List<String> _tabs = ['Upcoming', 'Active', 'Used', 'Expired', 'Cancelled'];
-  
+  final List<String> _tabs = [
+    'Upcoming',
+    'Active',
+    'Used',
+    'Expired',
+    'Cancelled',
+  ];
+
   bool _isLoading = true;
   List<Map<String, dynamic>> _tickets = [];
 
@@ -55,7 +62,9 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> with SingleTickerProv
 
   Future<void> _handleDownloadPdf(String ticketId) async {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Generating secure ticket download link...')),
+      const SnackBar(
+        content: Text('Generating secure ticket download link...'),
+      ),
     );
     final res = await ApiService.getTicketDownloadUrl(ticketId);
     if (res['success'] == true && res['downloadUrl'] != null) {
@@ -74,7 +83,9 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> with SingleTickerProv
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(res['message'] ?? 'Ticket expired or unavailable.')),
+          SnackBar(
+            content: Text(res['message'] ?? 'Ticket expired or unavailable.'),
+          ),
         );
       }
     }
@@ -87,20 +98,27 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> with SingleTickerProv
       await Clipboard.setData(ClipboardData(text: shareText));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Ticket share link copied to clipboard! Ready to share on WhatsApp.')),
+          const SnackBar(
+            content: Text(
+              'Ticket share link copied to clipboard! Ready to share on WhatsApp.',
+            ),
+          ),
         );
       }
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(res['message'] ?? 'Failed to generate share link')),
+          SnackBar(
+            content: Text(res['message'] ?? 'Failed to generate share link'),
+          ),
         );
       }
     }
   }
 
   void _showTicketDetailsModal(Map<String, dynamic> ticket) {
-    final isExpired = ticket['isExpired'] == true || ticket['status'] == 'EXPIRED';
+    final isExpired =
+        ticket['isExpired'] == true || ticket['status'] == 'EXPIRED';
     final ticketId = ticket['ticketId'] ?? ticket['id'] ?? 'LUN-TICKET';
 
     showModalBottomSheet(
@@ -157,7 +175,10 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> with SingleTickerProv
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
-                                (ticket['bookingType'] ?? 'DIGITAL TICKET').toString().toUpperCase().replaceAll('_', ' '),
+                                (ticket['bookingType'] ?? 'DIGITAL TICKET')
+                                    .toString()
+                                    .toUpperCase()
+                                    .replaceAll('_', ' '),
                                 style: TextStyle(
                                   color: LunaraTheme.electricViolet,
                                   fontWeight: FontWeight.w900,
@@ -166,18 +187,29 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> with SingleTickerProv
                                 ),
                               ),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: isExpired ? Colors.red.withOpacity(0.2) : Colors.green.withOpacity(0.2),
+                                  color: isExpired
+                                      ? Colors.red.withValues(alpha: 0.2)
+                                      : Colors.green.withValues(alpha: 0.2),
                                   borderRadius: BorderRadius.circular(8),
                                   border: Border.all(
-                                    color: isExpired ? Colors.red : Colors.green,
+                                    color: isExpired
+                                        ? Colors.red
+                                        : Colors.green,
                                   ),
                                 ),
                                 child: Text(
-                                  (ticket['status'] ?? 'ACTIVE').toString().toUpperCase(),
+                                  (ticket['status'] ?? 'ACTIVE')
+                                      .toString()
+                                      .toUpperCase(),
                                   style: TextStyle(
-                                    color: isExpired ? Colors.red : Colors.green,
+                                    color: isExpired
+                                        ? Colors.red
+                                        : Colors.green,
                                     fontWeight: FontWeight.bold,
                                     fontSize: 11,
                                   ),
@@ -197,16 +229,27 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> with SingleTickerProv
                           const SizedBox(height: 4),
                           Text(
                             ticket['venueAddress'] ?? '',
-                            style: const TextStyle(color: Colors.white70, fontSize: 13),
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                            ),
                           ),
                           const SizedBox(height: 16),
                           Row(
                             children: [
-                              const Icon(Icons.calendar_today_rounded, size: 16, color: Colors.white70),
+                              const Icon(
+                                Icons.calendar_today_rounded,
+                                size: 16,
+                                color: Colors.white70,
+                              ),
                               const SizedBox(width: 6),
                               Text(
                                 _formatDate(ticket['eventStartAt']),
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
                               ),
                             ],
                           ),
@@ -221,23 +264,36 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> with SingleTickerProv
                             Container(
                               padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
-                                color: Colors.red.withOpacity(0.12),
+                                color: Colors.red.withValues(alpha: 0.12),
                                 borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: Colors.red.withOpacity(0.3)),
+                                border: Border.all(
+                                  color: Colors.red.withValues(alpha: 0.3),
+                                ),
                               ),
                               child: const Column(
                                 children: [
-                                  Icon(Icons.info_outline_rounded, color: Colors.redAccent, size: 32),
+                                  Icon(
+                                    Icons.info_outline_rounded,
+                                    color: Colors.redAccent,
+                                    size: 32,
+                                  ),
                                   SizedBox(height: 8),
                                   Text(
                                     'This ticket has expired',
-                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 15,
+                                    ),
                                   ),
                                   SizedBox(height: 4),
                                   Text(
                                     'The event date has passed. This ticket is retained for your booking history records.',
                                     textAlign: TextAlign.center,
-                                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                                    style: TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 12,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -251,24 +307,37 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> with SingleTickerProv
                                 borderRadius: BorderRadius.circular(16),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: LunaraTheme.electricViolet.withOpacity(0.3),
+                                    color: LunaraTheme.electricViolet
+                                        .withValues(alpha: 0.3),
                                     blurRadius: 15,
                                   ),
                                 ],
                               ),
                               child: Center(
-                                child: Icon(Icons.qr_code_2_rounded, size: 140, color: Colors.black),
+                                child: Icon(
+                                  Icons.qr_code_2_rounded,
+                                  size: 140,
+                                  color: Colors.black,
+                                ),
                               ),
                             ),
                             const SizedBox(height: 12),
                             Text(
                               'Ticket ID: $ticketId',
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 1.0),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                letterSpacing: 1.0,
+                              ),
                             ),
                             const SizedBox(height: 4),
                             const Text(
                               'Present QR code at venue entrance for gate verification',
-                              style: TextStyle(color: Colors.white54, fontSize: 11),
+                              style: TextStyle(
+                                color: Colors.white54,
+                                fontSize: 11,
+                              ),
                             ),
                           ],
                           const SizedBox(height: 20),
@@ -277,28 +346,47 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> with SingleTickerProv
                               children: [
                                 Expanded(
                                   child: OutlinedButton.icon(
-                                    onPressed: () => _handleShareTicket(ticketId),
-                                    icon: const Icon(Icons.share_rounded, size: 18),
+                                    onPressed: () =>
+                                        _handleShareTicket(ticketId),
+                                    icon: const Icon(
+                                      Icons.share_rounded,
+                                      size: 18,
+                                    ),
                                     label: const Text('Share'),
                                     style: OutlinedButton.styleFrom(
                                       foregroundColor: Colors.white,
-                                      side: const BorderSide(color: Colors.white30),
-                                      padding: const EdgeInsets.symmetric(vertical: 12),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      side: const BorderSide(
+                                        color: Colors.white30,
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 12,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
                                     ),
                                   ),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: ElevatedButton.icon(
-                                    onPressed: () => _handleDownloadPdf(ticketId),
-                                    icon: const Icon(Icons.download_rounded, size: 18),
+                                    onPressed: () =>
+                                        _handleDownloadPdf(ticketId),
+                                    icon: const Icon(
+                                      Icons.download_rounded,
+                                      size: 18,
+                                    ),
                                     label: const Text('Download PDF'),
                                     style: ElevatedButton.styleFrom(
-                                      backgroundColor: LunaraTheme.electricViolet,
+                                      backgroundColor:
+                                          LunaraTheme.electricViolet,
                                       foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(vertical: 12),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 12,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -337,7 +425,11 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> with SingleTickerProv
         elevation: 0,
         title: const Text(
           'MY TICKETS',
-          style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.2, fontSize: 18),
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.2,
+            fontSize: 18,
+          ),
         ),
         centerTitle: true,
         bottom: TabBar(
@@ -346,22 +438,29 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> with SingleTickerProv
           indicatorColor: LunaraTheme.electricViolet,
           labelColor: LunaraTheme.electricViolet,
           unselectedLabelColor: Colors.white54,
-          labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          labelStyle: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
           tabs: _tabs.map((t) => Tab(text: t)).toList(),
         ),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: LunaraTheme.electricViolet))
+          ? const Center(
+              child: CircularProgressIndicator(
+                color: LunaraTheme.electricViolet,
+              ),
+            )
           : _tickets.isEmpty
-              ? _buildEmptyState()
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _tickets.length,
-                  itemBuilder: (context, index) {
-                    final ticket = _tickets[index];
-                    return _buildTicketCard(ticket);
-                  },
-                ),
+          ? _buildEmptyState()
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _tickets.length,
+              itemBuilder: (context, index) {
+                final ticket = _tickets[index];
+                return _buildTicketCard(ticket);
+              },
+            ),
     );
   }
 
@@ -373,11 +472,19 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> with SingleTickerProv
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.confirmation_number_outlined, size: 64, color: Colors.white.withOpacity(0.3)),
+            Icon(
+              Icons.confirmation_number_outlined,
+              size: 64,
+              color: Colors.white.withValues(alpha: 0.3),
+            ),
             const SizedBox(height: 16),
             Text(
               'No $tabName Tickets',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
@@ -392,7 +499,8 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> with SingleTickerProv
   }
 
   Widget _buildTicketCard(Map<String, dynamic> ticket) {
-    final isExpired = ticket['isExpired'] == true || ticket['status'] == 'EXPIRED';
+    final isExpired =
+        ticket['isExpired'] == true || ticket['status'] == 'EXPIRED';
     final status = (ticket['status'] ?? 'ACTIVE').toString().toUpperCase();
     final ticketId = ticket['ticketId'] ?? ticket['id'] ?? 'LUN-TICKET';
 
@@ -413,7 +521,7 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> with SingleTickerProv
       color: const Color(0xFF161226),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: statusColor.withOpacity(0.3), width: 1.5),
+        side: BorderSide(color: statusColor.withValues(alpha: 0.3), width: 1.5),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -425,18 +533,32 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> with SingleTickerProv
               children: [
                 Text(
                   ticketId,
-                  style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 0.8),
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                    letterSpacing: 0.8,
+                  ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.15),
+                    color: statusColor.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: statusColor.withOpacity(0.5)),
+                    border: Border.all(
+                      color: statusColor.withValues(alpha: 0.5),
+                    ),
                   ),
                   child: Text(
                     isExpired ? 'EXPIRED' : status,
-                    style: TextStyle(color: statusColor, fontWeight: FontWeight.w900, fontSize: 11),
+                    style: TextStyle(
+                      color: statusColor,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 11,
+                    ),
                   ),
                 ),
               ],
@@ -444,7 +566,11 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> with SingleTickerProv
             const SizedBox(height: 10),
             Text(
               ticket['venueName'] ?? 'Lunara Venue',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                fontSize: 18,
+              ),
             ),
             const SizedBox(height: 4),
             Text(
@@ -454,11 +580,19 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> with SingleTickerProv
             const SizedBox(height: 12),
             Row(
               children: [
-                const Icon(Icons.event_rounded, size: 16, color: LunaraTheme.electricViolet),
+                const Icon(
+                  Icons.event_rounded,
+                  size: 16,
+                  color: LunaraTheme.electricViolet,
+                ),
                 const SizedBox(width: 6),
                 Text(
                   _formatDate(ticket['eventStartAt']),
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
                 ),
               ],
             ),
@@ -472,22 +606,34 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> with SingleTickerProv
                       backgroundColor: LunaraTheme.electricViolet,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                     child: Text(
                       isExpired ? 'VIEW BOOKING HISTORY' : 'VIEW TICKET',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 0.5),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        letterSpacing: 0.5,
+                      ),
                     ),
                   ),
                 ),
                 if (!isExpired) ...[
                   const SizedBox(width: 8),
                   IconButton(
-                    icon: const Icon(Icons.share_rounded, color: Colors.white70),
+                    icon: const Icon(
+                      Icons.share_rounded,
+                      color: Colors.white70,
+                    ),
                     onPressed: () => _handleShareTicket(ticketId),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.download_rounded, color: Colors.white70),
+                    icon: const Icon(
+                      Icons.download_rounded,
+                      color: Colors.white70,
+                    ),
                     onPressed: () => _handleDownloadPdf(ticketId),
                   ),
                 ],

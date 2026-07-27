@@ -24,6 +24,7 @@ import {
     BiBlock,
     BiCrown,
     BiTrashAlt,
+    BiCreditCard,
 } from 'react-icons/bi';
 import { useAuthStore } from '../store/authStore';
 import { useThemeMode } from '../context/ThemeContext';
@@ -68,6 +69,8 @@ const navGroups: NavGroup[] = [
         category: 'Insights',
         items: [
             { text: 'Analytics', icon: <BiBarChartAlt2 />, path: '/analytics' },
+            { text: 'Venue Summary', icon: <BiBarChartAlt2 />, path: '/reports/venue-summary' },
+            { text: 'Payments', icon: <BiCreditCard />, path: '/payments' },
             { text: 'Compliance', icon: <BiShieldQuarter />, path: '/compliance' },
         ],
     },

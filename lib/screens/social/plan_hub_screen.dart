@@ -180,7 +180,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
   void _fetchGoogleRatingsForVenues(List<Venue> venues) {
     for (final venue in venues) {
       if (venue.name.isNotEmpty && !_googleRatings.containsKey(venue.id)) {
-        GooglePlacesService.fetchGoogleRating(venue.name, venue.city).then((result) {
+        GooglePlacesService.fetchGoogleRating(venue.name, venue.city).then((
+          result,
+        ) {
           if (result != null && mounted) {
             setState(() {
               _googleRatings[venue.id] = result;
@@ -1070,7 +1072,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
       final userId = u['id']?.toString() ?? '';
 
       // Dynamic count of active plans created by the user (from API or local party plans filter)
-      final rawPlansCount = u['plansCount'] ?? u['plans_count'] ?? u['totalPlans'];
+      final rawPlansCount =
+          u['plansCount'] ?? u['plans_count'] ?? u['totalPlans'];
       final planCount = rawPlansCount != null
           ? (int.tryParse(rawPlansCount.toString()) ?? 0)
           : _partyPlans.where((p) {
@@ -1079,7 +1082,11 @@ class _PlanHubScreenState extends State<PlanHubScreen>
             }).length;
 
       // Real dynamic super likes count received by the user from server API
-      final rawSuperLikes = u['superLikesCount'] ?? u['super_likes_count'] ?? u['superLikes'] ?? u['super_likes'];
+      final rawSuperLikes =
+          u['superLikesCount'] ??
+          u['super_likes_count'] ??
+          u['superLikes'] ??
+          u['super_likes'];
       final superLikes = rawSuperLikes != null
           ? (int.tryParse(rawSuperLikes.toString()) ?? 0)
           : 0;
@@ -1164,7 +1171,11 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                           try {
                             final rawUser = item['user'];
                             if (rawUser is Map) {
-                              resolvedAllProfiles.add(User.fromJson(Map<String, dynamic>.from(rawUser)));
+                              resolvedAllProfiles.add(
+                                User.fromJson(
+                                  Map<String, dynamic>.from(rawUser),
+                                ),
+                              );
                             }
                           } catch (_) {}
                         }
@@ -1342,7 +1353,10 @@ class _PlanHubScreenState extends State<PlanHubScreen>
           builder: (builderCtx, setModalState) {
             final eligibleUsers = customerList.where((u) {
               final isNotMe = u['id']?.toString() != ApiService.currentUserId;
-              final name = (u['name'] ?? u['firstName'] ?? u['first_name'] ?? '').toString().toLowerCase();
+              final name =
+                  (u['name'] ?? u['firstName'] ?? u['first_name'] ?? '')
+                      .toString()
+                      .toLowerCase();
               return isNotMe && name.contains(searchVal.toLowerCase());
             }).toList();
 
@@ -1364,7 +1378,10 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 8,
+                    ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -1399,7 +1416,10 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 6,
+                    ),
                     child: TextField(
                       onChanged: (v) {
                         setModalState(() {
@@ -1408,10 +1428,16 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       },
                       decoration: InputDecoration(
                         hintText: 'Search by name...',
-                        prefixIcon: const Icon(Icons.search, color: LunaraTheme.electricViolet),
+                        prefixIcon: const Icon(
+                          Icons.search,
+                          color: LunaraTheme.electricViolet,
+                        ),
                         filled: true,
                         fillColor: Colors.grey[100],
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
                           borderSide: BorderSide.none,
@@ -1420,7 +1446,10 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 4,
+                    ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -1440,7 +1469,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                 setModalState(() {
                                   for (var u in eligibleUsers) {
                                     final uid = u['id']?.toString();
-                                    if (uid != null && !tempSelected.contains(uid)) {
+                                    if (uid != null &&
+                                        !tempSelected.contains(uid)) {
                                       if (tempSelected.length < 50) {
                                         tempSelected.add(uid);
                                       }
@@ -1483,22 +1513,30 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                         ? const Center(
                             child: Text(
                               'No matching profiles found',
-                              style: TextStyle(color: Colors.grey, fontSize: 13),
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 13,
+                              ),
                             ),
                           )
                         : GridView.builder(
                             padding: const EdgeInsets.all(16),
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 3,
-                              childAspectRatio: 0.82,
-                              crossAxisSpacing: 12,
-                              mainAxisSpacing: 12,
-                            ),
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 3,
+                                  childAspectRatio: 0.82,
+                                  crossAxisSpacing: 12,
+                                  mainAxisSpacing: 12,
+                                ),
                             itemCount: eligibleUsers.length,
                             itemBuilder: (context, index) {
                               final user = eligibleUsers[index];
                               final uId = user['id']?.toString() ?? '';
-                              final uName = user['name'] ?? user['firstName'] ?? user['first_name'] ?? 'User';
+                              final uName =
+                                  user['name'] ??
+                                  user['firstName'] ??
+                                  user['first_name'] ??
+                                  'User';
                               final isSel = tempSelected.contains(uId);
 
                               return GestureDetector(
@@ -1508,9 +1546,13 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                       tempSelected.remove(uId);
                                     } else {
                                       if (tempSelected.length >= 50) {
-                                        ScaffoldMessenger.of(parentContext).showSnackBar(
+                                        ScaffoldMessenger.of(
+                                          parentContext,
+                                        ).showSnackBar(
                                           const SnackBar(
-                                            content: Text('Maximum 50 invites allowed.'),
+                                            content: Text(
+                                              'Maximum 50 invites allowed.',
+                                            ),
                                             backgroundColor: Colors.redAccent,
                                           ),
                                         );
@@ -1523,10 +1565,16 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                 child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 150),
                                   decoration: BoxDecoration(
-                                    color: isSel ? LunaraTheme.electricViolet.withValues(alpha: 0.08) : Colors.grey[50],
+                                    color: isSel
+                                        ? LunaraTheme.electricViolet.withValues(
+                                            alpha: 0.08,
+                                          )
+                                        : Colors.grey[50],
                                     borderRadius: BorderRadius.circular(16),
                                     border: Border.all(
-                                      color: isSel ? LunaraTheme.electricViolet : Colors.grey[200]!,
+                                      color: isSel
+                                          ? LunaraTheme.electricViolet
+                                          : Colors.grey[200]!,
                                       width: isSel ? 2 : 1,
                                     ),
                                   ),
@@ -1548,7 +1596,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                             child: Container(
                                               padding: const EdgeInsets.all(2),
                                               decoration: BoxDecoration(
-                                                color: isSel ? Colors.green : Colors.grey[300],
+                                                color: isSel
+                                                    ? Colors.green
+                                                    : Colors.grey[300],
                                                 shape: BoxShape.circle,
                                               ),
                                               child: Icon(
@@ -1566,7 +1616,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         style: TextStyle(
                                           fontSize: 11,
                                           fontWeight: FontWeight.bold,
-                                          color: isSel ? LunaraTheme.electricViolet : Colors.black87,
+                                          color: isSel
+                                              ? LunaraTheme.electricViolet
+                                              : Colors.black87,
                                         ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
@@ -1597,7 +1649,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: LunaraTheme.electricViolet,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
                           ),
                           onPressed: () {
                             onSelectionChanged(tempSelected);
@@ -1919,8 +1973,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       dateCtrl.text =
                           "${DateFormat('MMM dd, yyyy').format(selectedDate!)} at $formattedTime";
                     } else if (selectedDate != null) {
-                      dateCtrl.text =
-                          "${DateFormat('MMM dd, yyyy').format(selectedDate!)}";
+                      dateCtrl.text = DateFormat(
+                        'MMM dd, yyyy',
+                      ).format(selectedDate!);
                     } else {
                       dateCtrl.text = '';
                     }
@@ -2118,9 +2173,13 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               final v = displayedVenues[index];
                               final isSelected = selectedVenue?.id == v.id;
                               final ratingMap = _googleRatings[v.id];
-                              final double rating = (ratingMap != null && ratingMap['rating'] != null)
+                              final double rating =
+                                  (ratingMap != null &&
+                                      ratingMap['rating'] != null)
                                   ? (ratingMap['rating'] as num).toDouble()
-                                  : (v.averageRating > 0.0 ? v.averageRating : 4.5);
+                                  : (v.averageRating > 0.0
+                                        ? v.averageRating
+                                        : 4.5);
 
                               return GestureDetector(
                                 onTap: () {
@@ -2158,7 +2217,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                       );
                                       if (invalidReason != null &&
                                           (invalidReason.contains('closed') ||
-                                              invalidReason.contains('not open'))) {
+                                              invalidReason.contains(
+                                                'not open',
+                                              ))) {
                                         selectedDate = null;
                                         dateCtrl.clear();
                                         ScaffoldMessenger.of(
@@ -2226,8 +2287,12 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                             vertical: 2,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: Colors.black.withValues(alpha: 0.6),
-                                            borderRadius: BorderRadius.circular(8),
+                                            color: Colors.black.withValues(
+                                              alpha: 0.6,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
                                           ),
                                           child: Row(
                                             mainAxisSize: MainAxisSize.min,
@@ -2733,7 +2798,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                   ),
                                   child: DropdownButtonHideUnderline(
                                     child: DropdownButtonFormField<String>(
-                                      value: selectedFoodPref,
+                                      initialValue: selectedFoodPref,
                                       isExpanded: true,
                                       decoration: const InputDecoration(
                                         prefixIcon: Icon(
@@ -2804,7 +2869,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                   ),
                                   child: DropdownButtonHideUnderline(
                                     child: DropdownButtonFormField<String>(
-                                      value: selectedDrinkPref,
+                                      initialValue: selectedDrinkPref,
                                       isExpanded: true,
                                       decoration: const InputDecoration(
                                         prefixIcon: Icon(
@@ -2884,9 +2949,14 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                 );
                               },
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                                  color: LunaraTheme.electricViolet.withValues(
+                                    alpha: 0.1,
+                                  ),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: const Row(
@@ -2937,21 +3007,24 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                 )
                               : ListView.builder(
                                   scrollDirection: Axis.horizontal,
-                                  itemCount: _customerList.where((u) {
-                                    final name =
-                                        (u['name'] ??
-                                                u['firstName'] ??
-                                                u['first_name'] ??
-                                                '')
-                                            .toString()
+                                  itemCount:
+                                      _customerList.where((u) {
+                                        final name =
+                                            (u['name'] ??
+                                                    u['firstName'] ??
+                                                    u['first_name'] ??
+                                                    '')
+                                                .toString()
+                                                .toLowerCase();
+                                        final searchVal = userSearchQuery
                                             .toLowerCase();
-                                    final searchVal = userSearchQuery
-                                        .toLowerCase();
-                                    final isNotMe =
-                                        u['id']?.toString() !=
-                                        ApiService.currentUserId;
-                                    return name.contains(searchVal) && isNotMe;
-                                  }).length + 1, // +1 for the View All tile
+                                        final isNotMe =
+                                            u['id']?.toString() !=
+                                            ApiService.currentUserId;
+                                        return name.contains(searchVal) &&
+                                            isNotMe;
+                                      }).length +
+                                      1, // +1 for the View All tile
                                   itemBuilder: (ctx, idx) {
                                     final filteredList = _customerList.where((
                                       u,
@@ -2989,23 +3062,29 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                           );
                                         },
                                         child: Padding(
-                                          padding: const EdgeInsets.only(right: 14),
+                                          padding: const EdgeInsets.only(
+                                            right: 14,
+                                          ),
                                           child: Column(
                                             children: [
                                               Container(
                                                 width: 48,
                                                 height: 48,
                                                 decoration: BoxDecoration(
-                                                  color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                                                  color: LunaraTheme
+                                                      .electricViolet
+                                                      .withValues(alpha: 0.1),
                                                   shape: BoxShape.circle,
                                                   border: Border.all(
-                                                    color: LunaraTheme.electricViolet,
+                                                    color: LunaraTheme
+                                                        .electricViolet,
                                                     width: 1.5,
                                                   ),
                                                 ),
                                                 child: const Icon(
                                                   Icons.grid_view_rounded,
-                                                  color: LunaraTheme.electricViolet,
+                                                  color: LunaraTheme
+                                                      .electricViolet,
                                                   size: 20,
                                                 ),
                                               ),
@@ -3015,7 +3094,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                                 style: TextStyle(
                                                   fontSize: 10,
                                                   fontWeight: FontWeight.bold,
-                                                  color: LunaraTheme.electricViolet,
+                                                  color: LunaraTheme
+                                                      .electricViolet,
                                                 ),
                                               ),
                                             ],
@@ -3201,16 +3281,23 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                         const SizedBox(height: 4),
                         Text(
                           'Add your payment details so admin can settle your earnings after the meet.',
-                          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
                         ),
                         const SizedBox(height: 12),
                         Row(
                           children: [
                             Expanded(
                               child: GestureDetector(
-                                onTap: () => setSheetState(() => selectedPaymentOption = 'upi_id'),
+                                onTap: () => setSheetState(
+                                  () => selectedPaymentOption = 'upi_id',
+                                ),
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 10,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: selectedPaymentOption == 'upi_id'
                                         ? const Color(0xFF7C3AED)
@@ -3219,7 +3306,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                       topLeft: Radius.circular(10),
                                       bottomLeft: Radius.circular(10),
                                     ),
-                                    border: Border.all(color: Colors.grey[200]!),
+                                    border: Border.all(
+                                      color: Colors.grey[200]!,
+                                    ),
                                   ),
                                   child: Center(
                                     child: Text(
@@ -3238,14 +3327,20 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             ),
                             Expanded(
                               child: GestureDetector(
-                                onTap: () => setSheetState(() => selectedPaymentOption = 'upi_number'),
+                                onTap: () => setSheetState(
+                                  () => selectedPaymentOption = 'upi_number',
+                                ),
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 10,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: selectedPaymentOption == 'upi_number'
                                         ? const Color(0xFF7C3AED)
                                         : Colors.grey[100],
-                                    border: Border.all(color: Colors.grey[200]!),
+                                    border: Border.all(
+                                      color: Colors.grey[200]!,
+                                    ),
                                   ),
                                   child: Center(
                                     child: Text(
@@ -3253,7 +3348,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                       style: TextStyle(
                                         fontSize: 11,
                                         fontWeight: FontWeight.bold,
-                                        color: selectedPaymentOption == 'upi_number'
+                                        color:
+                                            selectedPaymentOption ==
+                                                'upi_number'
                                             ? Colors.white
                                             : Colors.black54,
                                       ),
@@ -3264,9 +3361,13 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             ),
                             Expanded(
                               child: GestureDetector(
-                                onTap: () => setSheetState(() => selectedPaymentOption = 'bank'),
+                                onTap: () => setSheetState(
+                                  () => selectedPaymentOption = 'bank',
+                                ),
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 10,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: selectedPaymentOption == 'bank'
                                         ? const Color(0xFF7C3AED)
@@ -3275,7 +3376,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                       topRight: Radius.circular(10),
                                       bottomRight: Radius.circular(10),
                                     ),
-                                    border: Border.all(color: Colors.grey[200]!),
+                                    border: Border.all(
+                                      color: Colors.grey[200]!,
+                                    ),
                                   ),
                                   child: Center(
                                     child: Text(
@@ -3517,24 +3620,37 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                       if (upiCtrl.text.trim().isEmpty) {
                                         paymentError = 'Please enter a UPI ID';
                                       }
-                                    } else if (selectedPaymentOption == 'upi_number') {
+                                    } else if (selectedPaymentOption ==
+                                        'upi_number') {
                                       final numStr = upiNumberCtrl.text.trim();
                                       if (numStr.isEmpty) {
-                                        paymentError = 'Please enter a UPI Number';
-                                      } else if (!mobileRegExp.hasMatch(numStr)) {
-                                        paymentError = 'UPI Number must be a valid 10-digit mobile number';
+                                        paymentError =
+                                            'Please enter a UPI Number';
+                                      } else if (!mobileRegExp.hasMatch(
+                                        numStr,
+                                      )) {
+                                        paymentError =
+                                            'UPI Number must be a valid 10-digit mobile number';
                                       }
-                                    } else if (selectedPaymentOption == 'bank') {
+                                    } else if (selectedPaymentOption ==
+                                        'bank') {
                                       if (bankNameCtrl.text.trim().isEmpty ||
-                                          accountHolderCtrl.text.trim().isEmpty ||
-                                          accountNumberCtrl.text.trim().isEmpty ||
+                                          accountHolderCtrl.text
+                                              .trim()
+                                              .isEmpty ||
+                                          accountNumberCtrl.text
+                                              .trim()
+                                              .isEmpty ||
                                           ifscCtrl.text.trim().isEmpty) {
-                                        paymentError = 'All bank account details are required.';
+                                        paymentError =
+                                            'All bank account details are required.';
                                       }
                                     }
 
                                     if (paymentError != null) {
-                                      setSheetState(() => sheetErrorMsg = paymentError);
+                                      setSheetState(
+                                        () => sheetErrorMsg = paymentError,
+                                      );
                                       return;
                                     }
                                   }
@@ -3547,7 +3663,10 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                             venueId: selectedVenue!.id,
                                             subject: subjectCtrl.text.trim(),
                                             tagline: taglineCtrl.text.trim(),
-                                            eventDateTime: _formatToISTString(selectedDate!, selectedTime!),
+                                            eventDateTime: _formatToISTString(
+                                              selectedDate!,
+                                              selectedTime!,
+                                            ),
                                             numberOfPersons:
                                                 selectedUserIds.length,
                                             chargesPerHead: 0.0,
@@ -3556,18 +3675,30 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                             alternateMobileNumber: altMobileCtrl
                                                 .text
                                                 .trim(),
-                                            upiId: selectedPaymentOption == 'upi_id' ? upiCtrl.text.trim() : null,
-                                            upiNumber: selectedPaymentOption == 'upi_number' ? upiNumberCtrl.text.trim() : null,
-                                            bankName: selectedPaymentOption == 'bank'
+                                            upiId:
+                                                selectedPaymentOption ==
+                                                    'upi_id'
+                                                ? upiCtrl.text.trim()
+                                                : null,
+                                            upiNumber:
+                                                selectedPaymentOption ==
+                                                    'upi_number'
+                                                ? upiNumberCtrl.text.trim()
+                                                : null,
+                                            bankName:
+                                                selectedPaymentOption == 'bank'
                                                 ? bankNameCtrl.text.trim()
                                                 : null,
-                                            accountNumber: selectedPaymentOption == 'bank'
+                                            accountNumber:
+                                                selectedPaymentOption == 'bank'
                                                 ? accountNumberCtrl.text.trim()
                                                 : null,
-                                            accountHolderName: selectedPaymentOption == 'bank'
+                                            accountHolderName:
+                                                selectedPaymentOption == 'bank'
                                                 ? accountHolderCtrl.text.trim()
                                                 : null,
-                                            ifscCode: selectedPaymentOption == 'bank'
+                                            ifscCode:
+                                                selectedPaymentOption == 'bank'
                                                 ? ifscCtrl.text.trim()
                                                 : null,
                                             foodPreference: selectedFoodPref,
@@ -3602,8 +3733,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                       if (!mounted) return;
                                       setSheetState(() {
                                         isPosting = false;
-                                        sheetErrorMsg =
-                                            'Error: ' + e.toString();
+                                        sheetErrorMsg = 'Error: $e';
                                       });
                                     }
                                     return;
@@ -3618,7 +3748,10 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         'message': descriptionCtrl.text.isEmpty
                                             ? "Let's party at ${selectedVenue!.name}"
                                             : descriptionCtrl.text,
-                                        'planDateTime': _formatToISTString(selectedDate!, selectedTime!),
+                                        'planDateTime': _formatToISTString(
+                                          selectedDate!,
+                                          selectedTime!,
+                                        ),
                                         'privacyType': selectedPrivacy
                                             .toLowerCase(),
                                         'paymentStatus': 'pending',
@@ -3679,7 +3812,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     if (!mounted) return;
                                     setSheetState(() {
                                       isPosting = false;
-                                      sheetErrorMsg = 'Error: ' + e.toString();
+                                      sheetErrorMsg = 'Error: $e';
                                     });
                                   }
                                 },
@@ -3967,8 +4100,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       dateCtrl.text =
                           "${DateFormat('MMM dd, yyyy').format(selectedDate!)} at $formattedTime";
                     } else if (selectedDate != null) {
-                      dateCtrl.text =
-                          "${DateFormat('MMM dd, yyyy').format(selectedDate!)}";
+                      dateCtrl.text = DateFormat(
+                        'MMM dd, yyyy',
+                      ).format(selectedDate!);
                     } else {
                       dateCtrl.text = '';
                     }
@@ -4166,9 +4300,13 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               final v = displayedVenues[index];
                               final isSelected = selectedVenue?.id == v.id;
                               final ratingMap = _googleRatings[v.id];
-                              final double rating = (ratingMap != null && ratingMap['rating'] != null)
+                              final double rating =
+                                  (ratingMap != null &&
+                                      ratingMap['rating'] != null)
                                   ? (ratingMap['rating'] as num).toDouble()
-                                  : (v.averageRating > 0.0 ? v.averageRating : 4.5);
+                                  : (v.averageRating > 0.0
+                                        ? v.averageRating
+                                        : 4.5);
 
                               return GestureDetector(
                                 onTap: () {
@@ -4204,7 +4342,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                       );
                                       if (invalidReason != null &&
                                           (invalidReason.contains('closed') ||
-                                              invalidReason.contains('not open'))) {
+                                              invalidReason.contains(
+                                                'not open',
+                                              ))) {
                                         selectedDate = null;
                                         dateCtrl.clear();
                                         ScaffoldMessenger.of(
@@ -4272,8 +4412,12 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                             vertical: 2,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: Colors.black.withValues(alpha: 0.6),
-                                            borderRadius: BorderRadius.circular(8),
+                                            color: Colors.black.withValues(
+                                              alpha: 0.6,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
                                           ),
                                           child: Row(
                                             mainAxisSize: MainAxisSize.min,
@@ -4671,7 +4815,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                   child: DropdownButtonHideUnderline(
                                     child: DropdownButtonFormField<String>(
                                       isExpanded: true,
-                                      value: foodPreference,
+                                      initialValue: foodPreference,
                                       decoration: const InputDecoration(
                                         prefixIcon: Icon(
                                           Icons.restaurant,
@@ -4746,7 +4890,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                   child: DropdownButtonHideUnderline(
                                     child: DropdownButtonFormField<String>(
                                       isExpanded: true,
-                                      value: drinkPreference,
+                                      initialValue: drinkPreference,
                                       decoration: const InputDecoration(
                                         prefixIcon: Icon(
                                           Icons.local_bar,
@@ -4817,9 +4961,13 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                         children: [
                           Expanded(
                             child: GestureDetector(
-                              onTap: () => setSheetState(() => selectedPaymentOption = 'upi_id'),
+                              onTap: () => setSheetState(
+                                () => selectedPaymentOption = 'upi_id',
+                              ),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 10,
+                                ),
                                 decoration: BoxDecoration(
                                   color: selectedPaymentOption == 'upi_id'
                                       ? const Color(0xFF7C3AED)
@@ -4847,9 +4995,13 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                           ),
                           Expanded(
                             child: GestureDetector(
-                              onTap: () => setSheetState(() => selectedPaymentOption = 'upi_number'),
+                              onTap: () => setSheetState(
+                                () => selectedPaymentOption = 'upi_number',
+                              ),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 10,
+                                ),
                                 decoration: BoxDecoration(
                                   color: selectedPaymentOption == 'upi_number'
                                       ? const Color(0xFF7C3AED)
@@ -4862,7 +5014,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.bold,
-                                      color: selectedPaymentOption == 'upi_number'
+                                      color:
+                                          selectedPaymentOption == 'upi_number'
                                           ? Colors.white
                                           : Colors.black54,
                                     ),
@@ -4873,9 +5026,13 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                           ),
                           Expanded(
                             child: GestureDetector(
-                              onTap: () => setSheetState(() => selectedPaymentOption = 'bank'),
+                              onTap: () => setSheetState(
+                                () => selectedPaymentOption = 'bank',
+                              ),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 10,
+                                ),
                                 decoration: BoxDecoration(
                                   color: selectedPaymentOption == 'bank'
                                       ? const Color(0xFF7C3AED)
@@ -5177,14 +5334,16 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               if (numStr.isEmpty) {
                                 paymentError = 'Please enter a UPI Number';
                               } else if (!mobileRegExp.hasMatch(numStr)) {
-                                paymentError = 'UPI Number must be a valid 10-digit mobile number';
+                                paymentError =
+                                    'UPI Number must be a valid 10-digit mobile number';
                               }
                             } else if (selectedPaymentOption == 'bank') {
                               if (bankNameCtrl.text.trim().isEmpty ||
                                   accountHolderCtrl.text.trim().isEmpty ||
                                   accountNumberCtrl.text.trim().isEmpty ||
                                   ifscCtrl.text.trim().isEmpty) {
-                                paymentError = 'All bank account details are required.';
+                                paymentError =
+                                    'All bank account details are required.';
                               }
                             }
 
@@ -5232,22 +5391,31 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                   venueId: selectedVenue!.id,
                                   subject: subjectCtrl.text.trim(),
                                   tagline: taglineCtrl.text.trim(),
-                                  eventDateTime: _formatToISTString(selectedDate!, selectedTime!),
+                                  eventDateTime: _formatToISTString(
+                                    selectedDate!,
+                                    selectedTime!,
+                                  ),
                                   numberOfPersons: numberOfPersons,
                                   chargesPerHead: 0.0,
                                   mobileNumber: mobileCtrl.text.trim(),
                                   alternateMobileNumber: altMobileCtrl.text
                                       .trim(),
                                   // Bank/UPI/UPI Number details
-                                  upiId: selectedPaymentOption == 'upi_id' ? upiCtrl.text.trim() : null,
-                                  upiNumber: selectedPaymentOption == 'upi_number' ? upiNumberCtrl.text.trim() : null,
+                                  upiId: selectedPaymentOption == 'upi_id'
+                                      ? upiCtrl.text.trim()
+                                      : null,
+                                  upiNumber:
+                                      selectedPaymentOption == 'upi_number'
+                                      ? upiNumberCtrl.text.trim()
+                                      : null,
                                   bankName: selectedPaymentOption == 'bank'
                                       ? bankNameCtrl.text.trim()
                                       : null,
                                   accountNumber: selectedPaymentOption == 'bank'
                                       ? accountNumberCtrl.text.trim()
                                       : null,
-                                  accountHolderName: selectedPaymentOption == 'bank'
+                                  accountHolderName:
+                                      selectedPaymentOption == 'bank'
                                       ? accountHolderCtrl.text.trim()
                                       : null,
                                   ifscCode: selectedPaymentOption == 'bank'

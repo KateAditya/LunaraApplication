@@ -17,6 +17,9 @@ router.get('/', ctrl.getBookings);
 // GET /api/admin/bookings/stats
 router.get('/stats', ctrl.getBookingStats);
 
+// GET /api/admin/bookings/venue-summary
+router.get('/venue-summary', ctrl.getVenueWiseBookingSummary);
+
 // GET /api/admin/bookings/large-party-requests
 router.get('/large-party-requests', ctrl.getLargePartyRequests);
 

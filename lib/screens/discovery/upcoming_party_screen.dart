@@ -45,11 +45,20 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
   }
 
   Future<void> _checkInitialInterest() async {
-    final venueId = widget.venueMap?['id']?.toString() ?? widget.party['venueId']?.toString() ?? '';
-    final rawDate = widget.party['rawDate']?.toString() ?? widget.party['date']?.toString() ?? '';
+    final venueId =
+        widget.venueMap?['id']?.toString() ??
+        widget.party['venueId']?.toString() ??
+        '';
+    final rawDate =
+        widget.party['rawDate']?.toString() ??
+        widget.party['date']?.toString() ??
+        '';
     final date = _formatDateIso(rawDate);
     if (venueId.isNotEmpty) {
-      final isInt = await ApiService.checkNightInterest(venueId: venueId, date: date);
+      final isInt = await ApiService.checkNightInterest(
+        venueId: venueId,
+        date: date,
+      );
       if (mounted) {
         setState(() {
           _isInterested = isInt;
@@ -74,8 +83,14 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
   }
 
   Future<void> _toggleInterest() async {
-    final venueId = widget.venueMap?['id']?.toString() ?? widget.party['venueId']?.toString() ?? '';
-    final rawDate = widget.party['rawDate']?.toString() ?? widget.party['date']?.toString() ?? '';
+    final venueId =
+        widget.venueMap?['id']?.toString() ??
+        widget.party['venueId']?.toString() ??
+        '';
+    final rawDate =
+        widget.party['rawDate']?.toString() ??
+        widget.party['date']?.toString() ??
+        '';
     final date = _formatDateIso(rawDate);
 
     if (venueId.isEmpty) {
@@ -99,7 +114,10 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
 
     if (previousState) {
       // Reverting interest (removing)
-      final success = await ApiService.removeNightInterest(venueId: venueId, date: date);
+      final success = await ApiService.removeNightInterest(
+        venueId: venueId,
+        date: date,
+      );
       if (mounted) {
         setState(() => _isToggling = false);
         if (success) {
@@ -125,13 +143,18 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
       }
     } else {
       // Adding interest
-      final success = await ApiService.markNightInterested(venueId: venueId, date: date);
+      final success = await ApiService.markNightInterested(
+        venueId: venueId,
+        date: date,
+      );
       if (mounted) {
         setState(() => _isToggling = false);
         if (success) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Marked as Interested! 🎉 Host can view your profile.'),
+              content: Text(
+                'Marked as Interested! 🎉 Host can view your profile.',
+              ),
               backgroundColor: Colors.green,
               behavior: SnackBarBehavior.floating,
               duration: Duration(seconds: 2),
@@ -157,9 +180,12 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
     final double screenWidth = MediaQuery.of(context).size.width;
     final String title = widget.party['title']?.toString() ?? 'Special Event';
     final String dateStr = widget.party['date']?.toString() ?? 'Upcoming';
-    final String venueName = widget.party['venue']?.toString() ?? 'Unknown Venue';
+    final String venueName =
+        widget.party['venue']?.toString() ?? 'Unknown Venue';
     final String imageUrl = widget.party['image']?.toString() ?? '';
-    final String aboutEventText = (widget.party['aboutEvent'] != null && widget.party['aboutEvent'].toString().trim().isNotEmpty)
+    final String aboutEventText =
+        (widget.party['aboutEvent'] != null &&
+            widget.party['aboutEvent'].toString().trim().isNotEmpty)
         ? widget.party['aboutEvent'].toString().trim()
         : 'Join us for an unforgettable night at $venueName. Get ready for amazing music, great vibes, and an incredible atmosphere. Book your tickets now before they sell out!';
 
@@ -202,15 +228,23 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) => Container(
                         color: Colors.grey[200],
-                        child: const Icon(Icons.broken_image, size: 50, color: Colors.grey),
+                        child: const Icon(
+                          Icons.broken_image,
+                          size: 50,
+                          color: Colors.grey,
+                        ),
                       ),
                     )
                   else
                     Container(
                       color: Colors.grey[200],
-                      child: const Icon(Icons.event, size: 50, color: Colors.grey),
+                      child: const Icon(
+                        Icons.event,
+                        size: 50,
+                        color: Colors.grey,
+                      ),
                     ),
-                  
+
                   // Gradient Overlay for Text Legibility
                   Positioned.fill(
                     child: DecoratedBox(
@@ -219,17 +253,17 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                           colors: [
-                            Colors.black.withOpacity(0.4),
+                            Colors.black.withValues(alpha: 0.4),
                             Colors.transparent,
                             Colors.transparent,
-                            Colors.black.withOpacity(0.85),
+                            Colors.black.withValues(alpha: 0.85),
                           ],
                           stops: const [0.0, 0.2, 0.5, 1.0],
                         ),
                       ),
                     ),
                   ),
-                  
+
                   // Top Buttons (Back)
                   Positioned(
                     top: MediaQuery.of(context).padding.top + 10,
@@ -246,7 +280,7 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                       ],
                     ),
                   ),
-                  
+
                   // Bottom Info Overlay
                   Positioned(
                     left: 24,
@@ -256,11 +290,18 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
                           decoration: BoxDecoration(
-                            color: LunaraTheme.cyberCyan.withOpacity(0.2),
+                            color: LunaraTheme.cyberCyan.withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: LunaraTheme.cyberCyan.withOpacity(0.5)),
+                            border: Border.all(
+                              color: LunaraTheme.cyberCyan.withValues(
+                                alpha: 0.5,
+                              ),
+                            ),
                           ),
                           child: Text(
                             dateStr.toUpperCase(),
@@ -288,7 +329,11 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            const Icon(Icons.location_on_rounded, color: LunaraTheme.cyberCyan, size: 16),
+                            const Icon(
+                              Icons.location_on_rounded,
+                              color: LunaraTheme.cyberCyan,
+                              size: 16,
+                            ),
                             const SizedBox(width: 6),
                             Expanded(
                               child: Text(
@@ -348,8 +393,9 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                     ),
                   ),
                   const SizedBox(height: 32),
-                  
-                  if (widget.venueMap != null && widget.venueMap!.isNotEmpty) ...[
+
+                  if (widget.venueMap != null &&
+                      widget.venueMap!.isNotEmpty) ...[
                     const Text(
                       'HOSTED AT',
                       style: TextStyle(
@@ -366,7 +412,8 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => VenueDetailScreen(venue: widget.venueMap!),
+                            builder: (_) =>
+                                VenueDetailScreen(venue: widget.venueMap!),
                           ),
                         );
                       },
@@ -377,7 +424,9 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                           borderRadius: BorderRadius.circular(20),
                           boxShadow: [
                             BoxShadow(
-                              color: LunaraTheme.electricViolet.withOpacity(0.08),
+                              color: LunaraTheme.electricViolet.withValues(
+                                alpha: 0.08,
+                              ),
                               blurRadius: 16,
                               offset: const Offset(0, 6),
                             ),
@@ -395,14 +444,17 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(12),
                                 color: Colors.grey[200],
-                                image: venueImageUrl != null && venueImageUrl.isNotEmpty
+                                image:
+                                    venueImageUrl != null &&
+                                        venueImageUrl.isNotEmpty
                                     ? DecorationImage(
                                         image: NetworkImage(venueImageUrl),
                                         fit: BoxFit.cover,
                                       )
                                     : null,
                               ),
-                              child: venueImageUrl == null || venueImageUrl.isEmpty
+                              child:
+                                  venueImageUrl == null || venueImageUrl.isEmpty
                                   ? const Icon(Icons.store, color: Colors.grey)
                                   : null,
                             ),
@@ -423,7 +475,8 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    '${widget.venueMap!['city']} • ${widget.venueMap!['area'] ?? widget.venueMap!['addressLine1']}'.toUpperCase(),
+                                    '${widget.venueMap!['city']} • ${widget.venueMap!['area'] ?? widget.venueMap!['addressLine1']}'
+                                        .toUpperCase(),
                                     style: TextStyle(
                                       color: Colors.grey[600],
                                       fontSize: 10,
@@ -433,15 +486,19 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                                 ],
                               ),
                             ),
-                            const Icon(Icons.arrow_forward_ios, size: 16, color: LunaraTheme.electricViolet),
+                            const Icon(
+                              Icons.arrow_forward_ios,
+                              size: 16,
+                              color: LunaraTheme.electricViolet,
+                            ),
                           ],
                         ),
                       ),
                     ),
                   ],
-                  
+
                   const SizedBox(height: 32),
-                  
+
                   // Action Row: Interested + Book Now
                   Row(
                     children: [
@@ -456,7 +513,9 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                             height: 56,
                             decoration: BoxDecoration(
                               color: _isInterested
-                                  ? LunaraTheme.electricViolet.withOpacity(0.12)
+                                  ? LunaraTheme.electricViolet.withValues(
+                                      alpha: 0.12,
+                                    )
                                   : Colors.white,
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
@@ -466,14 +525,17 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                               boxShadow: _isInterested
                                   ? [
                                       BoxShadow(
-                                        color: LunaraTheme.electricViolet.withOpacity(0.25),
+                                        color: LunaraTheme.electricViolet
+                                            .withValues(alpha: 0.25),
                                         blurRadius: 10,
                                         offset: const Offset(0, 4),
                                       ),
                                     ]
                                   : [
                                       BoxShadow(
-                                        color: Colors.black.withOpacity(0.03),
+                                        color: Colors.black.withValues(
+                                          alpha: 0.03,
+                                        ),
                                         blurRadius: 6,
                                         offset: const Offset(0, 2),
                                       ),
@@ -483,7 +545,9 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Icon(
-                                  _isInterested ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                                  _isInterested
+                                      ? Icons.favorite_rounded
+                                      : Icons.favorite_border_rounded,
                                   color: LunaraTheme.electricViolet,
                                   size: 22,
                                 ),
@@ -516,7 +580,9 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                                   builder: (_) => BookingProcessScreen(
                                     venue: widget.venueMap!,
                                     isUpcomingNight: true,
-                                    upcomingNightDate: widget.party['rawDate'] ?? widget.party['date'],
+                                    upcomingNightDate:
+                                        widget.party['rawDate'] ??
+                                        widget.party['date'],
                                     upcomingNightTime: '20:00',
                                   ),
                                 ),
@@ -524,10 +590,14 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                             } else {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: const Text('Venue details not available for booking.'),
+                                  content: const Text(
+                                    'Venue details not available for booking.',
+                                  ),
                                   backgroundColor: LunaraTheme.electricViolet,
                                   behavior: SnackBarBehavior.floating,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
                                 ),
                               );
                             }
@@ -540,7 +610,9 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                               borderRadius: BorderRadius.circular(16),
                               boxShadow: [
                                 BoxShadow(
-                                  color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                                  color: LunaraTheme.electricViolet.withValues(
+                                    alpha: 0.3,
+                                  ),
                                   blurRadius: 16,
                                   offset: const Offset(0, 8),
                                 ),

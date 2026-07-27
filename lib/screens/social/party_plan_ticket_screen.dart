@@ -915,28 +915,30 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: const [
-                                    Text(
-                                      'TICKET TYPE',
-                                      style: TextStyle(
-                                        color: grayTextColor,
-                                        fontSize: 8.5,
-                                        fontWeight: FontWeight.w800,
-                                        letterSpacing: 0.5,
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: const [
+                                      Text(
+                                        'TICKET TYPE',
+                                        style: TextStyle(
+                                          color: grayTextColor,
+                                          fontSize: 8.5,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 0.5,
+                                        ),
                                       ),
-                                    ),
-                                    SizedBox(height: 1),
-                                    Text(
-                                      'Party Plan Entry',
-                                      style: TextStyle(
-                                        color: darkTextColor,
-                                        fontSize: 11.5,
-                                        fontWeight: FontWeight.bold,
+                                      SizedBox(height: 1),
+                                      Text(
+                                        'Party Plan Entry',
+                                        style: TextStyle(
+                                          color: darkTextColor,
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ],
                             ),

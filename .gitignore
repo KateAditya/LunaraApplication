@@ -93,3 +93,4 @@ app.*.map.json
 
 # Heap dumps
 *.hprof
+.env

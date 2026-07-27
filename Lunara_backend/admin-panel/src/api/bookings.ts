@@ -135,6 +135,19 @@ export const bookingsApi = {
     markPaymentDone: (id: string): Promise<{ success: boolean; data: any }> => {
         return apiClient.post(`/api/admin/bookings/${id}/mark-payment-done`);
     },
+
+    getVenueWiseSummary: (params?: {
+        page?: number;
+        limit?: number;
+        fromDate?: string;
+        toDate?: string;
+        venueId?: string;
+        bookingStatus?: string;
+        paymentStatus?: string;
+        search?: string;
+    }): Promise<{ success: boolean; data: any }> => {
+        return apiClient.get('/api/admin/bookings/venue-summary', { params });
+    }
 };
 
 export default bookingsApi;
