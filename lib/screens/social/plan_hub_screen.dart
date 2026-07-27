@@ -17,6 +17,8 @@ import '../profile/profile_screen.dart';
 import '../../widgets/venue_timing_error_dialog.dart';
 import '../discovery/upcoming_party_screen.dart';
 import '../../services/google_places_service.dart';
+import '../../widgets/venue_cover_charge_notice.dart';
+
 
 class PlanHubScreen extends StatefulWidget {
   final bool autoShowCreatePlan;
@@ -3378,8 +3380,11 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                         const SizedBox(height: 12),
                       ],
 
+                      const VenueCoverChargeNoticeCard(),
+                      const SizedBox(height: 12),
                       Container(
                         key: AppTourService.createPlanPostButtonKey,
+
                         child: _sheetButton(
                           label: isPosting
                               ? 'PROCEEDING...'

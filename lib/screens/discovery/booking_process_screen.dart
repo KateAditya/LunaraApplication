@@ -8,6 +8,8 @@ import '../../widgets/venue_timing_error_dialog.dart';
 import 'night_partner_discovery_screen.dart';
 import 'night_invite_partner_screen.dart';
 import '../social/friends_list_screen.dart';
+import '../../widgets/venue_cover_charge_notice.dart';
+
 
 
 class BookingProcessScreen extends StatefulWidget {
@@ -502,13 +504,16 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                         ],
                       ),
                     ],
-                    const SizedBox(height: 40),
+                    const SizedBox(height: 24),
+                    const VenueCoverChargeNoticeCard(),
+                    const SizedBox(height: 20),
                     LunaraActionButton(
                       text: 'BOOK NOW',
                       onPressed: () {
                         _showBookingPopup(context, isSolo: _isGoingSolo);
                       },
                     ),
+
                     const SizedBox(height: 20),
                   ],
                 ),
@@ -1408,6 +1413,8 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                             ],
 
                             if (!isLargeParty) ...[
+                              const VenueCoverChargeNoticeCard(),
+                              const SizedBox(height: 16),
                               const Text(
                                 'PRICING DETAILS',
                                 style: TextStyle(
@@ -1417,6 +1424,7 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                   letterSpacing: 1,
                                 ),
                               ),
+
                               const SizedBox(height: 12),
                               Container(
                                 padding: const EdgeInsets.all(16),
