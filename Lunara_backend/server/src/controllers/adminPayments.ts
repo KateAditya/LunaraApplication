@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { Op, fn, col } from 'sequelize';
+import { Op } from 'sequelize';
 import { Payment, User } from '../models';
 import { logger } from '../config/logger';
 
@@ -14,63 +14,56 @@ export const getPaymentSummary = async (req: Request, res: Response) => {
             };
         }
 
-        // 1. Total successful revenue
-        const revenueResult = await Payment.sum('amount', {
-            where: {
-                ...whereClause,
-                status: 'successful'
-            }
-        });
-        const totalRevenue = revenueResult || 0;
-
-        // 2. Transaction counts
+        // 1. Fetch all matching payments
         const allPayments = await Payment.findAll({
             where: whereClause,
-            attributes: ['status', [fn('count', col('id')), 'count']],
-            group: ['status']
+            order: [['createdAt', 'ASC']],
+            raw: true
         });
-        
+
+        let totalRevenue = 0;
         let successfulCount = 0;
         let failedCount = 0;
         let pendingCount = 0;
-        
+        const paymentMethodsMap: { [key: string]: number } = {};
+        const revenueOverTimeMap: { [dateStr: string]: number } = {};
+
         allPayments.forEach((p: any) => {
-            const countStr = p.getDataValue('count');
-            const countNum = parseInt(typeof countStr === 'string' ? countStr : countStr.toString(), 10);
-            
-            if (p.status === 'successful') successfulCount += countNum;
-            else if (p.status === 'failed') failedCount += countNum;
-            else pendingCount += countNum; // initiated, processing, refunded
+            const amount = parseFloat(p.amount) || 0;
+            const status = (p.status || '').toLowerCase();
+            const method = p.paymentMethod || p.payment_method || 'razorpay';
+
+            if (status === 'successful') {
+                successfulCount++;
+                totalRevenue += amount;
+
+                paymentMethodsMap[method] = (paymentMethodsMap[method] || 0) + 1;
+
+                const createdAt = p.createdAt || p.created_at;
+                if (createdAt) {
+                    const d = new Date(createdAt);
+                    const dateStr = d.toISOString().split('T')[0]; // YYYY-MM-DD
+                    revenueOverTimeMap[dateStr] = (revenueOverTimeMap[dateStr] || 0) + amount;
+                }
+            } else if (status === 'failed') {
+                failedCount++;
+            } else {
+                pendingCount++;
+            }
         });
-        
-        const totalTransactions = successfulCount + failedCount + pendingCount;
+
+        const totalTransactions = allPayments.length;
         const averageTransactionValue = successfulCount > 0 ? totalRevenue / successfulCount : 0;
 
-        // 3. Payment methods distribution
-        const paymentMethodsResult = await Payment.findAll({
-            where: {
-                ...whereClause,
-                status: 'successful'
-            },
-            attributes: ['paymentMethod', [fn('count', col('id')), 'count']],
-            group: ['paymentMethod']
-        });
+        const paymentMethods = Object.keys(paymentMethodsMap).map(method => ({
+            paymentMethod: method,
+            count: paymentMethodsMap[method]
+        }));
 
-        // 4. Revenue broken down by day
-        // Using DATE_TRUNC for Postgres
-        const revenueOverTimeRaw = await Payment.findAll({
-            where: {
-                ...whereClause,
-                status: 'successful'
-            },
-            attributes: [
-                [fn('DATE_TRUNC', 'day', col('createdAt')), 'date'],
-                [fn('SUM', col('amount')), 'revenue']
-            ],
-            group: [fn('DATE_TRUNC', 'day', col('createdAt'))],
-            order: [[fn('DATE_TRUNC', 'day', col('createdAt')), 'ASC']],
-            raw: true
-        });
+        const revenueOverTime = Object.keys(revenueOverTimeMap).sort().map(date => ({
+            date,
+            revenue: revenueOverTimeMap[date]
+        }));
 
         res.status(200).json({
             success: true,
@@ -81,8 +74,8 @@ export const getPaymentSummary = async (req: Request, res: Response) => {
                 failedCount,
                 pendingCount,
                 averageTransactionValue,
-                paymentMethods: paymentMethodsResult,
-                revenueOverTime: revenueOverTimeRaw
+                paymentMethods,
+                revenueOverTime
             }
         });
     } catch (error: any) {
