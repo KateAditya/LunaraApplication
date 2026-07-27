@@ -76,6 +76,30 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _startStatusPolling();
   }
 
+  @override
+  void didUpdateWidget(covariant ChatScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final oldUserId = oldWidget.user['id']?.toString();
+    final newUserId = widget.user['id']?.toString();
+    final oldConvId = oldWidget.user['conversationId']?.toString();
+    final newConvId = widget.user['conversationId']?.toString();
+
+    if (oldUserId != newUserId || oldConvId != newConvId) {
+      _removeSocketListeners();
+      setState(() {
+        _currentUserId = ApiService.currentUserId;
+        _isOnline = widget.user['online'] == true;
+        _conversationId = newConvId?.isNotEmpty == true ? newConvId : null;
+        _messages = [];
+        _isLoading = true;
+      });
+      _checkBlockStatus();
+      _initChat();
+      _initSocketListeners();
+      _fetchUserStatus();
+    }
+  }
+
   void _initSocketListeners() {
     ApiService.addSocketListener('new_message', _onNewMessageSocket);
     ApiService.addSocketListener('messages_read', _onMessagesReadSocket);
@@ -99,7 +123,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
     final msgConvId = _safeString(data['conversationId']);
 
-    if (msgConvId.isNotEmpty && msgConvId == _conversationId) {
+    if (msgConvId.isNotEmpty && _conversationId != null && msgConvId.toLowerCase() == _conversationId!.toLowerCase()) {
       final incoming = _mapApiMessage(data);
       final clientMsgId = _safeString(incoming['clientMessageId']);
       final msgId = _safeString(incoming['id']);
@@ -125,7 +149,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (!mounted || rawData == null) return;
     final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
     final msgConvId = _safeString(data['conversationId']);
-    if (msgConvId == _conversationId) {
+    if (_conversationId != null && msgConvId.toLowerCase() == _conversationId!.toLowerCase()) {
       setState(() {
         for (var i = 0; i < _messages.length; i++) {
           if (_messages[i]['isSent'] == true) {
@@ -140,7 +164,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (!mounted || rawData == null) return;
     final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
     final targetUserId = _safeString(widget.user['id']);
-    if (_safeString(data['userId']) == targetUserId) {
+    if (_safeString(data['userId']).toLowerCase() == targetUserId.toLowerCase()) {
       setState(() {
         _isOnline = data['isOnline'] == true;
         _lastActive = _safeString(data['lastActiveAt']);
@@ -152,7 +176,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (!mounted || rawData == null) return;
     final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
     final msgConvId = _safeString(data['conversationId']);
-    if (msgConvId == _conversationId) {
+    if (_conversationId != null && msgConvId.toLowerCase() == _conversationId!.toLowerCase()) {
       setState(() {
         for (var i = 0; i < _messages.length; i++) {
           if (_messages[i]['isSent'] == true &&
@@ -167,7 +191,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void _onTypingStartedSocket(dynamic rawData) {
     if (!mounted || rawData == null) return;
     final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
-    if (_safeString(data['conversationId']) == _conversationId) {
+    final msgConvId = _safeString(data['conversationId']);
+    if (_conversationId != null && msgConvId.toLowerCase() == _conversationId!.toLowerCase()) {
       setState(() => _isRecipientTyping = true);
     }
   }
@@ -175,7 +200,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void _onTypingStoppedSocket(dynamic rawData) {
     if (!mounted || rawData == null) return;
     final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
-    if (_safeString(data['conversationId']) == _conversationId) {
+    final msgConvId = _safeString(data['conversationId']);
+    if (_conversationId != null && msgConvId.toLowerCase() == _conversationId!.toLowerCase()) {
       setState(() => _isRecipientTyping = false);
     }
   }
@@ -399,7 +425,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }) async {
     final convId = _conversationId;
     final userId = _currentUserId;
-    if (convId == null || userId == null) return;
+    if (convId == null || userId == null) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isLoadingMore = false;
+        });
+      }
+      return;
+    }
 
     if (loadMore) {
       if (_isLoadingMore || _messages.isEmpty) return;
@@ -457,7 +491,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   /// Normalise a raw API message into our local map format.
   Map<String, dynamic> _mapApiMessage(Map<String, dynamic> m) {
-    final senderId = _safeString(m['senderId'] ?? m['sender']);
+    String senderId = '';
+    if (m['senderId'] != null) {
+      senderId = m['senderId'].toString();
+    } else if (m['sender'] != null) {
+      if (m['sender'] is Map) {
+        senderId = (m['sender']['id'] ?? m['sender']['_id'] ?? '').toString();
+      } else {
+        senderId = m['sender'].toString();
+      }
+    }
+
     final type = _safeString(m['type'], 'text');
     final invStatus = _safeString(m['invitationStatus'], 'pending');
 
@@ -474,7 +518,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       'fileSize': m['fileSize'],
       'waveformData': m['waveformData']?.toString(),
       'replyToMessageId': m['replyToMessageId']?.toString(),
-      'isSent': senderId.isNotEmpty && senderId == _currentUserId,
+      'isSent': senderId.isNotEmpty && senderId.toLowerCase() == _currentUserId?.toLowerCase(),
       'createdAt': m['createdAt']?.toString(),
       'isDeleted': m['isDeleted'] == true || m['deletedAt'] != null,
       'status': _safeString(m['status'], 'sent'),

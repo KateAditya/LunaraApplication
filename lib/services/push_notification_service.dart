@@ -195,7 +195,7 @@ class PushNotificationService {
 
     // Suppress popups if the user is currently looking at this exact chat screen
     final convId = payloadData['conversationId']?.toString();
-    if (activeConversationId != null && convId == activeConversationId) {
+    if (activeConversationId != null && convId != null && convId.toLowerCase() == activeConversationId!.toLowerCase()) {
       debugPrint('🔔 Suppressing in-app banner for active chat $activeConversationId');
       return;
     }
@@ -220,7 +220,7 @@ class PushNotificationService {
     if (title.isEmpty && body.isEmpty) return;
 
     final convId = message.data['conversationId']?.toString();
-    if (activeConversationId != null && convId == activeConversationId) {
+    if (activeConversationId != null && convId != null && convId.toLowerCase() == activeConversationId!.toLowerCase()) {
       debugPrint('🔔 Suppressing foreground notification for active chat $activeConversationId');
       return;
     }
