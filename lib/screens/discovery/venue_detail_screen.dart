@@ -553,17 +553,12 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
 
     String distanceText = '';
     if (_currentPosition != null && lat != null && lng != null && lat != 0.0 && lng != 0.0) {
-      double distanceInMeters = Geolocator.distanceBetween(
+      distanceText = GooglePlacesService.formatRoadDistance(
         _currentPosition!.latitude,
         _currentPosition!.longitude,
         lat,
         lng,
       );
-      if (distanceInMeters < 1000) {
-        distanceText = '${distanceInMeters.toStringAsFixed(0)} m';
-      } else {
-        distanceText = '${(distanceInMeters / 1000).toStringAsFixed(1)} km';
-      }
     }
 
     return Scaffold(

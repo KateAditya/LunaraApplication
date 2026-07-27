@@ -438,13 +438,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       liveVenues.sort((a, b) {
         if (a.latitude == null || a.longitude == null) return 1;
         if (b.latitude == null || b.longitude == null) return -1;
-        double distA = Geolocator.distanceBetween(
+        double distA = GooglePlacesService.calculateRoadDistanceInMeters(
           _currentPosition!.latitude,
           _currentPosition!.longitude,
           a.latitude!,
           a.longitude!,
         );
-        double distB = Geolocator.distanceBetween(
+        double distB = GooglePlacesService.calculateRoadDistanceInMeters(
           _currentPosition!.latitude,
           _currentPosition!.longitude,
           b.latitude!,
@@ -1715,18 +1715,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               venue.longitude != null &&
               venue.latitude != 0.0 &&
               venue.longitude != 0.0) {
-            double distanceInMeters = Geolocator.distanceBetween(
+            distanceText = GooglePlacesService.formatRoadDistance(
               _currentPosition!.latitude,
               _currentPosition!.longitude,
               venue.latitude!,
               venue.longitude!,
             );
-            if (distanceInMeters < 1000) {
-              distanceText = '${distanceInMeters.toStringAsFixed(0)} m';
-            } else {
-              distanceText =
-                  '${(distanceInMeters / 1000).toStringAsFixed(1)} km';
-            }
           }
 
           return RepaintBoundary(

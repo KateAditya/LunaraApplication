@@ -25,7 +25,7 @@ const razorpay = new Razorpay({
 
 // ─── Shared attributes ────────────────────────────────────────────────────────
 const USER_ATTRS = ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'];
-const VENUE_ATTRS = ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'openingTime', 'closingTime', 'daysOpen', 'closedDates'];
+const VENUE_ATTRS = ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'openingTime', 'closingTime', 'daysOpen', 'closedDates', 'imageUrl'];
 const PROFILE_ATTRS = ['bio', 'occupation', 'city', 'gender'];
 
 function genTicketId(): string {
@@ -55,7 +55,6 @@ function buildIncludes() {
                     model: VenueImage,
                     as: 'images',
                     attributes: ['id', 'filePath', 'imageType', 'isPrimary'],
-                    where: { imageType: 'cover', isPrimary: true },
                     required: false,
                 },
             ],
@@ -94,8 +93,11 @@ function formatRequest(r: StrangersMeetRequest) {
         const primary = venue.images?.find((img: any) => img.isPrimary) || venue.images[0];
         if (primary?.filePath) {
             venueImageUrl = '/' + primary.filePath.replace(/\\/g, '/');
+        } else if (primary?.imageUrl) {
+            venueImageUrl = primary.imageUrl;
         }
     }
+
 
 
     // Dynamic calculations
@@ -130,7 +132,11 @@ function formatRequest(r: StrangersMeetRequest) {
         id: r.id,
         subject: r.subject,
         tagline: r.tagline,
+        coverImageUrl: venueImageUrl,
+        venueImageUrl: venueImageUrl,
+        bannerUrl: venueImageUrl,
         eventDateTime: r.eventDateTime,
+
         numberOfPersons: r.numberOfPersons,
         chargesPerHead: Number(r.chargesPerHead || 0),
         slotsFilled: joinedCount,  // Use live-computed count, not stale DB column
@@ -606,7 +612,7 @@ export const getAllRequests = async (req: Request, res: Response): Promise<void>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/mobile/strangers-meet/feed
-// Get all approved and paid strangers meet requests for public feed
+// Get all approved strangers meet requests for public feed
 // ─────────────────────────────────────────────────────────────────────────────
 export const getFeedRequests = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -618,8 +624,9 @@ export const getFeedRequests = async (req: Request, res: Response): Promise<void
 
         const { count, rows } = await StrangersMeetRequest.findAndCountAll({
             where: {
+                // Show all admin-approved meets regardless of host payment status
+                // so they appear in the public feed as soon as the admin approves them
                 status: StrangersMeetStatus.APPROVED,
-                paymentStatus: StrangersMeetPaymentStatus.PAID,
                 // Hide events that start within 45 minutes from now (or have already started)
                 eventDateTime: { [Op.gte]: new Date(Date.now() + 45 * 60 * 1000) },
             },
