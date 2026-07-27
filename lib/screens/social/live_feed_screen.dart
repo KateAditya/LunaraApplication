@@ -1636,7 +1636,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final isRead = _localReadNotificationIds.contains(bookingId);
 
     return Opacity(
-      opacity: isRead ? 0.6 : 1.0,
+      opacity: 1.0,
       child: Card(
         margin: const EdgeInsets.only(bottom: 16),
         elevation: 2,
@@ -1978,15 +1978,27 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   Widget _buildNotificationsFeed() {
     final filteredNotifications = _notifications.where((n) {
       if (_subFilterIndexTab3 == 0) return true;
-      final category = (n['category'] ?? n['type'] ?? '')
+      final category = (n['category'] ?? n['type'] ?? n['title'] ?? '')
           .toString()
           .toLowerCase();
-      if (_subFilterIndexTab3 == 1) return category.contains('system');
+      if (_subFilterIndexTab3 == 1) {
+        return category.contains('system') || category.contains('notice');
+      }
       if (_subFilterIndexTab3 == 2) {
-        return category.contains('alert') || category.contains('reminder');
+        return category.contains('alert') ||
+            category.contains('reminder') ||
+            category.contains('safety') ||
+            category.contains('warning');
       }
       if (_subFilterIndexTab3 == 3) {
-        return category.contains('activity') || category.contains('event');
+        return category.contains('activity') ||
+            category.contains('event') ||
+            category.contains('booking') ||
+            category.contains('payment') ||
+            category.contains('like') ||
+            category.contains('match') ||
+            category.contains('party') ||
+            category.contains('meet');
       }
       return true;
     }).toList();
@@ -3264,7 +3276,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final isRead = _readRequestIds.contains(reqId);
 
     return Opacity(
-      opacity: isRead ? 0.6 : 1.0,
+      opacity: 1.0,
       child: Padding(
         padding: const EdgeInsets.only(bottom: 16),
         child: Container(
@@ -3693,7 +3705,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final isRead = _readRequestIds.contains(reqId);
 
     return Opacity(
-      opacity: isRead ? 0.6 : 1.0,
+      opacity: 1.0,
       child: Padding(
         padding: const EdgeInsets.only(bottom: 16),
         child: Container(

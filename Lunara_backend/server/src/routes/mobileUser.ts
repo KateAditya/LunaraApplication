@@ -5,6 +5,7 @@ import { validate } from '../middleware/validate';
 import { uploadTempPhotos } from '../middleware/upload';
 import mobileUserController from '../controllers/mobileUserController';
 import { User, UserMatch, Payment, PartyPlanRequest, PlanJoinRequest, Conversation, Message, Plan, PartyPlan, Venue, StrangersMeetRequest, StrangersMeetJoiner, SafetyCheck, Booking, GroupParty } from '../models';
+import Notification from '../models/Notification';
 import { Op } from 'sequelize';
 import { optionalAuth } from '../middleware/auth';
 import { NotificationActionController } from '../controllers/NotificationActionController';
@@ -169,6 +170,38 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
         ...perUserServerIds,
     ]);
 
+    // Compile notifications list
+    const notifications: any[] = [];
+
+    // 0. Fetch stored DB Notification records
+    try {
+        const storedNotifs = await Notification.findAll({
+            where: { recipientUserId: uId },
+            order: [['createdAt', 'DESC']],
+            limit: 50
+        });
+
+        for (const sn of storedNotifs) {
+            const notificationId = sn.id;
+            const isRead = sn.isRead || activeReadNotificationIds.has(notificationId);
+            notifications.push({
+                id: notificationId,
+                title: sn.title,
+                body: sn.body,
+                category: sn.category || 'system',
+                type: sn.eventType || 'system_notice',
+                createdAt: sn.createdAt ? sn.createdAt.toISOString() : new Date().toISOString(),
+                read: isRead,
+                isRead: isRead,
+                data: sn.metadata || {},
+                deepLink: sn.deepLink,
+                actionType: sn.actionType,
+            });
+        }
+    } catch (snErr) {
+        console.error('Error fetching stored Notification records:', snErr);
+    }
+
     // 1. Fetch Likes & Super Likes
     const matches = await UserMatch.findAll({
         where: { user2Id: uId },
@@ -300,9 +333,6 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
         })
         : [];
 
-    // Compile notifications list
-    const notifications: any[] = [];
-
     // Add Likes/Super Likes
     for (const match of matches) {
         const sender = (match as any).user1;
@@ -321,8 +351,11 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
             id: notificationId,
             title,
             body,
+            category: 'activity',
+            type: isSuper ? 'superlike' : 'like',
             createdAt: match.createdAt ? match.createdAt.toISOString() : new Date().toISOString(),
             read: isRead,
+            isRead: isRead,
             sender: {
                 id: sender.id,
                 firstName: sender.firstName,
@@ -340,8 +373,11 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
             id: notificationId,
             title: isSuccess ? 'Payment Successful' : 'Payment Update',
             body: `Payment of ₹${p.amount} ${isSuccess ? 'confirmed' : p.status}.`,
+            category: 'activity',
+            type: 'payment',
             createdAt: p.createdAt ? p.createdAt.toISOString() : new Date().toISOString(),
             read: activeReadNotificationIds.has(notificationId),
+            isRead: activeReadNotificationIds.has(notificationId),
         });
     }
 
