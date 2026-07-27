@@ -264,6 +264,17 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
             logger.warn('Failed to send request submitted notification: ' + notifErr.message);
         }
 
+        try {
+            const { io } = require('../server');
+            io.to('admin').emit('admin_notification', {
+                title: 'New Stranger Meet Request',
+                message: `A new Stranger Meet request for ${request.numberOfPersons} persons requires admin approval.`,
+                type: 'stranger_meet_request'
+            });
+        } catch (adminErr: any) {
+            logger.warn('Failed to emit admin_notification: ' + adminErr.message);
+        }
+
         res.status(201).json({
             success: true,
             message: 'Request submitted successfully! Admin will review and get back to you. 🎉',
