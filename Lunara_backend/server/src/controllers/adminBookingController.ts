@@ -487,24 +487,16 @@ export const getBookings = async (req: Request, res: Response) => {
             where.isGroupBooking = { [Op.or]: [false, { [Op.is]: null }] };
             where.isLargePartyRequest = { [Op.or]: [false, { [Op.is]: null }] };
         } else if (goingMode === 'plan') {
-            where.goingMode = { [Op.or]: ['plan', 'party_plan'] };
+            where.goingMode = 'plan';
         } else if (goingMode === 'party_request') {
-            where[Op.or] = [
-                { goingMode: 'party_request' },
-                { isLargePartyRequest: true }
-            ];
-        } else if (goingMode) {
+            where.goingMode = 'party_request';
+        } else if (goingMode && ['solo', 'plan', 'party_request'].includes(String(goingMode))) {
             where.goingMode = goingMode;
         }
 
         if (isGroupRequested) where.isGroupBooking = true;
         if (isLargeRequested) where.isLargePartyRequest = true;
-        if (isUpcomingRequested) {
-            where[Op.or] = [
-                { isUpcomingNight: true },
-                { goingMode: 'upcoming' }
-            ];
-        }
+        if (isUpcomingRequested) where.isUpcomingNight = true;
 
         if (date === 'today') {
             const todayStr = new Date().toISOString().split('T')[0];
