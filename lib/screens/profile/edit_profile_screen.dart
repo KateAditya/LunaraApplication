@@ -611,19 +611,57 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     List<TextInputFormatter>? inputFormatters,
     String? Function(String?)? validator,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: TextFormField(
-        controller: controller,
-        keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-        maxLines: maxLines,
-        inputFormatters: inputFormatters,
-        validator: validator,
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: const TextStyle(fontWeight: FontWeight.bold),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Container(
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E1E2A) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: isDark ? Colors.black26 : Colors.black.withOpacity(0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: TextFormField(
+          controller: controller,
+          keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+          maxLines: maxLines,
+          inputFormatters: inputFormatters,
+          validator: validator,
+          style: TextStyle(
+            color: isDark ? Colors.white : Colors.black87,
+            fontWeight: FontWeight.w500,
+          ),
+          decoration: InputDecoration(
+            labelText: label,
+            labelStyle: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: isDark ? Colors.white54 : Colors.black54,
+              fontSize: 14,
+            ),
+            floatingLabelStyle: const TextStyle(
+              color: LunaraTheme.electricViolet,
+              fontWeight: FontWeight.bold,
+            ),
+            filled: false,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(color: LunaraTheme.electricViolet, width: 1.5),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(color: Colors.redAccent, width: 1.5),
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+          ),
         ),
       ),
     );
@@ -640,21 +678,75 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     } else if (currentText.startsWith('o')) {
       selectedValue = 'Other';
     }
+    
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: DropdownButtonFormField<String>(
-        initialValue: selectedValue,
-        decoration: InputDecoration(
-          labelText: 'Gender',
-          labelStyle: const TextStyle(fontWeight: FontWeight.bold),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Container(
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E1E2A) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: isDark ? Colors.black26 : Colors.black.withOpacity(0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
+        child: DropdownButtonFormField<String>(
+          initialValue: selectedValue,
+          icon: const Icon(Icons.arrow_drop_down, color: LunaraTheme.electricViolet),
+          decoration: InputDecoration(
+            labelText: 'Gender',
+            prefixIcon: Icon(
+              selectedValue == 'Male' ? Icons.male : (selectedValue == 'Female' ? Icons.female : Icons.transgender),
+              color: selectedValue == 'Male' ? Colors.blue : (selectedValue == 'Female' ? Colors.pink : Colors.purple),
+            ),
+            labelStyle: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: isDark ? Colors.white54 : Colors.black54,
+              fontSize: 14,
+            ),
+            floatingLabelStyle: const TextStyle(
+              color: LunaraTheme.electricViolet,
+              fontWeight: FontWeight.bold,
+            ),
+            filled: false,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(color: LunaraTheme.electricViolet, width: 1.5),
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+          ),
         items: genders.map((String gender) {
+          IconData icon;
+          Color iconColor;
+          if (gender == 'Male') {
+            icon = Icons.male;
+            iconColor = Colors.blue;
+          } else if (gender == 'Female') {
+            icon = Icons.female;
+            iconColor = Colors.pink;
+          } else {
+            icon = Icons.transgender;
+            iconColor = Colors.purple;
+          }
+
           return DropdownMenuItem<String>(
             value: gender,
-            child: Text(gender),
+            child: Row(
+              children: [
+                Icon(icon, color: iconColor, size: 20),
+                const SizedBox(width: 10),
+                Text(gender),
+              ],
+            ),
           );
         }).toList(),
         onChanged: (String? newValue) {

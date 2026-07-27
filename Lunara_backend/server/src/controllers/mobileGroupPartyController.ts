@@ -60,6 +60,19 @@ export const createGroupParty = async (req: Request, res: Response): Promise<voi
             currency: result.currency || 'INR'
         });
 
+        if (result.partyType === 'large_party_request' || Number(numberOfFriends) > 20) {
+            try {
+                const { io } = require('../server');
+                io.to('admin').emit('admin_notification', {
+                    title: 'New Group Party Request',
+                    message: `A new Group Party request for ${numberOfFriends} friends requires admin attention.`,
+                    type: 'group_party_request'
+                });
+            } catch (adminErr: any) {
+                logger.warn('Failed to emit admin_notification: ' + adminErr.message);
+            }
+        }
+
     } catch (err: any) {
         logger.error('createGroupParty error:', err);
         if (err.code && err.code.startsWith('PLAN_')) {
