@@ -543,6 +543,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   void _handleTabChange() {
     if (_tabController.indexIsChanging) return;
+    if (_tabController.index == 3) {
+      markAllNotificationsAsRead();
+    }
     _markCurrentTabItemsAsRead();
   }
 
@@ -784,9 +787,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             (plan['selectedUsers'] as List).contains(ApiService.currentUserId));
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final strangerMeetUnreadCount = _feedItems.where((i) {
+  int get strangerMeetUnreadCount {
+    return _feedItems.where((i) {
       final rType = i['requestType'];
       if (rType != 'table_plan' &&
           rType != 'stranger_meet' &&
@@ -795,44 +797,71 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (_readRequestIds.contains(i['id']?.toString() ?? '')) return false;
       if (i['type'] == 'incoming_request' && i['status'] == 'pending')
         return true;
-      if (i['type'] == 'my_request' &&
-          (i['status'] == 'accepted' || i['paymentStatus'] == 'pending')) {
+      if (i['type'] == 'my_request' && i['paymentStatus'] == 'pending')
         return true;
-      }
       return false;
     }).length;
+  }
 
-    final partyPlanUnreadCount = _feedItems.where((i) {
+  int get partyPlanUnreadCount {
+    return _feedItems.where((i) {
       if (i['requestType'] != 'party_plan') return false;
       if (_readRequestIds.contains(i['id']?.toString() ?? '')) return false;
       if (i['type'] == 'incoming_request' && i['status'] == 'pending')
         return true;
+      final hostPaid =
+          i['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'paid';
+      final isSelfPay = i['paymentType'] == 'self_pay';
+      final joinerPaid =
+          i['joinerPaymentStatus']?.toString().toLowerCase() == 'paid';
       if ((i['type'] == 'my_request' || _isInvite(i)) &&
-          (i['status'] == 'accepted' || i['joinerPaymentStatus'] == 'unpaid')) {
+          !hostPaid &&
+          !joinerPaid &&
+          !isSelfPay &&
+          i['status'] == 'payment_pending')
         return true;
-      }
       return false;
     }).length;
+  }
 
-    final otherUnreadCount = _notifications
-        .where((n) => n['isRead'] != true && n['read'] != true)
+  int get otherUnreadCount {
+    return _notifications
+        .where(
+          (n) =>
+              n['isRead'] != true &&
+              n['read'] != true &&
+              !_localReadNotificationIds.contains(n['id']?.toString() ?? ''),
+        )
         .length;
+  }
 
-    // Group Parties badge: bookings awaiting host payment
-    final groupPartyAwaitingCount = _largePartyBookings.where((b) {
+  int get groupPartyAwaitingCount {
+    return _largePartyBookings.where((b) {
       final st = (b['status'] ?? b['bookingStatus'] ?? '')
           .toString()
           .toLowerCase();
-      return st == 'approved' ||
-          st == 'approved_awaiting_payment' ||
-          st == 'awaiting_payment';
+      final pSt = (b['paymentStatus'] ?? b['hostPaymentStatus'] ?? '')
+          .toString()
+          .toLowerCase();
+      return (st == 'approved' ||
+              st == 'approved_awaiting_payment' ||
+              st == 'awaiting_payment') &&
+          pSt != 'paid';
     }).length;
+  }
 
-    final totalUnreadCount =
-        strangerMeetUnreadCount +
-        partyPlanUnreadCount +
-        groupPartyAwaitingCount +
-        otherUnreadCount;
+  int get totalUnreadCount =>
+      strangerMeetUnreadCount +
+      partyPlanUnreadCount +
+      groupPartyAwaitingCount +
+      otherUnreadCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final strangerMeetCount = strangerMeetUnreadCount;
+    final partyPlanCount = partyPlanUnreadCount;
+    final groupPartyCount = groupPartyAwaitingCount;
+    final otherCount = otherUnreadCount;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -854,28 +883,28 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               tabs: [
                 Tab(
                   child: Badge(
-                    isLabelVisible: strangerMeetUnreadCount > 0,
+                    isLabelVisible: strangerMeetCount > 0,
                     backgroundColor: LunaraTheme.electricViolet,
                     child: const Text('Stranger Meet'),
                   ),
                 ),
                 Tab(
                   child: Badge(
-                    isLabelVisible: partyPlanUnreadCount > 0,
+                    isLabelVisible: partyPlanCount > 0,
                     backgroundColor: LunaraTheme.electricViolet,
                     child: const Text('Party Plan'),
                   ),
                 ),
                 Tab(
                   child: Badge(
-                    isLabelVisible: groupPartyAwaitingCount > 0,
+                    isLabelVisible: groupPartyCount > 0,
                     backgroundColor: Colors.orange,
                     child: const Text('Group Parties'),
                   ),
                 ),
                 Tab(
                   child: Badge(
-                    isLabelVisible: otherUnreadCount > 0,
+                    isLabelVisible: otherCount > 0,
                     backgroundColor: LunaraTheme.electricViolet,
                     child: const Text('Other'),
                   ),
@@ -919,6 +948,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                       builder: (_) => const NotificationCenterScreen(),
                     ),
                   );
+                  await markAllNotificationsAsRead();
                   _loadFeed(showLoader: false);
                 },
               ),
@@ -2734,15 +2764,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                         } else if (reqStatus == 'accepted' ||
                             reqStatus == 'payment_pending') {
                           if (!joinerPaid) {
+                            final hStatus =
+                                (myReq['plan']?['hostPaymentStatus'] ??
+                                        myReq['planDetails']?['hostPaymentStatus'] ??
+                                        plan['hostPaymentStatus'])
+                                    ?.toString()
+                                    .toLowerCase();
                             final hostPaid =
-                                myReq['plan']?['hostPaymentStatus']
-                                        ?.toString()
-                                        .toLowerCase() ==
-                                    'paid' ||
-                                myReq['plan']?['hostPaymentStatus']
-                                        ?.toString()
-                                        .toLowerCase() ==
-                                    'refunded';
+                                hStatus == 'paid' ||
+                                hStatus == 'refunded' ||
+                                hStatus == 'completed' ||
+                                hStatus == 'confirmed';
                             if (!hostPaid) {
                               return Expanded(
                                 child: Container(
@@ -2791,15 +2823,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                             );
                           } else {
                             // Joiner has paid
+                            final hStatus =
+                                (myReq['plan']?['hostPaymentStatus'] ??
+                                        myReq['planDetails']?['hostPaymentStatus'] ??
+                                        plan['hostPaymentStatus'])
+                                    ?.toString()
+                                    .toLowerCase();
                             final hostPaid =
-                                myReq['plan']?['hostPaymentStatus']
-                                        ?.toString()
-                                        .toLowerCase() ==
-                                    'paid' ||
-                                myReq['plan']?['hostPaymentStatus']
-                                        ?.toString()
-                                        .toLowerCase() ==
-                                    'refunded';
+                                hStatus == 'paid' ||
+                                hStatus == 'refunded' ||
+                                hStatus == 'completed' ||
+                                hStatus == 'confirmed';
                             if (!hostPaid) {
                               return Expanded(
                                 child: Container(

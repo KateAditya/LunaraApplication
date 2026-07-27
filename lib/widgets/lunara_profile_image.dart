@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../core/theme.dart';
 import '../models/user.dart';
 import '../screens/profile/profile_screen.dart';
@@ -41,10 +42,6 @@ class LunaraProfileImage extends StatelessWidget {
   }
 
   String? get _profilePhoto {
-    // Try resolved user first — but only use the photo if it is actually non-null.
-    // User.fromJson may succeed (e.g. id/name are present) yet yield a null
-    // profilePhoto when the map key is 'profilePhotoUrl' instead of 'profileImageUrl'.
-    // In that case we must fall through to the direct map lookup below.
     final resolved = _resolvedUser;
     final fromResolved = resolved?.profilePhoto;
     if (fromResolved != null && fromResolved.isNotEmpty) return fromResolved;
@@ -71,12 +68,10 @@ class LunaraProfileImage extends StatelessWidget {
     return null;
   }
 
-  /// Determine the effective subscription tier for border styling.
   String get _effectiveTier {
     if (overrideTier != null) return overrideTier!.toUpperCase();
     final resolved = _resolvedUser;
     if (resolved != null) return resolved.subscriptionTier.toUpperCase();
-    // Try to parse from raw userData map
     if (userData != null) {
       final t = userData!['subscriptionTier']?.toString().toUpperCase();
       if (t != null && t.isNotEmpty) return t;
@@ -84,12 +79,6 @@ class LunaraProfileImage extends StatelessWidget {
     return 'FREE';
   }
 
-  /// Returns the ring gradient for the given subscription tier.
-  /// - Elite: animated golden gradient
-  /// - Pro: purple-pink gradient
-  /// - Plus: purple gradient
-  /// - Core: cyan gradient
-  /// - Free: default Lunara gradient
   Gradient _tierGradient(String tier) {
     switch (tier) {
       case 'ELITE':
@@ -139,13 +128,14 @@ class LunaraProfileImage extends StatelessWidget {
       radius: radius,
       backgroundColor: Colors.grey[100],
       backgroundImage: isNetwork
-          ? NetworkImage(photo) as ImageProvider
+          ? CachedNetworkImageProvider(photo) as ImageProvider
           : AssetImage(
               (photo != null && photo.isNotEmpty)
                   ? photo
                   : LunaraTheme.defaultAvatar,
             ),
     );
+
 
     if (showGradientBorder) {
       final String tier = _effectiveTier;

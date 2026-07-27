@@ -15,6 +15,8 @@ import '../screens/social/live_feed_screen.dart';
 import '../screens/profile/lunara_wallet_screen.dart';
 import '../screens/social/post_detail_screen.dart';
 import '../screens/post_booking/ticket_pocket_screen.dart';
+import '../screens/social/party_plan_requests_screen.dart';
+import '../screens/social/host_party_plan_manager_screen.dart';
 
 /// Top-level background message handler.
 /// Must be a top-level function (not a class method) for Firebase.
@@ -195,7 +197,7 @@ class PushNotificationService {
 
     // Suppress popups if the user is currently looking at this exact chat screen
     final convId = payloadData['conversationId']?.toString();
-    if (activeConversationId != null && convId == activeConversationId) {
+    if (activeConversationId != null && convId != null && convId.toLowerCase() == activeConversationId!.toLowerCase()) {
       debugPrint('🔔 Suppressing in-app banner for active chat $activeConversationId');
       return;
     }
@@ -220,7 +222,7 @@ class PushNotificationService {
     if (title.isEmpty && body.isEmpty) return;
 
     final convId = message.data['conversationId']?.toString();
-    if (activeConversationId != null && convId == activeConversationId) {
+    if (activeConversationId != null && convId != null && convId.toLowerCase() == activeConversationId!.toLowerCase()) {
       debugPrint('🔔 Suppressing foreground notification for active chat $activeConversationId');
       return;
     }
@@ -327,8 +329,30 @@ class PushNotificationService {
         _navigateToChat(navigator, data);
         break;
       case 'new_party_plan':
-      case 'host_payment_successful':
+      case 'party_plan_created':
+        navigator.push(
+          MaterialPageRoute(
+            builder: (_) => const LiveFeedScreen(initialTabIndex: 0),
+          ),
+        );
+        break;
       case 'participant_payment_required':
+      case 'party_plan_request_accepted':
+      case 'party_plan_request':
+        navigator.push(
+          MaterialPageRoute(
+            builder: (_) => const PartyPlanRequestsScreen(),
+          ),
+        );
+        break;
+      case 'host_payment_required':
+      case 'host_payment_successful':
+        navigator.push(
+          MaterialPageRoute(
+            builder: (_) => const HostPartyPlanManagerScreen(),
+          ),
+        );
+        break;
       case 'booking_confirmed':
       case 'booking_pending':
       case 'booking_cancelled':

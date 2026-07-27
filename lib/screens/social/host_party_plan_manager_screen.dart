@@ -328,7 +328,8 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
     final message = plan['message'] ?? 'Let\'s party!';
     final planDateTime = plan['planDateTime'] != null ? DateTime.parse(plan['planDateTime']).toLocal() : DateTime.now();
     final isLive = plan['isLive'] ?? false;
-    final paymentStatus = plan['hostPaymentStatus'] ?? 'pending';
+    final paymentStatus = (plan['hostPaymentStatus'] ?? 'pending').toString().toLowerCase();
+    final bool isHostPaid = paymentStatus == 'paid' || paymentStatus == 'refunded' || paymentStatus == 'completed' || paymentStatus == 'confirmed';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 24),
@@ -408,10 +409,10 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
-                            color: (paymentStatus == 'paid' || paymentStatus == 'refunded') ? Colors.green : Colors.orange,
+                            color: isHostPaid ? Colors.green : Colors.orange,
                           ),
                         ),
-                        if (paymentStatus == 'unpaid' && requests.any((r) => r['status'] == 'payment_pending')) ...[
+                        if (!isHostPaid && requests.any((r) => r['status'] == 'payment_pending')) ...[
                           const SizedBox(width: 8),
                           ElevatedButton(
                             onPressed: () => _onHostPayDeposit(plan),
@@ -461,8 +462,9 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                     final reqUser = req['requester'] ?? {};
                     final name = '${reqUser['firstName'] ?? ''} ${reqUser['lastName'] ?? ''}'.trim();
                     final status = req['status'] ?? 'pending';
-                    final hostPaid = plan['hostPaymentStatus'] == 'paid' || plan['hostPaymentStatus'] == 'refunded';
-                    final joinerPaid = req['joinerPaymentStatus'] == 'paid' || req['joinerPaymentStatus'] == 'refunded';
+                    final isSelfPay = plan['paymentType'] == 'self_pay';
+                    final hostPaid = isHostPaid;
+                    final joinerPaid = req['joinerPaymentStatus']?.toString().toLowerCase() == 'paid' || req['joinerPaymentStatus']?.toString().toLowerCase() == 'refunded' || isSelfPay;
                     final timerText = _getTimeRemaining(req['paymentTimeoutAt']);
                     
                     return Container(

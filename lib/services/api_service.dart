@@ -1846,8 +1846,10 @@ class ApiService {
       final params = <String, String>{
         'userId': userId,
         'limit': limit.toString(),
-        'before': ?before,
       };
+      if (before != null && before.isNotEmpty) {
+        params['before'] = before;
+      }
       final response = await get(
         '/api/mobile/chat/conversations/$conversationId/messages',
         queryParameters: params,

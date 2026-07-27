@@ -4,7 +4,6 @@ import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../discovery/payment_confirmation_screen.dart';
-import 'party_plan_ticket_screen.dart';
 import 'chat_screen.dart';
 
 class PartyPlanRequestsScreen extends StatefulWidget {
@@ -286,10 +285,14 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
     final hostName = '${host['firstName'] ?? ''} ${host['lastName'] ?? ''}'
         .trim();
 
-    final joinerPaid = paymentStatus == 'paid' || paymentStatus == 'refunded';
+    final isSelfPay = plan['paymentType'] == 'self_pay';
+    final joinerPaid =
+        paymentStatus.toString().toLowerCase() == 'paid' ||
+        paymentStatus.toString().toLowerCase() == 'refunded' ||
+        isSelfPay;
     final hostPaid =
-        plan['hostPaymentStatus'] == 'paid' ||
-        plan['hostPaymentStatus'] == 'refunded';
+        plan['hostPaymentStatus']?.toString().toLowerCase() == 'paid' ||
+        plan['hostPaymentStatus']?.toString().toLowerCase() == 'refunded';
 
     final String lowerStatus = status.toString().toLowerCase();
     final bool isBookingConfirmed =
@@ -351,7 +354,8 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
                 _buildStatusBadge(
                   status,
                   paymentStatus,
-                  plan['hostPaymentStatus'],
+                  plan['hostPaymentStatus']?.toString(),
+                  paymentType: plan['paymentType']?.toString(),
                 ),
               ],
             ),
@@ -580,12 +584,22 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
   Widget _buildStatusBadge(
     String status,
     String paymentStatus,
-    String? hostPaymentStatus,
-  ) {
+    String? hostPaymentStatus, {
+    String? paymentType,
+  }) {
     Color bg;
     Color text;
     final String lowerStatus = status.toString().toLowerCase();
     String label = status.toUpperCase();
+
+    final bool isSelfPay = paymentType == 'self_pay';
+    final bool hostPaid =
+        hostPaymentStatus?.toLowerCase() == 'paid' ||
+        hostPaymentStatus?.toLowerCase() == 'refunded';
+    final bool joinerPaid =
+        paymentStatus.toLowerCase() == 'paid' ||
+        paymentStatus.toLowerCase() == 'refunded' ||
+        isSelfPay;
 
     if (lowerStatus == 'pending') {
       bg = Colors.orange.withValues(alpha: 0.1);

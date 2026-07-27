@@ -8,6 +8,8 @@ import '../../services/api_service.dart';
 import 'payment_confirmation_screen.dart';
 import '../../services/app_tour_service.dart';
 import '../../widgets/venue_timing_error_dialog.dart';
+import '../../widgets/venue_cover_charge_notice.dart';
+
 
 class GroupPartyBookingScreen extends StatefulWidget {
   const GroupPartyBookingScreen({super.key});
@@ -1609,8 +1611,11 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                     ),
                     const SizedBox(height: 32),
                   ],
+                  const VenueCoverChargeNoticeCard(),
+                  const SizedBox(height: 16),
                   SizedBox(
                     key: AppTourService.groupPartyProceedButtonKey,
+
                     width: double.infinity,
                     child: ElevatedButton(
                       onPressed: () async {

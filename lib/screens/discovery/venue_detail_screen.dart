@@ -14,6 +14,8 @@ import '../../services/api_service.dart';
 import 'package:intl/intl.dart';
 import 'upcoming_party_screen.dart';
 import '../../main.dart';
+import '../../widgets/venue_cover_charge_notice.dart';
+
 
 
 
@@ -923,7 +925,10 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
                       Navigator.push(context, MaterialPageRoute(builder: (_) => BookingProcessScreen(venue: venue)));
                     },
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
+                  const VenueCoverChargeNoticeCard(),
+                  const SizedBox(height: 16),
+
                   if (hasDiscount) ...[
                     _buildDiscountBanner(discountVal),
                     const SizedBox(height: 24),
