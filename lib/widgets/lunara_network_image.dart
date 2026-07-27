@@ -41,7 +41,7 @@ class LunaraNetworkImage extends StatelessWidget {
         width: width,
         height: height,
         fit: fit,
-        errorBuilder: (_, __, ___) => _buildFallback(),
+        errorBuilder: (_, _, _) => _buildFallback(),
       );
       if (borderRadius != null) {
         image = ClipRRect(borderRadius: borderRadius!, child: image);

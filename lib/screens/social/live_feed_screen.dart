@@ -65,8 +65,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   final Set<String> _clearedFeedItemIds = {};
 
   String _sanitizeDisplayText(String rawText) {
-    if (rawText.isEmpty || rawText == 'null' || rawText == 'undefined')
+    if (rawText.isEmpty || rawText == 'null' || rawText == 'undefined') {
       return '';
+    }
     final trimmed = rawText.trim();
     // Check if string is a raw UUID or random debug code (e.g. rxtxc6c6, hcidhdhd)
     final isUuid = RegExp(
@@ -792,13 +793,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final rType = i['requestType'];
       if (rType != 'table_plan' &&
           rType != 'stranger_meet' &&
-          rType != 'stranger_meet_join')
+          rType != 'stranger_meet_join') {
         return false;
+      }
       if (_readRequestIds.contains(i['id']?.toString() ?? '')) return false;
-      if (i['type'] == 'incoming_request' && i['status'] == 'pending')
+      if (i['type'] == 'incoming_request' && i['status'] == 'pending') {
         return true;
-      if (i['type'] == 'my_request' && i['paymentStatus'] == 'pending')
+      }
+      if (i['type'] == 'my_request' && i['paymentStatus'] == 'pending') {
         return true;
+      }
       return false;
     }).length;
   }
@@ -807,8 +811,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     return _feedItems.where((i) {
       if (i['requestType'] != 'party_plan') return false;
       if (_readRequestIds.contains(i['id']?.toString() ?? '')) return false;
-      if (i['type'] == 'incoming_request' && i['status'] == 'pending')
+      if (i['type'] == 'incoming_request' && i['status'] == 'pending') {
         return true;
+      }
       final hostPaid =
           i['plan']?['hostPaymentStatus']?.toString().toLowerCase() == 'paid';
       final isSelfPay = i['paymentType'] == 'self_pay';
@@ -818,8 +823,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           !hostPaid &&
           !joinerPaid &&
           !isSelfPay &&
-          i['status'] == 'payment_pending')
+          i['status'] == 'payment_pending') {
         return true;
+      }
       return false;
     }).length;
   }
@@ -1462,19 +1468,22 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   'pending')
               .toString()
               .toLowerCase();
-      if (_subFilterIndexTab2 == 1)
+      if (_subFilterIndexTab2 == 1) {
         return rawStatus == 'pending' ||
             rawStatus == 'unpaid' ||
             rawStatus == 'submitted'; // Pending
-      if (_subFilterIndexTab2 == 2)
+      }
+      if (_subFilterIndexTab2 == 2) {
         return rawStatus == 'approved' ||
             rawStatus == 'approved_awaiting_payment' ||
             rawStatus == 'awaiting_payment' ||
             rawStatus == 'payment_sent'; // Approved
-      if (_subFilterIndexTab2 == 3)
+      }
+      if (_subFilterIndexTab2 == 3) {
         return rawStatus == 'paid' ||
             rawStatus == 'confirmed' ||
             rawStatus == 'payment_done'; // Confirmed Bookings
+      }
       return true;
     }).toList();
 
@@ -1973,10 +1982,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           .toString()
           .toLowerCase();
       if (_subFilterIndexTab3 == 1) return category.contains('system');
-      if (_subFilterIndexTab3 == 2)
+      if (_subFilterIndexTab3 == 2) {
         return category.contains('alert') || category.contains('reminder');
-      if (_subFilterIndexTab3 == 3)
+      }
+      if (_subFilterIndexTab3 == 3) {
         return category.contains('activity') || category.contains('event');
+      }
       return true;
     }).toList();
 
