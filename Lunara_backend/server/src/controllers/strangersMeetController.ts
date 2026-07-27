@@ -612,7 +612,7 @@ export const getAllRequests = async (req: Request, res: Response): Promise<void>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/mobile/strangers-meet/feed
-// Get all approved and paid strangers meet requests for public feed
+// Get all approved strangers meet requests for public feed
 // ─────────────────────────────────────────────────────────────────────────────
 export const getFeedRequests = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -624,8 +624,9 @@ export const getFeedRequests = async (req: Request, res: Response): Promise<void
 
         const { count, rows } = await StrangersMeetRequest.findAndCountAll({
             where: {
+                // Show all admin-approved meets regardless of host payment status
+                // so they appear in the public feed as soon as the admin approves them
                 status: StrangersMeetStatus.APPROVED,
-                paymentStatus: StrangersMeetPaymentStatus.PAID,
                 // Hide events that start within 45 minutes from now (or have already started)
                 eventDateTime: { [Op.gte]: new Date(Date.now() + 45 * 60 * 1000) },
             },

@@ -354,7 +354,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final userId = _currentUserId;
     final otherUserId = widget.user['id']?.toString();
 
+    debugPrint('[ChatScreen] _initChat: userId=$userId, otherUserId=$otherUserId');
+    debugPrint('[ChatScreen] _initChat: widget.user=${widget.user}');
+
     if (userId == null || otherUserId == null || otherUserId.isEmpty) {
+      debugPrint('[ChatScreen] _initChat: Missing userId or otherUserId, aborting');
       if (mounted) setState(() => _isLoading = false);
       return;
     }
@@ -362,6 +366,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // Step 3 — create or get conversation
     final existingConvId = widget.user['conversationId']?.toString();
     String? convId = existingConvId?.isNotEmpty == true ? existingConvId : null;
+    debugPrint('[ChatScreen] existingConvId=$existingConvId, using convId=$convId');
 
     convId ??= await ApiService.createOrGetConversation(
       userId: userId,
@@ -372,9 +377,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     if (!mounted) return;
     _conversationId = convId;
+    debugPrint('[ChatScreen] Final conversationId=$convId');
     PushNotificationService.activeConversationId = convId;
 
     if (convId == null) {
+      debugPrint('[ChatScreen] convId is null, cannot load messages');
       setState(() => _isLoading = false);
       return;
     }
@@ -390,6 +397,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       _checkChatSession();
     }
   }
+
 
   Future<void> _checkChatSession() async {
     final convId = _conversationId;
@@ -595,6 +603,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             _sortMessages();
           });
         }
+      } else if (mounted) {
+        // Remove temp message if send failed
+        setState(() => _messages.removeWhere((m) =>
+            m['id'] == tempId || m['clientMessageId'] == tempId));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to send message. Please try again.')),
+        );
       }
     } catch (e) {
       debugPrint('_sendMessage error: $e');
@@ -602,6 +617,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       if (mounted) {
         setState(() => _messages.removeWhere((m) =>
             m['id'] == tempId || m['clientMessageId'] == tempId));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error sending message.')),
+        );
       }
     } finally {
       if (mounted) setState(() => _isSending = false);

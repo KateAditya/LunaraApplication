@@ -1821,13 +1821,18 @@ class ApiService {
         body['contextType'] ??= 'plan';
       }
       final response = await post('/api/mobile/chat/conversations', body: body);
-      // debugPrint('createOrGetConversation ${response.statusCode}: ${response.body}');
+      debugPrint('[Chat] createOrGetConversation status=${response.statusCode}');
+      debugPrint('[Chat] createOrGetConversation body=${response.body.substring(0, response.body.length > 300 ? 300 : response.body.length)}');
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
-          return data['data']?['conversationId']?.toString() ??
+          final convId = data['data']?['conversationId']?.toString() ??
               data['data']?['id']?.toString();
+          debugPrint('[Chat] got conversationId: $convId');
+          return convId;
         }
+      } else {
+        debugPrint('[Chat] createOrGetConversation FAILED: ${response.body}');
       }
     } catch (e) {
       debugPrint('createOrGetConversation error: $e');
@@ -1854,12 +1859,17 @@ class ApiService {
         '/api/mobile/chat/conversations/$conversationId/messages',
         queryParameters: params,
       );
-      // debugPrint('fetchMessages ${response.statusCode}: ${response.body}');
+      debugPrint('[Chat] fetchMessages status=${response.statusCode} convId=$conversationId');
+      debugPrint('[Chat] fetchMessages body=${response.body.substring(0, response.body.length > 300 ? 300 : response.body.length)}');
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] is List) {
-          return List<Map<String, dynamic>>.from(data['data']);
+          final msgs = List<Map<String, dynamic>>.from(data['data']);
+          debugPrint('[Chat] fetchMessages returned ${msgs.length} messages');
+          return msgs;
         }
+      } else {
+        debugPrint('[Chat] fetchMessages FAILED: ${response.body}');
       }
     } catch (e) {
       debugPrint('fetchMessages error: $e');
@@ -1896,12 +1906,15 @@ class ApiService {
         '/api/mobile/chat/conversations/$conversationId/messages',
         body: body,
       );
-      //debugPrint('sendMessage ${response.statusCode}: ${response.body}');
+      debugPrint('[Chat] sendMessage status=${response.statusCode} convId=$conversationId');
+      debugPrint('[Chat] sendMessage body=${response.body.substring(0, response.body.length > 300 ? 300 : response.body.length)}');
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
           return Map<String, dynamic>.from(data['data']);
         }
+      } else {
+        debugPrint('[Chat] sendMessage FAILED: ${response.body}');
       }
     } catch (e) {
       debugPrint('sendMessage error: $e');

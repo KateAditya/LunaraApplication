@@ -77,10 +77,30 @@ export const getConversations = async (req: Request, res: Response) => {
                     }],
                 },
             ],
-            order: [['lastMessageAt', 'DESC NULLS LAST']],
+            order: [['lastMessageAt', 'DESC NULLS LAST'], ['createdAt', 'DESC']],
         });
 
-        const list = conversations.map(conv => {
+        // Deduplicate conversations by otherUser ID (keep the one with latest lastMessageAt)
+        const mapByOtherUser = new Map<string, any>();
+
+        for (const conv of conversations) {
+            const otherUserId = conv.getOtherParticipant(userId);
+            if (!otherUserId) continue;
+
+            const key = otherUserId.toLowerCase();
+            const existing = mapByOtherUser.get(key);
+            if (!existing) {
+                mapByOtherUser.set(key, conv);
+            } else {
+                const existingTime = existing.lastMessageAt ? new Date(existing.lastMessageAt).getTime() : (existing.createdAt ? new Date(existing.createdAt).getTime() : 0);
+                const newTime = conv.lastMessageAt ? new Date(conv.lastMessageAt).getTime() : (conv.createdAt ? new Date(conv.createdAt).getTime() : 0);
+                if (newTime > existingTime) {
+                    mapByOtherUser.set(key, conv);
+                }
+            }
+        }
+
+        const list = Array.from(mapByOtherUser.values()).map(conv => {
             const otherUserId = conv.getOtherParticipant(userId);
             const otherUser = (otherUserId && conv.participantOne && otherUserId.toLowerCase() === conv.participantOne.toLowerCase())
                 ? (conv as any).userOne
@@ -88,6 +108,7 @@ export const getConversations = async (req: Request, res: Response) => {
 
             return {
                 conversationId:      conv.id,
+                id:                  conv.id,
                 otherUser:           formatUserBrief(otherUser),
                 lastMessagePreview:  conv.lastMessagePreview ?? '',
                 lastMessageAt:       conv.lastMessageAt,
@@ -113,22 +134,37 @@ export const getOrCreateConversation = async (req: Request, res: Response) => {
         if (!userId || !otherUserId) {
             return res.status(400).json({ success: false, message: 'userId and otherUserId are required' });
         }
-        if (userId === otherUserId) {
+        if (userId.toLowerCase() === otherUserId.toLowerCase()) {
             return res.status(400).json({ success: false, message: 'Cannot create conversation with yourself' });
         }
 
-        // Normalize participant order (smaller UUID first) to enforce the unique constraint
-        const [p1, p2] = [userId, otherUserId].sort();
+        // Search for any existing conversation between these 2 users in EITHER direction
+        const existing = await Conversation.findAll({
+            where: {
+                [Op.or]: [
+                    { participantOne: userId, participantTwo: otherUserId },
+                    { participantOne: otherUserId, participantTwo: userId },
+                ],
+                status: { [Op.ne]: ConversationStatus.BLOCKED },
+            },
+            order: [['lastMessageAt', 'DESC NULLS LAST'], ['createdAt', 'DESC']],
+        });
 
-        const [conversation, created] = await Conversation.findOrCreate({
-            where: { participantOne: p1, participantTwo: p2 },
-            defaults: {
+        let conversation: Conversation;
+        let created = false;
+
+        if (existing.length > 0) {
+            conversation = existing[0];
+        } else {
+            const [p1, p2] = [userId, otherUserId].sort();
+            conversation = await Conversation.create({
                 participantOne: p1,
                 participantTwo: p2,
                 contextType,
                 contextId,
-            },
-        });
+            });
+            created = true;
+        }
 
         const otherUser = await User.findByPk(otherUserId, {
             attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'],
@@ -146,6 +182,7 @@ export const getOrCreateConversation = async (req: Request, res: Response) => {
             message: created ? 'Conversation created' : 'Conversation retrieved',
             data: {
                 conversationId: conversation.id,
+                id:             conversation.id,
                 otherUser:      formatUserBrief(otherUser),
                 unreadCount:    conversation.getUnreadFor(userId),
                 status:         conversation.status,
@@ -172,12 +209,26 @@ export const getMessages = async (req: Request, res: Response) => {
         const conv = await Conversation.findByPk(id);
         if (!conv) return res.status(404).json({ success: false, message: 'Conversation not found' });
         const uId = userId.toLowerCase();
-        if (conv.participantOne.toLowerCase() !== uId && conv.participantTwo.toLowerCase() !== uId) {
+        const p1 = (conv.participantOne || '').toLowerCase();
+        const p2 = (conv.participantTwo || '').toLowerCase();
+        if (p1 !== uId && p2 !== uId) {
             return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
+        // Find all conversation IDs between these two participants to include legacy duplicate conversations
+        const allConvs = await Conversation.findAll({
+            where: {
+                [Op.or]: [
+                    { participantOne: conv.participantOne, participantTwo: conv.participantTwo },
+                    { participantOne: conv.participantTwo, participantTwo: conv.participantOne },
+                ],
+            },
+            attributes: ['id'],
+        });
+        const convIds = allConvs.map(c => c.id);
+
         const where: any = {
-            conversationId: id,
+            conversationId: { [Op.in]: convIds },
             deletedAt: null as any,
         };
         if (before) where.createdAt = { [Op.lt]: new Date(before) };
@@ -199,7 +250,7 @@ export const getMessages = async (req: Request, res: Response) => {
             limit,
         });
 
-        // Mark unread messages as read
+        // Mark unread messages as read across all related conversations
         const unreadIds = messages
             .filter(m => m.senderId !== userId && m.status !== MessageStatus.READ)
             .map(m => m.id);
@@ -209,9 +260,11 @@ export const getMessages = async (req: Request, res: Response) => {
                 { status: MessageStatus.READ, readAt: new Date() },
                 { where: { id: { [Op.in]: unreadIds } } }
             );
-            // Reset caller's unread count
-            const resetField = (conv.participantOne && userId && conv.participantOne.toLowerCase() === userId.toLowerCase()) ? { unreadOne: 0 } : { unreadTwo: 0 };
-            await (conv as any).update(resetField);
+            
+            for (const c of allConvs) {
+                const resetField = (c.participantOne && userId && c.participantOne.toLowerCase() === userId.toLowerCase()) ? { unreadOne: 0 } : { unreadTwo: 0 };
+                await (c as any).update(resetField);
+            }
             
             // Emit read receipt to the sender
             try {
@@ -271,7 +324,7 @@ export const sendMessage = async (req: Request, res: Response) => {
                         model: UserPhoto, as: 'photos',
                         where: { isPrimary: true },
                         attributes: ['id', 'filePath', 'userId'],
-                        required: false, limit: 1,
+                        required: false,
                     }],
                 }],
             });
@@ -287,7 +340,9 @@ export const sendMessage = async (req: Request, res: Response) => {
         const conv = await Conversation.findByPk(id);
         if (!conv) return res.status(404).json({ success: false, message: 'Conversation not found' });
         const sId = senderId.toLowerCase();
-        if (conv.participantOne.toLowerCase() !== sId && conv.participantTwo.toLowerCase() !== sId) {
+        const p1 = (conv.participantOne || '').toLowerCase();
+        const p2 = (conv.participantTwo || '').toLowerCase();
+        if (p1 !== sId && p2 !== sId) {
             return res.status(403).json({ success: false, message: 'You are not part of this conversation' });
         }
         if (conv.status === ConversationStatus.BLOCKED) {
@@ -317,7 +372,7 @@ export const sendMessage = async (req: Request, res: Response) => {
         try {
             const { io } = require('../server');
             const recipientRoom = io.sockets.adapter.rooms.get(`user_${recipientId}`);
-            isRecipientOnline = recipientRoom && recipientRoom.size > 0;
+            isRecipientOnline = !!(recipientRoom && recipientRoom.size > 0);
         } catch (err) {}
 
         const message = await Message.create({
@@ -342,11 +397,13 @@ export const sendMessage = async (req: Request, res: Response) => {
         // Build preview text
         const preview = message.getPreview();
 
-        // Increment unread for the OTHER participant
+        // Increment unread for the OTHER participant safely
         const isOne = (conv.participantOne && senderId && conv.participantOne.toLowerCase() === senderId.toLowerCase());
+        const currentUnreadOne = Number(conv.unreadOne || 0);
+        const currentUnreadTwo = Number(conv.unreadTwo || 0);
         const unreadUpdate = isOne
-            ? { unreadTwo: conv.unreadTwo + 1 }
-            : { unreadOne: conv.unreadOne + 1 };
+            ? { unreadTwo: currentUnreadTwo + 1 }
+            : { unreadOne: currentUnreadOne + 1 };
 
         await (conv as any).update({
             lastMessageId:      message.id,
@@ -355,16 +412,21 @@ export const sendMessage = async (req: Request, res: Response) => {
             ...unreadUpdate,
         });
 
-        // Emit new_message to recipient
+        const formattedMsg = formatMessage(message as any);
+
+        // Emit new_message to recipient AND sender rooms
         try {
             const { io } = require('../server');
+            io.to(`user_${recipientId}`).emit('new_message', formattedMsg);
+            io.to(`user_${senderId}`).emit('new_message', formattedMsg);
             if (isRecipientOnline) {
-                io.to(`user_${recipientId}`).emit('new_message', formatMessage(message as any));
                 io.to(`user_${senderId}`).emit('messages_delivered', { conversationId: id });
             }
         } catch (err) {
             logger.error('Failed to emit new_message socket event:', err);
         }
+
+
 
         // ── Push notification (for offline recipients) ───────────────────────
         if (!isRecipientOnline) {
