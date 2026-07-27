@@ -215,6 +215,11 @@ app.use('/api/db-restore', dbRestoreRoutes);
 io.on('connection', (socket) => {
     logger.info(`Client connected: ${socket.id}`);
 
+    socket.on('join_admin_room', () => {
+        socket.join('admin');
+        logger.info(`Socket ${socket.id} joined admin room`);
+    });
+
     socket.on('join_user_room', async (userId: string) => {
         socket.join(`user_${userId}`);
         (socket as any).userId = userId;

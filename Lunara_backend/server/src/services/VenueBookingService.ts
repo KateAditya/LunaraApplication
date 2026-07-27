@@ -168,6 +168,19 @@ export class VenueBookingService {
             }
         );
 
+        try {
+            if (isLargeParty || isUpcomingNight) {
+                const { io } = require('../server');
+                io.to('admin').emit('admin_notification', {
+                    title: isLargeParty ? 'New Large Party Request' : 'New Upcoming Night Request',
+                    message: `A new request for ${numberOfGuests} guests requires admin attention.`,
+                    type: 'booking_request'
+                });
+            }
+        } catch (adminErr: any) {
+            logger.warn('Failed to emit admin_notification: ' + adminErr.message);
+        }
+
         return { booking, razorpayOrder };
     }
 
