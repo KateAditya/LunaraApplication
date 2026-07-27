@@ -151,45 +151,121 @@ export const VenueBookingSummary = () => {
 
             {/* KPI Cards */}
             <div className="row g-3 mb-4">
+                {/* 1. All Bookings */}
                 <div className="col-sm-6 col-md-3">
                     <div className="stat-card">
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                             <div>
-                                <div className="stat-card-label">Total Venues</div>
-                                <div className="stat-card-value">{loading ? '...' : summary?.totalVenues || 0}</div>
+                                <div className="stat-card-label">All Bookings</div>
+                                <div className="stat-card-value">{loading ? '...' : summary?.totalBookings || 0}</div>
+                                <div style={{ fontSize: '0.85rem', color: 'var(--vz-text-muted)', marginTop: '4px' }}>
+                                    Amount: {loading ? '...' : formatCurrency(summary?.totalAmount)}
+                                </div>
                             </div>
-                            <div className="stat-card-icon primary"><BiBuildingHouse /></div>
+                            <div className="stat-card-icon primary"><BiCalendar /></div>
                         </div>
                     </div>
                 </div>
+                {/* 2. Today's Bookings */}
                 <div className="col-sm-6 col-md-3">
                     <div className="stat-card">
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                             <div>
-                                <div className="stat-card-label">Total Bookings</div>
-                                <div className="stat-card-value">{loading ? '...' : summary?.totalBookings || 0}</div>
+                                <div className="stat-card-label">Today's Bookings</div>
+                                <div className="stat-card-value">{loading ? '...' : summary?.todaysBookingCount || 0}</div>
+                                <div style={{ fontSize: '0.85rem', color: 'var(--vz-text-muted)', marginTop: '4px' }}>
+                                    Amount: {loading ? '...' : formatCurrency(summary?.todaysBookingAmount)}
+                                </div>
                             </div>
                             <div className="stat-card-icon info"><BiCalendar /></div>
                         </div>
                     </div>
                 </div>
+                {/* 3. Solo Bookings */}
                 <div className="col-sm-6 col-md-3">
                     <div className="stat-card">
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                             <div>
-                                <div className="stat-card-label">Confirmed Bookings</div>
-                                <div className="stat-card-value">{loading ? '...' : summary?.totalConfirmed || 0}</div>
+                                <div className="stat-card-label">Solo Bookings</div>
+                                <div className="stat-card-value">{loading ? '...' : summary?.soloBookingCount || 0}</div>
+                                <div style={{ fontSize: '0.85rem', color: 'var(--vz-text-muted)', marginTop: '4px' }}>
+                                    Amount: {loading ? '...' : formatCurrency(summary?.soloBookingAmount)}
+                                </div>
                             </div>
                             <div className="stat-card-icon success"><BiCheckCircle /></div>
                         </div>
                     </div>
                 </div>
+                {/* 4. Party Plans */}
                 <div className="col-sm-6 col-md-3">
                     <div className="stat-card">
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                             <div>
-                                <div className="stat-card-label">Total Booking Amount</div>
-                                <div className="stat-card-value">{loading ? '...' : formatCurrency(summary?.totalAmount)}</div>
+                                <div className="stat-card-label">Party Plans</div>
+                                <div className="stat-card-value">{loading ? '...' : summary?.partyPlansCount || 0}</div>
+                                <div style={{ fontSize: '0.85rem', color: 'var(--vz-text-muted)', marginTop: '4px' }}>
+                                    Amount: {loading ? '...' : formatCurrency(summary?.partyPlansAmount)}
+                                </div>
+                            </div>
+                            <div className="stat-card-icon warning"><BiMoney /></div>
+                        </div>
+                    </div>
+                </div>
+                {/* 5. Party Requests */}
+                <div className="col-sm-6 col-md-3">
+                    <div className="stat-card">
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <div>
+                                <div className="stat-card-label">Party Requests</div>
+                                <div className="stat-card-value">{loading ? '...' : summary?.partyRequestsCount || 0}</div>
+                                <div style={{ fontSize: '0.85rem', color: 'var(--vz-text-muted)', marginTop: '4px' }}>
+                                    Amount: {loading ? '...' : formatCurrency(summary?.partyRequestsAmount)}
+                                </div>
+                            </div>
+                            <div className="stat-card-icon primary"><BiBuildingHouse /></div>
+                        </div>
+                    </div>
+                </div>
+                {/* 6. Group Party Bookings */}
+                <div className="col-sm-6 col-md-3">
+                    <div className="stat-card">
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <div>
+                                <div className="stat-card-label">Group Party</div>
+                                <div className="stat-card-value">{loading ? '...' : summary?.groupPartyBookingCount || 0}</div>
+                                <div style={{ fontSize: '0.85rem', color: 'var(--vz-text-muted)', marginTop: '4px' }}>
+                                    Amount: {loading ? '...' : formatCurrency(summary?.groupPartyBookingAmount)}
+                                </div>
+                            </div>
+                            <div className="stat-card-icon info"><BiCalendar /></div>
+                        </div>
+                    </div>
+                </div>
+                {/* 7. Large Parties */}
+                <div className="col-sm-6 col-md-3">
+                    <div className="stat-card">
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <div>
+                                <div className="stat-card-label">Large Parties</div>
+                                <div className="stat-card-value">{loading ? '...' : summary?.largePartiesCount || 0}</div>
+                                <div style={{ fontSize: '0.85rem', color: 'var(--vz-text-muted)', marginTop: '4px' }}>
+                                    Amount: {loading ? '...' : formatCurrency(summary?.largePartiesAmount)}
+                                </div>
+                            </div>
+                            <div className="stat-card-icon success"><BiCheckCircle /></div>
+                        </div>
+                    </div>
+                </div>
+                {/* 8. Upcoming Night Bookings */}
+                <div className="col-sm-6 col-md-3">
+                    <div className="stat-card">
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <div>
+                                <div className="stat-card-label">Upcoming Night</div>
+                                <div className="stat-card-value">{loading ? '...' : summary?.upcomingNightBookingCount || 0}</div>
+                                <div style={{ fontSize: '0.85rem', color: 'var(--vz-text-muted)', marginTop: '4px' }}>
+                                    Amount: {loading ? '...' : formatCurrency(summary?.upcomingNightBookingAmount)}
+                                </div>
                             </div>
                             <div className="stat-card-icon warning"><BiMoney /></div>
                         </div>
