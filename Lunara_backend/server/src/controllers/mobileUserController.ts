@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import sharp from 'sharp';
-import { UserProfile, UserPreference, UserPhoto, UserMatch, PartyPlan, GroupParty, StrangersMeetRequest, Booking } from '../models';
+import { UserProfile, UserPreference, UserPhoto, UserMatch, PartyPlan, GroupParty, StrangersMeetRequest, Booking, Plan } from '../models';
 import User, { UserRole } from '../models/User';
 import sequelize from '../config/database';
 import DeletedAccount from '../models/DeletedAccount';
@@ -1614,6 +1614,21 @@ export const deleteAccount = async (req: Request, res: Response): Promise<Respon
             }
         }
 
+        // ── 3.5. Check for any pending/active plans ────────────────────────────
+        const pendingPartyPlan = await PartyPlan.findOne({ where: { userId, status: 'active' } });
+        const pendingPlan = await Plan.findOne({ where: { userId, status: { [Op.in]: ['active', 'full', 'secured'] } } });
+        const pendingBooking = await Booking.findOne({ where: { userId, status: { [Op.in]: ['pending', 'confirmed'] } } });
+        const pendingGroupParty = await GroupParty.findOne({ where: { userId, status: { [Op.in]: ['pending', 'approved', 'confirmed'] } } });
+        const pendingStrangersMeet = await StrangersMeetRequest.findOne({ where: { userId, status: { [Op.in]: ['pending', 'approved'] } } });
+
+        if (pendingPartyPlan || pendingPlan || pendingBooking || pendingGroupParty || pendingStrangersMeet) {
+            return res.status(400).json({
+                success: false,
+                code: 'PENDING_PLANS',
+                message: 'You have active plans or bookings. Please complete or cancel them before deleting your account.',
+            });
+        }
+
         // ── 4. Gather snapshot counts ──────────────────────────────────────────
         const [bookingsCount, subscriptionsCount, photosCount, profileData] = await Promise.all([
             Booking.count({ where: { userId } }),
@@ -1656,13 +1671,16 @@ export const deleteAccount = async (req: Request, res: Response): Promise<Respon
             photosCount,
         });
 
-        // ── 6. Soft-delete: mark as deleted, deactivate, clear sensitive tokens ─
+        // ── 6. Soft-delete: mark as deleted, deactivate, clear sensitive tokens, release email/phone ─
+        const deleteTimestamp = Date.now();
         await user.update({
             isDeleted: true,
             isActive: false,
             deletedAt: new Date(),
             deletionReason: reason?.trim() ?? null,
             fcmToken: null,   // Stop all push notifications immediately
+            email: `deleted_${deleteTimestamp}_${user.email}`,
+            phone: `deleted_${deleteTimestamp}_${user.phone}`,
         } as any);
 
         logger.info(`[DeleteAccount] User ${userId} (${user.email}) self-deleted their account. Reason: ${reason ?? 'N/A'}`);

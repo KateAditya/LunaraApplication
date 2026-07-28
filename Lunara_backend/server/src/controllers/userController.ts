@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { User, UserProfile, UserPreference, UserRole, SocialConnection } from '../models';
+import { User, UserProfile, UserPreference, UserRole, SocialConnection, Plan, PartyPlan, StrangersMeetRequest, PlanJoinRequest, PartyPlanRequest } from '../models';
 import { ConnectionStatus } from '../models/SocialConnection';
 import DeletedAccount from '../models/DeletedAccount';
 import bcrypt from 'bcryptjs';
@@ -397,10 +397,26 @@ export const getDeletedAccountById = async (req: Request, res: Response): Promis
             attributes: { exclude: ['passwordHash', 'mfaSecret'] },
         }).catch(() => null);
 
+        // Fetch historical activity using originalUserId
+        const [plans, partyPlans, strangersMeets, sentPlanRequests, sentPartyRequests] = await Promise.all([
+            Plan.findAll({ where: { userId: record.originalUserId }, order: [['createdAt', 'DESC']] }),
+            PartyPlan.findAll({ where: { userId: record.originalUserId }, order: [['createdAt', 'DESC']] }),
+            StrangersMeetRequest.findAll({ where: { userId: record.originalUserId }, order: [['createdAt', 'DESC']] }),
+            PlanJoinRequest.findAll({ where: { requesterId: record.originalUserId }, order: [['createdAt', 'DESC']] }),
+            PartyPlanRequest.findAll({ where: { requesterId: record.originalUserId }, order: [['createdAt', 'DESC']] })
+        ]);
+
         res.status(200).json({
             success: true,
             deletedAccount: record,
             liveUserRecord: liveUser ?? null,
+            activity: {
+                plans,
+                partyPlans,
+                strangersMeets,
+                sentPlanRequests,
+                sentPartyRequests
+            }
         });
     } catch (error) {
         console.error('Error fetching deleted account:', error);
@@ -461,12 +477,24 @@ export const restoreDeletedAccount = async (req: Request, res: Response): Promis
             });
         }
 
-        await user.update({
-            isDeleted: false,
-            isActive: true,
-            deletedAt: null,
-            deletionReason: null,
-        } as any);
+        try {
+            await user.update({
+                isDeleted: false,
+                isActive: true,
+                deletedAt: null,
+                deletionReason: null,
+                email: record.email,
+                phone: record.phone,
+            } as any);
+        } catch (updateError: any) {
+            if (updateError.name === 'SequelizeUniqueConstraintError') {
+                return res.status(409).json({
+                    success: false,
+                    message: 'Cannot restore account because the original email or phone number has been registered by a new active user.'
+                });
+            }
+            throw updateError;
+        }
 
         if (adminNotes) {
             record.adminNotes = adminNotes;

@@ -62,12 +62,20 @@ const DetailModal: React.FC<{
     const [notes, setNotes] = useState(record.adminNotes || '');
     const [restoreNotes, setRestoreNotes] = useState('');
     const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
+    const [activeTab, setActiveTab] = useState<'profile' | 'plans' | 'meets' | 'requests'>('profile');
+
+    const { data: detailData, isLoading } = useQuery({
+        queryKey: ['deletedAccountDetail', record.id],
+        queryFn: () => usersApi.getDeletedAccountById(record.id)
+    });
+
+    const activity = (detailData as any)?.activity || (detailData as any)?.data?.activity;
 
     return (
         <div className="modal-overlay" onClick={onClose} style={{ zIndex: 9999 }}>
             <div className="modal-container" onClick={e => e.stopPropagation()} style={{ maxWidth: 780, maxHeight: '90vh', overflow: 'auto' }}>
                 {/* Header */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                         <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'linear-gradient(135deg, #e6533c, #c0392b)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 20, fontWeight: 700 }}>
                             {record.firstName?.charAt(0) || '?'}
@@ -89,97 +97,180 @@ const DetailModal: React.FC<{
                     </div>
                 </div>
 
-                {/* Grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
-                    {/* Identity */}
-                    <div className="card" style={{ padding: 16 }}>
-                        <div style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: 12, color: 'var(--vz-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Identity</div>
-                        <InfoRow icon={<BiEnvelope />} label="Email" value={record.email} />
-                        <InfoRow icon={<BiPhone />} label="Phone" value={record.phone} />
-                        <InfoRow icon={<BiUser />} label="Gender" value={record.gender} />
-                        <InfoRow icon={<BiCalendar />} label="Date of Birth" value={formatDateOnly(record.dateOfBirth)} />
-                        <InfoRow icon={<BiShield />} label="Role" value={record.role} />
-                        <InfoRow icon={<BiInfoCircle />} label="City" value={record.city} />
-                        <InfoRow icon={<BiInfoCircle />} label="Occupation" value={record.occupation} />
-                    </div>
-
-                    {/* Account Stats */}
-                    <div className="card" style={{ padding: 16 }}>
-                        <div style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: 12, color: 'var(--vz-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Account Stats</div>
-                        <InfoRow icon={<BiCheckCircle />} label="Verified" value={record.isVerified ? 'Yes' : 'No'} valueColor={record.isVerified ? '#26bf94' : '#e6533c'} />
-                        <InfoRow icon={<BiCalendar />} label="Registered" value={formatDate(record.registeredAt)} />
-                        <InfoRow icon={<BiTimeFive />} label="Last Login" value={formatDate(record.lastLoginAt)} />
-                        <InfoRow icon={<BiError />} label="Block Count" value={String(record.blockCount)} valueColor={record.blockCount > 0 ? '#e6533c' : undefined} />
-                        <InfoRow icon={<BiError />} label="No-Shows" value={String(record.noShowCount)} valueColor={record.noShowCount > 0 ? '#e6533c' : undefined} />
-                        <InfoRow icon={<BiCalendar />} label="Bookings" value={String(record.bookingsCount)} />
-                        <InfoRow icon={<BiShield />} label="Subscriptions" value={String(record.subscriptionsCount)} />
-                    </div>
+                {/* Tabs */}
+                <div style={{ display: 'flex', gap: 20, borderBottom: '1px solid var(--vz-border)', marginBottom: 20 }}>
+                    <div onClick={() => setActiveTab('profile')} style={{ paddingBottom: 8, cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', color: activeTab === 'profile' ? 'var(--vz-primary)' : 'var(--vz-text-muted)', borderBottom: activeTab === 'profile' ? '2px solid var(--vz-primary)' : '2px solid transparent' }}>Profile Overview</div>
+                    <div onClick={() => setActiveTab('plans')} style={{ paddingBottom: 8, cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', color: activeTab === 'plans' ? 'var(--vz-primary)' : 'var(--vz-text-muted)', borderBottom: activeTab === 'plans' ? '2px solid var(--vz-primary)' : '2px solid transparent' }}>Hosted Plans</div>
+                    <div onClick={() => setActiveTab('meets')} style={{ paddingBottom: 8, cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', color: activeTab === 'meets' ? 'var(--vz-primary)' : 'var(--vz-text-muted)', borderBottom: activeTab === 'meets' ? '2px solid var(--vz-primary)' : '2px solid transparent' }}>Strangers Meets</div>
+                    <div onClick={() => setActiveTab('requests')} style={{ paddingBottom: 8, cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', color: activeTab === 'requests' ? 'var(--vz-primary)' : 'var(--vz-text-muted)', borderBottom: activeTab === 'requests' ? '2px solid var(--vz-primary)' : '2px solid transparent' }}>Sent Requests</div>
                 </div>
 
-                {/* Deletion Metadata */}
-                <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-                    <div style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: 12, color: 'var(--vz-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Deletion Metadata</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                        <InfoRow icon={<BiInfoCircle />} label="Original User ID" value={record.originalUserId} mono />
-                        <InfoRow icon={<BiInfoCircle />} label="Archive Record ID" value={record.id} mono />
-                        <InfoRow icon={<BiInfoCircle />} label="IP Address" value={record.ipAddress} />
-                        <InfoRow icon={<BiInfoCircle />} label="Deleted At" value={formatDate(record.createdAt)} />
-                        {record.autoblockedReason && <InfoRow icon={<BiError />} label="Autoblock Reason" value={record.autoblockedReason} />}
-                    </div>
-                    {record.bio && (
-                        <div style={{ marginTop: 12, padding: '10px 12px', background: 'var(--vz-bg-secondary)', borderRadius: 8, fontSize: '0.82rem', color: 'var(--vz-text-muted)' }}>
-                            <b>Bio:</b> {record.bio}
-                        </div>
-                    )}
-                </div>
-
-                {/* Admin Notes */}
-                <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-                    <div style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: 10, color: 'var(--vz-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        <BiNote style={{ marginRight: 6, verticalAlign: 'middle' }} />Admin Notes
-                    </div>
-                    <textarea
-                        value={notes}
-                        onChange={e => setNotes(e.target.value)}
-                        placeholder="Add investigation notes, contact attempts, audit remarks..."
-                        style={{ width: '100%', minHeight: 80, padding: '10px 12px', borderRadius: 8, border: '1px solid var(--vz-border)', background: 'var(--vz-bg-secondary)', color: 'var(--vz-text-primary)', fontSize: '0.82rem', resize: 'vertical', outline: 'none', fontFamily: 'inherit' }}
-                    />
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-                        <button className="btn btn-outline-primary btn-sm" onClick={() => onSaveNotes(record.id, notes)} disabled={savingNotes}>
-                            {savingNotes ? 'Saving...' : 'Save Notes'}
-                        </button>
-                    </div>
-                </div>
-
-                {/* Restore */}
-                <div className="card" style={{ padding: 16, border: '1px solid rgba(38,191,148,0.3)', background: 'rgba(38,191,148,0.04)' }}>
-                    <div style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: 8, color: '#26bf94', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        <BiRefresh style={{ marginRight: 6, verticalAlign: 'middle' }} />Restore Account
-                    </div>
-                    <p style={{ fontSize: '0.82rem', color: 'var(--vz-text-muted)', marginBottom: 10 }}>
-                        Restoring the account will re-activate the user and allow them to log in again. The archive record will remain for audit purposes.
-                    </p>
-                    {showRestoreConfirm ? (
-                        <>
-                            <textarea
-                                value={restoreNotes}
-                                onChange={e => setRestoreNotes(e.target.value)}
-                                placeholder="Reason for restoring (optional)..."
-                                style={{ width: '100%', minHeight: 60, padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(38,191,148,0.4)', background: 'var(--vz-bg-secondary)', color: 'var(--vz-text-primary)', fontSize: '0.82rem', marginBottom: 10, outline: 'none', fontFamily: 'inherit' }}
-                            />
-                            <div style={{ display: 'flex', gap: 8 }}>
-                                <button className="btn btn-success btn-sm" onClick={() => onRestore(record.id, restoreNotes)} disabled={restoring}>
-                                    {restoring ? 'Restoring...' : '✓ Confirm Restore'}
-                                </button>
-                                <button className="btn btn-outline-secondary btn-sm" onClick={() => setShowRestoreConfirm(false)}>Cancel</button>
+                {/* Tab Content */}
+                {activeTab === 'profile' && (
+                    <>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+                            <div className="card" style={{ padding: 16 }}>
+                                <div style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: 12, color: 'var(--vz-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Identity</div>
+                                <InfoRow icon={<BiEnvelope />} label="Email" value={record.email} />
+                                <InfoRow icon={<BiPhone />} label="Phone" value={record.phone} />
+                                <InfoRow icon={<BiUser />} label="Gender" value={record.gender} />
+                                <InfoRow icon={<BiCalendar />} label="Date of Birth" value={formatDateOnly(record.dateOfBirth)} />
+                                <InfoRow icon={<BiShield />} label="Role" value={record.role} />
+                                <InfoRow icon={<BiInfoCircle />} label="City" value={record.city} />
+                                <InfoRow icon={<BiInfoCircle />} label="Occupation" value={record.occupation} />
                             </div>
-                        </>
-                    ) : (
-                        <button className="btn btn-success btn-sm" onClick={() => setShowRestoreConfirm(true)}>
-                            <BiRefresh style={{ marginRight: 4 }} />Restore This Account
-                        </button>
-                    )}
-                </div>
+                            <div className="card" style={{ padding: 16 }}>
+                                <div style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: 12, color: 'var(--vz-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Account Stats</div>
+                                <InfoRow icon={<BiCheckCircle />} label="Verified" value={record.isVerified ? 'Yes' : 'No'} valueColor={record.isVerified ? '#26bf94' : '#e6533c'} />
+                                <InfoRow icon={<BiCalendar />} label="Registered" value={formatDate(record.registeredAt)} />
+                                <InfoRow icon={<BiTimeFive />} label="Last Login" value={formatDate(record.lastLoginAt)} />
+                                <InfoRow icon={<BiError />} label="Block Count" value={String(record.blockCount)} valueColor={record.blockCount > 0 ? '#e6533c' : undefined} />
+                                <InfoRow icon={<BiError />} label="No-Shows" value={String(record.noShowCount)} valueColor={record.noShowCount > 0 ? '#e6533c' : undefined} />
+                                <InfoRow icon={<BiCalendar />} label="Bookings" value={String(record.bookingsCount)} />
+                                <InfoRow icon={<BiShield />} label="Subscriptions" value={String(record.subscriptionsCount)} />
+                            </div>
+                        </div>
+
+                        <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+                            <div style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: 12, color: 'var(--vz-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Deletion Metadata</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                <InfoRow icon={<BiInfoCircle />} label="Original User ID" value={record.originalUserId} mono />
+                                <InfoRow icon={<BiInfoCircle />} label="Archive Record ID" value={record.id} mono />
+                                <InfoRow icon={<BiInfoCircle />} label="IP Address" value={record.ipAddress} />
+                                <InfoRow icon={<BiInfoCircle />} label="Deleted At" value={formatDate(record.createdAt)} />
+                                {record.autoblockedReason && <InfoRow icon={<BiError />} label="Autoblock Reason" value={record.autoblockedReason} />}
+                            </div>
+                            {record.bio && (
+                                <div style={{ marginTop: 12, padding: '10px 12px', background: 'var(--vz-bg-secondary)', borderRadius: 8, fontSize: '0.82rem', color: 'var(--vz-text-muted)' }}>
+                                    <b>Bio:</b> {record.bio}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+                            <div style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: 10, color: 'var(--vz-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                <BiNote style={{ marginRight: 6, verticalAlign: 'middle' }} />Admin Notes
+                            </div>
+                            <textarea
+                                value={notes}
+                                onChange={e => setNotes(e.target.value)}
+                                placeholder="Add investigation notes, contact attempts, audit remarks..."
+                                style={{ width: '100%', minHeight: 80, padding: '10px 12px', borderRadius: 8, border: '1px solid var(--vz-border)', background: 'var(--vz-bg-secondary)', color: 'var(--vz-text-primary)', fontSize: '0.82rem', resize: 'vertical', outline: 'none', fontFamily: 'inherit' }}
+                            />
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                                <button className="btn btn-outline-primary btn-sm" onClick={() => onSaveNotes(record.id, notes)} disabled={savingNotes}>
+                                    {savingNotes ? 'Saving...' : 'Save Notes'}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="card" style={{ padding: 16, border: '1px solid rgba(38,191,148,0.3)', background: 'rgba(38,191,148,0.04)' }}>
+                            <div style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: 8, color: '#26bf94', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                <BiRefresh style={{ marginRight: 6, verticalAlign: 'middle' }} />Restore Account
+                            </div>
+                            <p style={{ fontSize: '0.82rem', color: 'var(--vz-text-muted)', marginBottom: 10 }}>
+                                Restoring the account will re-activate the user and allow them to log in again. The archive record will remain for audit purposes.
+                            </p>
+                            {showRestoreConfirm ? (
+                                <>
+                                    <textarea
+                                        value={restoreNotes}
+                                        onChange={e => setRestoreNotes(e.target.value)}
+                                        placeholder="Reason for restoring (optional)..."
+                                        style={{ width: '100%', minHeight: 60, padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(38,191,148,0.4)', background: 'var(--vz-bg-secondary)', color: 'var(--vz-text-primary)', fontSize: '0.82rem', marginBottom: 10, outline: 'none', fontFamily: 'inherit' }}
+                                    />
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                        <button className="btn btn-success btn-sm" onClick={() => onRestore(record.id, restoreNotes)} disabled={restoring}>
+                                            {restoring ? 'Restoring...' : '✓ Confirm Restore'}
+                                        </button>
+                                        <button className="btn btn-outline-secondary btn-sm" onClick={() => setShowRestoreConfirm(false)}>Cancel</button>
+                                    </div>
+                                </>
+                            ) : (
+                                <button className="btn btn-success btn-sm" onClick={() => setShowRestoreConfirm(true)}>
+                                    <BiRefresh style={{ marginRight: 4 }} />Restore This Account
+                                </button>
+                            )}
+                        </div>
+                    </>
+                )}
+
+                {/* Additional Dynamic Tabs */}
+                {activeTab !== 'profile' && isLoading && <div style={{ padding: 20, textAlign: 'center', fontSize: '0.85rem' }}>Loading data...</div>}
+                {activeTab !== 'profile' && !isLoading && activity && (
+                    <div style={{ minHeight: 200 }}>
+                        {activeTab === 'plans' && (
+                            <div>
+                                <h6 style={{ fontSize: '0.85rem', marginBottom: 10, color: 'var(--vz-text-muted)' }}>Table Plans ({activity.plans?.length || 0})</h6>
+                                {activity.plans?.length > 0 ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+                                        {activity.plans.map((p: any) => (
+                                            <div key={p.id} style={{ padding: 12, background: 'var(--vz-bg-secondary)', borderRadius: 8, fontSize: '0.8rem' }}>
+                                                <strong>{p.status}</strong> — {p.tablePackage} package on {formatDateOnly(p.planDate)} at {p.startTime} <br />
+                                                <span style={{ color: 'var(--vz-text-muted)' }}>Joiners: {p.currentJoiners}/{p.maxJoiners}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : <div style={{ fontSize: '0.8rem', color: 'var(--vz-text-muted)' }}>No table plans hosted.</div>}
+                                
+                                <h6 style={{ fontSize: '0.85rem', marginBottom: 10, marginTop: 20, color: 'var(--vz-text-muted)' }}>Party Plans ({activity.partyPlans?.length || 0})</h6>
+                                {activity.partyPlans?.length > 0 ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                        {activity.partyPlans.map((p: any) => (
+                                            <div key={p.id} style={{ padding: 12, background: 'var(--vz-bg-secondary)', borderRadius: 8, fontSize: '0.8rem' }}>
+                                                <strong>{p.status}</strong> — {formatDate(p.planDateTime)} <br />
+                                                <span style={{ color: 'var(--vz-text-muted)' }}>{p.message}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : <div style={{ fontSize: '0.8rem', color: 'var(--vz-text-muted)' }}>No party plans hosted.</div>}
+                            </div>
+                        )}
+
+                        {activeTab === 'meets' && (
+                            <div>
+                                <h6 style={{ fontSize: '0.85rem', marginBottom: 10, color: 'var(--vz-text-muted)' }}>Strangers Meet Requests ({activity.strangersMeets?.length || 0})</h6>
+                                {activity.strangersMeets?.length > 0 ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                        {activity.strangersMeets.map((m: any) => (
+                                            <div key={m.id} style={{ padding: 12, background: 'var(--vz-bg-secondary)', borderRadius: 8, fontSize: '0.8rem' }}>
+                                                <strong>{m.status}</strong> — Need {m.requiredPersons} person(s) on {formatDateOnly(m.date)} at {m.time} <br />
+                                                <span style={{ color: 'var(--vz-text-muted)' }}>{m.description}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : <div style={{ fontSize: '0.8rem', color: 'var(--vz-text-muted)' }}>No stranger meets requested.</div>}
+                            </div>
+                        )}
+
+                        {activeTab === 'requests' && (
+                            <div>
+                                <h6 style={{ fontSize: '0.85rem', marginBottom: 10, color: 'var(--vz-text-muted)' }}>Sent Table Plan Requests ({activity.sentPlanRequests?.length || 0})</h6>
+                                {activity.sentPlanRequests?.length > 0 ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+                                        {activity.sentPlanRequests.map((r: any) => (
+                                            <div key={r.id} style={{ padding: 12, background: 'var(--vz-bg-secondary)', borderRadius: 8, fontSize: '0.8rem' }}>
+                                                <strong>{r.status}</strong> — Request to join Plan ID: {r.planId} <br />
+                                                {r.message && <span style={{ color: 'var(--vz-text-muted)' }}>"{r.message}"</span>}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : <div style={{ fontSize: '0.8rem', color: 'var(--vz-text-muted)' }}>No table plan requests sent.</div>}
+                                
+                                <h6 style={{ fontSize: '0.85rem', marginBottom: 10, marginTop: 20, color: 'var(--vz-text-muted)' }}>Sent Party Plan Requests ({activity.sentPartyRequests?.length || 0})</h6>
+                                {activity.sentPartyRequests?.length > 0 ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                        {activity.sentPartyRequests.map((r: any) => (
+                                            <div key={r.id} style={{ padding: 12, background: 'var(--vz-bg-secondary)', borderRadius: 8, fontSize: '0.8rem' }}>
+                                                <strong>{r.status}</strong> — Request to join Party Plan ID: {r.planId}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : <div style={{ fontSize: '0.8rem', color: 'var(--vz-text-muted)' }}>No party plan requests sent.</div>}
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
         </div>
     );
