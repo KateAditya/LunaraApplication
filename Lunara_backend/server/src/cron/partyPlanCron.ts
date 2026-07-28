@@ -706,40 +706,50 @@ async function dispatchSafetyCheckIfPending(data: {
     partyDate: Date;
     partyTime?: string;
 }) {
-    const existing = await PartySafetyCheck.findOne({
-        where: {
-            planId: data.planId,
-            userId: data.userId,
+    try {
+        let existing = null;
+        try {
+            existing = await PartySafetyCheck.findOne({
+                where: {
+                    planId: data.planId,
+                    userId: data.userId,
+                }
+            });
+        } catch (tableErr) {
+            // If table doesn't exist, sync it safely
+            await PartySafetyCheck.sync();
         }
-    });
 
-    if (existing) return; // Notification already created
+        if (existing) return; // Notification already created
 
-    const safetyRecord = await PartySafetyCheck.create({
-        planId: data.planId,
-        planType: data.planType,
-        userId: data.userId,
-        partnerUserId: data.partnerUserId,
-        venueName: data.venueName,
-        partyDate: data.partyDate,
-        partyTime: data.partyTime,
-        safetyStatus: SafetyStatus.NO_RESPONSE,
-        alertTriggered: false,
-        notificationSentAt: new Date(),
-    });
+        const safetyRecord = await PartySafetyCheck.create({
+            planId: data.planId,
+            planType: data.planType,
+            userId: data.userId,
+            partnerUserId: data.partnerUserId,
+            venueName: data.venueName,
+            partyDate: data.partyDate,
+            partyTime: data.partyTime,
+            safetyStatus: SafetyStatus.NO_RESPONSE,
+            alertTriggered: false,
+            notificationSentAt: new Date(),
+        });
 
-    await NotificationService.dispatch({
-        recipientUserId: data.userId,
-        eventType: 'party_safety_check',
-        category: 'alert',
-        entityType: 'PartySafetyCheck',
-        entityId: safetyRecord.id,
-        title: '🛡️ Safety Check: Has your party ended?',
-        body: `Your party at ${data.venueName} started 3 hours ago. Please confirm you are safe & sound.`,
-        priority: 'HIGH',
-        idempotencyKey: `safety_check_${safetyRecord.id}_${data.userId}`,
-        actionType: 'safety_check',
-        deepLink: `/safety-check/${safetyRecord.id}`,
-    });
+        await NotificationService.dispatch({
+            recipientUserId: data.userId,
+            eventType: 'party_safety_check',
+            category: 'alert',
+            entityType: 'PartySafetyCheck',
+            entityId: safetyRecord.id,
+            title: '🛡️ Safety Check: Has your party ended?',
+            body: `Your party at ${data.venueName} started 3 hours ago. Please confirm you are safe & sound.`,
+            priority: 'HIGH',
+            idempotencyKey: `safety_check_${safetyRecord.id}_${data.userId}`,
+            actionType: 'safety_check',
+            deepLink: `/safety-check/${safetyRecord.id}`,
+        });
+    } catch (err: any) {
+        logger.error(`Failed to dispatch safety check for plan ${data.planId} and user ${data.userId}:`, err.message || err);
+    }
 }
 

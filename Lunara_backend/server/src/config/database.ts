@@ -235,6 +235,30 @@ export const connectDatabase = async (): Promise<void> => {
                 `);
                 logger.info('Default subscription packages seeded successfully.');
             }
+
+            // ── Additive party_safety_checks table migration ──────────────────
+            await sequelize.query(`
+                CREATE TABLE IF NOT EXISTS party_safety_checks (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    plan_id UUID NOT NULL,
+                    plan_type VARCHAR(50) NOT NULL DEFAULT 'party_plan',
+                    user_id UUID NOT NULL,
+                    partner_user_id UUID,
+                    venue_name VARCHAR(255) NOT NULL DEFAULT 'Venue',
+                    party_date TIMESTAMP WITH TIME ZONE NOT NULL,
+                    party_time VARCHAR(50),
+                    safety_status VARCHAR(50) NOT NULL DEFAULT 'NO_RESPONSE',
+                    notes TEXT,
+                    location_lat FLOAT,
+                    location_lng FLOAT,
+                    alert_triggered BOOLEAN NOT NULL DEFAULT FALSE,
+                    notification_sent_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    responded_at TIMESTAMP WITH TIME ZONE,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                );
+            `);
+            logger.info('party_safety_checks table verified/migrated successfully.');
         } catch (alterError: any) {
             logger.warn('Dynamic table migration warning: ' + alterError.message);
         }
