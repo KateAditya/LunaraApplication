@@ -2651,12 +2651,12 @@ class ApiService {
           'isUpcomingNight': isUpcomingNight,
         },
       );
-      if (response.statusCode == 200 || response.statusCode == 201) {
+      try {
         final data = jsonDecode(response.body);
-        if (data['success'] == true && data['data'] != null) {
-          return Map<String, dynamic>.from(data['data']);
+        if (data is Map<String, dynamic>) {
+          return data;
         }
-      }
+      } catch (_) {}
     } catch (e) {
       debugPrint('createBooking error: $e');
     }
