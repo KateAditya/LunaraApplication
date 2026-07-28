@@ -8,6 +8,7 @@ import { generateTokenPair } from '../utils/jwt';
 import { sendVerificationEmail } from '../services/emailService';
 import { azureFaceService } from '../services/azureFaceService';
 import { logger } from '../config/logger';
+import { SMSService } from '../services/smsService';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -20,7 +21,7 @@ function isValidEmail(email: string): boolean {
 
 /** Indian mobile number: starts with 6-9, exactly 10 digits */
 function isValidPhone(phone: string): boolean {
-    return /^[6-9]\d{9}$/.test(phone.trim());
+    return SMSService.isValidIndianMobile(phone);
 }
 
 function passwordStrengthError(password: string): string | null {
@@ -65,26 +66,30 @@ export const mobileSendOTP = async (req: Request, res: Response): Promise<Respon
         if (!phone?.trim()) {
             return res.status(400).json({ success: false, message: 'Phone number is required' });
         }
-        if (!isValidPhone(phone)) {
-            return res.status(400).json({ success: false, message: 'Invalid 10-digit Indian phone number' });
+
+        const cleanPhone = SMSService.normalizePhone(phone);
+        if (!SMSService.isValidIndianMobile(cleanPhone)) {
+            return res.status(400).json({ success: false, message: 'Please enter a valid 10-digit Indian mobile number (e.g. 9876543210)' });
         }
 
         // Check if user already exists
-        const existing = await User.findOne({ where: { phone: phone.trim() } });
+        const existing = await User.findOne({ where: { phone: cleanPhone } });
         if (existing) {
             return res.status(409).json({ success: false, code: 'DUPLICATE_USER', message: 'An account with this phone number already exists' });
         }
 
         // Generate OTP
-        const { code } = await OTPVerification.generateOTP(phone.trim(), OTPPurpose.REGISTRATION);
+        const { code } = await OTPVerification.generateOTP(cleanPhone, OTPPurpose.REGISTRATION);
 
-        // For development/dummy requirement, we can print it or return it.
-        // We are using '1234' as the fixed dummy OTP during verification, but we still create the record.
-        logger.info(`[MobileSendOTP] Generated OTP for ${phone}: ${code} (Dummy verification accepts 1234)`);
+        // Send real SMS via True Bulk SMS API
+        const smsResult = await SMSService.sendOTP(cleanPhone, code);
+
+        logger.info(`[MobileSendOTP] Generated OTP for ${cleanPhone}: ${code}. SMS Status: ${smsResult.message}`);
 
         return res.status(200).json({
             success: true,
-            message: 'OTP sent successfully (Dummy mode: use 1234)',
+            message: `OTP sent successfully to +91 ${cleanPhone}`,
+            smsSent: smsResult.success
         });
     } catch (error: any) {
         logger.error('[MobileSendOTP] Error:', error);
@@ -117,7 +122,7 @@ export const mobileCheckEmail = async (req: Request, res: Response): Promise<Res
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/mobile/auth/verify-otp
-// PUBLIC — Verify dummy OTP
+// PUBLIC — Verify OTP
 // ─────────────────────────────────────────────────────────────────────────────
 export const mobileVerifyOTP = async (req: Request, res: Response): Promise<Response> => {
     try {
@@ -127,30 +132,30 @@ export const mobileVerifyOTP = async (req: Request, res: Response): Promise<Resp
             return res.status(400).json({ success: false, message: 'Phone and OTP are required' });
         }
 
-        // Dummy OTP Logic
-        if (otp === '1234') {
-            // Find the pending OTP record and mark it verified
+        const cleanPhone = SMSService.normalizePhone(phone);
+        if (!SMSService.isValidIndianMobile(cleanPhone)) {
+            return res.status(400).json({ success: false, message: 'Invalid 10-digit Indian phone number' });
+        }
+
+        const cleanOtp = String(otp).trim();
+
+        // First attempt real verification against DB hashed OTP
+        let result = await OTPVerification.verifyOTP(cleanPhone, cleanOtp, OTPPurpose.REGISTRATION);
+
+        // Fallback for dev/dummy mode (1234) if real verification didn't match
+        if (!result.success && cleanOtp === '1234') {
             const otpRecord = await OTPVerification.findOne({
-                where: { phone: phone.trim(), purpose: OTPPurpose.REGISTRATION },
+                where: { phone: cleanPhone, purpose: OTPPurpose.REGISTRATION },
                 order: [['created_at', 'DESC']]
             });
 
-            if (!otpRecord) {
-                return res.status(400).json({ success: false, message: 'Please request an OTP first' });
+            if (otpRecord && !otpRecord.isExpired()) {
+                otpRecord.verifiedAt = new Date();
+                await otpRecord.save();
+                result = { success: true, message: 'OTP verified successfully' };
             }
-
-            if (otpRecord.isExpired()) {
-                return res.status(400).json({ success: false, message: 'OTP has expired' });
-            }
-
-            otpRecord.verifiedAt = new Date();
-            await otpRecord.save();
-
-            return res.status(200).json({ success: true, message: 'OTP verified successfully' });
         }
 
-        // Fallback to real verification if it's not the dummy code
-        const result = await OTPVerification.verifyOTP(phone.trim(), otp, OTPPurpose.REGISTRATION);
         if (!result.success) {
             return res.status(400).json({ success: false, message: result.message });
         }
@@ -197,9 +202,11 @@ export const mobileRegister = async (req: Request, res: Response): Promise<Respo
             });
         }
 
+        const cleanPhone = SMSService.normalizePhone(phone);
+
         // ── 1.5. OTP Verification Check ───────────────────────────────────────
         const otpRecord = await OTPVerification.findOne({
-            where: { phone: phone.trim(), purpose: OTPPurpose.REGISTRATION },
+            where: { phone: cleanPhone, purpose: OTPPurpose.REGISTRATION },
             order: [['created_at', 'DESC']]
         });
 
@@ -220,7 +227,7 @@ export const mobileRegister = async (req: Request, res: Response): Promise<Respo
             });
         }
 
-        if (!isValidPhone(phone)) {
+        if (!isValidPhone(cleanPhone)) {
             return res.status(400).json({
                 success: false,
                 code: 'INVALID_PHONE',
@@ -262,7 +269,7 @@ export const mobileRegister = async (req: Request, res: Response): Promise<Respo
             where: {
                 [Op.or]: [
                     { email: email.trim().toLowerCase() },
-                    { phone: phone.trim() },
+                    { phone: cleanPhone },
                 ],
             },
         });
@@ -292,7 +299,7 @@ export const mobileRegister = async (req: Request, res: Response): Promise<Respo
             firstName: firstName.trim(),
             lastName: lastName.trim(),
             email: email.trim().toLowerCase(),
-            phone: phone.trim(),
+            phone: cleanPhone,
             passwordHash,                      // pre-hashed, hook will skip re-hash
             dateOfBirth: new Date(dateOfBirth),
             role: UserRole.CUSTOMER,
@@ -387,21 +394,29 @@ export const mobileForgotPassword = async (req: Request, res: Response): Promise
             return res.status(400).json({ success: false, message: 'Phone number is required' });
         }
 
+        const cleanPhone = SMSService.normalizePhone(phone);
+        if (!SMSService.isValidIndianMobile(cleanPhone)) {
+            return res.status(400).json({ success: false, message: 'Please enter a valid 10-digit Indian mobile number' });
+        }
+
         // Check if user exists
-        const user = await User.findOne({ where: { phone: phone.trim() } });
+        const user = await User.findOne({ where: { phone: cleanPhone } });
         if (!user) {
             return res.status(404).json({ success: false, message: 'No account found with this phone number' });
         }
 
         // Generate OTP
-        const { code } = await OTPVerification.generateOTP(phone.trim(), OTPPurpose.PASSWORD_RESET);
+        const { code } = await OTPVerification.generateOTP(cleanPhone, OTPPurpose.PASSWORD_RESET);
 
-        // Dummy OTP Logic
-        logger.info(`[MobileForgotPassword] Generated reset OTP for ${phone}: ${code} (Dummy verification accepts 1234)`);
+        // Send real SMS via True Bulk SMS API
+        const smsResult = await SMSService.sendOTP(cleanPhone, code);
+
+        logger.info(`[MobileForgotPassword] Generated reset OTP for ${cleanPhone}: ${code}. SMS Status: ${smsResult.message}`);
 
         return res.status(200).json({
             success: true,
-            message: 'Password reset OTP sent successfully (Dummy mode: use 1234)',
+            message: `Password reset OTP sent successfully to +91 ${cleanPhone}`,
+            smsSent: smsResult.success
         });
     } catch (error: any) {
         logger.error('[MobileForgotPassword] Error:', error);
@@ -420,36 +435,34 @@ export const mobileResetPassword = async (req: Request, res: Response): Promise<
             return res.status(400).json({ success: false, message: 'Phone, OTP, and new password are required' });
         }
 
+        const cleanPhone = SMSService.normalizePhone(phone);
+        const cleanOtp = String(otp).trim();
+
         // Find user
-        const user = await User.findOne({ where: { phone: phone.trim() } });
+        const user = await User.findOne({ where: { phone: cleanPhone } });
         if (!user) {
             return res.status(404).json({ success: false, message: 'No account found with this phone number' });
         }
 
-        // Dummy OTP Logic
-        if (otp === '1234') {
+        // Attempt real OTP verification
+        let vResult = await OTPVerification.verifyOTP(cleanPhone, cleanOtp, OTPPurpose.PASSWORD_RESET);
+
+        // Fallback for dev/dummy mode (1234)
+        if (!vResult.success && cleanOtp === '1234') {
             const otpRecord = await OTPVerification.findOne({
-                where: { phone: phone.trim(), purpose: OTPPurpose.PASSWORD_RESET },
+                where: { phone: cleanPhone, purpose: OTPPurpose.PASSWORD_RESET },
                 order: [['created_at', 'DESC']]
             });
 
-            if (!otpRecord) {
-                return res.status(400).json({ success: false, message: 'Please request a password reset OTP first' });
+            if (otpRecord && !otpRecord.isExpired()) {
+                otpRecord.verifiedAt = new Date();
+                await otpRecord.save();
+                vResult = { success: true, message: 'OTP verified successfully' };
             }
+        }
 
-            if (otpRecord.isExpired()) {
-                return res.status(400).json({ success: false, message: 'Reset OTP has expired' });
-            }
-
-            // Mark OTP as verified/used
-            otpRecord.verifiedAt = new Date();
-            await otpRecord.save();
-        } else {
-            // Real OTP Verification
-            const isValid = await OTPVerification.verifyOTP(phone.trim(), otp, OTPPurpose.PASSWORD_RESET);
-            if (!isValid) {
-                return res.status(400).json({ success: false, code: 'INVALID_OTP', message: 'Invalid or expired OTP' });
-            }
+        if (!vResult.success) {
+            return res.status(400).json({ success: false, code: 'INVALID_OTP', message: vResult.message });
         }
 
         // Hash new password

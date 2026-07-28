@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../widgets/action_button.dart';
@@ -20,6 +21,9 @@ class OtpScreen extends StatefulWidget {
 class _OtpScreenState extends State<OtpScreen>
     with SingleTickerProviderStateMixin {
   bool _isLoading = false;
+  bool _isResending = false;
+  int _resendSeconds = 60;
+  Timer? _timer;
   late AnimationController _pulseController;
   final List<TextEditingController> _controllers = List.generate(
     4,
@@ -34,10 +38,53 @@ class _OtpScreenState extends State<OtpScreen>
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
+    _startResendTimer();
+  }
+
+  void _startResendTimer() {
+    _timer?.cancel();
+    setState(() => _resendSeconds = 60);
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_resendSeconds > 0) {
+        if (mounted) {
+          setState(() => _resendSeconds--);
+        }
+      } else {
+        timer.cancel();
+      }
+    });
+  }
+
+  Future<void> _handleResendOtp() async {
+    if (_resendSeconds > 0 || _isResending) return;
+
+    String phone = widget.collectedData?['phone'] ?? '';
+    if (phone.isEmpty) {
+      TopErrorBanner.show(context, 'Phone number missing');
+      return;
+    }
+
+    setState(() => _isResending = true);
+    final error = await AuthService.sendOtp(phone);
+    if (!mounted) return;
+    setState(() => _isResending = false);
+
+    if (error != null) {
+      TopErrorBanner.show(context, error);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('New OTP sent successfully to +91 $phone'),
+          backgroundColor: Colors.green.shade800,
+        ),
+      );
+      _startResendTimer();
+    }
   }
 
   @override
   void dispose() {
+    _timer?.cancel();
     _pulseController.dispose();
     for (var controller in _controllers) {
       controller.dispose();
@@ -50,6 +97,7 @@ class _OtpScreenState extends State<OtpScreen>
 
   @override
   Widget build(BuildContext context) {
+    final String phoneNum = widget.collectedData?['phone'] ?? '';
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
@@ -89,7 +137,9 @@ class _OtpScreenState extends State<OtpScreen>
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'We sent a 4-digit code to your registered mobile number.',
+                          phoneNum.isNotEmpty
+                              ? 'We sent a 4-digit verification code to +91 $phoneNum.'
+                              : 'We sent a 4-digit code to your registered mobile number.',
                           style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), height: 1.5),
                         ),
                         const SizedBox(height: 40),
@@ -97,11 +147,15 @@ class _OtpScreenState extends State<OtpScreen>
                         const SizedBox(height: 40),
                         Center(
                           child: TextButton(
-                            onPressed: () {},
-                            child: const Text(
-                              'RESEND CODE IN 00:59',
+                            onPressed: _resendSeconds == 0 ? _handleResendOtp : null,
+                            child: Text(
+                              _resendSeconds > 0
+                                  ? 'RESEND CODE IN 00:${_resendSeconds.toString().padLeft(2, '0')}'
+                                  : (_isResending ? 'RESENDING...' : 'RESEND CODE'),
                               style: TextStyle(
-                                color: LunaraTheme.primaryRich,
+                                color: _resendSeconds == 0
+                                    ? LunaraTheme.primaryRich
+                                    : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
                                 letterSpacing: 1.5,
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
@@ -139,7 +193,9 @@ class _OtpScreenState extends State<OtpScreen>
                                   setState(() => _isLoading = false);
 
                                   if (error != null) {
-                                    TopErrorBanner.show(context, error);
+                                    if (context.mounted) {
+                                      TopErrorBanner.show(context, error);
+                                    }
                                     return;
                                   }
 
@@ -151,7 +207,7 @@ class _OtpScreenState extends State<OtpScreen>
 
                                     await OnboardingService.saveProgress('password_setup', data);
 
-                                    if (!mounted) return;
+                                    if (!context.mounted) return;
 
                                     Navigator.push(
                                       context,
@@ -162,6 +218,7 @@ class _OtpScreenState extends State<OtpScreen>
                                       ),
                                     );
                                   } else {
+                                    if (!context.mounted) return;
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(
@@ -290,6 +347,18 @@ class _OtpScreenState extends State<OtpScreen>
               controller: _controllers[index],
               focusNode: _focusNodes[index],
               onChanged: (value) {
+                if (value.length > 1) {
+                  final digits = value.replaceAll(RegExp(r'\D'), '');
+                  for (int i = 0; i < 4 && i < digits.length; i++) {
+                    _controllers[i].text = digits[i];
+                  }
+                  if (digits.length >= 4) {
+                    _focusNodes[3].requestFocus();
+                  } else if (digits.isNotEmpty) {
+                    _focusNodes[digits.length - 1].requestFocus();
+                  }
+                  return;
+                }
                 if (value.isNotEmpty && index < 3) {
                   _focusNodes[index + 1].requestFocus();
                 } else if (value.isEmpty && index > 0) {
@@ -298,7 +367,6 @@ class _OtpScreenState extends State<OtpScreen>
               },
               textAlign: TextAlign.center,
               keyboardType: TextInputType.number,
-              maxLength: 1,
               style: TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.bold,

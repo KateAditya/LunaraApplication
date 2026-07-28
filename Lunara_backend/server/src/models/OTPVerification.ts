@@ -65,6 +65,8 @@ class OTPVerification
         phone: string,
         purpose: OTPPurpose
     ): Promise<{ otp: OTPVerification; code: string }> {
+        const cleanPhone = phone.replace(/\D/g, '').slice(-10);
+
         // Generate 4-digit OTP
         const rawCode = Math.floor(1000 + Math.random() * 9000).toString();
 
@@ -78,11 +80,11 @@ class OTPVerification
 
         // Delete any existing unverified OTPs for this phone/purpose
         await OTPVerification.destroy({
-            where: { phone, purpose, verifiedAt: { [Op.is]: null } as any },
+            where: { phone: cleanPhone, purpose, verifiedAt: { [Op.is]: null } as any },
         });
 
         const otp = await OTPVerification.create({
-            phone,
+            phone: cleanPhone,
             otpCode: hashedCode,
             purpose,
             expiresAt,
@@ -97,10 +99,11 @@ class OTPVerification
         rawCode: string,
         purpose: OTPPurpose
     ): Promise<{ success: boolean; message: string; otp?: OTPVerification }> {
+        const cleanPhone = phone.replace(/\D/g, '').slice(-10);
         const hashedCode = crypto.createHash('sha256').update(rawCode).digest('hex');
 
         const otp = await OTPVerification.findOne({
-            where: { phone, purpose },
+            where: { phone: cleanPhone, purpose },
             order: [['created_at', 'DESC']],
         });
 
