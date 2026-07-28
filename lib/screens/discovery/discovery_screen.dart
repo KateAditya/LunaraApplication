@@ -2404,6 +2404,35 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     );
   }
 
+  Widget _buildProfileMetricChip(IconData icon, String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: color.withValues(alpha: 0.25),
+          width: 0.8,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 10),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 9.5,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTopProfiles() {
     // Robust null check and filter out the current user + apply gender filter
     final List<dynamic> users = _filteredUsers.where((u) {
@@ -2426,6 +2455,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
       return isNotMe;
     }).toList();
+
+    // Sort by rankScore (Boost + Superlikes + Likes + Points)
+    users.sort((a, b) {
+      final scoreA = (a['rankScore'] is num ? a['rankScore'] : double.tryParse(a['rankScore']?.toString() ?? '0') ?? 0);
+      final scoreB = (b['rankScore'] is num ? b['rankScore'] : double.tryParse(b['rankScore']?.toString() ?? '0') ?? 0);
+      return scoreB.compareTo(scoreA);
+    });
 
     final List<dynamic> allUsers = _filteredUsers.where((u) {
       return u['id']?.toString() != _currentUser?.id;
@@ -2488,7 +2524,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           )
         else
           SizedBox(
-            height: 104,
+            height: 138,
             child: ListView.builder(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               scrollDirection: Axis.horizontal,
@@ -2502,7 +2538,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                             'User')
                         .toString();
                 final vibe = user['gender'] ?? user['vibe'] ?? 'Discovery';
-                final matchPct = 65 + (index * 4) % 35;
+                
+                final int likes = (user['likesCount'] is num ? user['likesCount'] : int.tryParse(user['likesCount']?.toString() ?? '0') ?? 0).toInt();
+                final int superLikes = (user['superLikesCount'] is num ? user['superLikesCount'] : int.tryParse(user['superLikesCount']?.toString() ?? '0') ?? 0).toInt();
+                final dynamic bRaw = user['boostCount'] ?? user['boostsRemaining'];
+                final int boosts = (bRaw is num ? bRaw : int.tryParse(bRaw?.toString() ?? '0') ?? 0).toInt();
+                final bool isBoosted = user['isBoosted'] == true || boosts > 0;
+                final int points = (user['points'] is num ? user['points'] : int.tryParse(user['points']?.toString() ?? '0') ?? (120 + (10 - index) * 15)).toInt();
 
                 return GestureDetector(
                   onTap: () {
@@ -2529,114 +2571,133 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     );
                   },
                   child: Container(
-                    width: 280,
+                    width: 300,
                     margin: const EdgeInsets.only(right: 12),
-                    padding: const EdgeInsets.all(14),
+                    padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       gradient: LunaraTheme.cardGradient,
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: const Color(0xFF7F00FF).withValues(alpha: 0.08),
-                        width: 1.2,
+                        color: isBoosted ? Colors.amber.withValues(alpha: 0.6) : const Color(0xFF7F00FF).withValues(alpha: 0.08),
+                        width: isBoosted ? 1.8 : 1.2,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(
-                            0xFF7F00FF,
-                          ).withValues(alpha: 0.06),
+                          color: isBoosted ? Colors.amber.withValues(alpha: 0.15) : const Color(0xFF7F00FF).withValues(alpha: 0.06),
                           blurRadius: 16,
                           offset: const Offset(0, 6),
                         ),
                       ],
                     ),
-                    child: Row(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        LunaraProfileImage(
-                          userData: user,
-                          radius: 26,
-                          showGradientBorder: false,
-                          isInteractive: false,
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Row(
+                        Row(
+                          children: [
+                            Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                LunaraProfileImage(
+                                  userData: user,
+                                  radius: 24,
+                                  showGradientBorder: isBoosted,
+                                  isInteractive: false,
+                                ),
+                                Positioned(
+                                  bottom: -2,
+                                  right: -4,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                    decoration: BoxDecoration(
+                                      gradient: index == 0
+                                          ? const LinearGradient(colors: [Color(0xFFFFD700), Color(0xFFFFA500)])
+                                          : index == 1
+                                              ? const LinearGradient(colors: [Color(0xFFC0C0C0), Color(0xFF808080)])
+                                              : index == 2
+                                                  ? const LinearGradient(colors: [Color(0xFFCD7F32), Color(0xFF8B4513)])
+                                                  : const LinearGradient(colors: [Color(0xFF7F00FF), Color(0xFFE100FF)]),
+                                      borderRadius: BorderRadius.circular(8),
+                                      boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+                                    ),
+                                    child: Text(
+                                      '#${index + 1}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 8.5,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
+                                  Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          '$name, ${22 + (index % 10)}',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14,
+                                            color: Colors.black,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      const Icon(
+                                        Icons.verified,
+                                        color: LunaraTheme.cyberCyan,
+                                        size: 14,
+                                      ),
+                                      if (isBoosted) ...[
+                                        const SizedBox(width: 4),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: Colors.amber,
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: const Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(Icons.bolt, color: Colors.black, size: 9),
+                                              Text(
+                                                'BOOST',
+                                                style: TextStyle(
+                                                  color: Colors.black,
+                                                  fontSize: 8,
+                                                  fontWeight: FontWeight.w900,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
                                   Text(
-                                    '$name, ${22 + (index % 10)}',
+                                    vibe.toString(),
                                     style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 15,
-                                      color: Colors.black,
+                                      fontSize: 10.5,
+                                      color: LunaraTheme.electricViolet,
+                                      fontWeight: FontWeight.w600,
+                                      letterSpacing: 0.5,
                                     ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
-                                  const SizedBox(width: 4),
-                                  const Icon(
-                                    Icons.verified,
-                                    color: LunaraTheme.cyberCyan,
-                                    size: 14,
-                                  ),
                                 ],
                               ),
-                              const SizedBox(height: 3),
-                              Text(
-                                vibe.toString(),
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: LunaraTheme.electricViolet,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: 1,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
-                                '${1 + index} km away',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey[400],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: matchPct >= 80
-                                    ? const Color(
-                                        0xFF10B981,
-                                      ).withValues(alpha: 0.12)
-                                    : LunaraTheme.electricViolet.withValues(
-                                        alpha: 0.1,
-                                      ),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                '$matchPct%',
-                                style: TextStyle(
-                                  color: matchPct >= 80
-                                      ? const Color(0xFF10B981)
-                                      : LunaraTheme.electricViolet,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                ),
-                              ),
                             ),
-                            const SizedBox(height: 8),
                             GestureDetector(
                               onTap: () {
                                 final id =
@@ -2673,7 +2734,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                 );
                               },
                               child: Container(
-                                padding: const EdgeInsets.all(6),
+                                padding: const EdgeInsets.all(7),
                                 decoration: const BoxDecoration(
                                   color: Color(0xFF7F00FF),
                                   shape: BoxShape.circle,
@@ -2681,10 +2742,20 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                 child: const Icon(
                                   Icons.send_rounded,
                                   color: Colors.white,
-                                  size: 14,
+                                  size: 13,
                                 ),
                               ),
                             ),
+                          ],
+                        ),
+                        // Row of Metrics: Boost, Superlike, Likes, Points
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            _buildProfileMetricChip(Icons.bolt, '$boosts Boost', Colors.amber),
+                            _buildProfileMetricChip(Icons.star_rounded, '$superLikes Super', const Color(0xFF9333EA)),
+                            _buildProfileMetricChip(Icons.favorite_rounded, '$likes Likes', const Color(0xFFEC4899)),
+                            _buildProfileMetricChip(Icons.emoji_events_rounded, '$points Pts', const Color(0xFF10B981)),
                           ],
                         ),
                       ],

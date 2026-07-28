@@ -581,13 +581,27 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
         const totalPages = Math.ceil(count / limit);
 
         const userIds = rows.map(u => u.id);
+        const likesMap: Record<string, number> = {};
         const superLikesMap: Record<string, number> = {};
         const plansMap: Record<string, number> = {};
         const tierMap: Record<string, string> = {};
         const tierRankMap: Record<string, number> = { FREE: 0, CORE: 1, PLUS: 2, PRO: 3, ELITE: 4 };
         const boostsMap: Record<string, number> = {};
+        const pointsMap: Record<string, number> = {};
+        const rankScoreMap: Record<string, number> = {};
 
         if (userIds.length > 0) {
+            const allLikesCounts = await UserMatch.findAll({
+                attributes: [
+                    'user2Id',
+                    [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+                ],
+                where: {
+                    user2Id: { [Op.in]: userIds }
+                },
+                group: ['user2Id']
+            });
+
             const superLikesCounts = await UserMatch.findAll({
                 attributes: [
                     'user2Id',
@@ -635,6 +649,11 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                 group: ['userId']
             });
 
+            allLikesCounts.forEach((c: any) => {
+                const u2Id = c.getDataValue('user2Id');
+                likesMap[u2Id] = parseInt(c.getDataValue('count')) || 0;
+            });
+
             superLikesCounts.forEach((c: any) => {
                 const u2Id = c.getDataValue('user2Id');
                 superLikesMap[u2Id] = parseInt(c.getDataValue('count')) || 0;
@@ -679,6 +698,21 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
             }
         }
 
+        // Compute points & rankScore (Boost + Superlikes + Likes + Points)
+        userIds.forEach(id => {
+            const likes = likesMap[id] || 0;
+            const superlikes = superLikesMap[id] || 0;
+            const boosts = boostsMap[id] || 0;
+            const plans = plansMap[id] || 0;
+            const tierRank = tierRankMap[tierMap[id] ?? 'FREE'] ?? 0;
+
+            const calcPoints = (likes * 15) + (superlikes * 35) + (boosts * 50) + (plans * 25) + 120;
+            const calcRankScore = (boosts > 0 ? 1000 : 0) + (tierRank * 250) + (boosts * 150) + (superlikes * 60) + (likes * 20) + calcPoints;
+
+            pointsMap[id] = calcPoints;
+            rankScoreMap[id] = calcRankScore;
+        });
+
         const data = rows.map(user => {
             const u = user as any;
             const age = user.dateOfBirth
@@ -689,6 +723,12 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
             const photoUrl = photo
                 ? '/' + photo.filePath.replace(/\\/g, '/')
                 : (user.profileImageUrl ?? null);
+
+            const likes = likesMap[user.id] || 0;
+            const superLikes = superLikesMap[user.id] || 0;
+            const boosts = boostsMap[user.id] || 0;
+            const points = pointsMap[user.id] || 120;
+            const rankScore = rankScoreMap[user.id] || 0;
 
             return {
                 id: user.id,
@@ -707,22 +747,21 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                 lastLoginAt: (user as any).lastLoginAt ?? null,
                 profile: u.profile ?? null,
                 preferences: u.preferences ?? null,
-                superLikesCount: superLikesMap[user.id] || 0,
+                likesCount: likes,
+                superLikesCount: superLikes,
+                boostCount: boosts,
+                boostsRemaining: boosts,
+                isBoosted: boosts > 0,
                 plansCount: plansMap[user.id] || 0,
+                points,
+                rankScore,
                 subscriptionTier: tierMap[user.id] ?? 'FREE',
                 tierRank: tierRankMap[tierMap[user.id] ?? 'FREE'] ?? 0,
-                boostsRemaining: boostsMap[user.id] ?? 0,
-                isBoosted: (boostsMap[user.id] ?? 0) > 0,
             };
         });
 
-        // ── Tier-ranked sort: ELITE > PRO > PLUS > CORE > FREE, boosted first within tier
-        const sorted = data.sort((a, b) => {
-            const rankDiff = (b.tierRank ?? 0) - (a.tierRank ?? 0);
-            if (rankDiff !== 0) return rankDiff;
-            // Within same tier, boosted users come first
-            return (b.boostsRemaining ?? 0) - (a.boostsRemaining ?? 0);
-        });
+        // ── Rank-Score sort: Boost + Superlikes + Likes + Points
+        const sorted = data.sort((a, b) => (b.rankScore ?? 0) - (a.rankScore ?? 0));
 
         return res.status(200).json({
             success: true,
