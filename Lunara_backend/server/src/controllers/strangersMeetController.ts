@@ -636,19 +636,33 @@ export const getFeedRequests = async (req: Request, res: Response): Promise<void
         const limitNum = Math.min(100, Math.max(1, parseInt(limit as string)));
         const offset = (pageNum - 1) * limitNum;
 
-        const { count, rows } = await StrangersMeetRequest.findAndCountAll({
+        let { count, rows } = await StrangersMeetRequest.findAndCountAll({
             where: {
                 // Show all admin-approved meets regardless of host payment status
-                // so they appear in the public feed as soon as the admin approves them
                 status: StrangersMeetStatus.APPROVED,
-                // Hide events that start within 45 minutes from now (or have already started)
-                eventDateTime: { [Op.gte]: new Date(Date.now() + 45 * 60 * 1000) },
+                // Include upcoming and recent meets (last 24 hours)
+                eventDateTime: { [Op.gte]: new Date(Date.now() - 24 * 60 * 60 * 1000) },
             },
             include: buildIncludes(),
-            order: [['createdAt', 'DESC']],
+            order: [['eventDateTime', 'DESC'], ['createdAt', 'DESC']],
             limit: limitNum,
             offset,
         });
+
+        // Fallback: If no future/recent events found, return approved meets so feed is never empty
+        if (count === 0) {
+            const fallback = await StrangersMeetRequest.findAndCountAll({
+                where: {
+                    status: StrangersMeetStatus.APPROVED,
+                },
+                include: buildIncludes(),
+                order: [['eventDateTime', 'DESC'], ['createdAt', 'DESC']],
+                limit: limitNum,
+                offset,
+            });
+            count = fallback.count;
+            rows = fallback.rows;
+        }
 
         res.json({
             success: true,
