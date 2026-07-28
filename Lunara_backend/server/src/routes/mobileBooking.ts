@@ -42,21 +42,24 @@ router.post(
     '/',
     [
         body('userId').notEmpty().withMessage('userId is required'),
-        body('venueId').isUUID().withMessage('venueId must be a UUID'),
+        body('venueId').notEmpty().withMessage('venueId is required'),
         body('bookingDate').isISO8601().withMessage('bookingDate must be YYYY-MM-DD'),
         body('startTime').notEmpty().withMessage('startTime is required (e.g. "22:00")'),
         body('tablePackage')
-            .optional()
-            .isIn(['silver', 'gold', 'platinum', 'Confirmation Charges', 'none'])
+            .optional({ nullable: true, checkFalsy: true })
+            .isString()
             .withMessage('tablePackage is invalid'),
         body('goingMode')
-            .optional()
-            .isIn(['solo', 'party_request'])
-            .withMessage('goingMode must be solo or party_request'),
-        body('numberOfGuests').optional().isNumeric(),
-        body('partySubject').optional().isString(),
-        body('partyRequirement').optional().isString(),
-        body('partyDescription').optional().isString(),
+            .optional({ nullable: true, checkFalsy: true })
+            .isString()
+            .withMessage('goingMode must be string'),
+        body('numberOfGuests').optional({ nullable: true, checkFalsy: true }).isNumeric(),
+        body('partySubject').optional({ nullable: true, checkFalsy: true }).isString(),
+        body('partyRequirement').optional({ nullable: true, checkFalsy: true }).isString(),
+        body('partyDescription').optional({ nullable: true, checkFalsy: true }).isString(),
+        body('mobileNumber').optional({ nullable: true, checkFalsy: true }).isString(),
+        body('optionalMobileNumber').optional({ nullable: true, checkFalsy: true }).isString(),
+        body('isUpcomingNight').optional({ nullable: true }).isBoolean(),
         validate,
     ],
     ctrl.createBooking

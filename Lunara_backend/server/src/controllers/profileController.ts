@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import User from '../models/User';
 import { UserProfile, UserPreference, UserPhoto } from '../models';
-import { UserProfile, UserPreference, UserPhoto } from '../models';
 import sequelize from '../config/database';
 import { logger } from '../config/logger';
 
@@ -50,7 +49,6 @@ export const updateProfile = async (req: Request, res: Response): Promise<Respon
                 lookingFor: data.lookingFor,
                 occupation: data.occupation,
                 education: data.education,
-                interests: data.interests,
                 interests: data.interests,
             },
             { transaction }
