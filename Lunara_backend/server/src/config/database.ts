@@ -102,6 +102,16 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
             await sequelize.query(`ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS ticket_url VARCHAR(500);`);
             await sequelize.query(`ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS ticket_code VARCHAR(100);`);
             await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS client_message_id VARCHAR(255);`);
+            await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_url TEXT;`);
+            await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_mime_type VARCHAR(50);`);
+            await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS duration INTEGER;`);
+            await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS file_size INTEGER;`);
+            await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS waveform_data TEXT;`);
+            await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_message_id UUID;`);
+            await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS invitation_ref UUID;`);
+            await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS invitation_ref_type VARCHAR(20);`);
+            await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS invitation_time VARCHAR(100);`);
+            await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS invitation_status VARCHAR(20) DEFAULT 'pending';`);
             logger.info('users and messages table columns verified/migrated successfully.');
 
 
