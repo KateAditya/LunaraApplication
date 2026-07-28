@@ -104,7 +104,7 @@ class OTPVerification
 
         const otp = await OTPVerification.findOne({
             where: { phone: cleanPhone, purpose },
-            order: [['created_at', 'DESC']],
+            order: [['createdAt', 'DESC']],
         });
 
         if (!otp) {

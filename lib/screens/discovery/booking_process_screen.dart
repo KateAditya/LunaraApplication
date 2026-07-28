@@ -1890,22 +1890,24 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                 );
                                 if (bookingRes != null && bookingRes['success'] == true) {
                                   final data = bookingRes['data'];
-                                  if (data != null && data['bookingId'] != null) {
-                                    createdBookingId = data['bookingId'].toString();
+                                  if (data != null) {
+                                    createdBookingId = (data['id'] ?? data['bookingId'])?.toString();
                                   }
-                                } else if (bookingRes != null && bookingRes['reasonCode'] == 'TIME_LOCK_ACTIVE') {
+                                  createdBookingId ??= bookingRes['bookingId']?.toString();
+                                } else if (bookingRes != null && (bookingRes['reasonCode'] == 'TIME_LOCK_ACTIVE' || bookingRes['code'] == 'PLAN_TIME_LOCK_ACTIVE')) {
                                   if (!outerContext.mounted) return;
                                   TimeLockModal.show(
                                     context: outerContext,
-                                    reasonCode: bookingRes['reasonCode'],
+                                    reasonCode: bookingRes['reasonCode'] ?? bookingRes['code'],
                                     message: bookingRes['message'] ?? 'Please wait before booking again.',
-                                    remainingSeconds: bookingRes['remainingSeconds'] ?? 60,
+                                    remainingSeconds: bookingRes['remainingSeconds'] ?? bookingRes['lock']?['remainingSeconds'] ?? 60,
                                   );
                                   return;
                                 } else {
                                   if (!outerContext.mounted) return;
+                                  final errMsg = bookingRes?['message']?.toString() ?? 'Failed to create booking.';
                                   ScaffoldMessenger.of(outerContext).showSnackBar(
-                                    const SnackBar(content: Text('Failed to create booking.')),
+                                    SnackBar(content: Text(errMsg)),
                                   );
                                   return;
                                 }

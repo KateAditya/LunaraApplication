@@ -126,7 +126,7 @@ export const mobileCheckEmail = async (req: Request, res: Response): Promise<Res
 // ─────────────────────────────────────────────────────────────────────────────
 export const mobileVerifyOTP = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const { phone, otp } = req.body;
+        const { phone, otp, purpose } = req.body;
 
         if (!phone || !otp) {
             return res.status(400).json({ success: false, message: 'Phone and OTP are required' });
@@ -139,20 +139,19 @@ export const mobileVerifyOTP = async (req: Request, res: Response): Promise<Resp
 
         const cleanOtp = String(otp).trim();
 
-        // First attempt real verification against DB hashed OTP
-        let result = await OTPVerification.verifyOTP(cleanPhone, cleanOtp, OTPPurpose.REGISTRATION);
+        // Determine target purpose or default to REGISTRATION with PASSWORD_RESET fallback
+        let targetPurpose = OTPPurpose.REGISTRATION;
+        if (purpose && Object.values(OTPPurpose).includes(purpose as OTPPurpose)) {
+            targetPurpose = purpose as OTPPurpose;
+        }
 
-        // Fallback for dev/dummy mode (1234) if real verification didn't match
-        if (!result.success && cleanOtp === '1234') {
-            const otpRecord = await OTPVerification.findOne({
-                where: { phone: cleanPhone, purpose: OTPPurpose.REGISTRATION },
-                order: [['created_at', 'DESC']]
-            });
+        let result = await OTPVerification.verifyOTP(cleanPhone, cleanOtp, targetPurpose);
 
-            if (otpRecord && !otpRecord.isExpired()) {
-                otpRecord.verifiedAt = new Date();
-                await otpRecord.save();
-                result = { success: true, message: 'OTP verified successfully' };
+        // Fallback check for PASSWORD_RESET if purpose wasn't explicitly passed and REGISTRATION failed
+        if (!result.success && !purpose) {
+            const resetResult = await OTPVerification.verifyOTP(cleanPhone, cleanOtp, OTPPurpose.PASSWORD_RESET);
+            if (resetResult.success) {
+                result = resetResult;
             }
         }
 
@@ -207,7 +206,7 @@ export const mobileRegister = async (req: Request, res: Response): Promise<Respo
         // ── 1.5. OTP Verification Check ───────────────────────────────────────
         const otpRecord = await OTPVerification.findOne({
             where: { phone: cleanPhone, purpose: OTPPurpose.REGISTRATION },
-            order: [['created_at', 'DESC']]
+            order: [['createdAt', 'DESC']]
         });
 
         if (!otpRecord || !otpRecord.isVerified()) {
@@ -445,21 +444,7 @@ export const mobileResetPassword = async (req: Request, res: Response): Promise<
         }
 
         // Attempt real OTP verification
-        let vResult = await OTPVerification.verifyOTP(cleanPhone, cleanOtp, OTPPurpose.PASSWORD_RESET);
-
-        // Fallback for dev/dummy mode (1234)
-        if (!vResult.success && cleanOtp === '1234') {
-            const otpRecord = await OTPVerification.findOne({
-                where: { phone: cleanPhone, purpose: OTPPurpose.PASSWORD_RESET },
-                order: [['created_at', 'DESC']]
-            });
-
-            if (otpRecord && !otpRecord.isExpired()) {
-                otpRecord.verifiedAt = new Date();
-                await otpRecord.save();
-                vResult = { success: true, message: 'OTP verified successfully' };
-            }
-        }
+        const vResult = await OTPVerification.verifyOTP(cleanPhone, cleanOtp, OTPPurpose.PASSWORD_RESET);
 
         if (!vResult.success) {
             return res.status(400).json({ success: false, code: 'INVALID_OTP', message: vResult.message });

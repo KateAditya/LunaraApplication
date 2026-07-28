@@ -12,11 +12,11 @@ const sequelize = new Sequelize({
     username: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || '',
     pool: {
-        min: parseInt(process.env.DB_POOL_MIN || '10'),
-        max: parseInt(process.env.DB_POOL_MAX || '100'),
+        min: parseInt(process.env.DB_POOL_MIN || '2'),
+        max: parseInt(process.env.DB_POOL_MAX || '25'),
         acquire: 60000,
-        idle: 30000,
-        evict: 2000,
+        idle: 10000,
+        evict: 1000,
     },
     dialectOptions: {
         ssl: process.env.DB_SSL === 'true' ? {
@@ -32,10 +32,25 @@ const sequelize = new Sequelize({
     },
 });
 
-export const connectDatabase = async (): Promise<void> => {
-    try {
-        await sequelize.authenticate();
-        logger.info('Database connection established successfully');
+export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Promise<void> => {
+    let connected = false;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            await sequelize.authenticate();
+            logger.info('Database connection established successfully');
+            connected = true;
+            break;
+        } catch (err: any) {
+            logger.warn(`Database connection attempt ${attempt}/${maxRetries} failed (${err.code || err.message}). Retrying in ${retryDelayMs / 1000}s...`);
+            if (attempt === maxRetries) {
+                logger.error('All database connection retries exhausted.', err);
+                throw err;
+            }
+            await new Promise((res) => setTimeout(res, retryDelayMs));
+        }
+    }
+
+    if (connected) {
 
         // Always ensure new columns are added safely
         try {
@@ -445,9 +460,6 @@ export const connectDatabase = async (): Promise<void> => {
                 logger.warn('Sequelize sync warning: ' + syncErr.message);
             }
         }
-    } catch (error) {
-        logger.error('Unable to connect to the database:', error);
-        process.exit(1);
     }
 };
 

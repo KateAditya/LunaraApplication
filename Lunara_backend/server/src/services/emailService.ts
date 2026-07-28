@@ -28,7 +28,7 @@ export { smtpFrom };
 
 transporter.verify((error: Error | null) => {
   if (error) {
-    logger.error(`Email service configuration error: ${error.message}`);
+    logger.warn(`[EmailService] SMTP verification notice: ${error.message}. (Transactional emails disabled until valid credentials provided)`);
   } else {
     logger.info(`Email service ready — sending as: ${smtpFrom} via ${smtpHost}:${smtpPort}`);
   }
