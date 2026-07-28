@@ -181,12 +181,22 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
             ),
     );
 
+    // Resolve raw image path across all possible keys
+    String? rawCover = post['coverImageUrl']?.toString().isNotEmpty == true
+        ? post['coverImageUrl']
+        : (post['venueImageUrl'] ?? post['venueImage'] ?? post['bannerUrl'] ?? post['bannerImage']);
+
+    if ((rawCover == null || rawCover.toString().isEmpty) && post['venue'] is Map) {
+      final vMap = post['venue'] as Map;
+      rawCover = (vMap['imageUrl'] ?? vMap['coverImage'] ?? vMap['photoUrl'] ?? vMap['image'])?.toString();
+    }
+
+    if (rawCover == null || rawCover.toString().isEmpty) {
+      rawCover = matchedVenue.imageUrl;
+    }
+
     // Use venue cover image as background; fall back to user avatar
-    final String? coverImageUrl = ApiService.formatImageUrl(
-      post['coverImageUrl']?.toString().isNotEmpty == true
-          ? post['coverImageUrl']
-          : matchedVenue.imageUrl,
-    ) ?? avatarUrl;
+    final String? coverImageUrl = ApiService.formatImageUrl(rawCover) ?? avatarUrl;
 
     ImageProvider? bgImage;
     if (coverImageUrl != null && coverImageUrl.isNotEmpty) {

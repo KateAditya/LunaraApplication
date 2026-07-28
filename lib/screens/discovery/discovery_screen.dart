@@ -2137,7 +2137,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           // Try to get cover image from all possible fields and venue lookup
           String? rawCover = feed['coverImageUrl']?.toString().isNotEmpty == true
               ? feed['coverImageUrl']
-              : (feed['venueImage'] ?? feed['bannerUrl'] ?? feed['bannerImage']);
+              : (feed['venueImageUrl'] ?? feed['venueImage'] ?? feed['bannerUrl'] ?? feed['bannerImage']);
 
           if ((rawCover == null || rawCover.toString().isEmpty) && feed['venue'] is Map) {
             final vMap = feed['venue'] as Map;
@@ -2162,9 +2162,21 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               rawCover = matchedVenue.imageUrl;
               if ((rawCover == null || rawCover.isEmpty) && matchedVenue.images != null && matchedVenue.images!.isNotEmpty) {
                 final firstImg = matchedVenue.images!.first;
-                rawCover = firstImg is Map ? (firstImg['url'] ?? firstImg['imageUrl']) : firstImg?.toString();
+                if (firstImg is Map) {
+                  rawCover = (firstImg['url'] ?? firstImg['imageUrl'] ?? firstImg['filePath'])?.toString();
+                } else if (firstImg != null) {
+                  try {
+                    rawCover = ((firstImg as dynamic).url ?? (firstImg as dynamic).filePath ?? firstImg.toString())?.toString();
+                  } catch (_) {
+                    rawCover = firstImg.toString();
+                  }
+                }
               }
             }
+          }
+
+          if (rawCover != null && rawCover.startsWith('Instance of')) {
+            rawCover = null;
           }
 
           final String? coverImageUrl = ApiService.formatImageUrl(rawCover?.toString());

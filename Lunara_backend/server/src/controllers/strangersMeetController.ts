@@ -25,7 +25,7 @@ const razorpay = new Razorpay({
 
 // ─── Shared attributes ────────────────────────────────────────────────────────
 const USER_ATTRS = ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'];
-const VENUE_ATTRS = ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'openingTime', 'closingTime', 'daysOpen', 'closedDates'];
+const VENUE_ATTRS = ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'openingTime', 'closingTime', 'daysOpen', 'closedDates', 'imageUrl'];
 const PROFILE_ATTRS = ['bio', 'occupation', 'city', 'gender'];
 
 function genTicketId(): string {
@@ -85,16 +85,19 @@ function formatRequest(r: StrangersMeetRequest) {
     let userPhotoUrl = user?.profileImageUrl ?? null;
     if (user?.photos?.length > 0) {
         const primary = user.photos.find((p: any) => p.isPrimary) || user.photos[0];
-        if (primary?.filePath) userPhotoUrl = '/' + primary.filePath.replace(/\\/g, '/');
+        if (primary?.filePath) {
+            const cleanUserPath = primary.filePath.replace(/\\/g, '/');
+            userPhotoUrl = cleanUserPath.startsWith('/') ? cleanUserPath : '/' + cleanUserPath;
+        }
     }
 
     let venueImageUrl = venue?.imageUrl ?? null;
     if (!venueImageUrl && venue?.images?.length > 0) {
         const primary = venue.images?.find((img: any) => img.isPrimary) || venue.images[0];
-        if (primary?.filePath) {
-            venueImageUrl = '/' + primary.filePath.replace(/\\/g, '/');
-        } else if (primary?.imageUrl) {
-            venueImageUrl = primary.imageUrl;
+        const rawPath = primary?.filePath || primary?.imageUrl;
+        if (rawPath) {
+            const cleanPath = rawPath.replace(/\\/g, '/');
+            venueImageUrl = cleanPath.startsWith('/') ? cleanPath : '/' + cleanPath;
         }
     }
 
