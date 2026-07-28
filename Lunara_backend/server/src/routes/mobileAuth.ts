@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { mobileRegister, mobileSendOTP, mobileVerifyOTP, mobileForgotPassword, mobileResetPassword, mobileLogout, mobileCheckEmail, mobileVerifyFace, mobileDetectFace } from '../controllers/mobileAuthController';
+import { mobileRegister, mobileSendOTP, mobileVerifyOTP, mobileForgotPassword, mobileResetPassword, mobileLogout, mobileCheckEmail, mobileVerifyFace, mobileDetectFace, mobileFacebookLogin } from '../controllers/mobileAuthController';
 
 const router = Router();
 
@@ -93,5 +93,10 @@ router.post('/detect-face', authLimiter, mobileDetectFace);
  * POST /api/mobile/auth/logout
  */
 router.post('/logout', authLimiter, mobileLogout);
+
+/**
+ * POST /api/mobile/auth/facebook-login
+ */
+router.post('/facebook-login', authLimiter, mobileFacebookLogin);
 
 export default router;

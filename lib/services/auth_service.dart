@@ -303,4 +303,42 @@ class AuthService {
       return 'An unexpected error occurred during registration.';
     }
   }
+
+  /// Log in or register with Facebook credentials
+  static Future<String?> loginWithFacebook({
+    required String facebookId,
+    String? email,
+    String? firstName,
+    String? lastName,
+    String? avatarUrl,
+  }) async {
+    try {
+      final response = await ApiService.post(
+        '/api/mobile/auth/facebook-login',
+        body: {
+          'facebookId': facebookId,
+          'email': email,
+          'firstName': firstName,
+          'lastName': lastName,
+          'avatarUrl': avatarUrl,
+        },
+      );
+
+      final respData = jsonDecode(response.body);
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        if (respData['success'] == true) {
+          final token = respData['token'] ?? respData['data']?['token'];
+          if (token != null) {
+            await ApiService.setAuthToken(token);
+            PushNotificationService.registerTokenAfterLogin();
+          }
+          return null; // Success!
+        }
+      }
+      return respData['message'] ?? 'Facebook login failed.';
+    } catch (e) {
+      debugPrint('Error in loginWithFacebook: $e');
+      return 'An unexpected error occurred during Facebook login.';
+    }
+  }
 }

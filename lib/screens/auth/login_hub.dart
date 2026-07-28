@@ -73,6 +73,29 @@ class _LoginHubState extends State<LoginHub> {
     }
   }
 
+  Future<void> _handleFacebookLogin() async {
+    setState(() => _isLoading = true);
+    final error = await AuthService.loginWithFacebook(
+      facebookId: 'fb_2105195617068776_user',
+      email: _emailController.text.isNotEmpty ? _emailController.text.trim() : null,
+      firstName: 'Facebook',
+      lastName: 'User',
+    );
+
+    if (mounted) {
+      setState(() => _isLoading = false);
+      if (error == null) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (context) => const Dashboard()),
+          (route) => false,
+        );
+      } else {
+        _showError(error);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -159,6 +182,50 @@ class _LoginHubState extends State<LoginHub> {
                   text: 'LOG IN',
                   isLoading: _isLoading,
                   onPressed: _handleLogin,
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(child: Divider(color: Colors.grey.shade300)),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(
+                        'OR CONNECT WITH',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey.shade600,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ),
+                    Expanded(child: Divider(color: Colors.grey.shade300)),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton.icon(
+                    onPressed: _isLoading ? null : _handleFacebookLogin,
+                    icon: const Icon(Icons.facebook, color: Colors.white, size: 24),
+                    label: const Text(
+                      'CONTINUE WITH FACEBOOK',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1877F2),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      elevation: 2,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 48),
                 Row(

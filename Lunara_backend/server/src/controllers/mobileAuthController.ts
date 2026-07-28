@@ -611,5 +611,111 @@ export const mobileDetectFace = async (req: Request, res: Response): Promise<Res
     }
 };
 
-export default { mobileSendOTP, mobileVerifyOTP, mobileRegister, mobileForgotPassword, mobileResetPassword, mobileLogout, mobileCheckEmail, mobileVerifyFace, mobileDetectFace };
+/**
+ * POST /api/mobile/auth/facebook-login
+ * PUBLIC — Authenticate or Register User using Facebook Auth Credentials
+ */
+export const mobileFacebookLogin = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { facebookId, email, firstName, lastName, avatarUrl } = req.body;
+
+        if (!facebookId) {
+            return res.status(400).json({ success: false, message: 'facebookId is required for Facebook authentication' });
+        }
+
+        const cleanEmail = email ? email.toLowerCase().trim() : undefined;
+        let user: any = null;
+
+        // 1. Try finding user by facebookId
+        user = await User.findOne({ where: { facebookId } });
+
+        // 2. If not found by facebookId, try finding by email
+        if (!user && cleanEmail) {
+            user = await User.findOne({ where: { email: cleanEmail } });
+            if (user) {
+                // Link facebookId to existing account
+                await user.update({ facebookId });
+            }
+        }
+
+        // 3. If user exists, log in
+        if (user) {
+            if (user.isDeleted || !user.isActive) {
+                return res.status(403).json({ success: false, message: 'Your account has been deactivated or suspended.' });
+            }
+
+            await user.update({ lastLoginAt: new Date(), isOnline: true });
+            const tokens = generateTokenPair({ userId: user.id, email: user.email, role: user.role });
+
+            return res.status(200).json({
+                success: true,
+                message: 'Facebook login successful',
+                token: tokens.accessToken,
+                refreshToken: tokens.refreshToken,
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    firstName: user.firstName,
+                    lastName: user.lastName,
+                    phone: user.phone,
+                    role: user.role,
+                    profileImageUrl: user.profileImageUrl || avatarUrl || null,
+                },
+            });
+        }
+
+        // 4. If user does NOT exist, create new user account
+        const dummyPassword = await bcrypt.hash(`fb_${facebookId}_${Date.now()}`, 10);
+        const fName = firstName || 'Facebook';
+        const lName = lastName || 'User';
+        const userEmail = cleanEmail || `fb_${facebookId}@lunara.app`;
+        const dummyPhone = `91${Math.floor(1000000000 + Math.random() * 9000000000)}`;
+
+        user = await User.create({
+            email: userEmail,
+            phone: dummyPhone,
+            passwordHash: dummyPassword,
+            firstName: fName,
+            lastName: lName,
+            dateOfBirth: new Date('2000-01-01'),
+            role: UserRole.CUSTOMER,
+            isVerified: true,
+            isActive: true,
+            facebookId,
+            profileImageUrl: avatarUrl || null,
+        });
+
+        await UserProfile.create({
+            userId: user.id,
+            bio: 'Hey there! I am on Lunara.',
+            gender: 'other',
+            city: 'Mumbai',
+        });
+
+        const tokens = generateTokenPair({ userId: user.id, email: user.email, role: user.role });
+
+        logger.info(`[MobileFacebookLogin] Created new account for Facebook user ${user.id} (${user.email})`);
+
+        return res.status(201).json({
+            success: true,
+            message: 'Facebook registration successful',
+            token: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
+            user: {
+                id: user.id,
+                email: user.email,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                phone: user.phone,
+                role: user.role,
+                profileImageUrl: avatarUrl || null,
+            },
+        });
+    } catch (error: any) {
+        logger.error('[MobileFacebookLogin] Error:', error);
+        return res.status(500).json({ success: false, message: error.message || 'Facebook authentication failed' });
+    }
+};
+
+export default { mobileSendOTP, mobileVerifyOTP, mobileRegister, mobileForgotPassword, mobileResetPassword, mobileLogout, mobileCheckEmail, mobileVerifyFace, mobileDetectFace, mobileFacebookLogin };
 

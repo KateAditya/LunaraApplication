@@ -79,6 +79,8 @@ export const connectDatabase = async (): Promise<void> => {
             await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS autoblocked_reason TEXT;`);
             await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS cleared_notifications_at TIMESTAMP WITH TIME ZONE;`);
             await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS no_show_count INTEGER NOT NULL DEFAULT 0;`);
+            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS facebook_id VARCHAR(100);`);
+            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(100);`);
             await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS ticket_url VARCHAR(500);`);
             await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS is_upcoming_night BOOLEAN DEFAULT FALSE;`);
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS ticket_url VARCHAR(500);`);

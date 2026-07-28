@@ -35,6 +35,8 @@ export interface UserAttributes {
     blockCount: number;
     isAutoblocked: boolean;
     autoblockedReason?: string | null;
+    facebookId?: string | null;
+    googleId?: string | null;
     // Soft-deletion
     isDeleted: boolean;
     deletedAt?: Date | null;
@@ -43,7 +45,7 @@ export interface UserAttributes {
 
 // Creation attributes (optional fields)
 export interface UserCreationAttributes
-    extends Optional<UserAttributes, 'id' | 'isVerified' | 'isActive' | 'isOnline' | 'mfaEnabled' | 'mfaSecret' | 'profileImageUrl' | 'createdAt' | 'updatedAt' | 'lastLoginAt' | 'lastActiveAt' | 'noShowCount' | 'fcmToken' | 'clearedNotificationsAt' | 'blockCount' | 'isAutoblocked' | 'autoblockedReason' | 'isDeleted' | 'deletedAt' | 'deletionReason'> { }
+    extends Optional<UserAttributes, 'id' | 'isVerified' | 'isActive' | 'isOnline' | 'mfaEnabled' | 'mfaSecret' | 'profileImageUrl' | 'createdAt' | 'updatedAt' | 'lastLoginAt' | 'lastActiveAt' | 'noShowCount' | 'fcmToken' | 'clearedNotificationsAt' | 'blockCount' | 'isAutoblocked' | 'autoblockedReason' | 'facebookId' | 'googleId' | 'isDeleted' | 'deletedAt' | 'deletionReason'> { }
 
 // User model class
 class User extends Model<UserAttributes, UserCreationAttributes> implements UserAttributes {
@@ -71,6 +73,8 @@ class User extends Model<UserAttributes, UserCreationAttributes> implements User
     public blockCount!: number;
     public isAutoblocked!: boolean;
     public autoblockedReason?: string | null;
+    public facebookId?: string | null;
+    public googleId?: string | null;
     public isDeleted!: boolean;
     public deletedAt?: Date | null;
     public deletionReason?: string | null;
@@ -249,6 +253,16 @@ User.init(
             type: DataTypes.TEXT,
             allowNull: true,
             field: 'autoblocked_reason',
+        },
+        facebookId: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'facebook_id',
+        },
+        googleId: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'google_id',
         },
         isDeleted: {
             type: DataTypes.BOOLEAN,
