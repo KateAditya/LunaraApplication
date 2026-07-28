@@ -1,6 +1,7 @@
 import { initializeApp, getApps, App, cert, applicationDefault } from 'firebase-admin/app';
 import { getMessaging, Message, MulticastMessage } from 'firebase-admin/messaging';
 import { logger } from '../config/logger';
+import User from '../models/User';
 
 // ── Initialise Firebase Admin SDK once ───────────────────────────────────────
 let _app: App | null = null;
@@ -89,14 +90,19 @@ export async function sendPushNotification(
         const response = await getMessaging(app).send(message);
         logger.debug(`FCM notification sent: ${response}`);
     } catch (err: any) {
-        // Don't re-throw — notification failure must not break the API
-        logger.warn(`FCM send failed for token ${fcmToken.substring(0, 20)}...: ${err.message}`);
+        // Auto-clean expired / unregistered tokens from DB
+        if (err.message?.includes('NotRegistered') || err.code === 'messaging/registration-token-not-registered') {
+            logger.info(`Cleaning up expired FCM token ${fcmToken.substring(0, 20)}...`);
+            User.update({ fcmToken: null as any }, { where: { fcmToken } }).catch(() => {});
+        } else {
+            logger.warn(`FCM send failed for token ${fcmToken.substring(0, 20)}...: ${err.message}`);
+        }
     }
 }
 
 /**
  * Send push notifications to multiple FCM tokens.
- * Invalid / expired tokens are silently ignored.
+ * Invalid / expired tokens are silently ignored and cleaned up from DB.
  */
 export async function sendMulticastPushNotification(
     fcmTokens: string[],
@@ -138,6 +144,17 @@ export async function sendMulticastPushNotification(
         logger.debug(
             `FCM multicast: ${response.successCount} sent, ${response.failureCount} failed`
         );
+
+        // Auto-clean expired FCM tokens from multicast responses
+        response.responses.forEach((res, index) => {
+            if (!res.success && (res.error?.code === 'messaging/registration-token-not-registered' || res.error?.message?.includes('NotRegistered'))) {
+                const expiredToken = validTokens[index];
+                if (expiredToken) {
+                    logger.info(`Cleaning up expired multicast FCM token ${expiredToken.substring(0, 20)}...`);
+                    User.update({ fcmToken: null as any }, { where: { fcmToken: expiredToken } }).catch(() => {});
+                }
+            }
+        });
     } catch (err: any) {
         logger.warn(`FCM multicast failed: ${err.message}`);
     }
