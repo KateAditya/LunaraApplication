@@ -5,6 +5,7 @@ import '../../services/auth_service.dart';
 import '../home/dashboard.dart';
 import 'register_basic_screen.dart';
 import 'forgot_password_screen.dart';
+import '../../widgets/facebook_login_dialog.dart';
 
 class LoginHub extends StatefulWidget {
   const LoginHub({super.key});
@@ -73,27 +74,8 @@ class _LoginHubState extends State<LoginHub> {
     }
   }
 
-  Future<void> _handleFacebookLogin() async {
-    setState(() => _isLoading = true);
-    final error = await AuthService.loginWithFacebook(
-      facebookId: 'fb_2105195617068776_user',
-      email: _emailController.text.isNotEmpty ? _emailController.text.trim() : null,
-      firstName: 'Facebook',
-      lastName: 'User',
-    );
-
-    if (mounted) {
-      setState(() => _isLoading = false);
-      if (error == null) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (context) => const Dashboard()),
-          (route) => false,
-        );
-      } else {
-        _showError(error);
-      }
-    }
+  void _handleFacebookLogin() {
+    FacebookLoginDialog.show(context);
   }
 
   @override
