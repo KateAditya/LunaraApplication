@@ -86,7 +86,8 @@ export const connectDatabase = async (): Promise<void> => {
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS ticket_url VARCHAR(500);`);
             await sequelize.query(`ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS ticket_url VARCHAR(500);`);
             await sequelize.query(`ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS ticket_code VARCHAR(100);`);
-            logger.info('users table columns verified/migrated successfully.');
+            await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS client_message_id VARCHAR(255);`);
+            logger.info('users and messages table columns verified/migrated successfully.');
 
 
 

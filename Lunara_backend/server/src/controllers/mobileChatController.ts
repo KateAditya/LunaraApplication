@@ -315,25 +315,30 @@ export const sendMessage = async (req: Request, res: Response) => {
 
         // ── Idempotency check: return existing message if clientMessageId already processed
         if (clientMessageId) {
-            const existing = await Message.findOne({
-                where: { conversationId: id, clientMessageId },
-                include: [{
-                    model: User, as: 'sender',
-                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'],
+            try {
+                const existing = await Message.findOne({
+                    where: { conversationId: id, clientMessageId },
                     include: [{
-                        model: UserPhoto, as: 'photos',
-                        where: { isPrimary: true },
-                        attributes: ['id', 'filePath', 'userId'],
-                        required: false,
+                        model: User, as: 'sender',
+                        attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'],
+                        include: [{
+                            model: UserPhoto, as: 'photos',
+                            where: { isPrimary: true },
+                            attributes: ['id', 'filePath', 'userId'],
+                            required: false,
+                        }],
                     }],
-                }],
-            });
-            if (existing) {
-                return res.status(200).json({
-                    success: true,
-                    message: 'Message already sent (idempotent)',
-                    data: formatMessage(existing),
                 });
+                if (existing) {
+                    return res.status(200).json({
+                        success: true,
+                        message: 'Message already sent (idempotent)',
+                        data: formatMessage(existing),
+                    });
+                }
+            } catch (findErr: any) {
+                logger.warn('[SendMessage] client_message_id query fallback:', findErr.message);
+                await Message.sync().catch(() => {});
             }
         }
 
@@ -375,7 +380,7 @@ export const sendMessage = async (req: Request, res: Response) => {
             isRecipientOnline = !!(recipientRoom && recipientRoom.size > 0);
         } catch (err) {}
 
-        const message = await Message.create({
+        const msgPayload = {
             conversationId: id,
             senderId,
             clientMessageId,
@@ -392,7 +397,16 @@ export const sendMessage = async (req: Request, res: Response) => {
             invitationTime,
             invitationStatus: type === MessageType.INVITATION ? InvitationStatus.PENDING : undefined,
             status: isRecipientOnline ? MessageStatus.DELIVERED : MessageStatus.SENT,
-        });
+        };
+
+        let message: Message;
+        try {
+            message = await Message.create(msgPayload);
+        } catch (createErr: any) {
+            logger.warn('[SendMessage] Message.create failed, triggering table auto-sync fallback:', createErr.message);
+            await Message.sync().catch(() => {});
+            message = await Message.create(msgPayload);
+        }
 
         // Build preview text
         const preview = message.getPreview();
