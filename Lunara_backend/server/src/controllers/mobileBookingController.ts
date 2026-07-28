@@ -14,6 +14,7 @@ import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import { generateTicketForBookingHelper, generateTicketForGroupPartyHelper } from '../services/ticketService';
 import { VenueBookingService } from '../services/VenueBookingService';
+import { NotificationService } from '../services/NotificationService';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -202,12 +203,27 @@ export const payNow = async (req: Request, res: Response) => {
             ticketCode,
         });
 
-        // Generate digital ticket in background
+        // Generate digital ticket in background & dispatch notification
         setImmediate(async () => {
             try {
                 await generateTicketForBookingHelper(booking.id);
+                const venueInfo = await Venue.findByPk(booking.venueId, { attributes: ['name'] });
+                const vName = venueInfo?.name || 'Venue';
+                await NotificationService.dispatch({
+                    recipientUserId: booking.userId,
+                    eventType: 'booking_confirmed',
+                    category: 'bookings',
+                    entityType: 'Booking',
+                    entityId: booking.id,
+                    title: '🎉 Booking Confirmed!',
+                    body: `Your booking payment for ${vName} is successful! Your ticket is now available in your Ticket Wallet.`,
+                    priority: 'HIGH',
+                    idempotencyKey: `booking_paynow_${booking.id}`,
+                    actionType: 'view_ticket',
+                    deepLink: `/ticket/${booking.id}`,
+                });
             } catch (ticketErr) {
-                logger.error(`Background ticket generation failed for booking ${booking.id}:`, ticketErr);
+                logger.error(`Background ticket/notification processing failed for booking ${booking.id}:`, ticketErr);
             }
         });
 

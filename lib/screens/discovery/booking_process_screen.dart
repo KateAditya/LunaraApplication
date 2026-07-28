@@ -1205,17 +1205,24 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
             int guests = int.tryParse(_guestsController.text) ?? 1;
             bool isLargeParty = !isSolo && guests > 20;
 
-            final double basePrice =
+            final double rawTableCharge =
                 double.tryParse(
-                  widget.venue['tableBookingCharges']?.toString() ?? '20',
+                  widget.venue['tableBookingCharges']?.toString() ??
+                      widget.venue['table_booking_charges']?.toString() ??
+                      widget.venue['pricePerHead']?.toString() ??
+                      widget.venue['price_per_head']?.toString() ??
+                      '500',
                 ) ??
-                20.0;
+                500.0;
+            final double basePrice = rawTableCharge > 0 ? rawTableCharge : 500.0;
             final double subtotal = basePrice * guests;
             final double discountPercent =
                 double.tryParse(
-                  widget.venue['discountPercentage']?.toString() ?? '0',
+                  widget.venue['discountPercentage']?.toString() ??
+                      widget.venue['discount_percentage']?.toString() ??
+                      '10',
                 ) ??
-                0.0;
+                10.0;
             final double discountAmount = (subtotal * discountPercent) / 100;
             final double totalPrice = subtotal - discountAmount;
 

@@ -5,6 +5,7 @@ import { PlanEligibilityService } from './PlanEligibilityService';
 import { validateVenueTimingAndHolidays } from '../utils/venueValidator';
 import { checkExistingBookingForDate } from '../utils/bookingLimitValidator';
 import { generateTicketForBookingHelper } from './ticketService';
+import { NotificationService } from './NotificationService';
 import { logger } from '../config/logger';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
@@ -52,10 +53,11 @@ export class VenueBookingService {
 
         let totalAmount = 0;
         let pkg: BookingTablePackage | null = null;
-        const isStandardOrGroup = packageName === 'Standard Booking' || packageName === 'Group Party Booking';
+        const isStandardOrGroup = packageName === 'Standard Booking' || packageName === 'Group Party Booking' || packageName === 'Confirmation Charges' || !packageName || packageName === 'none';
 
         if (isStandardOrGroup) {
-            const basePrice = Number(venue.tableBookingCharges || 0);
+            const rawCharge = Number(venue.tableBookingCharges);
+            const basePrice = (!isNaN(rawCharge) && rawCharge > 0) ? rawCharge : 500;
             const subtotal = basePrice * numberOfGuests;
             const discountPercent = Number(venue.discountPercentage || 0);
             const discountAmount = (subtotal * discountPercent) / 100;
@@ -68,6 +70,10 @@ export class VenueBookingService {
             }
             if (pkg) {
                 totalAmount = Number(pkg.price);
+            } else {
+                const rawCharge = Number(venue.tableBookingCharges);
+                const basePrice = (!isNaN(rawCharge) && rawCharge > 0) ? rawCharge : 500;
+                totalAmount = basePrice * numberOfGuests;
             }
         }
 
@@ -169,6 +175,23 @@ export class VenueBookingService {
         );
 
         try {
+            if (booking.status === BookingStatus.CONFIRMED) {
+                await generateTicketForBookingHelper(booking.id);
+                await NotificationService.dispatch({
+                    recipientUserId: userId,
+                    eventType: 'booking_confirmed',
+                    category: 'bookings',
+                    entityType: 'Booking',
+                    entityId: booking.id,
+                    title: '🎉 Booking Confirmed!',
+                    body: `Your booking at ${venue.name} for ${bookingDate} at ${startTime} has been confirmed. View your digital ticket now!`,
+                    priority: 'HIGH',
+                    idempotencyKey: `booking_created_${booking.id}`,
+                    actionType: 'view_ticket',
+                    deepLink: `/ticket/${booking.id}`,
+                });
+            }
+
             if (isLargeParty || isUpcomingNight) {
                 const { io } = require('../server');
                 io.to('admin').emit('admin_notification', {
@@ -178,7 +201,7 @@ export class VenueBookingService {
                 });
             }
         } catch (adminErr: any) {
-            logger.warn('Failed to emit admin_notification: ' + adminErr.message);
+            logger.warn('Failed to emit notification for booking: ' + adminErr.message);
         }
 
         return { booking, razorpayOrder };
@@ -216,8 +239,22 @@ export class VenueBookingService {
 
         try {
             await generateTicketForBookingHelper(booking.id);
+            const venue = await Venue.findByPk(booking.venueId, { attributes: ['name'] });
+            await NotificationService.dispatch({
+                recipientUserId: booking.userId,
+                eventType: 'booking_confirmed',
+                category: 'bookings',
+                entityType: 'Booking',
+                entityId: booking.id,
+                title: '🎉 Booking Confirmed!',
+                body: `Your payment for ${venue ? venue.name : 'venue'} is confirmed! Your ticket is ready in your Wallet.`,
+                priority: 'HIGH',
+                idempotencyKey: `booking_verified_${booking.id}`,
+                actionType: 'view_ticket',
+                deepLink: `/ticket/${booking.id}`,
+            });
         } catch (tErr) {
-            logger.error(`[VenueBookingService] Ticket generation error for Booking ${booking.id}:`, tErr);
+            logger.error(`[VenueBookingService] Ticket generation/notification error for Booking ${booking.id}:`, tErr);
         }
 
         return booking;
