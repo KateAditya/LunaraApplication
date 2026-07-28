@@ -306,6 +306,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     venue['imageUrl'] ??
                     venue['image'] ??
                     meet['coverImageUrl'] ??
+                    meet['venueImageUrl'] ??
                     meet['venueImage'] ??
                     meet['bannerUrl'] ??
                     meet['bannerImage'] ??
@@ -315,6 +316,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                             ? (venue['images'] as List).first['url'] ?? (venue['images'] as List).first['filePath']
                             : (venue['images'] as List).first)
                         : null);
+
+                final String extractedVenueId = (meet['venueId'] ?? venue['id'] ?? (meet['venue'] is Map ? meet['venue']['id'] : null) ?? (meet['venue'] is String ? meet['venue'] : ''))?.toString() ?? '';
+
                 return {
                   'id': meet['id'],
                   'type': 'strangers_meet',
@@ -327,6 +331,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   'bio': user['bio'] ?? '',
                   'gender': user['gender'] ?? 'Unknown',
                   'venue': venue['name'] ?? meet['venueName'] ?? (meet['venue'] is String ? meet['venue'] : null) ?? 'Unknown',
+                  'venueId': extractedVenueId,
+                  'venueMap': venue,
                   'content': meet['tagline'] ?? meet['subject'] ?? '',
                   'time': timeStr,
                   'coverImageUrl': smVenueCoverImg?.toString() ?? '',
@@ -334,7 +340,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   'user': user,
                   'createdAt': meet['createdAt'],
                 };
-
               }),
             );
           }
@@ -2124,15 +2129,17 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
           // Handle nested user object or flat structure
           final userObj = feed['user'] is Map ? feed['user'] as Map : feed;
+          final String? userPhotoRaw = (userObj['profilePhotoUrl'] ?? userObj['photoUrl'] ?? userObj['profilePhoto'] ?? feed['profilePhotoUrl'] ?? feed['profilePhoto'])?.toString();
+          final String? avatarUrl = ApiService.formatImageUrl(userPhotoRaw);
 
-
-          // Resolve venue name
+          // Resolve venue name & ID
           String venueName = '';
           if (feed['venue'] is Map) {
             venueName = (feed['venue'] as Map)['name']?.toString() ?? '';
           } else {
             venueName = feed['venue']?.toString() ?? '';
           }
+          final String targetVenueId = (feed['venueId'] ?? (feed['venue'] is Map ? feed['venue']['id'] : null))?.toString() ?? '';
 
           // Try to get cover image from all possible fields and venue lookup
           String? rawCover = feed['coverImageUrl']?.toString().isNotEmpty == true
@@ -2148,16 +2155,25 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             rawCover ??= (vMap['imageUrl'] ?? vMap['coverImage'] ?? vMap['photoUrl'] ?? vMap['image'])?.toString();
           }
 
-          if ((rawCover == null || rawCover.toString().isEmpty) && venueName.isNotEmpty) {
-            final vNameLower = venueName.toLowerCase().trim();
+          // Search in _allVenues by ID first, then by Name
+          if (rawCover == null || rawCover.toString().isEmpty) {
             Venue? matchedVenue;
-            for (final v in _allVenues) {
-              final nameLower = v.name.toLowerCase().trim();
-              if (nameLower == vNameLower || nameLower.contains(vNameLower) || vNameLower.contains(nameLower)) {
-                matchedVenue = v;
-                break;
+            if (targetVenueId.isNotEmpty) {
+              try {
+                matchedVenue = _allVenues.firstWhere((v) => v.id == targetVenueId);
+              } catch (_) {}
+            }
+            if (matchedVenue == null && venueName.isNotEmpty) {
+              final vNameLower = venueName.toLowerCase().trim();
+              for (final v in _allVenues) {
+                final nameLower = v.name.toLowerCase().trim();
+                if (nameLower == vNameLower || nameLower.contains(vNameLower) || vNameLower.contains(nameLower)) {
+                  matchedVenue = v;
+                  break;
+                }
               }
             }
+
             if (matchedVenue != null) {
               rawCover = matchedVenue.imageUrl;
               if ((rawCover == null || rawCover.isEmpty) && matchedVenue.images != null && matchedVenue.images!.isNotEmpty) {
@@ -2175,11 +2191,26 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             }
           }
 
+          // Fall back to host/user avatar URL if venue image not found
+          if (rawCover == null || rawCover.toString().isEmpty) {
+            rawCover = userPhotoRaw;
+          }
+
+          // Fall back to first available venue image in _allVenues if still empty
+          if (rawCover == null || rawCover.toString().isEmpty) {
+            for (final v in _allVenues) {
+              if (v.imageUrl != null && v.imageUrl!.isNotEmpty) {
+                rawCover = v.imageUrl;
+                break;
+              }
+            }
+          }
+
           if (rawCover != null && rawCover.startsWith('Instance of')) {
             rawCover = null;
           }
 
-          final String? coverImageUrl = ApiService.formatImageUrl(rawCover?.toString());
+          final String? coverImageUrl = ApiService.formatImageUrl(rawCover?.toString()) ?? avatarUrl;
           final bool hasValidCover = coverImageUrl != null && coverImageUrl.trim().isNotEmpty;
 
           return RepaintBoundary(

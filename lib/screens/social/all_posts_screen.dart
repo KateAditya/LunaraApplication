@@ -167,19 +167,35 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
 
     final String venueName = post['venue']?.toString() ?? '';
 
+    final String targetVenueId = (post['venueId'] ?? (post['venue'] is Map ? post['venue']['id'] : null))?.toString() ?? '';
+
     // Look up venue to get cover image
-    Venue matchedVenue = widget.venues.firstWhere(
-      (v) => v.name.toLowerCase() == venueName.toLowerCase(),
-      orElse: () => widget.venues.isNotEmpty
-          ? widget.venues.first
-          : Venue(
-              id: '0',
-              name: venueName,
-              city: 'Pune',
-              addressLine1: 'Pune',
-              averageRating: 0.0,
-            ),
-    );
+    Venue? matchedVenueObj;
+    if (targetVenueId.isNotEmpty) {
+      try {
+        matchedVenueObj = widget.venues.firstWhere((v) => v.id == targetVenueId);
+      } catch (_) {}
+    }
+    if (matchedVenueObj == null && venueName.isNotEmpty) {
+      final vNameLower = venueName.toLowerCase().trim();
+      for (final v in widget.venues) {
+        final nameLower = v.name.toLowerCase().trim();
+        if (nameLower == vNameLower || nameLower.contains(vNameLower) || vNameLower.contains(nameLower)) {
+          matchedVenueObj = v;
+          break;
+        }
+      }
+    }
+
+    final Venue matchedVenue = matchedVenueObj ?? (widget.venues.isNotEmpty
+        ? widget.venues.first
+        : Venue(
+            id: '0',
+            name: venueName,
+            city: 'Pune',
+            addressLine1: 'Pune',
+            averageRating: 0.0,
+          ));
 
     // Resolve raw image path across all possible keys
     String? rawCover = post['coverImageUrl']?.toString().isNotEmpty == true
@@ -188,11 +204,23 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
 
     if ((rawCover == null || rawCover.toString().isEmpty) && post['venue'] is Map) {
       final vMap = post['venue'] as Map;
-      rawCover = (vMap['imageUrl'] ?? vMap['coverImage'] ?? vMap['photoUrl'] ?? vMap['image'])?.toString();
+      if (vMap['images'] is List && (vMap['images'] as List).isNotEmpty) {
+        final first = (vMap['images'] as List).first;
+        rawCover = first is Map ? (first['url'] ?? first['imageUrl'] ?? first['filePath']) : first?.toString();
+      }
+      rawCover ??= (vMap['imageUrl'] ?? vMap['coverImage'] ?? vMap['photoUrl'] ?? vMap['image'])?.toString();
     }
 
     if (rawCover == null || rawCover.toString().isEmpty) {
       rawCover = matchedVenue.imageUrl;
+      if ((rawCover == null || rawCover.isEmpty) && matchedVenue.images != null && matchedVenue.images!.isNotEmpty) {
+        final firstImg = matchedVenue.images!.first;
+        if (firstImg is Map) {
+          rawCover = (firstImg['url'] ?? firstImg['imageUrl'] ?? firstImg['filePath'])?.toString();
+        } else if (firstImg != null) {
+          rawCover = firstImg.toString();
+        }
+      }
     }
 
     // Use venue cover image as background; fall back to user avatar
