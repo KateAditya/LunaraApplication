@@ -613,56 +613,65 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 20),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: isDark ? Colors.black26 : Colors.black.withValues(alpha: 0.04),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: TextFormField(
-          controller: controller,
-          keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-          maxLines: maxLines,
-          inputFormatters: inputFormatters,
-          validator: validator,
-          style: TextStyle(
-            color: isDark ? Colors.white : Colors.black87,
-            fontWeight: FontWeight.w500,
-          ),
-          decoration: InputDecoration(
-            labelText: label,
-            labelStyle: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: isDark ? Colors.white54 : Colors.black54,
-              fontSize: 14,
-            ),
-            floatingLabelStyle: const TextStyle(
-              color: LunaraTheme.electricViolet,
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label.toUpperCase(),
+            style: TextStyle(
+              fontSize: 10,
               fontWeight: FontWeight.bold,
+              color: LunaraTheme.electricViolet,
+              letterSpacing: 1.5,
             ),
-            filled: true,
-            fillColor: isDark ? const Color(0xFF1E1E2A) : Colors.white,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: BorderSide.none,
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: LunaraTheme.electricViolet, width: 1.5),
-            ),
-            errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: Colors.redAccent, width: 1.5),
-            ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
           ),
-        ),
+          const SizedBox(height: 12),
+          Container(
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E1E2A) : Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: isDark ? Colors.black26 : Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: TextFormField(
+              controller: controller,
+              keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+              maxLines: maxLines,
+              inputFormatters: inputFormatters,
+              validator: validator,
+              style: TextStyle(
+                color: isDark ? Colors.white : Colors.black87,
+                fontWeight: FontWeight.w600,
+              ),
+              decoration: InputDecoration(
+                hintText: label,
+                hintStyle: TextStyle(
+                  color: isDark ? Colors.white30 : Colors.black38,
+                  fontWeight: FontWeight.normal,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: const BorderSide(color: LunaraTheme.electricViolet, width: 1.5),
+                ),
+                errorBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: const BorderSide(color: Colors.redAccent, width: 1.5),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -682,83 +691,92 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 20),
-      child: Container(
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1E1E2A) : Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: isDark ? Colors.black26 : Colors.black.withValues(alpha: 0.04),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: DropdownButtonFormField<String>(
-          initialValue: selectedValue,
-          icon: const Icon(Icons.arrow_drop_down, color: LunaraTheme.electricViolet),
-          decoration: InputDecoration(
-            labelText: 'Gender',
-            prefixIcon: Icon(
-              selectedValue == 'Male' ? Icons.male : (selectedValue == 'Female' ? Icons.female : Icons.transgender),
-              color: selectedValue == 'Male' ? Colors.blue : (selectedValue == 'Female' ? Colors.pink : Colors.purple),
-            ),
-            labelStyle: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: isDark ? Colors.white54 : Colors.black54,
-              fontSize: 14,
-            ),
-            floatingLabelStyle: const TextStyle(
-              color: LunaraTheme.electricViolet,
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'GENDER',
+            style: TextStyle(
+              fontSize: 10,
               fontWeight: FontWeight.bold,
+              color: LunaraTheme.electricViolet,
+              letterSpacing: 1.5,
             ),
-            filled: false,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: BorderSide.none,
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: LunaraTheme.electricViolet, width: 1.5),
-            ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
           ),
-        items: genders.map((String gender) {
-          IconData icon;
-          Color iconColor;
-          if (gender == 'Male') {
-            icon = Icons.male;
-            iconColor = Colors.blue;
-          } else if (gender == 'Female') {
-            icon = Icons.female;
-            iconColor = Colors.pink;
-          } else {
-            icon = Icons.transgender;
-            iconColor = Colors.purple;
-          }
-
-          return DropdownMenuItem<String>(
-            value: gender,
-            child: Row(
-              children: [
-                Icon(icon, color: iconColor, size: 20),
-                const SizedBox(width: 10),
-                Text(gender),
+          const SizedBox(height: 12),
+          Container(
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E1E2A) : Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: isDark ? Colors.black26 : Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
               ],
             ),
-          );
-        }).toList(),
-        onChanged: (String? newValue) {
-          if (newValue != null) {
-            setState(() {
-              _genderController.text = newValue;
-            });
-          }
-        },
+            child: DropdownButtonFormField<String>(
+              initialValue: selectedValue,
+              icon: const Icon(Icons.arrow_drop_down, color: LunaraTheme.electricViolet),
+              decoration: InputDecoration(
+                hintText: 'Gender',
+                hintStyle: TextStyle(
+                  color: isDark ? Colors.white30 : Colors.black38,
+                  fontWeight: FontWeight.normal,
+                ),
+                prefixIcon: Icon(
+                  selectedValue == 'Male' ? Icons.male : (selectedValue == 'Female' ? Icons.female : Icons.transgender),
+                  color: selectedValue == 'Male' ? Colors.blue : (selectedValue == 'Female' ? Colors.pink : Colors.purple),
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: const BorderSide(color: LunaraTheme.electricViolet, width: 1.5),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+              ),
+              items: genders.map((String gender) {
+                IconData icon;
+                Color iconColor;
+                if (gender == 'Male') {
+                  icon = Icons.male;
+                  iconColor = Colors.blue;
+                } else if (gender == 'Female') {
+                  icon = Icons.female;
+                  iconColor = Colors.pink;
+                } else {
+                  icon = Icons.transgender;
+                  iconColor = Colors.purple;
+                }
+
+                return DropdownMenuItem<String>(
+                  value: gender,
+                  child: Row(
+                    children: [
+                      Icon(icon, color: iconColor, size: 20),
+                      const SizedBox(width: 10),
+                      Text(gender),
+                    ],
+                  ),
+                );
+              }).toList(),
+              onChanged: (String? newValue) {
+                if (newValue != null) {
+                  setState(() {
+                    _genderController.text = newValue;
+                  });
+                }
+              },
+            ),
+          ),
+        ],
       ),
-    ),
-  );
+    );
   }
 
   Widget _buildSwitch(String label, bool value, ValueChanged<bool> onChanged) {

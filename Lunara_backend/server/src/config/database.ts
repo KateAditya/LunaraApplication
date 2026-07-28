@@ -60,7 +60,7 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_amount DECIMAL(10,2);`);
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_date TIMESTAMP WITH TIME ZONE;`);
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_method VARCHAR(50);`);
-            
+
             // v2: Structured bank/UPI details provided at time of request creation
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS bank_name VARCHAR(100);`);
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS account_number VARCHAR(50);`);
@@ -70,9 +70,9 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS upi_number VARCHAR(20);`);
             // Platform per-seat charge (set by admin on approval, auto-calculated from paymentAmount/numberOfPersons)
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS platform_charge_per_seat DECIMAL(10,2) DEFAULT 0;`);
-            
+
             await sequelize.query(`ALTER TABLE strangers_meet_joiners ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'pending';`);
-            
+
             await sequelize.query(`ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS food_preference VARCHAR(100);`);
             await sequelize.query(`ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS drink_preference VARCHAR(100);`);
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS food_preference VARCHAR(100);`);
@@ -303,7 +303,7 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                 const adminPassword = process.env.ADMIN_PASSWORD || 'JaiGanesh@2026';
                 const hashedPw = await bcrypt.hash(adminPassword, 10);
                 const adminId = require('crypto').randomUUID();
-                
+
                 await sequelize.query(`
                     INSERT INTO users (
                         id, email, phone, password_hash, first_name, last_name, 

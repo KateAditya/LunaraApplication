@@ -220,6 +220,7 @@ async function initializeDatabase() {
         education VARCHAR(200),
         relationship_status VARCHAR(20),
         looking_for TEXT[],
+        interests TEXT[],
         instagram_handle VARCHAR(50),
         spotify_profile VARCHAR(255),
         created_at TIMESTAMP DEFAULT NOW(),
