@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../widgets/action_button.dart';
 import 'payment_confirmation_screen.dart';
@@ -8,7 +9,7 @@ import '../../widgets/venue_timing_error_dialog.dart';
 import 'night_partner_discovery_screen.dart';
 import 'night_invite_partner_screen.dart';
 import '../../widgets/venue_cover_charge_notice.dart';
-
+import '../../widgets/time_lock_modal.dart';
 class BookingProcessScreen extends StatefulWidget {
   final Map<dynamic, dynamic> venue;
   final bool isUpcomingNight;
@@ -40,6 +41,7 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
   final TextEditingController _partyMobileController = TextEditingController();
   final TextEditingController _partyOptMobileController =
       TextEditingController();
+  final TextEditingController _dateController = TextEditingController();
 
   bool _isVenueOpenOnDate(DateTime date) {
     final closedDates = widget.venue['closedDates'];
@@ -323,6 +325,59 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
 
       _selectedTime = defaultTime ?? '21:00';
     }
+    _updateDateControllerText();
+  }
+
+  void _updateDateControllerText() {
+    if (_selectedTime != null) {
+      final formattedTime = _formatTimeOfBooking(_selectedTime);
+      _dateController.text = "${DateFormat('MMM dd, yyyy').format(_selectedDate)} at $formattedTime";
+    } else {
+      _dateController.text = DateFormat('MMM dd, yyyy').format(_selectedDate);
+    }
+  }
+
+  Future<void> _handleDateSelection(DateTime date) async {
+    final venueObj = Venue.fromJson(Map<String, dynamic>.from(widget.venue));
+    TimeOfDay? time;
+    if (_selectedTime != null) {
+      final parts = _selectedTime!.split(':');
+      if (parts.length >= 2) {
+        time = TimeOfDay(hour: int.tryParse(parts[0]) ?? 20, minute: int.tryParse(parts[1]) ?? 0);
+      }
+    }
+    time ??= const TimeOfDay(hour: 20, minute: 0);
+
+    if (!_isTimeSlotValid(time)) {
+      if (!mounted) return;
+      VenueTimingErrorDialog.show(
+        context,
+        venueName: venueObj.name,
+        daysOpen: venueObj.daysOpen,
+        openingTime: venueObj.openingTime,
+        closingTime: venueObj.closingTime,
+        closedDates: venueObj.closedDates,
+      );
+      return;
+    }
+
+    setState(() {
+      _selectedDate = date;
+      _updateDateControllerText();
+    });
+  }
+
+  Future<void> _handleCustomDateSelection() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 60)),
+    );
+
+    if (date != null) {
+      await _handleDateSelection(date);
+    }
   }
 
   @override
@@ -333,6 +388,7 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
     _partyDescriptionController.dispose();
     _partyMobileController.dispose();
     _partyOptMobileController.dispose();
+    _dateController.dispose();
     super.dispose();
   }
 
@@ -996,6 +1052,7 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
           setState(() {
             _selectedTime =
                 '${tod.hour.toString().padLeft(2, '0')}:${tod.minute.toString().padLeft(2, '0')}';
+            _updateDateControllerText();
           });
         },
         child: Container(
@@ -1095,6 +1152,7 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                     },
                   );
                   if (picked != null) {
+                    if (!mounted) return;
                     if (!_isTimeSlotValid(picked)) {
                       final venueObj = Venue.fromJson(
                         Map<String, dynamic>.from(widget.venue),
@@ -1112,6 +1170,7 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                     setState(() {
                       _selectedTime =
                           '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+                      _updateDateControllerText();
                     });
                   }
                 },
@@ -1158,6 +1217,41 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                 ),
               ),
             ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        GestureDetector(
+          onTap: () {
+            _handleCustomDateSelection();
+          },
+          child: AbsorbPointer(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.grey[200]!),
+              ),
+              child: TextField(
+                controller: _dateController,
+                decoration: InputDecoration(
+                  hintText: 'Selected Date & Time *',
+                  hintStyle: TextStyle(
+                    color: Colors.grey[400],
+                    fontSize: 13,
+                  ),
+                  prefixIcon: const Icon(
+                    Icons.calendar_today_rounded,
+                    color: LunaraTheme.electricViolet,
+                    size: 20,
+                  ),
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
       ],
@@ -1794,10 +1888,26 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                       ? _partyOptMobileController.text.trim()
                                       : null,
                                 );
-                                if (bookingRes != null &&
-                                    bookingRes['bookingId'] != null) {
-                                  createdBookingId = bookingRes['bookingId']
-                                      .toString();
+                                if (bookingRes != null && bookingRes['success'] == true) {
+                                  final data = bookingRes['data'];
+                                  if (data != null && data['bookingId'] != null) {
+                                    createdBookingId = data['bookingId'].toString();
+                                  }
+                                } else if (bookingRes != null && bookingRes['reasonCode'] == 'TIME_LOCK_ACTIVE') {
+                                  if (!outerContext.mounted) return;
+                                  TimeLockModal.show(
+                                    context: outerContext,
+                                    reasonCode: bookingRes['reasonCode'],
+                                    message: bookingRes['message'] ?? 'Please wait before booking again.',
+                                    remainingSeconds: bookingRes['remainingSeconds'] ?? 60,
+                                  );
+                                  return;
+                                } else {
+                                  if (!outerContext.mounted) return;
+                                  ScaffoldMessenger.of(outerContext).showSnackBar(
+                                    const SnackBar(content: Text('Failed to create booking.')),
+                                  );
+                                  return;
                                 }
 
                                 if (!outerContext.mounted) return;
@@ -1817,6 +1927,15 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                           : '$guests Guests',
                                       totalPrice: '₹$chargesStr',
                                       showSplitBill: false,
+                                      razorpayOrderId: bookingRes != null && bookingRes['razorpayOrderId'] != null && bookingRes['razorpayOrderId'].toString().isNotEmpty
+                                          ? bookingRes['razorpayOrderId'].toString()
+                                          : null,
+                                      razorpayKeyId: bookingRes != null && bookingRes['razorpayKeyId'] != null && bookingRes['razorpayKeyId'].toString().isNotEmpty
+                                          ? bookingRes['razorpayKeyId'].toString()
+                                          : null,
+                                      razorpayAmount: bookingRes != null && bookingRes['amount'] != null
+                                          ? (bookingRes['amount'] as num).toInt()
+                                          : null,
                                     ),
                                   ),
                                 );
