@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { BiCalendar, BiCheckCircle, BiPulse, BiGroup, BiStar, BiCalendarEvent, BiParty, BiStoreAlt } from 'react-icons/bi';
 import { useThemeMode } from '../context/ThemeContext';
 import bookingsApi from '../api/bookings';
@@ -10,6 +11,7 @@ import 'sweetalert2/dist/sweetalert2.min.css';
 export const Dashboard: React.FC = () => {
     const { mode } = useThemeMode();
     const isDark = mode === 'dark';
+    const navigate = useNavigate();
 
     const [summary, setSummary] = useState<any>(null);
     const [venuesData, setVenuesData] = useState<any[]>([]);
@@ -132,6 +134,10 @@ export const Dashboard: React.FC = () => {
         );
     }
 
+    const handleCardClick = (path: string, state?: any) => {
+        navigate(path, { state });
+    };
+
     return (
         <div style={{ paddingBottom: '2rem' }}>
             {/* Header */}
@@ -168,7 +174,7 @@ export const Dashboard: React.FC = () => {
             <div className="row g-3 mb-4">
                 {/* 1. All Bookings */}
                 <div className="col-sm-6 col-md-3">
-                    <div className="stat-card">
+                    <div className="stat-card" onClick={() => handleCardClick('/bookings', { tab: 'all' })} style={{ cursor: 'pointer' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                             <div>
                                 <div className="stat-card-label">All Bookings</div>
@@ -183,7 +189,7 @@ export const Dashboard: React.FC = () => {
                 </div>
                 {/* 2. Today's Bookings & Revenue */}
                 <div className="col-sm-6 col-md-3">
-                    <div className="stat-card">
+                    <div className="stat-card" onClick={() => handleCardClick('/bookings', { tab: 'today' })} style={{ cursor: 'pointer' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                             <div>
                                 <div className="stat-card-label">Today's Revenue</div>
@@ -198,7 +204,7 @@ export const Dashboard: React.FC = () => {
                 </div>
                 {/* 3. Solo Bookings */}
                 <div className="col-sm-6 col-md-3">
-                    <div className="stat-card">
+                    <div className="stat-card" onClick={() => handleCardClick('/bookings', { tab: 'solo' })} style={{ cursor: 'pointer' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                             <div>
                                 <div className="stat-card-label">Solo Bookings</div>
@@ -213,7 +219,7 @@ export const Dashboard: React.FC = () => {
                 </div>
                 {/* 4. Party Plans */}
                 <div className="col-sm-6 col-md-3">
-                    <div className="stat-card">
+                    <div className="stat-card" onClick={() => handleCardClick('/bookings', { tab: 'plan' })} style={{ cursor: 'pointer' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                             <div>
                                 <div className="stat-card-label">Party Plans</div>
@@ -228,7 +234,7 @@ export const Dashboard: React.FC = () => {
                 </div>
                 {/* 5. Party Requests */}
                 <div className="col-sm-6 col-md-3">
-                    <div className="stat-card">
+                    <div className="stat-card" onClick={() => handleCardClick('/party-requests')} style={{ cursor: 'pointer' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                             <div>
                                 <div className="stat-card-label">Party Requests</div>
@@ -243,7 +249,7 @@ export const Dashboard: React.FC = () => {
                 </div>
                 {/* 6. Group Party Booking */}
                 <div className="col-sm-6 col-md-3">
-                    <div className="stat-card">
+                    <div className="stat-card" onClick={() => handleCardClick('/group-parties')} style={{ cursor: 'pointer' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                             <div>
                                 <div className="stat-card-label">Group Party Booking</div>
@@ -258,7 +264,7 @@ export const Dashboard: React.FC = () => {
                 </div>
                 {/* 7. Large Parties */}
                 <div className="col-sm-6 col-md-3">
-                    <div className="stat-card">
+                    <div className="stat-card" onClick={() => handleCardClick('/party-requests')} style={{ cursor: 'pointer' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                             <div>
                                 <div className="stat-card-label">Large Parties</div>
@@ -273,7 +279,7 @@ export const Dashboard: React.FC = () => {
                 </div>
                 {/* 8. Upcoming Night Booking */}
                 <div className="col-sm-6 col-md-3">
-                    <div className="stat-card">
+                    <div className="stat-card" onClick={() => handleCardClick('/bookings', { tab: 'upcoming' })} style={{ cursor: 'pointer' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                             <div>
                                 <div className="stat-card-label">Upcoming Night Booking</div>

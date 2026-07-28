@@ -1,13 +1,22 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import {
     BiSearch, BiCalendar, BiGroup, BiCheckCircle,
     BiTimeFive, BiRefresh, BiFilterAlt, BiDetail, BiX,
-    BiUser, BiBuilding, BiMoney, BiSend, BiCreditCard
+    BiUser, BiBuilding, BiMoney, BiSend, BiCreditCard, BiMapPin, BiPhone, BiStar, BiArrowBack
 } from 'react-icons/bi';
 import bookingsApi, { type Booking } from '../api/bookings';
 import venuesApi from '../api/venues';
+
+const getImageUrl = (filePath?: string): string => {
+    if (!filePath) return '';
+    if (filePath.startsWith('http')) return filePath;
+    const normalizedPath = filePath.replace(/\\/g, '/');
+    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    return `${baseUrl}/${normalizedPath}`;
+};
 
 const getStatusBadgeClass = (status: string) => {
     const map: Record<string, string> = {
@@ -46,15 +55,29 @@ const formatDate = (dateStr?: string) => {
 
 export const Bookings: React.FC = () => {
     const queryClient = useQueryClient();
+    const location = useLocation();
     
     // Filter states
-    const [activeTab, setActiveTab] = useState<'all' | 'today' | 'solo' | 'plan' | 'party_request' | 'group' | 'large' | 'upcoming'>('all');
-    const [venueIdFilter, setVenueIdFilter] = useState<string>('all');
+    const [activeTab, setActiveTab] = useState<'all' | 'today' | 'solo' | 'plan' | 'party_request' | 'group' | 'large' | 'upcoming'>(location.state?.tab || 'all');
+    const [venueIdFilter, setVenueIdFilter] = useState<string>(location.state?.venueId || 'all');
     const [statusFilter, setStatusFilter] = useState<string>('all');
     const [searchInput, setSearchInput] = useState<string>('');
     const [searchQuery, setSearchQuery] = useState<string>('');
     const [currentPage, setCurrentPage] = useState<number>(1);
     const [autoRefresh, setAutoRefresh] = useState<boolean>(true);
+    const [venueDetails, setVenueDetails] = useState<any>(null);
+
+    useEffect(() => {
+        if (location.state?.showVenueDetails && location.state?.venueId) {
+            venuesApi.getVenue(location.state.venueId).then(res => {
+                if (res.success) {
+                    setVenueDetails(res.venue);
+                }
+            }).catch(() => {});
+        } else {
+            setVenueDetails(null);
+        }
+    }, [location.state]);
     
     // Modal states
     const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
@@ -268,6 +291,31 @@ export const Bookings: React.FC = () => {
 
     return (
         <div>
+            {venueDetails && (
+                <div className="vz-card mb-4 animate-in animate-in-1">
+                    <div className="vz-card-body" style={{ padding: '1.5rem', display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+                        <img src={getImageUrl(venueDetails.coverImage) || 'https://via.placeholder.com/100'} alt="Venue" style={{ width: 100, height: 100, borderRadius: 12, objectFit: 'cover' }} />
+                        <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <h3 style={{ margin: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    {venueDetails.name}
+                                    <span className="badge bg-primary-subtle text-primary" style={{ fontSize: '0.75rem' }}>{venueDetails.category}</span>
+                                </h3>
+                                <button className="btn btn-sm btn-outline-secondary" onClick={() => window.history.back()}><BiArrowBack /> Back</button>
+                            </div>
+                            <div style={{ color: 'var(--vz-text-muted)', fontSize: '0.9rem', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                <BiMapPin /> {venueDetails.addressLine1}, {venueDetails.city}
+                            </div>
+                            <div style={{ display: 'flex', gap: '1.5rem', marginTop: '0.75rem', fontSize: '0.85rem' }}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><BiUser /> Capacity: <b>{venueDetails.capacity}</b></span>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><BiPhone /> <b>{venueDetails.phone}</b></span>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><BiStar className="text-warning" /> <b>{venueDetails.averageRating || 'N/A'}</b></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Header / Stats Summary */}
             <div className="row g-3 mb-4">
                 {[
