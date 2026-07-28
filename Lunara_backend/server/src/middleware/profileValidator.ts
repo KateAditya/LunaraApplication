@@ -18,6 +18,7 @@ export const updateProfileValidation = [
     // Bio & Intent
     body('bio').optional().trim().isLength({ max: 500 }).withMessage('Bio must be at most 500 characters'),
     body('lookingFor').optional().isArray().withMessage('lookingFor must be an array'),
+    body('interests').optional().isArray().withMessage('interests must be an array'),
 
     // Music & Habits
     body('musicPreference').optional().isArray().withMessage('musicPreference must be an array'),
