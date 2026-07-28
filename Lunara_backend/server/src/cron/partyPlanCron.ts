@@ -12,6 +12,7 @@ import ChatSubscription, { ChatSubscriptionStatus } from '../models/ChatSubscrip
 import Conversation from '../models/Conversation';
 import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription';
 import SubscriptionPackage from '../models/SubscriptionPackage';
+import PartySafetyCheck, { SafetyStatus } from '../models/PartySafetyCheck';
 
 // Run every 5 minutes
 export const startPartyPlanCron = () => {
@@ -585,9 +586,160 @@ export const startExpiringPlanAlertCron = () => {
                     });
                 }
             }
+            // 5. Trigger Post-Party Safety Checks (3 hours after party start time)
+            await checkAndTriggerPartySafetyChecks();
         } catch (alertErr: any) {
             logger.error('Expiring Plan Alert Cron Error:', alertErr);
         }
     });
 };
+
+/**
+ * Automates 3-Hour Post-Party Safety Checks for Party Plans & Stranger Meets
+ */
+export const checkAndTriggerPartySafetyChecks = async () => {
+    try {
+        const now = new Date();
+        const threeHoursAgo = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+
+        // 1. Party Plans scheduled 3+ hours ago
+        const partyPlans = await PartyPlan.findAll({
+            where: {
+                planDateTime: { [Op.lte]: threeHoursAgo },
+            },
+            include: [
+                { model: Venue, as: 'venue', attributes: ['name'] },
+                { model: User, as: 'creator', attributes: ['id', 'firstName', 'lastName', 'phone'] }
+            ]
+        });
+
+        for (const plan of partyPlans) {
+            const venueName = (plan as any).venue?.name || 'Venue';
+            const hostId = plan.userId;
+
+            // Find accepted joiner
+            const acceptedReq = await PartyPlanRequest.findOne({
+                where: { planId: plan.id, status: PartyPlanRequestStatus.ACCEPTED },
+                include: [{ model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'phone'] }]
+            });
+
+            const joinerId = acceptedReq ? acceptedReq.requesterId : undefined;
+
+            // Dispatch to Host
+            await dispatchSafetyCheckIfPending({
+                planId: plan.id,
+                planType: 'party_plan',
+                userId: hostId,
+                partnerUserId: joinerId,
+                venueName,
+                partyDate: plan.planDateTime,
+                partyTime: (plan as any).startTime || '10:00 PM',
+            });
+
+            // Dispatch to Joiner
+            if (joinerId) {
+                await dispatchSafetyCheckIfPending({
+                    planId: plan.id,
+                    planType: 'party_plan',
+                    userId: joinerId,
+                    partnerUserId: hostId,
+                    venueName,
+                    partyDate: plan.planDateTime,
+                    partyTime: (plan as any).startTime || '10:00 PM',
+                });
+            }
+        }
+
+        // 2. Stranger Meets scheduled 3+ hours ago
+        const strangerMeets = await StrangersMeetRequest.findAll({
+            where: {
+                eventDateTime: { [Op.lte]: threeHoursAgo },
+            },
+            include: [{ model: Venue, as: 'venue', attributes: ['name'] }]
+        });
+
+        for (const meet of strangerMeets) {
+            const venueName = (meet as any).venue?.name || 'Venue';
+            const hostId = meet.userId;
+
+            const joiners = await StrangersMeetJoiner.findAll({
+                where: { strangersMeetRequestId: meet.id, paymentStatus: 'paid' }
+            });
+
+            const joinerIds = joiners.map(j => j.userId);
+
+            // Dispatch to Host
+            await dispatchSafetyCheckIfPending({
+                planId: meet.id,
+                planType: 'stranger_meet',
+                userId: hostId,
+                partnerUserId: joinerIds[0],
+                venueName,
+                partyDate: meet.eventDateTime,
+                partyTime: '10:00 PM',
+            });
+
+            // Dispatch to Joiners
+            for (const jId of joinerIds) {
+                await dispatchSafetyCheckIfPending({
+                    planId: meet.id,
+                    planType: 'stranger_meet',
+                    userId: jId,
+                    partnerUserId: hostId,
+                    venueName,
+                    partyDate: meet.eventDateTime,
+                    partyTime: '10:00 PM',
+                });
+            }
+        }
+    } catch (err: any) {
+        logger.error('checkAndTriggerPartySafetyChecks error:', err);
+    }
+};
+
+async function dispatchSafetyCheckIfPending(data: {
+    planId: string;
+    planType: string;
+    userId: string;
+    partnerUserId?: string;
+    venueName: string;
+    partyDate: Date;
+    partyTime?: string;
+}) {
+    const existing = await PartySafetyCheck.findOne({
+        where: {
+            planId: data.planId,
+            userId: data.userId,
+        }
+    });
+
+    if (existing) return; // Notification already created
+
+    const safetyRecord = await PartySafetyCheck.create({
+        planId: data.planId,
+        planType: data.planType,
+        userId: data.userId,
+        partnerUserId: data.partnerUserId,
+        venueName: data.venueName,
+        partyDate: data.partyDate,
+        partyTime: data.partyTime,
+        safetyStatus: SafetyStatus.NO_RESPONSE,
+        alertTriggered: false,
+        notificationSentAt: new Date(),
+    });
+
+    await NotificationService.dispatch({
+        recipientUserId: data.userId,
+        eventType: 'party_safety_check',
+        category: 'alert',
+        entityType: 'PartySafetyCheck',
+        entityId: safetyRecord.id,
+        title: '🛡️ Safety Check: Has your party ended?',
+        body: `Your party at ${data.venueName} started 3 hours ago. Please confirm you are safe & sound.`,
+        priority: 'HIGH',
+        idempotencyKey: `safety_check_${safetyRecord.id}_${data.userId}`,
+        actionType: 'safety_check',
+        deepLink: `/safety-check/${safetyRecord.id}`,
+    });
+}
 

@@ -340,4 +340,10 @@ router.get(
     getPartyPlanTicket
 );
 
+// Safety Check Endpoints
+import { respondToSafetyCheck, getPendingSafetyCheck } from '../controllers/mobileSafetyCheckController';
+
+router.post('/safety-checks/respond', respondToSafetyCheck);
+router.get('/safety-checks/pending', getPendingSafetyCheck);
+
 export default router;

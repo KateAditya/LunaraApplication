@@ -119,4 +119,10 @@ router.post(
     }
 );
 
+// Party Plan Wise Safety Check Endpoints
+import { getAdminPartyPlanSafetyChecks, resolveAdminSafetyAlert } from '../controllers/adminSafetyCheckController';
+
+router.get('/party-plans', getAdminPartyPlanSafetyChecks);
+router.post('/party-plans/:id/resolve', resolveAdminSafetyAlert);
+
 export default router;

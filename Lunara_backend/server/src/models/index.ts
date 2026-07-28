@@ -45,6 +45,7 @@ import NightPartnerRequest from './NightPartnerRequest';
 import NightPartnerMatch from './NightPartnerMatch';
 import Notification from './Notification';
 import Ticket, { TicketStatus, StorageCleanupStatus } from './Ticket';
+import PartySafetyCheck from './PartySafetyCheck';
 
 // ============================================================================
 // Notification Associations
@@ -542,6 +543,7 @@ export {
     UserSubscription,
     SafetyCheck,
     DeletedAccount,
+    PartySafetyCheck,
 };
 
 // Export sync function
@@ -593,6 +595,7 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
         await NightInterest.sync(options);
         await NightPartnerRequest.sync(options);
         await NightPartnerMatch.sync(options);
+        await PartySafetyCheck.sync(options);
 
         console.log('✅ All models synchronized successfully');
     } catch (error) {
@@ -650,5 +653,6 @@ export default {
     Ticket,
     TicketStatus,
     StorageCleanupStatus,
+    PartySafetyCheck,
     syncModels,
 };

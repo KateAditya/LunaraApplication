@@ -3549,6 +3549,49 @@ class ApiService {
       return {'success': false, 'message': 'Network error verifying ticket'};
     }
   }
+
+  /// Submit Party Plan post-event Safety Check status (SAFE, EXTENDED, NEED_HELP)
+  static Future<Map<String, dynamic>> submitSafetyCheckStatus({
+    required String checkId,
+    required String safetyStatus,
+    String? notes,
+    double? locationLat,
+    double? locationLng,
+  }) async {
+    try {
+      final response = await _post('/api/mobile/party-plans/safety-checks/respond', {
+        'checkId': checkId,
+        'userId': currentUserId,
+        'safetyStatus': safetyStatus,
+        'notes': notes,
+        'locationLat': locationLat,
+        'locationLng': locationLng,
+      });
+      return jsonDecode(response.body);
+    } catch (e) {
+      debugPrint('submitSafetyCheckStatus error: $e');
+      return {'success': false, 'message': 'Failed to submit safety check'};
+    }
+  }
+
+  /// Fetch pending/unanswered safety check for current user
+  static Future<Map<String, dynamic>?> fetchPendingSafetyCheck() async {
+    try {
+      final userId = currentUserId;
+      if (userId == null) return null;
+      final response = await _get('/api/mobile/party-plans/safety-checks/pending?userId=$userId');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return data['data'];
+        }
+      }
+      return null;
+    } catch (e) {
+      debugPrint('fetchPendingSafetyCheck error: $e');
+      return null;
+    }
+  }
 }
 
 
