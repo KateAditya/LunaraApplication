@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { BiSearch, BiRefresh, BiFilterAlt, BiDownload, BiBuildingHouse, BiCalendar, BiMoney, BiCheckCircle } from 'react-icons/bi';
 import toast from 'react-hot-toast';
 import bookingsApi from '../../api/bookings';
@@ -8,6 +9,7 @@ import { useThemeMode } from '../../context/ThemeContext';
 export const VenueBookingSummary = () => {
     const { mode } = useThemeMode();
     const isDark = mode === 'dark';
+    const navigate = useNavigate();
 
     const [summary, setSummary] = useState<any>(null);
     const [venuesData, setVenuesData] = useState<any[]>([]);
@@ -397,7 +399,7 @@ export const VenueBookingSummary = () => {
                                 </thead>
                                 <tbody>
                                     {venuesData.map((v, index) => (
-                                        <tr key={v.venueId}>
+                                        <tr key={v.venueId} onClick={() => navigate('/bookings', { state: { venueId: v.venueId, showVenueDetails: true } })} style={{ cursor: 'pointer', transition: 'background-color 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
                                             <td>{((page - 1) * 15) + index + 1}</td>
                                             <td style={{ fontWeight: 600, color: 'var(--vz-primary)' }}>{v.venueName}</td>
                                             <td style={{ textAlign: 'center', fontWeight: 600 }}>{v.totalBookings}</td>
