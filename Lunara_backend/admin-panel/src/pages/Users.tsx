@@ -215,8 +215,17 @@ export const Users: React.FC = () => {
                                                         fontWeight: 600,
                                                         fontSize: '0.6875rem',
                                                         flexShrink: 0,
+                                                        overflow: 'hidden'
                                                     }}>
-                                                        {user.firstName?.charAt(0)}{user.lastName?.charAt(0)}
+                                                        {(user.avatarUrl || (user.social?.profilePhotos && user.social.profilePhotos.length > 0)) ? (
+                                                            <img 
+                                                                src={user.avatarUrl || user.social?.profilePhotos?.[0]} 
+                                                                alt={`${user.firstName} ${user.lastName}`}
+                                                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                            />
+                                                        ) : (
+                                                            `${user.firstName?.charAt(0) || ''}${user.lastName?.charAt(0) || ''}`
+                                                        )}
                                                     </div>
                                                     <div>
                                                         <div style={{ fontWeight: 600, fontSize: '0.8125rem' }}>{user.firstName} {user.lastName}</div>

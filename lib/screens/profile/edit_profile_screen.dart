@@ -616,7 +616,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       padding: const EdgeInsets.only(bottom: 20),
       child: Container(
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1E1E2A) : Colors.white,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
@@ -647,7 +646,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               color: LunaraTheme.electricViolet,
               fontWeight: FontWeight.bold,
             ),
-            filled: false,
+            filled: true,
+            fillColor: isDark ? const Color(0xFF1E1E2A) : Colors.white,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
               borderSide: BorderSide.none,

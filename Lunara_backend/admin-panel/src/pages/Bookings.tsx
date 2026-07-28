@@ -270,6 +270,7 @@ export const Bookings: React.FC = () => {
     const handleSearchSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         setSearchQuery(searchInput);
+        setCurrentPage(1);
     };
 
     const handleClearFilters = () => {
@@ -278,6 +279,7 @@ export const Bookings: React.FC = () => {
         setVenueIdFilter('all');
         setStatusFilter('all');
         setActiveTab('all');
+        setCurrentPage(1);
     };
 
     const bookings: Booking[] = bookingsData?.data?.bookings || [];
@@ -361,7 +363,10 @@ export const Bookings: React.FC = () => {
                             <select
                                 className="vz-form-control"
                                 value={venueIdFilter}
-                                onChange={(e) => setVenueIdFilter(e.target.value)}
+                                onChange={(e) => {
+                                    setVenueIdFilter(e.target.value);
+                                    setCurrentPage(1);
+                                }}
                                 style={{ minWidth: 160 }}
                             >
                                 <option value="all">🏢 All Venues</option>
@@ -374,7 +379,10 @@ export const Bookings: React.FC = () => {
                             <select
                                 className="vz-form-control"
                                 value={statusFilter}
-                                onChange={(e) => setStatusFilter(e.target.value)}
+                                onChange={(e) => {
+                                    setStatusFilter(e.target.value);
+                                    setCurrentPage(1);
+                                }}
                                 style={{ minWidth: 130 }}
                             >
                                 <option value="all">⚡ All Statuses</option>
@@ -445,7 +453,10 @@ export const Bookings: React.FC = () => {
                 ].map(t => (
                     <button
                         key={t.key}
-                        onClick={() => setActiveTab(t.key as any)}
+                        onClick={() => {
+                            setActiveTab(t.key as any);
+                            setCurrentPage(1);
+                        }}
                         style={{
                             padding: '0.6rem 1.1rem',
                             border: 'none',
