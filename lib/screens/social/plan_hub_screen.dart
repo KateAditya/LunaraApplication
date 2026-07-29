@@ -650,7 +650,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                         child: night['isAsset'] == true
                             ? Image.asset(night['image']!, fit: BoxFit.cover)
                             : Image.network(
-                                night['image']!,
+                                ApiService.formatImageUrl(night['image']) ?? night['image']!,
                                 fit: BoxFit.cover,
                                 errorBuilder: (context, error, stackTrace) =>
                                     Container(

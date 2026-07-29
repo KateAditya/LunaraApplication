@@ -528,6 +528,8 @@ class ApiService {
                   'venueAddress': gp['venue']?['addressLine1'] ?? gp['venue']?['city'] ?? '',
                   'status': gp['status']?.toString() ?? 'pending',
                   'bookingStatus': gp['status']?.toString() ?? 'pending',
+                  'paymentStatus': gp['paymentStatus']?.toString(),
+                  'adminApprovalStatus': gp['adminApprovalStatus']?.toString(),
                   'numberOfGuests': gp['numberOfFriends'],
                   'partySubject': 'Group Party',
                   'bookingDate': gp['partyDate'],

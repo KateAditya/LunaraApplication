@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 
 import 'package:geolocator/geolocator.dart';
 import '../../services/google_places_service.dart';
@@ -16,6 +15,7 @@ import '../../services/api_service.dart';
 import '../../models/venue.dart';
 import '../../models/user.dart';
 import '../../widgets/lunara_profile_image.dart';
+import '../../widgets/lunara_network_image.dart';
 import 'all_users_screen.dart';
 import '../social/post_detail_screen.dart';
 import '../social/chat_screen.dart';
@@ -241,8 +241,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           if (rawPartyPlans.isNotEmpty) {
             combinedPosts.addAll(
               rawPartyPlans.map((plan) {
-                final user = plan['user'] as Map<String, dynamic>? ?? {};
-                final venue = plan['venue'] as Map<String, dynamic>? ?? {};
+                final user = (plan['user'] ?? plan['creator'] ?? plan['host']) as Map<String, dynamic>? ?? {};
+                final venue = (plan['venue'] ?? plan['venueMap']) as Map<String, dynamic>? ?? {};
 
                 String timeStr =
                     plan['planDateTime'] ?? plan['createdAt'] ?? '';
@@ -253,8 +253,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   } catch (_) {}
                 }
 
+                final targetVenueId = (plan['venueId'] ?? venue['id'])?.toString() ?? '';
+
                 // Resolve venue cover image from multiple possible fields
-                final venueCoverImg = venue['coverImageUrl'] ??
+                dynamic rawImg = venue['coverImageUrl'] ??
                     venue['imageUrl'] ??
                     venue['image'] ??
                     (venue['coverImage'] is Map ? venue['coverImage']['url'] ?? venue['coverImage']['filePath'] : null) ??
@@ -263,23 +265,34 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                             ? (venue['images'] as List).first['url'] ?? (venue['images'] as List).first['filePath']
                             : (venue['images'] as List).first)
                         : null);
+
+                if ((rawImg == null || rawImg.toString().isEmpty || rawImg.toString().startsWith('Instance of')) && targetVenueId.isNotEmpty) {
+                  try {
+                    final matchedV = _allVenues.firstWhere((v) => v.id == targetVenueId);
+                    rawImg = matchedV.imageUrl;
+                  } catch (_) {}
+                }
+
+                final String? photoUrl = (user['profilePhotoUrl'] ?? user['photoUrl'] ?? user['profilePhoto'] ?? user['image'])?.toString();
+
                 return {
                   'id': plan['id'],
                   'type': 'party_plan',
                   'firstName': user['firstName'] ?? 'User',
                   'lastName': user['lastName'] ?? '',
-                  'profilePhotoUrl':
-                      user['profilePhotoUrl'] ?? user['photoUrl'],
-                  'profilePhoto': user['profilePhotoUrl'] ?? user['photoUrl'],
+                  'profilePhotoUrl': photoUrl,
+                  'profilePhoto': photoUrl,
                   'city': venue['city'] ?? user['city'] ?? 'Unknown',
                   'bio': user['bio'] ?? '',
                   'gender': user['gender'] ?? 'Unknown',
-                  'venue': venue['name'] ?? 'Unknown',
+                  'venue': venue['name'] ?? 'Venue',
+                  'venueId': targetVenueId,
                   'content': plan['message'] ?? '',
                   'time': timeStr,
-                  'coverImageUrl': venueCoverImg?.toString() ?? '',
-                  'userId': user['id'],
+                  'coverImageUrl': (rawImg != null && !rawImg.toString().startsWith('Instance of')) ? rawImg.toString() : '',
+                  'userId': user['id'] ?? plan['userId'],
                   'user': user,
+                  'venueMap': venue,
                   'createdAt': plan['createdAt'],
                 };
               }),
@@ -289,8 +302,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           if (rawStrangersMeet.isNotEmpty) {
             combinedPosts.addAll(
               rawStrangersMeet.map((meet) {
-                final user = meet['user'] as Map<String, dynamic>? ?? {};
-                final venue = meet['venue'] as Map<String, dynamic>? ?? {};
+                final user = (meet['user'] ?? meet['host']) as Map<String, dynamic>? ?? {};
+                final venue = (meet['venue'] ?? meet['venueMap']) as Map<String, dynamic>? ?? {};
 
                 String timeStr =
                     meet['eventDateTime'] ?? meet['createdAt'] ?? '';
@@ -301,8 +314,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   } catch (_) {}
                 }
 
+                final String extractedVenueId = (meet['venueId'] ?? venue['id'] ?? (meet['venue'] is Map ? meet['venue']['id'] : null) ?? (meet['venue'] is String ? meet['venue'] : ''))?.toString() ?? '';
+
                 // Resolve venue cover image from multiple possible fields
-                final smVenueCoverImg = venue['coverImageUrl'] ??
+                dynamic rawImg = venue['coverImageUrl'] ??
                     venue['imageUrl'] ??
                     venue['image'] ??
                     meet['coverImageUrl'] ??
@@ -317,37 +332,37 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                             : (venue['images'] as List).first)
                         : null);
 
-                final String extractedVenueId = (meet['venueId'] ?? venue['id'] ?? (meet['venue'] is Map ? meet['venue']['id'] : null) ?? (meet['venue'] is String ? meet['venue'] : ''))?.toString() ?? '';
+                if ((rawImg == null || rawImg.toString().isEmpty || rawImg.toString().startsWith('Instance of')) && extractedVenueId.isNotEmpty) {
+                  try {
+                    final matchedV = _allVenues.firstWhere((v) => v.id == extractedVenueId);
+                    rawImg = matchedV.imageUrl;
+                  } catch (_) {}
+                }
+
+                final String? photoUrl = (user['photoUrl'] ?? user['profilePhotoUrl'] ?? user['profilePhoto'] ?? user['image'])?.toString();
 
                 return {
                   'id': meet['id'],
                   'type': 'strangers_meet',
                   'firstName': user['firstName'] ?? 'User',
                   'lastName': user['lastName'] ?? '',
-                  'profilePhotoUrl':
-                      user['photoUrl'] ?? user['profilePhotoUrl'],
-                  'profilePhoto': user['photoUrl'] ?? user['profilePhotoUrl'],
+                  'profilePhotoUrl': photoUrl,
+                  'profilePhoto': photoUrl,
                   'city': venue['city'] ?? user['city'] ?? 'Unknown',
                   'bio': user['bio'] ?? '',
                   'gender': user['gender'] ?? 'Unknown',
-                  'venue': venue['name'] ?? meet['venueName'] ?? (meet['venue'] is String ? meet['venue'] : null) ?? 'Unknown',
+                  'venue': venue['name'] ?? meet['venueName'] ?? (meet['venue'] is String ? meet['venue'] : null) ?? 'Venue',
                   'venueId': extractedVenueId,
                   'venueMap': venue,
                   'content': meet['tagline'] ?? meet['subject'] ?? '',
                   'time': timeStr,
-                  'coverImageUrl': smVenueCoverImg?.toString() ?? '',
-                  'userId': user['id'],
+                  'coverImageUrl': (rawImg != null && !rawImg.toString().startsWith('Instance of')) ? rawImg.toString() : '',
+                  'userId': user['id'] ?? meet['userId'],
                   'user': user,
                   'createdAt': meet['createdAt'],
                 };
               }),
             );
-          }
-
-          // Filter out user's own posts
-          final myUserId = ApiService.currentUserId;
-          if (myUserId != null) {
-            combinedPosts.removeWhere((post) => post['userId'] == myUserId);
           }
 
           // Sort combined posts by time descending
@@ -2211,7 +2226,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           }
 
           final String? coverImageUrl = ApiService.formatImageUrl(rawCover?.toString()) ?? avatarUrl;
-          final bool hasValidCover = coverImageUrl != null && coverImageUrl.trim().isNotEmpty;
 
           return RepaintBoundary(
             child: Container(
@@ -2219,20 +2233,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               height: 240,
               margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
               decoration: BoxDecoration(
-                gradient: !hasValidCover
-                    ? LunaraTheme.deepPurpleGradient
-                    : null,
-                image: hasValidCover
-                    ? DecorationImage(
-                        image: CachedNetworkImageProvider(coverImageUrl),
-
-                        fit: BoxFit.cover,
-                        colorFilter: ColorFilter.mode(
-                          Colors.black.withValues(alpha: 0.6),
-                          BlendMode.darken,
-                        ),
-                      )
-                    : null,
                 borderRadius: BorderRadius.circular(24),
                 boxShadow: [
                   BoxShadow(
@@ -2246,7 +2246,22 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   width: 1.2,
                 ),
               ),
-              child: InkWell(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: LunaraNetworkImage(
+                        imageUrl: coverImageUrl,
+                        fit: BoxFit.cover,
+                        colorFilter: ColorFilter.mode(
+                          Colors.black.withValues(alpha: 0.6),
+                          BlendMode.darken,
+                        ),
+                      ),
+                    ),
+                    Positioned.fill(
+                      child: InkWell(
                 onTap: () {
                   final venue = _allVenues.firstWhere(
                     (v) => v.name.toLowerCase() == venueName.toLowerCase(),
@@ -2398,10 +2413,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                 ),
               ),
             ),
-          );
-        },
+          ],
+        ),
       ),
-    );
+    ),
+  );
+},
+),
+);
   }
 
   Widget _buildProfileMetricChip(IconData icon, String label, Color color) {
