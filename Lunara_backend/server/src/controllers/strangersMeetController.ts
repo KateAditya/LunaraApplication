@@ -598,13 +598,13 @@ export const getAllRequests = async (req: Request, res: Response): Promise<void>
         const limitNum = Math.min(100, Math.max(1, parseInt(limit as string)));
         const offset = (pageNum - 1) * limitNum;
 
-        const { count, rows } = await StrangersMeetRequest.findAndCountAll({
+        const count = await StrangersMeetRequest.count({ where });
+        const rows = await StrangersMeetRequest.findAll({
             where,
             include: buildIncludes(),
             order: [['createdAt', 'DESC']],
             limit: limitNum,
             offset,
-            distinct: true,
         });
 
         // Counts by status for badge display
@@ -643,34 +643,31 @@ export const getFeedRequests = async (req: Request, res: Response): Promise<void
         const limitNum = Math.min(100, Math.max(1, parseInt(limit as string)));
         const offset = (pageNum - 1) * limitNum;
 
-        let { count, rows } = await StrangersMeetRequest.findAndCountAll({
-            where: {
-                // Show all admin-approved meets regardless of host payment status
-                status: StrangersMeetStatus.APPROVED,
-                // Include upcoming and recent meets (last 24 hours)
-                eventDateTime: { [Op.gte]: new Date(Date.now() - 24 * 60 * 60 * 1000) },
-            },
+        const feedWhere = {
+            status: StrangersMeetStatus.APPROVED,
+            eventDateTime: { [Op.gte]: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+        };
+
+        let count = await StrangersMeetRequest.count({ where: feedWhere });
+        let rows = await StrangersMeetRequest.findAll({
+            where: feedWhere,
             include: buildIncludes(),
             order: [['eventDateTime', 'DESC'], ['createdAt', 'DESC']],
             limit: limitNum,
             offset,
-            distinct: true,
         });
 
         // Fallback: If no future/recent events found, return approved meets so feed is never empty
         if (count === 0) {
-            const fallback = await StrangersMeetRequest.findAndCountAll({
-                where: {
-                    status: StrangersMeetStatus.APPROVED,
-                },
+            const fallbackWhere = { status: StrangersMeetStatus.APPROVED };
+            count = await StrangersMeetRequest.count({ where: fallbackWhere });
+            rows = await StrangersMeetRequest.findAll({
+                where: fallbackWhere,
                 include: buildIncludes(),
                 order: [['eventDateTime', 'DESC'], ['createdAt', 'DESC']],
                 limit: limitNum,
                 offset,
-                distinct: true,
             });
-            count = fallback.count;
-            rows = fallback.rows;
         }
 
         res.json({
