@@ -1,3 +1,4 @@
+// ignore_for_file: use_build_context_synchronously, unused_local_variable
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../../core/theme.dart';
@@ -11,6 +12,7 @@ import 'party_plan_ticket_screen.dart';
 import '../../models/user.dart';
 import '../profile/profile_screen.dart';
 import '../../models/strangers_meet_request.dart';
+import '../../services/push_notification_service.dart';
 import 'strangers_meet_payment_screen.dart';
 import 'strangers_meet_ticket_screen.dart';
 import 'chat_screen.dart';
@@ -220,7 +222,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   void _onNotificationCreated(dynamic data) {
-    if (!mounted) return;
+    if (!mounted || !context.mounted) return;
     _loadFeed(showLoader: false);
     _loadGroupPartyBookings();
     if (data is Map) {
@@ -234,7 +236,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   void _onGroupPartyUpdated(dynamic data) {
-    if (!mounted) return;
+    if (!mounted || !context.mounted) return;
     _loadGroupPartyBookings();
     if (data is Map) {
       final notifMap = Map<String, dynamic>.from(data);
@@ -247,7 +249,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   void _onPartyPlanCreated(dynamic data) {
-    if (!mounted) return;
+    if (!mounted || !context.mounted) return;
     try {
       final map = Map<String, dynamic>.from(data);
       setState(() {
@@ -264,7 +266,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   void _onPartyPlanDeleted(dynamic data) {
-    if (!mounted) return;
+    if (!mounted || !context.mounted) return;
     try {
       final planId = data['planId']?.toString();
       if (planId != null) {
@@ -285,7 +287,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   void _onPartyPlanRequestAccepted(dynamic data) {
-    if (!mounted) return;
+    if (!mounted || !context.mounted) return;
     try {
       final reqId = data['requestId']?.toString();
       if (reqId != null) {
@@ -307,7 +309,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   void _onPartyPlanMatchSuccess(dynamic data) {
-    if (!mounted) return;
+    if (!mounted || !context.mounted) return;
     try {
       final reqId = data['requestId']?.toString();
       final planId = data['planId']?.toString();
@@ -335,7 +337,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   void _onPartyPlanHostPaid(dynamic data) {
-    if (!mounted) return;
+    if (!mounted || !context.mounted) return;
     try {
       final reqId = data['requestId']?.toString();
       if (reqId != null) {
@@ -353,7 +355,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   void _onPartyPlanJoinerPaid(dynamic data) {
-    if (!mounted) return;
+    if (!mounted || !context.mounted) return;
     try {
       final reqId = data['requestId']?.toString();
       if (reqId != null) {
@@ -371,7 +373,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   void _onPlanUnavailable(dynamic data) {
-    if (!mounted) return;
+    if (!mounted || !context.mounted) return;
     try {
       final planId = data['planId']?.toString();
       final requestId = data['requestId']?.toString();
@@ -427,7 +429,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     try {
       final result = await ApiService.initiateLargePartyPayment(bookingId);
-      if (!mounted) return;
+      if (!mounted || !context.mounted) return;
       if (result == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -473,7 +475,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ),
         );
         Future.delayed(const Duration(seconds: 2), () async {
-          if (!mounted) return;
+          if (!mounted || !context.mounted) return;
           Navigator.pop(context); // Close loader
           _handleLargePartySuccess(
             paymentId: 'mock_payment',
@@ -522,7 +524,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         razorpayPaymentId: paymentId,
         razorpaySignature: signature,
       );
-      if (!mounted) return;
+      if (!mounted || !context.mounted) return;
       if (verified) {
         // Refresh bookings and show success
         await _loadGroupPartyBookings();
@@ -575,7 +577,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   void _onLargePartyPaymentError(PaymentFailureResponse response) {
     _pendingLargePartyBookingId = null;
-    if (!mounted) return;
+    if (!mounted || !context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Payment failed: ${response.message ?? 'Unknown error'}'),
@@ -586,7 +588,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   void _onLargePartyExternalWallet(ExternalWalletResponse response) {
     _pendingLargePartyBookingId = null;
-    if (!mounted) return;
+    if (!mounted || !context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('External wallet selected: ${response.walletName}'),
@@ -643,9 +645,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       ApiService.markRequestRead(rId);
     }
   }
-
-  Future<void> _markAllNotificationsAsRead() => markAllNotificationsAsRead();
-
   Future<void> _markNotificationAsRead(Map<String, dynamic> notif) async {
     final nId = notif['id']?.toString() ?? '';
     final isRead =
@@ -690,68 +689,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
 
     PushNotificationService.navigateFromPayload(payloadData);
-  }
-
-  Future<void> _clearAllNotifications() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: LunaraTheme.darkSurface,
-        title: const Text(
-          'Clear All',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-        content: const Text(
-          'Are you sure you want to clear all notifications?',
-          style: TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('CANCEL', style: TextStyle(color: Colors.grey)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text(
-              'CLEAR',
-              style: TextStyle(
-                color: LunaraTheme.electricViolet,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
-        ),
-      ),
-    );
-
-    if (confirm == true) {
-      // Persist all current notification IDs locally so they don't reappear
-      // on the next poll even if the server hasn't cleared them yet.
-      for (final n in _notifications) {
-        final nId = n['id']?.toString() ?? '';
-        if (nId.isNotEmpty) _localReadNotificationIds.add(nId);
-      }
-      setState(() {
-        _notifications.clear();
-      });
-      widget.onCountChanged?.call();
-      final success = await ApiService.clearAllNotifications();
-      if (!success) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to clear notifications on server.'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-      _loadFeed(showLoader: false);
-    }
   }
 
   Future<void> _loadFeed({bool showLoader = true}) async {
@@ -1726,8 +1663,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     final bookingId =
         booking['id']?.toString() ?? booking['bookingId']?.toString() ?? '';
-    final isRead = _localReadNotificationIds.contains(bookingId);
-
     return Opacity(
       opacity: 1.0,
       child: Card(
@@ -2528,7 +2463,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                             if (planId.isEmpty) return;
                             final success =
                                 await ApiService.requestToJoinPartyPlan(planId);
-                            if (!mounted) return;
+                            if (!mounted || !context.mounted) return;
                             if (success) {
                               _loadFeed(showLoader: false);
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -3111,7 +3046,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                             if (planId.isEmpty) return;
                             final success =
                                 await ApiService.requestToJoinPartyPlan(planId);
-                            if (!mounted) return;
+                            if (!mounted || !context.mounted) return;
                             if (success) {
                               _loadFeed(showLoader: false);
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -3204,7 +3139,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 paymentId,
                 signature,
               );
-              if (!mounted) return;
+              if (!mounted || !context.mounted) return;
               if (success) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
@@ -3239,7 +3174,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 'mock_payment',
                 'mock_signature',
               );
-              if (!mounted) return;
+              if (!mounted || !context.mounted) return;
               if (success) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
@@ -3365,9 +3300,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final joinerPaid =
         req['joinerPaymentStatus']?.toString().toLowerCase() == 'paid' ||
         req['joinerPaymentStatus']?.toString().toLowerCase() == 'confirmed';
-
-    final isRead = _readRequestIds.contains(reqId);
-
     return Opacity(
       opacity: 1.0,
       child: Padding(
@@ -3794,9 +3726,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         req['status']?.toString().toLowerCase() ??
         'pending';
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    final isRead = _readRequestIds.contains(reqId);
-
     return Opacity(
       opacity: 1.0,
       child: Padding(
@@ -3952,7 +3881,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                         bookingId,
                                       );
 
-                                  if (!mounted) return;
+                                  if (!mounted || !context.mounted) return;
                                   Navigator.pop(
                                     context,
                                   ); // Close loading spinner
@@ -3997,7 +3926,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                                       razorpaySignature:
                                                           signature,
                                                     );
-                                                if (!mounted) return;
+                                                if (!mounted || !context.mounted) return;
                                                 if (success) {
                                                   setState(() {
                                                     _optimisticStates[reqId] =
@@ -5846,7 +5775,7 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
           );
           try {
             final success = await ApiService.confirmSelfPaidJoin(reqId);
-            if (!mounted) return;
+            if (!mounted || !context.mounted) return;
             Navigator.pop(context); // Close spinner
             if (success) {
               widget.onPaymentSuccess();
@@ -5939,7 +5868,7 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
                       paymentId,
                       signature,
                     );
-                    if (!mounted) return;
+                    if (!mounted || !context.mounted) return;
                     Navigator.pop(context); // Close verification spinner
                     if (success) {
                       widget.onPaymentSuccess();
@@ -5989,7 +5918,7 @@ class _CountdownPayButtonState extends State<CountdownPayButton> {
                       'mock_payment',
                       'mock_signature',
                     );
-                    if (!mounted) return;
+                    if (!mounted || !context.mounted) return;
                     Navigator.pop(context); // Close verification spinner
                     if (success) {
                       widget.onPaymentSuccess();

@@ -33,27 +33,48 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     super.initState();
     _fetchNotifications();
     ApiService.addSocketListener('notification_created', _onSocketNotification);
-    ApiService.addSocketListener('notification_received', _onSocketNotification);
-    ApiService.addSocketListener('notification_updated', _onSocketNotificationUpdated);
+    ApiService.addSocketListener(
+      'notification_received',
+      _onSocketNotification,
+    );
+    ApiService.addSocketListener(
+      'notification_updated',
+      _onSocketNotificationUpdated,
+    );
   }
 
   @override
   void dispose() {
-    ApiService.removeSocketListener('notification_created', _onSocketNotification);
-    ApiService.removeSocketListener('notification_received', _onSocketNotification);
-    ApiService.removeSocketListener('notification_updated', _onSocketNotificationUpdated);
+    ApiService.removeSocketListener(
+      'notification_created',
+      _onSocketNotification,
+    );
+    ApiService.removeSocketListener(
+      'notification_received',
+      _onSocketNotification,
+    );
+    ApiService.removeSocketListener(
+      'notification_updated',
+      _onSocketNotificationUpdated,
+    );
     super.dispose();
   }
 
   void _onSocketNotification(dynamic data) {
     if (!mounted || data == null) return;
-    final Map<String, dynamic> notifMap = data is Map ? Map<String, dynamic>.from(data) : {};
+    final Map<String, dynamic> notifMap = data is Map
+        ? Map<String, dynamic>.from(data)
+        : {};
 
     TopNotificationBanner.show(
       title: notifMap['title'] ?? 'New Notification',
       body: notifMap['body'] ?? '',
-      data: notifMap['data'] is Map ? Map<String, dynamic>.from(notifMap['data']) : notifMap,
-      senderData: notifMap['sender'] is Map ? Map<String, dynamic>.from(notifMap['sender']) : null,
+      data: notifMap['data'] is Map
+          ? Map<String, dynamic>.from(notifMap['data'])
+          : notifMap,
+      senderData: notifMap['sender'] is Map
+          ? Map<String, dynamic>.from(notifMap['sender'])
+          : null,
     );
 
     setState(() {
@@ -63,8 +84,12 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
   void _onSocketNotificationUpdated(dynamic data) {
     if (!mounted || data == null) return;
-    final Map<String, dynamic> updatedNotif = data is Map ? Map<String, dynamic>.from(data) : {};
-    final id = updatedNotif['id']?.toString() ?? updatedNotif['notification']?['id']?.toString();
+    final Map<String, dynamic> updatedNotif = data is Map
+        ? Map<String, dynamic>.from(data)
+        : {};
+    final id =
+        updatedNotif['id']?.toString() ??
+        updatedNotif['notification']?['id']?.toString();
     if (id == null) return;
 
     setState(() {
@@ -83,7 +108,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     }
 
     try {
-      final response = await ApiService.get('/api/mobile/user/notifications?userId=$currentUid');
+      final response = await ApiService.get(
+        '/api/mobile/user/notifications?userId=$currentUid',
+      );
       if (response.statusCode == 200 && mounted) {
         final bodyData = jsonDecode(response.body);
         if (bodyData != null && bodyData['data'] is List) {
@@ -109,7 +136,10 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     if (notifId != null && notifId.isNotEmpty && currentUid.isNotEmpty) {
       try {
-        await ApiService.patch('/api/mobile/user/notifications/$notifId/read?userId=$currentUid', body: {});
+        await ApiService.patch(
+          '/api/mobile/user/notifications/$notifId/read?userId=$currentUid',
+          body: {},
+        );
       } catch (e) {
         debugPrint('Error marking notification as read: $e');
       }
@@ -189,13 +219,24 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     try {
       final payloadData = item['data'] is Map
           ? Map<String, dynamic>.from(item['data'])
-          : (item['metadata'] is Map ? Map<String, dynamic>.from(item['metadata']) : <String, dynamic>{});
-      final requestId = payloadData['requestId']?.toString() ?? item['entityId']?.toString();
-      final entityType = (item['entityType'] ?? payloadData['type'] ?? '').toString();
+          : (item['metadata'] is Map
+                ? Map<String, dynamic>.from(item['metadata'])
+                : <String, dynamic>{});
+      final requestId =
+          payloadData['requestId']?.toString() ?? item['entityId']?.toString();
+      final entityType = (item['entityType'] ?? payloadData['type'] ?? '')
+          .toString();
 
-      if ((entityType == 'night_partner' || entityType == 'NightPartnerRequest' || entityType.contains('PARTNER_REQUEST')) && requestId != null && requestId.isNotEmpty) {
+      if ((entityType == 'night_partner' ||
+              entityType == 'NightPartnerRequest' ||
+              entityType.contains('PARTNER_REQUEST')) &&
+          requestId != null &&
+          requestId.isNotEmpty) {
         final act = action.toUpperCase() == 'ACCEPT' ? 'accept' : 'decline';
-        await ApiService.respondToNightPartnerRequest(requestId: requestId, action: act);
+        await ApiService.respondToNightPartnerRequest(
+          requestId: requestId,
+          action: act,
+        );
       }
 
       final response = await ApiService.post(
@@ -206,8 +247,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       if (response.statusCode == 200 && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(action.toUpperCase() == 'ACCEPT' ? '🎉 Invite Accepted!' : 'Invite Declined'),
-            backgroundColor: action.toUpperCase() == 'ACCEPT' ? Colors.green : Colors.grey[800],
+            content: Text(
+              action.toUpperCase() == 'ACCEPT'
+                  ? '🎉 Invite Accepted!'
+                  : 'Invite Declined',
+            ),
+            backgroundColor: action.toUpperCase() == 'ACCEPT'
+                ? Colors.green
+                : Colors.grey[800],
           ),
         );
         _fetchNotifications();
@@ -225,7 +272,10 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
           'Clear Notifications?',
-          style: TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold),
+          style: TextStyle(
+            color: Color(0xFF0F172A),
+            fontWeight: FontWeight.bold,
+          ),
         ),
         content: const Text(
           'This will clear your notification view. Critical transactional records remain preserved in history.',
@@ -234,15 +284,26 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('CANCEL', style: TextStyle(color: Color(0xFF94A3B8))),
+            child: const Text(
+              'CANCEL',
+              style: TextStyle(color: Color(0xFF94A3B8)),
+            ),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
               backgroundColor: LunaraTheme.electricViolet,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
-            child: const Text('CLEAR', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'CLEAR',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
@@ -267,7 +328,10 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           _notifications.clear();
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Notifications cleared'), backgroundColor: LunaraTheme.electricViolet),
+          const SnackBar(
+            content: Text('Notifications cleared'),
+            backgroundColor: LunaraTheme.electricViolet,
+          ),
         );
       }
     } catch (e) {
@@ -284,7 +348,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       // REQUESTS
       list = list.where((n) {
         final title = (n['title'] ?? '').toString().toLowerCase();
-        final type = (n['data']?['type'] ?? n['eventType'] ?? n['id'] ?? '').toString().toLowerCase();
+        final type = (n['data']?['type'] ?? n['eventType'] ?? n['id'] ?? '')
+            .toString()
+            .toLowerCase();
         final category = (n['category'] ?? '').toString().toLowerCase();
         return category == 'requests' ||
             title.contains('request') ||
@@ -297,7 +363,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       // ACTIVITY
       list = list.where((n) {
         final title = (n['title'] ?? '').toString().toLowerCase();
-        final type = (n['data']?['type'] ?? n['eventType'] ?? n['id'] ?? '').toString().toLowerCase();
+        final type = (n['data']?['type'] ?? n['eventType'] ?? n['id'] ?? '')
+            .toString()
+            .toLowerCase();
         final category = (n['category'] ?? '').toString().toLowerCase();
         return category == 'events' ||
             category == 'system' ||
@@ -314,7 +382,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     return list.where((n) {
       final title = (n['title'] ?? '').toString().toLowerCase();
-      final type = (n['data']?['type'] ?? n['eventType'] ?? n['id'] ?? '').toString().toLowerCase();
+      final type = (n['data']?['type'] ?? n['eventType'] ?? n['id'] ?? '')
+          .toString()
+          .toLowerCase();
 
       if (_selectedCategoryFilter == 1) {
         // PARTNER REQUESTS
@@ -324,13 +394,17 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         return title.contains('interest') || type.contains('interest');
       } else if (_selectedCategoryFilter == 3) {
         // BOOKINGS
-        return title.contains('booking') || title.contains('confirm') || type.contains('booking');
+        return title.contains('booking') ||
+            title.contains('confirm') ||
+            type.contains('booking');
       } else if (_selectedCategoryFilter == 4) {
         // TICKETS
         return title.contains('ticket') || type.contains('ticket');
       } else if (_selectedCategoryFilter == 5) {
         // MESSAGES
-        return title.contains('message') || title.contains('chat') || type.contains('chat');
+        return title.contains('message') ||
+            title.contains('chat') ||
+            type.contains('chat');
       } else if (_selectedCategoryFilter == 6) {
         // OTHER
         return true;
@@ -403,7 +477,11 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         elevation: 0.5,
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF0F172A), size: 20),
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Color(0xFF0F172A),
+            size: 20,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
@@ -418,12 +496,19 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         actions: [
           IconButton(
             tooltip: 'Mark all as read',
-            icon: const Icon(Icons.done_all_rounded, color: LunaraTheme.electricViolet, size: 22),
+            icon: const Icon(
+              Icons.done_all_rounded,
+              color: LunaraTheme.electricViolet,
+              size: 22,
+            ),
             onPressed: _markAllAsRead,
           ),
           if (_notifications.isNotEmpty)
             PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert_rounded, color: Color(0xFF475569)),
+              icon: const Icon(
+                Icons.more_vert_rounded,
+                color: Color(0xFF475569),
+              ),
               color: Colors.white,
               onSelected: (val) {
                 if (val == 'clear') _confirmClearAll();
@@ -432,11 +517,17 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               itemBuilder: (context) => [
                 const PopupMenuItem(
                   value: 'mark_read',
-                  child: Text('Mark all as read', style: TextStyle(color: Color(0xFF0F172A), fontSize: 13)),
+                  child: Text(
+                    'Mark all as read',
+                    style: TextStyle(color: Color(0xFF0F172A), fontSize: 13),
+                  ),
                 ),
                 const PopupMenuItem(
                   value: 'clear',
-                  child: Text('Clear notification view', style: TextStyle(color: Colors.redAccent, fontSize: 13)),
+                  child: Text(
+                    'Clear notification view',
+                    style: TextStyle(color: Colors.redAccent, fontSize: 13),
+                  ),
                 ),
               ],
             ),
@@ -455,22 +546,36 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               child: _isLoading
                   ? _buildSkeletonLoader()
                   : filtered.isEmpty
-                      ? _buildEmptyState()
-                      : RefreshIndicator(
-                          color: LunaraTheme.electricViolet,
-                          onRefresh: _fetchNotifications,
-                          child: ListView(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            children: [
-                              for (final section in ['Today', 'Yesterday', 'This Week', 'Earlier'])
-                                if (grouped[section] != null && grouped[section]!.isNotEmpty) ...[
-                                  _buildSectionHeader(section, grouped[section]!.length),
-                                  ...grouped[section]!.map((item) => _buildTypedNotificationCard(item)),
-                                  const SizedBox(height: 14),
-                                ],
-                            ],
-                          ),
+                  ? _buildEmptyState()
+                  : RefreshIndicator(
+                      color: LunaraTheme.electricViolet,
+                      onRefresh: _fetchNotifications,
+                      child: ListView(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
                         ),
+                        children: [
+                          for (final section in [
+                            'Today',
+                            'Yesterday',
+                            'This Week',
+                            'Earlier',
+                          ])
+                            if (grouped[section] != null &&
+                                grouped[section]!.isNotEmpty) ...[
+                              _buildSectionHeader(
+                                section,
+                                grouped[section]!.length,
+                              ),
+                              ...grouped[section]!.map(
+                                (item) => _buildTypedNotificationCard(item),
+                              ),
+                              const SizedBox(height: 14),
+                            ],
+                        ],
+                      ),
+                    ),
             ),
           ],
         ),
@@ -498,15 +603,19 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 duration: const Duration(milliseconds: 200),
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 decoration: BoxDecoration(
-                  color: isSelected ? LunaraTheme.electricViolet : Colors.transparent,
+                  color: isSelected
+                      ? LunaraTheme.electricViolet
+                      : Colors.transparent,
                   borderRadius: BorderRadius.circular(20),
                   boxShadow: isSelected
                       ? [
                           BoxShadow(
-                            color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                            color: LunaraTheme.electricViolet.withValues(
+                              alpha: 0.3,
+                            ),
                             blurRadius: 8,
                             offset: const Offset(0, 3),
-                          )
+                          ),
                         ]
                       : null,
                 ),
@@ -514,8 +623,12 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   child: Text(
                     entry.value,
                     style: TextStyle(
-                      color: isSelected ? Colors.white : const Color(0xFF64748B),
-                      fontWeight: isSelected ? FontWeight.w900 : FontWeight.bold,
+                      color: isSelected
+                          ? Colors.white
+                          : const Color(0xFF64748B),
+                      fontWeight: isSelected
+                          ? FontWeight.w900
+                          : FontWeight.bold,
                       fontSize: 12,
                       letterSpacing: 1.5,
                     ),
@@ -531,7 +644,15 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
   // ── Secondary Category Pills ───────────────────────────────────────────────
   Widget _buildCategoryFilterPills() {
-    final categories = ['All', 'Requests', 'Interests', 'Bookings', 'Tickets', 'Messages', 'Other'];
+    final categories = [
+      'All',
+      'Requests',
+      'Interests',
+      'Bookings',
+      'Tickets',
+      'Messages',
+      'Other',
+    ];
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -544,20 +665,27 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               onTap: () => setState(() => _selectedCategoryFilter = entry.key),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 7,
+                ),
                 decoration: BoxDecoration(
                   color: isSelected ? LunaraTheme.electricViolet : Colors.white,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: isSelected ? LunaraTheme.electricViolet : const Color(0xFFE2E8F0),
+                    color: isSelected
+                        ? LunaraTheme.electricViolet
+                        : const Color(0xFFE2E8F0),
                   ),
                   boxShadow: isSelected
                       ? [
                           BoxShadow(
-                            color: LunaraTheme.electricViolet.withValues(alpha: 0.25),
+                            color: LunaraTheme.electricViolet.withValues(
+                              alpha: 0.25,
+                            ),
                             blurRadius: 6,
                             offset: const Offset(0, 2),
-                          )
+                          ),
                         ]
                       : null,
                 ),
@@ -616,25 +744,37 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   Widget _buildTypedNotificationCard(dynamic item) {
     final title = (item['title'] ?? '').toString();
     final titleLower = title.toLowerCase();
-    final eventType = (item['eventType'] ?? item['data']?['type'] ?? '').toString().toUpperCase();
+    final eventType = (item['eventType'] ?? item['data']?['type'] ?? '')
+        .toString()
+        .toUpperCase();
 
-    if (eventType.contains('PARTNER_REQUEST') || titleLower.contains('wants to join') || titleLower.contains('partner request')) {
+    if (eventType.contains('PARTNER_REQUEST') ||
+        titleLower.contains('wants to join') ||
+        titleLower.contains('partner request')) {
       return _buildPartnerRequestCard(item);
-    } else if (eventType.contains('INTEREST') || titleLower.contains('interested')) {
+    } else if (eventType.contains('INTEREST') ||
+        titleLower.contains('interested')) {
       return _buildInterestCard(item);
-    } else if (eventType.contains('REQUEST_ACCEPTED') || titleLower.contains('accepted your')) {
+    } else if (eventType.contains('REQUEST_ACCEPTED') ||
+        titleLower.contains('accepted your')) {
       return _buildRequestAcceptedCard(item);
-    } else if (eventType.contains('BOOKING_CONFIRMED') || titleLower.contains('booking confirmed')) {
+    } else if (eventType.contains('BOOKING_CONFIRMED') ||
+        titleLower.contains('booking confirmed')) {
       return _buildBookingConfirmedCard(item);
-    } else if (eventType.contains('MATCH') || titleLower.contains("it's a match")) {
+    } else if (eventType.contains('MATCH') ||
+        titleLower.contains("it's a match")) {
       return _buildMatchCard(item);
     } else if (eventType.contains('TICKET') || titleLower.contains('ticket')) {
       return _buildTicketReadyCard(item);
-    } else if (eventType.contains('MESSAGE') || titleLower.contains('message')) {
+    } else if (eventType.contains('MESSAGE') ||
+        titleLower.contains('message')) {
       return _buildChatMessageCard(item);
-    } else if (eventType.contains('REMINDER') || titleLower.contains('starting soon')) {
+    } else if (eventType.contains('REMINDER') ||
+        titleLower.contains('starting soon')) {
       return _buildEventReminderCard(item);
-    } else if (eventType.contains('EXPIRED') || titleLower.contains('completed') || titleLower.contains('ended')) {
+    } else if (eventType.contains('EXPIRED') ||
+        titleLower.contains('completed') ||
+        titleLower.contains('ended')) {
       return _buildExpiredCard(item);
     }
 
@@ -652,7 +792,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     if (userMap.isEmpty) return;
 
-    final uid = userMap['id']?.toString() ??
+    final uid =
+        userMap['id']?.toString() ??
         userMap['userId']?.toString() ??
         userMap['_id']?.toString() ??
         userMap['actorUserId']?.toString() ??
@@ -661,18 +802,26 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     final userObj = User.fromJson({
       'id': uid,
-      'firstName': userMap['firstName'] ?? userMap['name'] ?? userMap['username'] ?? 'User',
+      'firstName':
+          userMap['firstName'] ??
+          userMap['name'] ??
+          userMap['username'] ??
+          'User',
       'lastName': userMap['lastName'] ?? '',
-      'photos': userMap['photos'] ?? (userMap['photoUrl'] != null ? [{'url': userMap['photoUrl']}] : []),
+      'photos':
+          userMap['photos'] ??
+          (userMap['photoUrl'] != null
+              ? [
+                  {'url': userMap['photoUrl']},
+                ]
+              : []),
       'profile': userMap['profile'] ?? {},
       'bio': userMap['bio'] ?? '',
     });
 
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => ProfileScreen(user: userObj),
-      ),
+      MaterialPageRoute(builder: (context) => ProfileScreen(user: userObj)),
     );
   }
 
@@ -680,7 +829,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   Widget _buildPartnerRequestCard(dynamic item) {
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
     final actor = item['actor'] ?? item['sender'] ?? item['actorUserId'];
-    final actorName = actor is Map ? (actor['firstName'] ?? actor['name'] ?? 'User') : 'User';
+    final actorName = actor is Map
+        ? (actor['firstName'] ?? actor['name'] ?? 'User')
+        : 'User';
     final body = item['body']?.toString() ?? 'Wants to join your event.';
     final timeStr = _formatTimeAgo(item['createdAt']);
 
@@ -694,15 +845,34 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             onTap: () => _openUserProfile(actor),
             child: Row(
               children: [
-                LunaraProfileImage(userData: actor is Map ? Map<String, dynamic>.from(actor) : {}, radius: 20),
+                LunaraProfileImage(
+                  userData: actor is Map
+                      ? Map<String, dynamic>.from(actor)
+                      : {},
+                  radius: 20,
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('$actorName wants to join your event', style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold, fontSize: 13.5)),
+                      Text(
+                        '$actorName wants to join your event',
+                        style: const TextStyle(
+                          color: Color(0xFF0F172A),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13.5,
+                        ),
+                      ),
                       const SizedBox(height: 2),
-                      Text(timeStr, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5, fontWeight: FontWeight.w500)),
+                      Text(
+                        timeStr,
+                        style: const TextStyle(
+                          color: Color(0xFF94A3B8),
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -711,7 +881,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          Text(body, style: const TextStyle(color: Color(0xFF475569), fontSize: 12, height: 1.3)),
+          Text(
+            body,
+            style: const TextStyle(
+              color: Color(0xFF475569),
+              fontSize: 12,
+              height: 1.3,
+            ),
+          ),
           const SizedBox(height: 12),
           Row(
             children: [
@@ -720,9 +897,18 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   onPressed: () => _openUserProfile(actor),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Color(0xFFCBD5E1)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
-                  child: const Text('View Profile', style: TextStyle(color: Color(0xFF475569), fontSize: 11.5, fontWeight: FontWeight.bold)),
+                  child: const Text(
+                    'View Profile',
+                    style: TextStyle(
+                      color: Color(0xFF475569),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -731,14 +917,27 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   onPressed: () => _handleNotificationAction(item, 'ACCEPT'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: LunaraTheme.electricViolet,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
-                  child: const Text('Accept', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
+                  child: const Text(
+                    'Accept',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
               IconButton(
-                icon: const Icon(Icons.close, color: Color(0xFF94A3B8), size: 18),
+                icon: const Icon(
+                  Icons.close,
+                  color: Color(0xFF94A3B8),
+                  size: 18,
+                ),
                 onPressed: () => _handleNotificationAction(item, 'DECLINE'),
               ),
             ],
@@ -753,7 +952,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
     final actor = item['actor'] ?? item['sender'];
     final actorName = actor?['firstName'] ?? actor?['name'] ?? 'Someone';
-    final body = item['body']?.toString() ?? '$actorName is interested in your Stranger Meet.';
+    final body =
+        item['body']?.toString() ??
+        '$actorName is interested in your Stranger Meet.';
     final timeStr = _formatTimeAgo(item['createdAt']);
 
     return _buildBaseCardContainer(
@@ -767,22 +968,46 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             child: Row(
               children: [
                 if (actor != null && actor is Map && actor.isNotEmpty) ...[
-                  LunaraProfileImage(userData: Map<String, dynamic>.from(actor), radius: 18),
+                  LunaraProfileImage(
+                    userData: Map<String, dynamic>.from(actor),
+                    radius: 18,
+                  ),
                   const SizedBox(width: 10),
                 ] else
                   Container(
                     padding: const EdgeInsets.all(8),
-                    decoration: const BoxDecoration(color: Color(0xFFFCE7F3), shape: BoxShape.circle),
-                    child: const Icon(Icons.favorite_rounded, color: LunaraTheme.hotPink, size: 18),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFFCE7F3),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.favorite_rounded,
+                      color: LunaraTheme.hotPink,
+                      size: 18,
+                    ),
                   ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('❤️ New Interest', style: TextStyle(color: LunaraTheme.hotPink, fontWeight: FontWeight.w900, fontSize: 12, letterSpacing: 0.5)),
+                      const Text(
+                        '❤️ New Interest',
+                        style: TextStyle(
+                          color: LunaraTheme.hotPink,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 12,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
                       const SizedBox(height: 2),
-                      Text(timeStr, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5)),
+                      Text(
+                        timeStr,
+                        style: const TextStyle(
+                          color: Color(0xFF94A3B8),
+                          fontSize: 10.5,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -791,7 +1016,15 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          Text(body, style: const TextStyle(color: Color(0xFF0F172A), fontSize: 13, fontWeight: FontWeight.w600, height: 1.3)),
+          Text(
+            body,
+            style: const TextStyle(
+              color: Color(0xFF0F172A),
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              height: 1.3,
+            ),
+          ),
           const SizedBox(height: 12),
           Row(
             children: [
@@ -807,7 +1040,11 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                     child: Center(
                       child: Text(
                         'View Interest',
-                        style: TextStyle(color: LunaraTheme.electricViolet, fontSize: 12, fontWeight: FontWeight.w900),
+                        style: TextStyle(
+                          color: LunaraTheme.electricViolet,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
                     ),
                   ),
@@ -818,15 +1055,20 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 child: GestureDetector(
                   onTap: () => _handleNotificationAction(item, 'DECLINE'),
                   child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'Ignore',
-                      style: TextStyle(color: Color(0xFF64748B), fontSize: 12, fontWeight: FontWeight.bold),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'Ignore',
+                        style: TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -856,16 +1098,34 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             children: [
               GestureDetector(
                 onTap: () => _openUserProfile(actor),
-                child: LunaraProfileImage(userData: actor is Map ? Map<String, dynamic>.from(actor) : {}, radius: 20),
+                child: LunaraProfileImage(
+                  userData: actor is Map
+                      ? Map<String, dynamic>.from(actor)
+                      : {},
+                  radius: 20,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('$actorName accepted your request', style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold, fontSize: 13.5)),
+                    Text(
+                      '$actorName accepted your request',
+                      style: const TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13.5,
+                      ),
+                    ),
                     const SizedBox(height: 2),
-                    Text(timeStr, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5)),
+                    Text(
+                      timeStr,
+                      style: const TextStyle(
+                        color: Color(0xFF94A3B8),
+                        fontSize: 10.5,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -873,16 +1133,33 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          Text(body, style: const TextStyle(color: Color(0xFF475569), fontSize: 12.5)),
+          Text(
+            body,
+            style: const TextStyle(color: Color(0xFF475569), fontSize: 12.5),
+          ),
           const SizedBox(height: 12),
           ElevatedButton.icon(
             onPressed: () => _markAsRead(item),
-            icon: const Icon(Icons.chat_bubble_rounded, size: 14, color: Colors.white),
-            label: const Text("Let's Chat", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+            icon: const Icon(
+              Icons.chat_bubble_rounded,
+              size: 14,
+              color: Colors.white,
+            ),
+            label: const Text(
+              "Let's Chat",
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
+              ),
+            ),
             style: ElevatedButton.styleFrom(
               backgroundColor: LunaraTheme.electricViolet,
               minimumSize: const Size(double.infinity, 38),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
           ),
         ],
@@ -893,7 +1170,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   // ── 4. Booking Confirmed Card Component ────────────────────────────────────
   Widget _buildBookingConfirmedCard(dynamic item) {
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
-    final body = item['body']?.toString() ?? 'Your booking is confirmed. Get ready for the party!';
+    final body =
+        item['body']?.toString() ??
+        'Your booking is confirmed. Get ready for the party!';
     final timeStr = _formatTimeAgo(item['createdAt']);
 
     return _buildBaseCardContainer(
@@ -906,17 +1185,37 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
-                decoration: const BoxDecoration(color: Color(0xFFD1FAE5), shape: BoxShape.circle),
-                child: const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 18),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFD1FAE5),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.check_circle_rounded,
+                  color: Color(0xFF10B981),
+                  size: 18,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Booking Confirmed 🎉', style: TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.w900, fontSize: 13)),
+                    const Text(
+                      'Booking Confirmed 🎉',
+                      style: TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 13,
+                      ),
+                    ),
                     const SizedBox(height: 2),
-                    Text(timeStr, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5)),
+                    Text(
+                      timeStr,
+                      style: const TextStyle(
+                        color: Color(0xFF94A3B8),
+                        fontSize: 10.5,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -924,18 +1223,34 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          Text(body, style: const TextStyle(color: Color(0xFF475569), fontSize: 12.5)),
+          Text(
+            body,
+            style: const TextStyle(color: Color(0xFF475569), fontSize: 12.5),
+          ),
           const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: () => _markAsRead(item),
-                  icon: const Icon(Icons.confirmation_number_outlined, size: 14, color: Colors.white),
-                  label: const Text('View Ticket', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
+                  icon: const Icon(
+                    Icons.confirmation_number_outlined,
+                    size: 14,
+                    color: Colors.white,
+                  ),
+                  label: const Text(
+                    'View Ticket',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: LunaraTheme.electricViolet,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
               ),
@@ -948,7 +1263,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Center(
-                    child: Text('Open Chat', style: TextStyle(color: LunaraTheme.electricViolet, fontSize: 11.5, fontWeight: FontWeight.bold)),
+                    child: Text(
+                      'Open Chat',
+                      style: TextStyle(
+                        color: LunaraTheme.electricViolet,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -962,7 +1284,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   // ── 5. Match / Celebration Card Component ──────────────────────────────────
   Widget _buildMatchCard(dynamic item) {
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
-    final body = item['body']?.toString() ?? "You're going to the party together!";
+    final body =
+        item['body']?.toString() ?? "You're going to the party together!";
     final timeStr = _formatTimeAgo(item['createdAt']);
 
     return _buildBaseCardContainer(
@@ -975,17 +1298,38 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
-                decoration: const BoxDecoration(color: Color(0xFFFCE7F3), shape: BoxShape.circle),
-                child: const Icon(Icons.favorite_rounded, color: LunaraTheme.hotPink, size: 18),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFCE7F3),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.favorite_rounded,
+                  color: LunaraTheme.hotPink,
+                  size: 18,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text("💜 It's a Match!", style: TextStyle(color: LunaraTheme.hotPink, fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 0.5)),
+                    const Text(
+                      "💜 It's a Match!",
+                      style: TextStyle(
+                        color: LunaraTheme.hotPink,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 13,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
                     const SizedBox(height: 2),
-                    Text(timeStr, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5)),
+                    Text(
+                      timeStr,
+                      style: const TextStyle(
+                        color: Color(0xFF94A3B8),
+                        fontSize: 10.5,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -993,16 +1337,37 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          Text(body, style: const TextStyle(color: Color(0xFF0F172A), fontSize: 13, fontWeight: FontWeight.bold)),
+          Text(
+            body,
+            style: const TextStyle(
+              color: Color(0xFF0F172A),
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
           const SizedBox(height: 12),
           ElevatedButton.icon(
             onPressed: () => _markAsRead(item),
-            icon: const Icon(Icons.forum_rounded, size: 14, color: Colors.white),
-            label: const Text("Let's Chat", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1)),
+            icon: const Icon(
+              Icons.forum_rounded,
+              size: 14,
+              color: Colors.white,
+            ),
+            label: const Text(
+              "Let's Chat",
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1,
+              ),
+            ),
             style: ElevatedButton.styleFrom(
               backgroundColor: LunaraTheme.hotPink,
               minimumSize: const Size(double.infinity, 38),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
           ),
         ],
@@ -1023,19 +1388,45 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         children: [
           Container(
             padding: const EdgeInsets.all(10),
-            decoration: const BoxDecoration(color: Color(0xFFE0F2FE), shape: BoxShape.circle),
-            child: const Icon(Icons.confirmation_number_rounded, color: Color(0xFF0284C7), size: 20),
+            decoration: const BoxDecoration(
+              color: Color(0xFFE0F2FE),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.confirmation_number_rounded,
+              color: Color(0xFF0284C7),
+              size: 20,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('🎟 Your Ticket is Ready', style: TextStyle(color: Color(0xFF0284C7), fontWeight: FontWeight.bold, fontSize: 13)),
+                const Text(
+                  '🎟 Your Ticket is Ready',
+                  style: TextStyle(
+                    color: Color(0xFF0284C7),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text(body, style: const TextStyle(color: Color(0xFF475569), fontSize: 11.5)),
+                Text(
+                  body,
+                  style: const TextStyle(
+                    color: Color(0xFF475569),
+                    fontSize: 11.5,
+                  ),
+                ),
                 const SizedBox(height: 4),
-                Text(timeStr, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5)),
+                Text(
+                  timeStr,
+                  style: const TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 10.5,
+                  ),
+                ),
               ],
             ),
           ),
@@ -1045,9 +1436,18 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF0284C7),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
-            child: const Text('Pass', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w900)),
+            child: const Text(
+              'Pass',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
           ),
         ],
       ),
@@ -1068,18 +1468,42 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         children: [
           GestureDetector(
             onTap: () => _openUserProfile(actor),
-            child: LunaraProfileImage(userData: actor is Map ? Map<String, dynamic>.from(actor) : {}, radius: 20),
+            child: LunaraProfileImage(
+              userData: actor is Map ? Map<String, dynamic>.from(actor) : {},
+              radius: 20,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(item['title']?.toString() ?? 'New Message', style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold, fontSize: 13)),
+                Text(
+                  item['title']?.toString() ?? 'New Message',
+                  style: const TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text(body, style: const TextStyle(color: Color(0xFF475569), fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text(
+                  body,
+                  style: const TextStyle(
+                    color: Color(0xFF475569),
+                    fontSize: 12,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 const SizedBox(height: 4),
-                Text(timeStr, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5)),
+                Text(
+                  timeStr,
+                  style: const TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 10.5,
+                  ),
+                ),
               ],
             ),
           ),
@@ -1092,7 +1516,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   // ── 8. Event Reminder Card Component ───────────────────────────────────────
   Widget _buildEventReminderCard(dynamic item) {
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
-    final body = item['body']?.toString() ?? 'Your Stranger Meet starts tomorrow at 8:00 PM';
+    final body =
+        item['body']?.toString() ??
+        'Your Stranger Meet starts tomorrow at 8:00 PM';
     final timeStr = _formatTimeAgo(item['createdAt']);
 
     return _buildBaseCardContainer(
@@ -1105,17 +1531,38 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
-                decoration: const BoxDecoration(color: Color(0xFFFFE4E6), shape: BoxShape.circle),
-                child: const Icon(Icons.access_time_filled_rounded, color: Color(0xFFF43F5E), size: 18),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFFE4E6),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.access_time_filled_rounded,
+                  color: Color(0xFFF43F5E),
+                  size: 18,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Event Reminder ⏰', style: TextStyle(color: Color(0xFFF43F5E), fontWeight: FontWeight.w900, fontSize: 12.5, letterSpacing: 0.5)),
+                    const Text(
+                      'Event Reminder ⏰',
+                      style: TextStyle(
+                        color: Color(0xFFF43F5E),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12.5,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
                     const SizedBox(height: 2),
-                    Text(timeStr, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5)),
+                    Text(
+                      timeStr,
+                      style: const TextStyle(
+                        color: Color(0xFF94A3B8),
+                        fontSize: 10.5,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1123,7 +1570,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          Text(body, style: const TextStyle(color: Color(0xFF0F172A), fontSize: 12.5, fontWeight: FontWeight.w600)),
+          Text(
+            body,
+            style: const TextStyle(
+              color: Color(0xFF0F172A),
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
           const SizedBox(height: 10),
           Container(
             padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1132,7 +1586,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Center(
-              child: Text('View Event', style: TextStyle(color: LunaraTheme.electricViolet, fontSize: 11.5, fontWeight: FontWeight.bold)),
+              child: Text(
+                'View Event',
+                style: TextStyle(
+                  color: LunaraTheme.electricViolet,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
           ),
         ],
@@ -1152,25 +1613,58 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         children: [
           Container(
             padding: const EdgeInsets.all(10),
-            decoration: const BoxDecoration(color: Color(0xFFF1F5F9), shape: BoxShape.circle),
-            child: const Icon(Icons.history_rounded, color: Color(0xFF94A3B8), size: 20),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF1F5F9),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.history_rounded,
+              color: Color(0xFF94A3B8),
+              size: 20,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('⚪ Event Completed', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.bold, fontSize: 12)),
+                const Text(
+                  '⚪ Event Completed',
+                  style: TextStyle(
+                    color: Color(0xFF64748B),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text(body, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11)),
+                Text(
+                  body,
+                  style: const TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 11,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text(timeStr, style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 10)),
+                Text(
+                  timeStr,
+                  style: const TextStyle(
+                    color: Color(0xFFCBD5E1),
+                    fontSize: 10,
+                  ),
+                ),
               ],
             ),
           ),
           TextButton(
             onPressed: () => _markAsRead(item),
-            child: const Text('History', style: TextStyle(color: Color(0xFF64748B), fontSize: 11, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'History',
+              style: TextStyle(
+                color: Color(0xFF64748B),
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
@@ -1192,33 +1686,61 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         children: [
           Container(
             padding: const EdgeInsets.all(10),
-            decoration: const BoxDecoration(color: Color(0xFFF3E8FF), shape: BoxShape.circle),
-            child: const Icon(Icons.notifications_active_rounded, color: LunaraTheme.electricViolet, size: 20),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF3E8FF),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.notifications_active_rounded,
+              color: LunaraTheme.electricViolet,
+              size: 20,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: TextStyle(color: const Color(0xFF0F172A), fontWeight: isUnread ? FontWeight.w900 : FontWeight.bold, fontSize: 13)),
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: const Color(0xFF0F172A),
+                    fontWeight: isUnread ? FontWeight.w900 : FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
                 const SizedBox(height: 4),
-                Text(body, style: const TextStyle(color: Color(0xFF475569), fontSize: 12, height: 1.3)),
+                Text(
+                  body,
+                  style: const TextStyle(
+                    color: Color(0xFF475569),
+                    fontSize: 12,
+                    height: 1.3,
+                  ),
+                ),
                 const SizedBox(height: 4),
-                Text(timeStr, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5)),
+                Text(
+                  timeStr,
+                  style: const TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 10.5,
+                  ),
+                ),
               ],
             ),
           ),
-          if (isUnread) ...[
-            const SizedBox(width: 8),
-            _buildUnreadDot(),
-          ],
+          if (isUnread) ...[const SizedBox(width: 8), _buildUnreadDot()],
         ],
       ),
     );
   }
 
   // ── Base Container & Helpers ───────────────────────────────────────────────
-  Widget _buildBaseCardContainer({required bool isUnread, required VoidCallback onTap, required Widget child}) {
+  Widget _buildBaseCardContainer({
+    required bool isUnread,
+    required VoidCallback onTap,
+    required Widget child,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: GestureDetector(
@@ -1278,15 +1800,36 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             ),
             child: Row(
               children: [
-                Container(width: 44, height: 44, decoration: const BoxDecoration(color: Color(0xFFF1F5F9), shape: BoxShape.circle)),
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF1F5F9),
+                    shape: BoxShape.circle,
+                  ),
+                ),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(width: 140, height: 12, decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(6))),
+                      Container(
+                        width: 140,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      ),
                       const SizedBox(height: 8),
-                      Container(width: 200, height: 10, decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(6))),
+                      Container(
+                        width: 200,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -1327,10 +1870,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           const SizedBox(height: 6),
           const Text(
             'New requests, matches & bookings will appear here.',
-            style: TextStyle(
-              color: Color(0xFF64748B),
-              fontSize: 12.5,
-            ),
+            style: TextStyle(color: Color(0xFF64748B), fontSize: 12.5),
             textAlign: TextAlign.center,
           ),
         ],
