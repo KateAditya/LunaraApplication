@@ -50,7 +50,9 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
     if (_isLoading) {
       return const Scaffold(
         backgroundColor: Colors.white,
-        body: Center(child: CircularProgressIndicator(color: LunaraTheme.electricViolet)),
+        body: Center(
+          child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+        ),
       );
     }
 
@@ -113,7 +115,11 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
                       color: LunaraTheme.electricViolet,
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.edit_rounded, size: 12, color: Colors.white),
+                    child: const Icon(
+                      Icons.edit_rounded,
+                      size: 12,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
               ],
@@ -124,7 +130,8 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    (_currentUser != null && _currentUser!.fullName.trim().isNotEmpty)
+                    (_currentUser != null &&
+                            _currentUser!.fullName.trim().isNotEmpty)
                         ? _currentUser!.fullName.toUpperCase()
                         : 'LUNARA USER',
                     style: const TextStyle(
@@ -197,7 +204,9 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
                               value: completion / 100,
                               minHeight: 4,
                               backgroundColor: Colors.grey[200],
-                              valueColor: const AlwaysStoppedAnimation<Color>(LunaraTheme.electricViolet),
+                              valueColor: const AlwaysStoppedAnimation<Color>(
+                                LunaraTheme.electricViolet,
+                              ),
                             ),
                           ),
                           if (missing.isNotEmpty && completion < 100) ...[
@@ -213,7 +222,7 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
                           ],
                         ],
                       );
-                    }
+                    },
                   ),
                 ],
               ),
@@ -313,19 +322,27 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
                 children: [
                   Row(
                     children: [
-                      Text(
-                        isPaid ? 'LUNARA $planName • $tier' : 'GET LUNARA VIP',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900,
-                          color: isPaid ? primaryColor : Colors.black,
-                          letterSpacing: 0.8,
+                      Flexible(
+                        child: Text(
+                          isPaid
+                              ? 'LUNARA $planName • $tier'
+                              : 'GET LUNARA VIP',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                            color: isPaid ? primaryColor : Colors.black,
+                            letterSpacing: 0.8,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       if (isPaid && remainingDays > 0) ...[
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: primaryColor.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(10),
@@ -384,7 +401,9 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
         boxShadow: LunaraTheme.premiumCardShadow,
-        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.05)),
+        border: Border.all(
+          color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
+        ),
       ),
       child: Row(
         children: [
@@ -468,9 +487,7 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
           'Pay and earn rewards',
           () => Navigator.push(
             context,
-            MaterialPageRoute(
-              builder: (context) => const LunaraWalletScreen(),
-            ),
+            MaterialPageRoute(builder: (context) => const LunaraWalletScreen()),
           ),
         ),
         _menuTile(
@@ -499,7 +516,9 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
           'Review your tonight\'s experience',
           () => Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => SafetyCheckScreen(user: _currentUser)),
+            MaterialPageRoute(
+              builder: (context) => SafetyCheckScreen(user: _currentUser),
+            ),
           ),
         ),
       ],
@@ -530,7 +549,10 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
           borderRadius: BorderRadius.circular(24),
           child: ListTile(
             onTap: onTap,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 4,
+            ),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(24),
               side: BorderSide(color: Colors.grey[50]!),
@@ -553,7 +575,11 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
             ),
             subtitle: Text(
               subtitle,
-              style: const TextStyle(color: Colors.black, fontSize: 11, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                color: Colors.black,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             trailing: const Icon(
               Icons.chevron_right_rounded,

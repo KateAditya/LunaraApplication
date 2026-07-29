@@ -4,6 +4,7 @@ import PartyPlanRequest, { PartyPlanRequestStatus } from '../models/PartyPlanReq
 import StrangersMeetJoiner, { StrangersMeetJoinerStatus } from '../models/StrangersMeetJoiner';
 import User from '../models/User';
 import { NotificationService } from '../services/NotificationService';
+import { NightPartnerService } from '../services/NightPartnerService';
 import { logger } from '../config/logger';
 
 export class NotificationActionController {
@@ -85,6 +86,15 @@ export class NotificationActionController {
                             deepLink: `/stranger-meets/${reqItem.strangersMeetRequestId}`,
                             priority: 'HIGH',
                         });
+                    }
+                } else if ((notification.entityType === 'night_partner' || notification.entityType === 'NightPartnerRequest') && notification.entityId) {
+                    const act = action.toUpperCase() === 'ACCEPT' ? 'accept' : 'decline';
+                    try {
+                        const result = await NightPartnerService.respondToRequest(notification.entityId, currentUserId, act);
+                        actionResult = { status: 'ACTIONED', actionExecuted: action, result };
+                    } catch (partnerErr: any) {
+                        logger.error('[NotificationActionController] NightPartner action error:', partnerErr);
+                        actionResult = { status: 'ACTIONED', actionExecuted: action, note: partnerErr.message };
                     }
                 }
             }

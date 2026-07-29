@@ -507,13 +507,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
               onRefresh: _loadConversations,
               child: _conversations.isEmpty ? _buildEmpty() : _buildList(),
             ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _showContactsPicker,
-        backgroundColor: const Color(0xFF7F00FF),
-        elevation: 4,
-        shape: const CircleBorder(),
-        child: const Icon(Icons.chat_rounded, color: Colors.white, size: 24),
-      ),
     );
   }
 

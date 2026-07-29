@@ -84,6 +84,10 @@ export const usersApi = {
         return apiClient.get('/api/users/autoblocked', { params });
     },
 
+    getReportedUsers: (params?: { page?: number; limit?: number }): Promise<any> => {
+        return apiClient.get('/api/users/reported', { params });
+    },
+
     unblockUser: (id: string): Promise<{ success: boolean; message: string; user?: any }> => {
         return apiClient.post(`/api/users/${id}/unblock`);
     },

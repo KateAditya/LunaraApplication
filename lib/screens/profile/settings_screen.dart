@@ -318,136 +318,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildHideProfileTile() {
     final isProUser = _currentUser?.isPro ?? false;
 
-    if (isProUser) {
-      return _buildSwitchTile('Hide Profile', _hideProfile, (v) async {
-        final prevValue = _hideProfile;
-        setState(() => _hideProfile = v);
-
-        final success = await ApiService.updateUserPreferences(
-          showMeInMatching: !v,
+    return _buildSwitchTile('Hide Profile', _hideProfile, (v) async {
+      if (!isProUser) {
+        showSubscriptionLimitDialog(
+          context,
+          feature: SubLimitFeature.hideProfile,
         );
+        setState(() {}); // Reset switch visually
+        return;
+      }
 
-        if (!success && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to update profile visibility.'),
-              backgroundColor: Colors.red,
-            ),
-          );
-          setState(() => _hideProfile = prevValue);
-        } else if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                v ? 'Profile is now hidden.' : 'Profile is now visible.',
-              ),
-              backgroundColor: LunaraTheme.electricViolet,
-            ),
-          );
-        }
-      });
-    }
+      final prevValue = _hideProfile;
+      setState(() => _hideProfile = v);
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: GestureDetector(
-        onTap: () {
-          showSubscriptionLimitDialog(
-            context,
-            feature: SubLimitFeature.hideProfile,
-          );
-        },
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            gradient: LunaraTheme.cardGradient,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: LunaraTheme.premiumCardShadow,
-            border: Border.all(
-              color: LunaraTheme.electricViolet.withValues(alpha: 0.15),
+      final success = await ApiService.updateUserPreferences(
+        showMeInMatching: !v,
+      );
+
+      if (!success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to update profile visibility.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() => _hideProfile = prevValue);
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              v ? 'Profile is now hidden.' : 'Profile is now visible.',
             ),
+            backgroundColor: LunaraTheme.electricViolet,
           ),
-          child: Row(
-            children: [
-              const Icon(
-                Icons.visibility_off_outlined,
-                color: Colors.black,
-                size: 20,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Row(
-                    children: [
-                      Text(
-                        'Hide Profile',
-                        style: TextStyle(
-                          color: Colors.black,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      SizedBox(width: 6),
-                      Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [Color(0xFF7F00FF), Color(0xFFE100FF)],
-                          ),
-                          borderRadius: BorderRadius.all(Radius.circular(6)),
-                        ),
-                        child: Text(
-                          'VIP',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              ElevatedButton.icon(
-                onPressed: () {
-                  showSubscriptionLimitDialog(
-                    context,
-                    feature: SubLimitFeature.hideProfile,
-                  );
-                },
-                icon: const Icon(Icons.lock, size: 12, color: Colors.white),
-                label: const Text(
-                  'UPGRADE TO HIDE',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: LunaraTheme.electricViolet,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+        );
+      }
+    });
   }
 
   Widget _buildDangerZone() {

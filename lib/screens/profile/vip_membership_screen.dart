@@ -11,13 +11,14 @@ class VIPMembershipScreen extends StatefulWidget {
   State<VIPMembershipScreen> createState() => _VIPMembershipScreenState();
 }
 
-class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTickerProviderStateMixin {
+class _VIPMembershipScreenState extends State<VIPMembershipScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   late Razorpay _razorpay;
 
   bool _isLoading = true;
   bool _isProcessing = false;
-  
+
   List<dynamic> _allPackages = [];
   String? _activePackageId;
   int _activeRemainingDays = 0;
@@ -27,7 +28,8 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
   // Selected Options
   int _selectedPlanIndex = 0; // 0: Core, 1: Plus, 2: Pro, 3: Elite
   int _selectedEliteIndex = 0; // Index of selected Elite duration option
-  int _selectedBoostOption = 0; // 0: 1 Boost, 1: 2 Boosts, 2: 3 Boosts, 3: 5 Boosts
+  int _selectedBoostOption =
+      0; // 0: 1 Boost, 1: 2 Boosts, 2: 3 Boosts, 3: 5 Boosts
 
   final List<Map<String, dynamic>> _boostOptions = [
     {'count': 1, 'price': 49, 'label': '1 Boost'},
@@ -40,7 +42,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    
+
     _razorpay = Razorpay();
     _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handleRazorpaySuccess);
     _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handleRazorpayError);
@@ -123,17 +125,18 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
     if (listTiers.isEmpty || _selectedPlanIndex >= listTiers.length) return [];
     final tier = listTiers[_selectedPlanIndex];
     final list = _allPackages.where((p) => p['tier'] == tier).toList();
-    list.sort((a, b) => (a['durationDays'] as num).compareTo(b['durationDays'] as num));
+    list.sort(
+      (a, b) => (a['durationDays'] as num).compareTo(b['durationDays'] as num),
+    );
     return list;
   }
-
-
 
   dynamic get _selectedPackage {
     final pkgs = _packagesForSelectedTier;
     if (pkgs.isEmpty) return null;
     int durationIndex = _selectedDurationIndexMap[_selectedPlanIndex] ?? 0;
-    if (_selectedPlanIndex < _tiers.length && _tiers[_selectedPlanIndex] == 'ELITE') {
+    if (_selectedPlanIndex < _tiers.length &&
+        _tiers[_selectedPlanIndex] == 'ELITE') {
       durationIndex = _selectedEliteIndex;
     }
     if (durationIndex >= pkgs.length) {
@@ -149,8 +152,10 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
       if (pkg != null) {
         _confirmPackagePurchase(
           pkg['id'],
-          response.orderId ?? 'order_mock_${DateTime.now().millisecondsSinceEpoch}',
-          response.paymentId ?? 'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
+          response.orderId ??
+              'order_mock_${DateTime.now().millisecondsSinceEpoch}',
+          response.paymentId ??
+              'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
           response.signature ?? 'mock_signature',
         );
       }
@@ -159,8 +164,10 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
       final boost = _boostOptions[_selectedBoostOption];
       _confirmBoostPurchase(
         boost['count'],
-        response.orderId ?? 'order_mock_${DateTime.now().millisecondsSinceEpoch}',
-        response.paymentId ?? 'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
+        response.orderId ??
+            'order_mock_${DateTime.now().millisecondsSinceEpoch}',
+        response.paymentId ??
+            'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
         response.signature ?? 'mock_signature',
       );
     }
@@ -193,7 +200,9 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Failed to initiate subscription payment. Please try again.'),
+          content: Text(
+            'Failed to initiate subscription payment. Please try again.',
+          ),
           backgroundColor: Colors.red,
         ),
       );
@@ -210,10 +219,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
       'name': 'Lunara VIP',
       'description': 'Subscription - ${pkg['name']}',
       'order_id': orderId,
-      'prefill': {
-        'contact': '8888888888',
-        'email': 'vip@lunara.com'
-      }
+      'prefill': {'contact': '8888888888', 'email': 'vip@lunara.com'},
     };
 
     bool razorpayOpened = false;
@@ -227,8 +233,55 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
     if (!razorpayOpened) {
       // Simulate checkout callback in test/simulated environment
       Future.delayed(const Duration(seconds: 2), () {
-        _confirmPackagePurchase(pkg['id'], orderId, 'pay_mock_${DateTime.now().millisecondsSinceEpoch}', 'mock_signature');
+        _confirmPackagePurchase(
+          pkg['id'],
+          orderId,
+          'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
+          'mock_signature',
+        );
       });
+    }
+  }
+
+  int _getTierRank(String? t) {
+    if (t == null) return -1;
+    const order = ['CORE', 'PLUS', 'PRO', 'ELITE'];
+    return order.indexOf(t.toUpperCase());
+  }
+
+  Future<void> _confirmPlanAction(
+    String actionText,
+    dynamic pkg,
+    double price,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          'Confirm $actionText',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          'You are currently on the ${_activePackageTier ?? "FREE"} plan. Are you sure you want to ${actionText.toLowerCase()} to the ${pkg['tier']} plan for ₹${price.toStringAsFixed(0)}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: LunaraTheme.electricViolet,
+            ),
+            child: const Text('Proceed', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      _initiatePurchase();
     }
   }
 
@@ -260,10 +313,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
       'name': 'Lunara Profile Boost',
       'description': 'Boost Pack - ${boost['label']}',
       'order_id': orderId,
-      'prefill': {
-        'contact': '8888888888',
-        'email': 'boost@lunara.com'
-      }
+      'prefill': {'contact': '8888888888', 'email': 'boost@lunara.com'},
     };
 
     bool razorpayOpened = false;
@@ -276,12 +326,22 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
 
     if (!razorpayOpened) {
       Future.delayed(const Duration(seconds: 2), () {
-        _confirmBoostPurchase(boost['count'], orderId, 'pay_mock_${DateTime.now().millisecondsSinceEpoch}', 'mock_signature');
+        _confirmBoostPurchase(
+          boost['count'],
+          orderId,
+          'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
+          'mock_signature',
+        );
       });
     }
   }
 
-  Future<void> _confirmPackagePurchase(String packageId, String orderId, String paymentId, String signature) async {
+  Future<void> _confirmPackagePurchase(
+    String packageId,
+    String orderId,
+    String paymentId,
+    String signature,
+  ) async {
     final data = await ApiService.purchaseSubscription(
       packageId: packageId,
       gatewayOrderId: orderId,
@@ -293,20 +353,30 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
 
     if (data != null) {
       SubscriptionProvider.instance.refreshAfterPurchase();
-      _showSuccessDialog('Subscription Activated!', 'You have successfully upgraded your tier.');
+      _showSuccessDialog(
+        'Subscription Activated!',
+        'You have successfully upgraded your tier.',
+      );
       _loadData();
     } else {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Failed to activate subscription. Please contact support.'),
+          content: Text(
+            'Failed to activate subscription. Please contact support.',
+          ),
           backgroundColor: Colors.red,
         ),
       );
     }
   }
 
-  Future<void> _confirmBoostPurchase(int boostCount, String orderId, String paymentId, String signature) async {
+  Future<void> _confirmBoostPurchase(
+    int boostCount,
+    String orderId,
+    String paymentId,
+    String signature,
+  ) async {
     final data = await ApiService.purchaseBoost(
       boostCount: boostCount,
       gatewayOrderId: orderId,
@@ -318,7 +388,10 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
 
     if (data != null) {
       SubscriptionProvider.instance.refreshAfterPurchase();
-      _showSuccessDialog('Boosts Credited!', '$boostCount profile boosts have been added to your account.');
+      _showSuccessDialog(
+        'Boosts Credited!',
+        '$boostCount profile boosts have been added to your account.',
+      );
       _loadData();
     } else {
       if (!mounted) return;
@@ -356,10 +429,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
       setState(() => _isProcessing = false);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
       );
     }
   }
@@ -381,13 +451,21 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
                   color: Colors.green,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.check_rounded, color: Colors.white, size: 48),
+                child: const Icon(
+                  Icons.check_rounded,
+                  color: Colors.white,
+                  size: 48,
+                ),
               ),
               const SizedBox(height: 24),
               Text(
                 title,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 8),
               Text(
@@ -404,9 +482,14 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white,
                     foregroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
-                  child: const Text('GREAT', style: TextStyle(fontWeight: FontWeight.bold)),
+                  child: const Text(
+                    'GREAT',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                 ),
               ),
             ],
@@ -424,22 +507,29 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
         title: Text(
           'LUNARA VIP',
           style: TextStyle(
-            fontWeight: FontWeight.w900, 
-            color: Theme.of(context).colorScheme.onSurface, 
-            letterSpacing: 1
+            fontWeight: FontWeight.w900,
+            color: Theme.of(context).colorScheme.onSurface,
+            letterSpacing: 1,
           ),
         ),
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
         centerTitle: true,
-        iconTheme: IconThemeData(color: Theme.of(context).colorScheme.onSurface),
+        iconTheme: IconThemeData(
+          color: Theme.of(context).colorScheme.onSurface,
+        ),
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: LunaraTheme.electricViolet,
           indicatorWeight: 3,
           labelColor: Theme.of(context).colorScheme.onSurface,
-          unselectedLabelColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
-          labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          unselectedLabelColor: Theme.of(
+            context,
+          ).colorScheme.onSurface.withValues(alpha: 0.38),
+          labelStyle: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+          ),
           tabs: const [
             Tab(text: 'VIP PASSES'),
             Tab(text: 'PROFILE BOOST'),
@@ -447,13 +537,14 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
         ),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: LunaraTheme.electricViolet))
+          ? const Center(
+              child: CircularProgressIndicator(
+                color: LunaraTheme.electricViolet,
+              ),
+            )
           : TabBarView(
               controller: _tabController,
-              children: [
-                _buildVIPPassesTab(),
-                _buildProfileBoostTab(),
-              ],
+              children: [_buildVIPPassesTab(), _buildProfileBoostTab()],
             ),
     );
   }
@@ -463,8 +554,12 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
     if (pkg == null) {
       return Center(
         child: Text(
-          'No subscription plans available.', 
-          style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7)),
+          'No subscription plans available.',
+          style: TextStyle(
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.7),
+          ),
         ),
       );
     }
@@ -472,6 +567,20 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
     final double price = double.tryParse(pkg['price'].toString()) ?? 0.0;
     final String tier = pkg['tier'];
     final bool isActive = _activePackageId == pkg['id'];
+
+    final int currentRank = _getTierRank(_activePackageTier);
+    final int selectedRank = _getTierRank(tier);
+
+    String actionText = 'GET PLAN';
+    if (currentRank >= 0) {
+      if (selectedRank > currentRank) {
+        actionText = 'UPGRADE';
+      } else if (selectedRank < currentRank) {
+        actionText = 'DOWNGRADE';
+      } else {
+        actionText = 'SWITCH PLAN';
+      }
+    }
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -490,7 +599,10 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
                 if (tierName == 'PRO') label = 'Pro';
                 if (tierName == 'ELITE') label = 'Elite VIP';
 
-                final firstPkg = _allPackages.firstWhere((p) => p['tier'] == tierName, orElse: () => null);
+                final firstPkg = _allPackages.firstWhere(
+                  (p) => p['tier'] == tierName,
+                  orElse: () => null,
+                );
                 final color = _getPlanThemeColor(firstPkg);
                 return Padding(
                   padding: const EdgeInsets.only(right: 8.0),
@@ -510,10 +622,12 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
             Text(
               'SELECT PLAN DURATION',
               style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), 
-                fontSize: 11, 
-                fontWeight: FontWeight.bold, 
-                letterSpacing: 1
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.6),
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1,
               ),
             ),
             const SizedBox(height: 12),
@@ -530,19 +644,31 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
             width: double.infinity,
             height: 56,
             child: ElevatedButton(
-              onPressed: _isProcessing ? null : (isActive ? null : _initiatePurchase),
+              onPressed: _isProcessing
+                  ? null
+                  : (isActive
+                        ? null
+                        : () => _confirmPlanAction(actionText, pkg, price)),
               style: ElevatedButton.styleFrom(
-                backgroundColor: isActive ? Colors.grey[800] : _getPlanThemeColor(pkg),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                backgroundColor: isActive
+                    ? Colors.grey[800]
+                    : _getPlanThemeColor(pkg),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
               ),
               child: _isProcessing
                   ? const CircularProgressIndicator(color: Colors.white)
                   : Text(
-                      isActive ? 'CURRENT PLAN' : 'UPGRADE FOR ₹${price.toStringAsFixed(0)}',
+                      isActive
+                          ? 'CURRENT PLAN'
+                          : '$actionText FOR ₹${price.toStringAsFixed(0)}',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: tier == 'ELITE' && !isActive ? Colors.black : Colors.white,
+                        color: tier == 'ELITE' && !isActive
+                            ? Colors.black
+                            : Colors.white,
                         letterSpacing: 1,
                       ),
                     ),
@@ -557,7 +683,8 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
   Widget _buildProfileBoostTab() {
     final selectedBoost = _boostOptions[_selectedBoostOption];
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final hasActiveBoosts = _boostsRemaining > 0 || _activePackageTier == 'ELITE';
+    final hasActiveBoosts =
+        _boostsRemaining > 0 || _activePackageTier == 'ELITE';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -579,7 +706,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
                   color: Colors.purple.withValues(alpha: 0.2),
                   blurRadius: 15,
                   offset: const Offset(0, 8),
-                )
+                ),
               ],
             ),
             child: const Row(
@@ -590,12 +717,21 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
                     children: [
                       Text(
                         'BOOST YOUR VISIBILITY',
-                        style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900, letterSpacing: -0.5),
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.5,
+                        ),
                       ),
                       SizedBox(height: 8),
                       Text(
                         'Get up to 10x more likes, views, and responses! Your profile goes straight to the top of discovery in your area.',
-                        style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 13,
+                          height: 1.4,
+                        ),
                       ),
                     ],
                   ),
@@ -614,7 +750,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: isDark 
+                  colors: isDark
                       ? [const Color(0xFF2E1A47), const Color(0xFF140D24)]
                       : [Colors.purple.shade50, Colors.white],
                   begin: Alignment.topLeft,
@@ -652,7 +788,9 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            _activePackageTier == 'ELITE' ? 'UNLIMITED BOOSTS' : '$_boostsRemaining BOOSTS AVAILABLE',
+                            _activePackageTier == 'ELITE'
+                                ? 'UNLIMITED BOOSTS'
+                                : '$_boostsRemaining BOOSTS AVAILABLE',
                             style: TextStyle(
                               color: isDark ? Colors.white : Colors.black87,
                               fontSize: 20,
@@ -718,10 +856,12 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
           Text(
             'SELECT BOOST PACKAGE',
             style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), 
-              fontSize: 11, 
-              fontWeight: FontWeight.bold, 
-              letterSpacing: 1
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.6),
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1,
             ),
           ),
           const SizedBox(height: 16),
@@ -742,10 +882,14 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
               final isSelected = _selectedBoostOption == index;
               final gridItemBg = isSelected
                   ? Colors.purple.withValues(alpha: 0.15)
-                  : (isDark ? const Color(0xFF16161E) : const Color(0xFFF2F2F7));
+                  : (isDark
+                        ? const Color(0xFF16161E)
+                        : const Color(0xFFF2F2F7));
               final gridItemBorder = isSelected
                   ? Colors.purple
-                  : (isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05));
+                  : (isDark
+                        ? Colors.white.withValues(alpha: 0.05)
+                        : Colors.black.withValues(alpha: 0.05));
               final labelColor = isDark ? Colors.white : Colors.black87;
               final priceColor = isSelected
                   ? Colors.purpleAccent
@@ -758,10 +902,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
                   decoration: BoxDecoration(
                     color: gridItemBg,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: gridItemBorder,
-                      width: 2,
-                    ),
+                    border: Border.all(color: gridItemBorder, width: 2),
                   ),
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
@@ -770,7 +911,11 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
                       children: [
                         Text(
                           option['label'],
-                          style: TextStyle(color: labelColor, fontWeight: FontWeight.bold, fontSize: 16),
+                          style: TextStyle(
+                            color: labelColor,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
                         ),
                         const SizedBox(height: 6),
                         Text(
@@ -802,13 +947,20 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
               onPressed: _isProcessing ? null : _initiateBoostPurchase,
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.purple,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
               ),
               child: _isProcessing
                   ? const CircularProgressIndicator(color: Colors.white)
                   : Text(
                       'PURCHASE FOR ₹${selectedBoost['price']}',
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 1),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        letterSpacing: 1,
+                      ),
                     ),
             ),
           ),
@@ -825,7 +977,9 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
         : (isDark ? const Color(0xFF16161E) : const Color(0xFFF2F2F7));
     final pillBorderColor = isSelected
         ? color
-        : (isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05));
+        : (isDark
+              ? Colors.white.withValues(alpha: 0.05)
+              : Colors.black.withValues(alpha: 0.05));
     final pillTextColor = isSelected
         ? color
         : (isDark ? Colors.white60 : Colors.black54);
@@ -845,10 +999,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
         decoration: BoxDecoration(
           color: pillBgColor,
           borderRadius: BorderRadius.circular(30),
-          border: Border.all(
-            color: pillBorderColor,
-            width: 1.5,
-          ),
+          border: Border.all(color: pillBorderColor, width: 1.5),
         ),
         child: Text(
           label.toUpperCase(),
@@ -870,7 +1021,11 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
     final int duration = pkg['durationDays'] ?? 0;
     final bool isActive = _activePackageId == pkg['id'];
 
-    final String? badgeText = pkg['badge'] ?? (pkg['is_popular'] == true ? 'POPULAR' : (pkg['is_recommended'] == true ? 'RECOMMENDED' : null));
+    final String? badgeText =
+        pkg['badge'] ??
+        (pkg['is_popular'] == true
+            ? 'POPULAR'
+            : (pkg['is_recommended'] == true ? 'RECOMMENDED' : null));
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardBgColor = isDark ? const Color(0xFF16161E) : Colors.white;
@@ -889,13 +1044,15 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
         ),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: color.withValues(alpha: 0.3), width: 1.5),
-        boxShadow: isDark ? [] : [
-          BoxShadow(
-            color: color.withValues(alpha: 0.08),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
+        boxShadow: isDark
+            ? []
+            : [
+                BoxShadow(
+                  color: color.withValues(alpha: 0.08),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -905,7 +1062,12 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
               Expanded(
                 child: Text(
                   name.toUpperCase(),
-                  style: TextStyle(color: color, fontSize: 24, fontWeight: FontWeight.w900, letterSpacing: -0.5),
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.5,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -918,7 +1080,10 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
                   children: [
                     if (badgeText != null && badgeText.isNotEmpty)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: color.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(8),
@@ -926,12 +1091,19 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
                         ),
                         child: Text(
                           badgeText.toUpperCase(),
-                          style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            color: color,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     if (isActive)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.green.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(10),
@@ -939,7 +1111,11 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
                         ),
                         child: Text(
                           'ACTIVE • $_activeRemainingDays DAYS',
-                          style: const TextStyle(color: Colors.green, fontSize: 9, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            color: Colors.green,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
                           maxLines: 1,
                         ),
                       ),
@@ -955,12 +1131,20 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
             children: [
               Text(
                 '₹${price.toStringAsFixed(0)}',
-                style: TextStyle(color: textOnCardColor, fontSize: 36, fontWeight: FontWeight.w900),
+                style: TextStyle(
+                  color: textOnCardColor,
+                  fontSize: 36,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
               const SizedBox(width: 8),
               Text(
                 '/ $duration DAYS',
-                style: TextStyle(color: subTextOnCardColor, fontSize: 14, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: subTextOnCardColor,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ],
           ),
@@ -978,19 +1162,24 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
     final pkgs = _packagesForSelectedTier;
     if (pkgs.isEmpty) return const SizedBox.shrink();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final itemBgColor = isDark ? const Color(0xFF16161E) : const Color(0xFFF2F2F7);
-    final borderUnselectedColor = isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05);
+    final itemBgColor = isDark
+        ? const Color(0xFF16161E)
+        : const Color(0xFFF2F2F7);
+    final borderUnselectedColor = isDark
+        ? Colors.white.withValues(alpha: 0.05)
+        : Colors.black.withValues(alpha: 0.05);
 
     final color = _getPlanThemeColor(_selectedPackage);
 
     return Row(
       children: List.generate(pkgs.length, (index) {
         final item = pkgs[index];
-        final currentSelectedIdx = _selectedDurationIndexMap[_selectedPlanIndex] ?? 0;
+        final currentSelectedIdx =
+            _selectedDurationIndexMap[_selectedPlanIndex] ?? 0;
         final isSelected = currentSelectedIdx == index;
         final int days = item['durationDays'] ?? 0;
         final double price = double.tryParse(item['price'].toString()) ?? 0.0;
-        
+
         String label = '${days}d';
         if (days == 7) label = '7d';
         if (days == 14) label = '14d';
@@ -1024,7 +1213,9 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
                   Text(
                     label.toUpperCase(),
                     style: TextStyle(
-                      color: isSelected ? color : (isDark ? Colors.white70 : Colors.black87),
+                      color: isSelected
+                          ? color
+                          : (isDark ? Colors.white70 : Colors.black87),
                       fontWeight: FontWeight.bold,
                       fontSize: 13,
                     ),
@@ -1033,7 +1224,9 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
                   Text(
                     '₹${price.toStringAsFixed(0)}',
                     style: TextStyle(
-                      color: isSelected ? (isDark ? Colors.white : Colors.black) : (isDark ? Colors.white38 : Colors.black38),
+                      color: isSelected
+                          ? (isDark ? Colors.white : Colors.black)
+                          : (isDark ? Colors.white38 : Colors.black38),
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
                     ),
@@ -1046,8 +1239,6 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
       }),
     );
   }
-
-
 
   Widget _buildDynamicFeatures(dynamic pkg) {
     final String tier = pkg['tier'] ?? '';
@@ -1094,42 +1285,78 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
               desc = 'See who viewed your profile';
             }
           }
-          benefits.add({
-            'title': name,
-            'desc': desc,
-          });
+          benefits.add({'title': name, 'desc': desc});
         }
       }
     }
 
     // Backwards compatibility fallback if no features mapped
     if (benefits.isEmpty) {
-      if (tier == 'CORE' || tier == 'PLUS' || tier == 'PRO' || tier == 'ELITE') {
+      if (tier == 'CORE' ||
+          tier == 'PLUS' ||
+          tier == 'PRO' ||
+          tier == 'ELITE') {
         benefits.addAll([
-          {'title': 'Send Unlimited Match Requests', 'desc': 'No daily swipe restrictions'},
-          {'title': 'Unlimited Posts & Likes', 'desc': 'Share and engage with no limits'},
-          {'title': 'Who Liked/Viewed Your Profile', 'desc': 'Unmask interested users instantly'},
+          {
+            'title': 'Send Unlimited Match Requests',
+            'desc': 'No daily swipe restrictions',
+          },
+          {
+            'title': 'Unlimited Posts & Likes',
+            'desc': 'Share and engage with no limits',
+          },
+          {
+            'title': 'Who Liked/Viewed Your Profile',
+            'desc': 'Unmask interested users instantly',
+          },
         ]);
       }
       if (tier == 'PLUS' || tier == 'PRO' || tier == 'ELITE') {
         benefits.addAll([
-          {'title': '10 Superlikes Per Cycle', 'desc': 'Stand out in their notifications'},
-          {'title': '2 Free Profile Boosts', 'desc': 'Automatic ranking push in searches'},
-          {'title': 'Hide Profile Mode', 'desc': 'Browse matches silently and anonymously'},
+          {
+            'title': '10 Superlikes Per Cycle',
+            'desc': 'Stand out in their notifications',
+          },
+          {
+            'title': '2 Free Profile Boosts',
+            'desc': 'Automatic ranking push in searches',
+          },
+          {
+            'title': 'Hide Profile Mode',
+            'desc': 'Browse matches silently and anonymously',
+          },
         ]);
       }
       if (tier == 'PRO' || tier == 'ELITE') {
         benefits.addAll([
-          {'title': 'Priority Visibility', 'desc': 'Appear in front of users before non-Pro users'},
-          {'title': '4 Free Profile Boosts', 'desc': 'Enhanced package cycle boosts'},
-          {'title': 'Trust Badge', 'desc': 'Adds a premium verify check on your profile'},
+          {
+            'title': 'Priority Visibility',
+            'desc': 'Appear in front of users before non-Pro users',
+          },
+          {
+            'title': '4 Free Profile Boosts',
+            'desc': 'Enhanced package cycle boosts',
+          },
+          {
+            'title': 'Trust Badge',
+            'desc': 'Adds a premium verify check on your profile',
+          },
         ]);
       }
       if (tier == 'ELITE') {
         benefits.addAll([
-          {'title': 'Maximum Profile Boost', 'desc': 'Stay at the very top of search feeds'},
-          {'title': 'Elite User Badge', 'desc': 'Exclusive premium badge layout'},
-          {'title': 'Early Access to Pro Features', 'desc': 'Test and access new updates first'},
+          {
+            'title': 'Maximum Profile Boost',
+            'desc': 'Stay at the very top of search feeds',
+          },
+          {
+            'title': 'Elite User Badge',
+            'desc': 'Exclusive premium badge layout',
+          },
+          {
+            'title': 'Early Access to Pro Features',
+            'desc': 'Test and access new updates first',
+          },
         ]);
       }
     }
@@ -1140,10 +1367,12 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
         Text(
           'INCLUDED BENEFITS',
           style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), 
-            fontSize: 11, 
-            fontWeight: FontWeight.bold, 
-            letterSpacing: 1
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.6),
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1,
           ),
         ),
         const SizedBox(height: 16),
@@ -1161,7 +1390,10 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
           Container(
             margin: const EdgeInsets.only(top: 2),
             padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(color: color.withValues(alpha: 0.15), shape: BoxShape.circle),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
             child: Icon(Icons.check_rounded, color: color, size: 14),
           ),
           const SizedBox(width: 14),
@@ -1172,17 +1404,19 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
                 Text(
                   title,
                   style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface, 
-                    fontWeight: FontWeight.bold, 
-                    fontSize: 14
+                    color: Theme.of(context).colorScheme.onSurface,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   desc,
                   style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4), 
-                    fontSize: 11
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.4),
+                    fontSize: 11,
                   ),
                 ),
               ],
@@ -1212,14 +1446,24 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
         children: [
           Container(
             padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(color: Colors.purple.withValues(alpha: 0.1), shape: BoxShape.circle),
-            child: const Icon(Icons.bolt_rounded, color: Colors.purpleAccent, size: 16),
+            decoration: BoxDecoration(
+              color: Colors.purple.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.bolt_rounded,
+              color: Colors.purpleAccent,
+              size: 16,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
               text,
-              style: TextStyle(color: isDark ? const Color(0xCCFFFFFF) : Colors.black87, fontSize: 13),
+              style: TextStyle(
+                color: isDark ? const Color(0xCCFFFFFF) : Colors.black87,
+                fontSize: 13,
+              ),
             ),
           ),
         ],
@@ -1248,12 +1492,15 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen> with SingleTi
     if (pkg == null) return '';
     final String? desc = pkg['description'];
     if (desc != null && desc.isNotEmpty) return desc;
-    
+
     final String tier = pkg['tier'] ?? '';
-    if (tier == 'CORE') return 'Perfect for daily swiping and standard messaging.';
+    if (tier == 'CORE')
+      return 'Perfect for daily swiping and standard messaging.';
     if (tier == 'PLUS') return 'Boost your reach and browse anonymously.';
-    if (tier == 'PRO') return 'Stand out from the crowd with priority visibility.';
-    if (tier == 'ELITE') return 'Maximum features, priority entry, and elite badges.';
+    if (tier == 'PRO')
+      return 'Stand out from the crowd with priority visibility.';
+    if (tier == 'ELITE')
+      return 'Maximum features, priority entry, and elite badges.';
     return '';
   }
 }

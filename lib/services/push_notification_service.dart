@@ -302,13 +302,24 @@ class PushNotificationService {
     switch (type) {
       case 'strangers_meet_join_request':
       case 'strangers_meet_request_accepted':
+      case 'strangers_meet_request_rejected':
       case 'strangers_meet_payment_success':
       case 'strangers_meet_participant_joined':
       case 'strangers_meet_approved':
       case 'strangers_meet_request_submitted':
       case 'strangers_meet_settlement_paid':
       case 'strangers_meet_published':
-        final requestId = data['requestId']?.toString();
+      case 'strangers_meet_awaiting_payment':
+      case 'strangers_meet_starting_soon':
+      case 'STRANGER_MEET_ACCEPTED':
+      case 'STRANGER_MEET_DECLINED':
+      case 'STRANGER_MEET_JOIN_REQUEST':
+        final requestId = data['requestId']?.toString() ??
+            data['id']?.toString() ??
+            data['entityId']?.toString() ??
+            data['strangersMeetRequestId']?.toString() ??
+            data['meetId']?.toString() ??
+            data['partyId']?.toString();
         if (requestId != null && requestId.isNotEmpty) {
           _navigateToStrangersMeet(navigator, requestId);
         } else {

@@ -95,12 +95,28 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
   }
 
   void _reportUser() {
+    final TextEditingController reasonController = TextEditingController();
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Report User'),
-        content: const Text(
-          'Are you sure you want to report and block this user?',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Are you sure you want to report and block this user?'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: reasonController,
+              decoration: const InputDecoration(
+                labelText: "What's wrong?",
+                hintText: 'Please provide a reason',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -109,11 +125,19 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
           ),
           TextButton(
             onPressed: () async {
+              final reason = reasonController.text.trim();
+              if (reason.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Please provide a reason to report this user.',
+                    ),
+                  ),
+                );
+                return;
+              }
               Navigator.pop(ctx);
-              await BlockService.reportUser(
-                _currentUser.id,
-                'Inappropriate profile content',
-              );
+              await BlockService.reportUser(_currentUser.id, reason);
               _checkBlockStatus();
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -181,13 +205,15 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
 
     // Section 2: Work & Education
     final List<Widget> workEduRows = [];
-    if (_currentUser.occupation != null && _currentUser.occupation!.isNotEmpty) {
+    if (_currentUser.occupation != null &&
+        _currentUser.occupation!.isNotEmpty) {
       String occ = _currentUser.occupation!;
       if (_currentUser.company != null && _currentUser.company!.isNotEmpty) {
         occ += ' at ${_currentUser.company}';
       }
       workEduRows.add(_buildInfoRow(Icons.work_outline_rounded, occ));
-    } else if (_currentUser.company != null && _currentUser.company!.isNotEmpty) {
+    } else if (_currentUser.company != null &&
+        _currentUser.company!.isNotEmpty) {
       workEduRows.add(
         _buildInfoRow(Icons.business_outlined, _currentUser.company!),
       );
@@ -285,18 +311,20 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
     if (_currentUser.smokingPreference != null &&
         _currentUser.smokingPreference!.isNotEmpty) {
       final smokeVal = _currentUser.smokingPreference!.toUpperCase();
-      final isNonSmoker = smokeVal.contains('NON') || smokeVal == 'NEVER' || smokeVal == 'NO';
+      final isNonSmoker =
+          smokeVal.contains('NON') || smokeVal == 'NEVER' || smokeVal == 'NO';
       final IconData smokeIcon = isNonSmoker
           ? Icons.smoke_free_rounded
           : Icons.smoking_rooms_rounded;
 
-      prefRows.add(
-        _buildInfoRow(smokeIcon, _currentUser.smokingPreference!),
-      );
+      prefRows.add(_buildInfoRow(smokeIcon, _currentUser.smokingPreference!));
     }
     if (_currentUser.drinkPreference.isNotEmpty) {
       final drinkVal = _currentUser.drinkPreference.join(', ').toUpperCase();
-      final isNonDrinker = drinkVal.contains('NEVER') || drinkVal == 'NO' || drinkVal.contains('NON');
+      final isNonDrinker =
+          drinkVal.contains('NEVER') ||
+          drinkVal == 'NO' ||
+          drinkVal.contains('NON');
       final IconData drinkIcon = isNonDrinker
           ? Icons.no_drinks_rounded
           : Icons.local_bar_rounded;
@@ -603,7 +631,11 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                 child: _buildNavBtn(
                   child: IconButton(
                     padding: EdgeInsets.zero,
-                    icon: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 22),
+                    icon: const Icon(
+                      Icons.arrow_back_rounded,
+                      color: Colors.white,
+                      size: 22,
+                    ),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ),
@@ -615,15 +647,25 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                   child: widget.isMe
                       ? IconButton(
                           padding: EdgeInsets.zero,
-                          icon: const Icon(Icons.settings_outlined, color: Colors.white, size: 22),
+                          icon: const Icon(
+                            Icons.settings_outlined,
+                            color: Colors.white,
+                            size: 22,
+                          ),
                           onPressed: () => Navigator.push(
                             context,
-                            MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                            MaterialPageRoute(
+                              builder: (_) => const SettingsScreen(),
+                            ),
                           ),
                         )
                       : PopupMenuButton<String>(
                           padding: EdgeInsets.zero,
-                          icon: const Icon(Icons.more_vert, color: Colors.white, size: 22),
+                          icon: const Icon(
+                            Icons.more_vert,
+                            color: Colors.white,
+                            size: 22,
+                          ),
                           color: Colors.white,
                           onSelected: (value) async {
                             if (value == 'block') {
@@ -632,19 +674,22 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                               _reportUser();
                             }
                           },
-                          itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                            PopupMenuItem<String>(
-                              value: 'block',
-                              child: Text(_isBlocked ? 'Unblock User' : 'Block User'),
-                            ),
-                            const PopupMenuItem<String>(
-                              value: 'report',
-                              child: Text(
-                                'Report User',
-                                style: TextStyle(color: Colors.red),
-                              ),
-                            ),
-                          ],
+                          itemBuilder: (BuildContext context) =>
+                              <PopupMenuEntry<String>>[
+                                PopupMenuItem<String>(
+                                  value: 'block',
+                                  child: Text(
+                                    _isBlocked ? 'Unblock User' : 'Block User',
+                                  ),
+                                ),
+                                const PopupMenuItem<String>(
+                                  value: 'report',
+                                  child: Text(
+                                    'Report User',
+                                    style: TextStyle(color: Colors.red),
+                                  ),
+                                ),
+                              ],
                         ),
                 ),
               ),
@@ -910,7 +955,9 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                   gradient: LunaraTheme.amberGlow,
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.amber.withValues(alpha: isDark ? 0.35 : 0.15),
+                      color: Colors.amber.withValues(
+                        alpha: isDark ? 0.35 : 0.15,
+                      ),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),
@@ -951,7 +998,9 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFFF2A6D).withValues(alpha: isDark ? 0.35 : 0.15),
+                    color: const Color(
+                      0xFFFF2A6D,
+                    ).withValues(alpha: isDark ? 0.35 : 0.15),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
@@ -995,19 +1044,21 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                           end: Alignment.bottomRight,
                         )
                       : likeDisabled
-                          ? LinearGradient(
-                              colors: [Colors.grey.shade400, Colors.grey.shade500],
-                            )
-                          : const LinearGradient(
-                              colors: [Color(0xFF00B5FF), Color(0xFF00E5FF)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
+                      ? LinearGradient(
+                          colors: [Colors.grey.shade400, Colors.grey.shade500],
+                        )
+                      : const LinearGradient(
+                          colors: [Color(0xFF00B5FF), Color(0xFF00E5FF)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
                   boxShadow: [
                     BoxShadow(
                       color: isLiked
                           ? const Color(0xFF00C853).withValues(alpha: 0.5)
-                          : const Color(0xFF00B5FF).withValues(alpha: isDark ? 0.4 : 0.2),
+                          : const Color(
+                              0xFF00B5FF,
+                            ).withValues(alpha: isDark ? 0.4 : 0.2),
                       blurRadius: isLiked ? 16 : 12,
                       offset: const Offset(0, 5),
                     ),
@@ -1063,19 +1114,21 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                           end: Alignment.bottomRight,
                         )
                       : superLikeDisabled
-                          ? LinearGradient(
-                              colors: [Colors.grey.shade400, Colors.grey.shade500],
-                            )
-                          : const LinearGradient(
-                              colors: [Color(0xFF7F00FF), Color(0xFFB952EB)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
+                      ? LinearGradient(
+                          colors: [Colors.grey.shade400, Colors.grey.shade500],
+                        )
+                      : const LinearGradient(
+                          colors: [Color(0xFF7F00FF), Color(0xFFB952EB)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
                   boxShadow: [
                     BoxShadow(
                       color: isSuperLiked
                           ? const Color(0xFFFFD700).withValues(alpha: 0.6)
-                          : const Color(0xFF7F00FF).withValues(alpha: isDark ? 0.35 : 0.15),
+                          : const Color(
+                              0xFF7F00FF,
+                            ).withValues(alpha: isDark ? 0.35 : 0.15),
                       blurRadius: isSuperLiked ? 18 : 10,
                       offset: const Offset(0, 4),
                     ),
@@ -1086,7 +1139,9 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                     isSuperLiked ? Icons.star : Icons.star_border,
                     color: Colors.white,
                   ),
-                  onPressed: (isActed || superLikeDisabled) ? null : widget.onSuper,
+                  onPressed: (isActed || superLikeDisabled)
+                      ? null
+                      : widget.onSuper,
                 ),
               ),
               const SizedBox(height: 6),
