@@ -1222,5 +1222,304 @@ export const getVenueWiseBookingSummary = async (req: Request, res: Response) =>
     }
 };
 
+export const getVenueRevenueDetails = async (req: Request, res: Response) => {
+    try {
+        const { venueId, period = 'monthly', fromDate, toDate, page = '1', limit = '15', search, status } = req.query;
+
+        if (!venueId) {
+            return res.status(400).json({ success: false, message: 'venueId is required' });
+        }
+
+        const venue = await Venue.findByPk(venueId as string);
+
+        if (!venue) {
+            return res.status(404).json({ success: false, message: 'Venue not found' });
+        }
+
+        // Determine date range filters
+        let startDate: Date;
+        let endDate: Date = new Date();
+        endDate.setHours(23, 59, 59, 999);
+
+        const periodStr = (period as string).toLowerCase();
+
+        if (periodStr === 'custom' && fromDate && toDate) {
+            startDate = new Date(fromDate as string);
+            startDate.setHours(0, 0, 0, 0);
+            endDate = new Date(toDate as string);
+            endDate.setHours(23, 59, 59, 999);
+        } else if (periodStr === 'daily') {
+            // Default last 30 days
+            startDate = new Date();
+            startDate.setDate(startDate.getDate() - 29);
+            startDate.setHours(0, 0, 0, 0);
+            if (fromDate) startDate = new Date(fromDate as string);
+            if (toDate) endDate = new Date(toDate as string);
+        } else if (periodStr === 'weekly') {
+            // Default last 12 weeks
+            startDate = new Date();
+            startDate.setDate(startDate.getDate() - (12 * 7));
+            startDate.setHours(0, 0, 0, 0);
+        } else if (periodStr === 'yearly') {
+            // Default last 5 years
+            startDate = new Date();
+            startDate.setFullYear(startDate.getFullYear() - 4, 0, 1);
+            startDate.setHours(0, 0, 0, 0);
+        } else {
+            // Monthly - default last 12 months
+            startDate = new Date();
+            startDate.setMonth(startDate.getMonth() - 11, 1);
+            startDate.setHours(0, 0, 0, 0);
+        }
+
+        // Build Booking query
+        let bookingWhere: any = {
+            venueId: venue.id,
+            bookingDate: { [Op.between]: [startDate.toISOString().split('T')[0], endDate.toISOString().split('T')[0]] }
+        };
+
+        if (status && status !== 'all') {
+            bookingWhere.status = status;
+        }
+
+        // Fetch bookings with payments & user info
+        const bookings = await Booking.findAll({
+            where: bookingWhere,
+            include: [
+                {
+                    model: Payment,
+                    as: 'payments',
+                    attributes: ['amount', 'refundAmount', 'status']
+                },
+                {
+                    model: User,
+                    as: 'user',
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'mobileNumber']
+                }
+            ],
+            order: [['bookingDate', 'DESC'], ['createdAt', 'DESC']]
+        });
+
+        // Initialize KPIs
+        let summary = {
+            totalBookings: 0,
+            confirmedBookings: 0,
+            pendingBookings: 0,
+            cancelledBookings: 0,
+            completedBookings: 0,
+            totalBookingAmount: 0,
+            paidAmount: 0,
+            pendingAmount: 0,
+            refundAmount: 0,
+            avgBookingValue: 0
+        };
+
+        // Mode breakdown
+        const modeBreakdown: Record<string, { count: number; totalAmount: number; paidAmount: number }> = {
+            solo: { count: 0, totalAmount: 0, paidAmount: 0 },
+            party_request: { count: 0, totalAmount: 0, paidAmount: 0 },
+            group_party: { count: 0, totalAmount: 0, paidAmount: 0 },
+            large_party: { count: 0, totalAmount: 0, paidAmount: 0 },
+            upcoming_night: { count: 0, totalAmount: 0, paidAmount: 0 }
+        };
+
+        // Trend aggregation map
+        const trendMap = new Map<string, { label: string; dateKey: string; totalAmount: number; paidAmount: number; pendingAmount: number; bookingCount: number }>();
+
+        // Pre-fill trend keys for smooth charts
+        if (periodStr === 'daily' || periodStr === 'custom') {
+            const curr = new Date(startDate);
+            while (curr <= endDate) {
+                const dateKey = curr.toISOString().split('T')[0];
+                const label = curr.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+                trendMap.set(dateKey, { label, dateKey, totalAmount: 0, paidAmount: 0, pendingAmount: 0, bookingCount: 0 });
+                curr.setDate(curr.getDate() + 1);
+            }
+        } else if (periodStr === 'weekly') {
+            for (let i = 11; i >= 0; i--) {
+                const d = new Date();
+                d.setDate(d.getDate() - (i * 7));
+                const wkNum = getWeekNumber(d);
+                const dateKey = `W${wkNum}-${d.getFullYear()}`;
+                const label = `W${wkNum} (${d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })})`;
+                trendMap.set(dateKey, { label, dateKey, totalAmount: 0, paidAmount: 0, pendingAmount: 0, bookingCount: 0 });
+            }
+        } else if (periodStr === 'monthly') {
+            for (let i = 11; i >= 0; i--) {
+                const d = new Date();
+                d.setMonth(d.getMonth() - i, 1);
+                const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                const label = d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+                trendMap.set(dateKey, { label, dateKey, totalAmount: 0, paidAmount: 0, pendingAmount: 0, bookingCount: 0 });
+            }
+        } else if (periodStr === 'yearly') {
+            const currentYr = new Date().getFullYear();
+            for (let i = 4; i >= 0; i--) {
+                const yr = (currentYr - i).toString();
+                trendMap.set(yr, { label: yr, dateKey: yr, totalAmount: 0, paidAmount: 0, pendingAmount: 0, bookingCount: 0 });
+            }
+        }
+
+        const formattedRecords: any[] = [];
+
+        bookings.forEach(b => {
+            const bAmount = Number(b.totalAmount) || 0;
+            summary.totalBookings++;
+            summary.totalBookingAmount += bAmount;
+
+            let bPaid = 0;
+            let bRefund = 0;
+
+            const bData: any = b;
+            if (bData.payments && bData.payments.length > 0) {
+                bData.payments.forEach((p: any) => {
+                    if (p.status === 'successful') {
+                        bPaid += Number(p.amount) || 0;
+                    }
+                    bRefund += Number(p.refundAmount) || 0;
+                });
+            } else {
+                if (b.paymentStatus === 'paid') {
+                    bPaid = bAmount;
+                } else {
+                    bPaid = Number(b.depositAmount) || 0;
+                }
+            }
+
+            const bPending = Math.max(0, bAmount - bPaid);
+            summary.paidAmount += bPaid;
+            summary.pendingAmount += bPending;
+            summary.refundAmount += bRefund;
+
+            if (b.status === 'confirmed') summary.confirmedBookings++;
+            else if (b.status === 'pending') summary.pendingBookings++;
+            else if (b.status === 'cancelled') summary.cancelledBookings++;
+            else if (b.status === 'completed') summary.completedBookings++;
+
+            // Mode breakdown
+            let modeKey = 'solo';
+            if (b.isLargePartyRequest) modeKey = 'large_party';
+            else if (b.isGroupBooking) modeKey = 'group_party';
+            else if (b.goingMode === 'party_request' || b.goingMode === 'plan') modeKey = 'party_request';
+            else if (b.isUpcomingNight) modeKey = 'upcoming_night';
+
+            if (modeBreakdown[modeKey]) {
+                modeBreakdown[modeKey].count++;
+                modeBreakdown[modeKey].totalAmount += bAmount;
+                modeBreakdown[modeKey].paidAmount += bPaid;
+            }
+
+            // Trend grouping key
+            const bDate = new Date(b.bookingDate || b.createdAt);
+            let trendKey = '';
+
+            if (periodStr === 'daily' || periodStr === 'custom') {
+                trendKey = bDate.toISOString().split('T')[0];
+            } else if (periodStr === 'weekly') {
+                trendKey = `W${getWeekNumber(bDate)}-${bDate.getFullYear()}`;
+            } else if (periodStr === 'monthly') {
+                trendKey = `${bDate.getFullYear()}-${String(bDate.getMonth() + 1).padStart(2, '0')}`;
+            } else if (periodStr === 'yearly') {
+                trendKey = bDate.getFullYear().toString();
+            }
+
+            if (trendKey && trendMap.has(trendKey)) {
+                const item = trendMap.get(trendKey)!;
+                item.totalAmount += bAmount;
+                item.paidAmount += bPaid;
+                item.pendingAmount += bPending;
+                item.bookingCount++;
+            }
+
+            // User info
+            const u = bData.user;
+            const userName = u ? `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email || 'Guest' : 'Guest';
+
+            formattedRecords.push({
+                id: b.id,
+                bookingDate: b.bookingDate,
+                createdAt: b.createdAt,
+                userName,
+                userMobile: u?.mobileNumber || 'N/A',
+                userEmail: u?.email || 'N/A',
+                goingMode: b.goingMode,
+                numberOfGuests: b.numberOfGuests || 1,
+                totalAmount: bAmount,
+                paidAmount: bPaid,
+                pendingAmount: bPending,
+                status: b.status,
+                paymentStatus: b.paymentStatus,
+                isGroupBooking: b.isGroupBooking,
+                isLargePartyRequest: b.isLargePartyRequest
+            });
+        });
+
+        if (summary.totalBookings > 0) {
+            summary.avgBookingValue = Math.round(summary.totalBookingAmount / summary.totalBookings);
+        }
+
+        // Apply search query to records if provided
+        let filteredRecords = formattedRecords;
+        if (search) {
+            const q = (search as string).toLowerCase();
+            filteredRecords = formattedRecords.filter(r =>
+                r.userName.toLowerCase().includes(q) ||
+                r.userMobile.toLowerCase().includes(q) ||
+                r.id.toLowerCase().includes(q)
+            );
+        }
+
+        // Pagination for records
+        const pNum = parseInt(page as string) || 1;
+        const lNum = parseInt(limit as string) || 15;
+        const offset = (pNum - 1) * lNum;
+        const paginatedRecords = filteredRecords.slice(offset, offset + lNum);
+
+        return res.json({
+            success: true,
+            data: {
+                venue: {
+                    id: venue.id,
+                    name: venue.name,
+                    city: venue.city,
+                    addressLine1: venue.addressLine1,
+                    category: venue.category,
+                    imageUrl: (venue as any).imageUrl || (venue as any).coverImageUrl || null
+                },
+                period: periodStr,
+                fromDate: startDate.toISOString().split('T')[0],
+                toDate: endDate.toISOString().split('T')[0],
+                summary,
+                modeBreakdown,
+                trend: Array.from(trendMap.values()),
+                records: paginatedRecords,
+                pagination: {
+                    total: filteredRecords.length,
+                    page: pNum,
+                    limit: lNum,
+                    totalPages: Math.ceil(filteredRecords.length / lNum)
+                }
+            }
+        });
+
+    } catch (error: any) {
+        logger.error('getVenueRevenueDetails error:', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+function getWeekNumber(d: Date): number {
+    const target = new Date(d.valueOf());
+    const dayNr = (d.getDay() + 6) % 7;
+    target.setDate(target.getDate() - dayNr + 3);
+    const firstThursday = target.valueOf();
+    target.setMonth(0, 1);
+    if (target.getDay() !== 4) {
+        target.setMonth(0, 1 + ((4 - target.getDay() + 7) % 7));
+    }
+    return 1 + Math.ceil((firstThursday - target.valueOf()) / 604800000);
+}
+
+
 
 

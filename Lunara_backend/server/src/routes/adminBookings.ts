@@ -20,6 +20,9 @@ router.get('/stats', ctrl.getBookingStats);
 // GET /api/admin/bookings/venue-summary
 router.get('/venue-summary', ctrl.getVenueWiseBookingSummary);
 
+// GET /api/admin/bookings/venue-revenue-details
+router.get('/venue-revenue-details', ctrl.getVenueRevenueDetails);
+
 // GET /api/admin/bookings/large-party-requests
 router.get('/large-party-requests', ctrl.getLargePartyRequests);
 

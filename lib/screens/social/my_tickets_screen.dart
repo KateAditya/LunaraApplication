@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../../widgets/lunara_ticket_widget.dart';
+import 'large_party_ticket_screen.dart';
 
 class MyTicketsScreen extends StatefulWidget {
   const MyTicketsScreen({super.key});
@@ -601,7 +602,39 @@ class _MyTicketsScreenState extends State<MyTicketsScreen>
               children: [
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () => _showTicketDetailsModal(ticket),
+                    onPressed: () {
+                      final bookingType = (ticket['bookingType'] ?? '').toString().toLowerCase();
+                      if (bookingType == 'group_party' || bookingType == 'group_party_small') {
+                        // Navigate to dedicated group party ticket screen
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => LargePartyTicketScreen(
+                              booking: {
+                                'id': ticket['bookingId'],
+                                'bookingId': ticket['bookingId'],
+                                'bookingDate': ticket['eventStartAt'],
+                                'partyDate': ticket['eventStartAt'],
+                                'startTime': '08:00 PM',
+                                'status': 'confirmed',
+                                'paymentStatus': 'paid',
+                                'venue': ticket['venue'] ?? {},
+                                'venueName': ticket['venueName'],
+                                'venueAddress': ticket['venueAddress'],
+                                'ticketCode': ticket['ticketId'],
+                                'ticketUrl': ticket['pdfUrl'],
+                                'numberOfGuests': ticket['numberOfGuests'] ?? '?',
+                              },
+                              venue: ticket['venue'] is Map
+                                  ? Map<dynamic, dynamic>.from(ticket['venue'] as Map)
+                                  : {},
+                            ),
+                          ),
+                        );
+                      } else {
+                        _showTicketDetailsModal(ticket);
+                      }
+                    },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: LunaraTheme.electricViolet,
                       foregroundColor: Colors.white,
