@@ -46,6 +46,9 @@ export interface PartyPlanAttributes {
     foodPreference?: string;
     drinkPreference?: string;
     paymentType?: PartyPlanPaymentType;
+    showProfilePhoto?: boolean;
+    showHostName?: boolean;
+    showVenueDetails?: boolean;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -53,7 +56,7 @@ export interface PartyPlanAttributes {
 export interface PartyPlanCreationAttributes
     extends Optional<
         PartyPlanAttributes,
-        'id' | 'status' | 'visibility' | 'createdAt' | 'updatedAt' | 'selectedUsers' | 'depositAmount' | 'hostPaymentStatus' | 'isLive' | 'expiresAt' | 'hostLatLangCheckIn' | 'paymentStatus' | 'optionalMobileNumber' | 'foodPreference' | 'drinkPreference' | 'paymentType'
+        'id' | 'status' | 'visibility' | 'createdAt' | 'updatedAt' | 'selectedUsers' | 'depositAmount' | 'hostPaymentStatus' | 'isLive' | 'expiresAt' | 'hostLatLangCheckIn' | 'paymentStatus' | 'optionalMobileNumber' | 'foodPreference' | 'drinkPreference' | 'paymentType' | 'showProfilePhoto' | 'showHostName' | 'showVenueDetails'
     > { }
 
 class PartyPlan
@@ -80,6 +83,9 @@ class PartyPlan
     public foodPreference?: string;
     public drinkPreference?: string;
     public paymentType!: PartyPlanPaymentType;
+    public showProfilePhoto!: boolean;
+    public showHostName!: boolean;
+    public showVenueDetails!: boolean;
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 }
@@ -205,6 +211,21 @@ PartyPlan.init(
             type: DataTypes.STRING,
             allowNull: true,
             field: 'drink_preference',
+        },
+        showProfilePhoto: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: true,
+            field: 'show_profile_photo',
+        },
+        showHostName: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: true,
+            field: 'show_host_name',
+        },
+        showVenueDetails: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: true,
+            field: 'show_venue_details',
         },
     },
     {

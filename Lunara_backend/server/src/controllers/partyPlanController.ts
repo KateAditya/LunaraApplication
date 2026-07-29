@@ -317,6 +317,9 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
 
         const { userId, venueId, message, planDateTime, mobileNumber, optionalMobileNumber, foodPreference, drinkPreference } = req.body;
         const selectedUsers = req.body.selectedUsers || req.body.selectedUserIds;
+        const showProfilePhoto = req.body.showProfilePhoto !== undefined ? Boolean(req.body.showProfilePhoto) : true;
+        const showHostName = req.body.showHostName !== undefined ? Boolean(req.body.showHostName) : true;
+        const showVenueDetails = req.body.showVenueDetails !== undefined ? Boolean(req.body.showVenueDetails) : true;
 
         // ── Validate required fields ─────────────────────────────────────────
         const errors: Record<string, string> = {};
@@ -423,6 +426,9 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                     foodPreference: foodPreference || 'Both',
                     drinkPreference: drinkPreference || 'Both',
                     paymentType: parsedPaymentType,
+                    showProfilePhoto,
+                    showHostName,
+                    showVenueDetails,
                 }, { transaction });
 
                 // Auto-generate accepted requests for invited users of private or both plan
@@ -473,6 +479,9 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             expiresAt: partyPlan.expiresAt,
             foodPreference: partyPlan.foodPreference,
             drinkPreference: partyPlan.drinkPreference,
+            showProfilePhoto: partyPlan.showProfilePhoto,
+            showHostName: partyPlan.showHostName,
+            showVenueDetails: partyPlan.showVenueDetails,
             user: buildUserData({ creator: user } as any),
             venue: {
                 id: venue.id,
