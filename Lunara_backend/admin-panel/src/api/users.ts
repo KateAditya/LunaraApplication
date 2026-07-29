@@ -68,15 +68,15 @@ export const usersApi = {
         return apiClient.delete(`/api/users/${id}`);
     },
 
-    activateUser: (id: string): Promise<{ success: boolean; data: User }> => {
+    activateUser: (id: string): Promise<{ success: boolean; data: User; message?: string }> => {
         return apiClient.post(`/api/users/${id}/activate`);
     },
 
-    deactivateUser: (id: string): Promise<{ success: boolean; data: User }> => {
+    deactivateUser: (id: string): Promise<{ success: boolean; data: User; message?: string }> => {
         return apiClient.post(`/api/users/${id}/deactivate`);
     },
 
-    verifyEmail: (id: string): Promise<{ success: boolean; data: User }> => {
+    verifyEmail: (id: string): Promise<{ success: boolean; data: User; message?: string }> => {
         return apiClient.post(`/api/users/${id}/verify-email`);
     },
 

@@ -5,8 +5,7 @@ import { useThemeMode } from '../context/ThemeContext';
 import bookingsApi from '../api/bookings';
 import ReactApexChart from 'react-apexcharts';
 import { io } from 'socket.io-client';
-import Swal from 'sweetalert2';
-import 'sweetalert2/dist/sweetalert2.min.css';
+import toast from 'react-hot-toast';
 
 export const Dashboard: React.FC = () => {
     const { mode } = useThemeMode();
@@ -43,21 +42,9 @@ export const Dashboard: React.FC = () => {
         });
 
         socket.on('admin_notification', (data) => {
-            Swal.fire({
-                title: data.title || 'New Notification',
-                text: data.message || 'Action required.',
-                icon: 'info',
-                toast: true,
-                position: 'top-end',
-                showConfirmButton: false,
-                timer: 6000,
-                timerProgressBar: true,
-                background: isDark ? '#1a1d21' : '#ffffff',
-                color: isDark ? '#ffffff' : '#000000',
-                didOpen: (toast) => {
-                    toast.addEventListener('mouseenter', Swal.stopTimer)
-                    toast.addEventListener('mouseleave', Swal.resumeTimer)
-                }
+            toast(data.message || data.title || 'New Notification', {
+                duration: 6000,
+                position: 'top-right',
             });
         });
 

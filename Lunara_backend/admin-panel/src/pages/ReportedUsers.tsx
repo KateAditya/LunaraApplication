@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { BiBlock, BiShow, BiLoaderAlt, BiUserCheck, BiMessageSquareDetail, BiUserX } from 'react-icons/bi';
+import { BiLoaderAlt, BiMessageSquareDetail, BiUserX } from 'react-icons/bi';
 import { usersApi } from '../api/users';
-import type { User } from '../types/user';
 import toast from 'react-hot-toast';
 
 export const ReportedUsers: React.FC = () => {
