@@ -111,7 +111,11 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
             await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS invitation_ref UUID;`);
             await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS invitation_ref_type VARCHAR(20);`);
             await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS invitation_time VARCHAR(100);`);
-            await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS invitation_status VARCHAR(20) DEFAULT 'pending';`);
+            await sequelize.query(`ALTER TABLE venues ADD COLUMN IF NOT EXISTS closed_dates TEXT[];`);
+            await sequelize.query(`ALTER TABLE venues ADD COLUMN IF NOT EXISTS days_open TEXT[];`);
+            await sequelize.query(`ALTER TABLE venues ADD COLUMN IF NOT EXISTS opening_time VARCHAR(50);`);
+            await sequelize.query(`ALTER TABLE venues ADD COLUMN IF NOT EXISTS closing_time VARCHAR(50);`);
+            await sequelize.query(`ALTER TABLE venues ADD COLUMN IF NOT EXISTS image_url VARCHAR(500);`);
             logger.info('users and messages table columns verified/migrated successfully.');
 
 
