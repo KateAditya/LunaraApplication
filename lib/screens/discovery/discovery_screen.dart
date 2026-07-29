@@ -18,7 +18,6 @@ import '../../widgets/lunara_profile_image.dart';
 import '../../widgets/lunara_network_image.dart';
 import 'all_users_screen.dart';
 import '../social/post_detail_screen.dart';
-import '../social/chat_screen.dart';
 import '../profile/profile_screen.dart';
 import '../profile/edit_profile_screen.dart';
 import '../profile/lunara_wallet_screen.dart';
@@ -2849,70 +2848,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                       children: [
                         Row(
                           children: [
-                            Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                LunaraProfileImage(
-                                  userData: user,
-                                  radius: 20,
-                                  showGradientBorder: isBoosted,
-                                  isInteractive: false,
-                                ),
-                                Positioned(
-                                  bottom: -2,
-                                  right: -4,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 5,
-                                      vertical: 1.5,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      gradient: index == 0
-                                          ? const LinearGradient(
-                                              colors: [
-                                                Color(0xFFFFD700),
-                                                Color(0xFFFFA500),
-                                              ],
-                                            )
-                                          : index == 1
-                                          ? const LinearGradient(
-                                              colors: [
-                                                Color(0xFFC0C0C0),
-                                                Color(0xFF808080),
-                                              ],
-                                            )
-                                          : index == 2
-                                          ? const LinearGradient(
-                                              colors: [
-                                                Color(0xFFCD7F32),
-                                                Color(0xFF8B4513),
-                                              ],
-                                            )
-                                          : const LinearGradient(
-                                              colors: [
-                                                Color(0xFF7F00FF),
-                                                Color(0xFFE100FF),
-                                              ],
-                                            ),
-                                      borderRadius: BorderRadius.circular(8),
-                                      boxShadow: const [
-                                        BoxShadow(
-                                          color: Colors.black26,
-                                          blurRadius: 4,
-                                        ),
-                                      ],
-                                    ),
-                                    child: Text(
-                                      '#${index + 1}',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 8.5,
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
+                            LunaraProfileImage(
+                              userData: user,
+                              radius: 20,
+                              showGradientBorder: isBoosted,
+                              isInteractive: false,
                             ),
                             const SizedBox(width: 8),
                             Expanded(
@@ -2988,54 +2928,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ],
-                              ),
-                            ),
-                            GestureDetector(
-                              onTap: () {
-                                final id =
-                                    user['id']?.toString() ??
-                                    user['_id']?.toString() ??
-                                    '';
-                                if (id.isEmpty) return;
-                                final String? profilePhoto =
-                                    (user['profilePhotoUrl'] ??
-                                            user['profileImageUrl'] ??
-                                            user['photoUrl'] ??
-                                            user['profilePhoto'] ??
-                                            user['image'])
-                                        ?.toString();
-                                String avatarUrl = profilePhoto ?? '';
-                                if (avatarUrl.startsWith('/')) {
-                                  avatarUrl = '${ApiService.baseUrl}$avatarUrl';
-                                }
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => ChatScreen(
-                                      user: {
-                                        'id': id,
-                                        'name': name,
-                                        'image': avatarUrl,
-                                        'isAsset': false,
-                                        'online':
-                                            user['isOnline'] == true ||
-                                            user['online'] == true,
-                                      },
-                                    ),
-                                  ),
-                                );
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(7),
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFF7F00FF),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.send_rounded,
-                                  color: Colors.white,
-                                  size: 13,
-                                ),
                               ),
                             ),
                           ],

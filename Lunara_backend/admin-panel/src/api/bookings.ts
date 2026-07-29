@@ -147,6 +147,19 @@ export const bookingsApi = {
         search?: string;
     }): Promise<{ success: boolean; data: any }> => {
         return apiClient.get('/api/admin/bookings/venue-summary', { params });
+    },
+
+    getVenueRevenueDetails: (params: {
+        venueId: string;
+        period?: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom';
+        fromDate?: string;
+        toDate?: string;
+        page?: number;
+        limit?: number;
+        search?: string;
+        status?: string;
+    }): Promise<{ success: boolean; data: any }> => {
+        return apiClient.get('/api/admin/bookings/venue-revenue-details', { params });
     }
 };
 

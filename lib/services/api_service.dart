@@ -533,13 +533,18 @@ class ApiService {
                   'numberOfGuests': gp['numberOfFriends'],
                   'partySubject': 'Group Party',
                   'bookingDate': gp['partyDate'],
+                  'partyDate': gp['partyDate'],
                   'startTime': '08:00 PM',
                   'approvedAmount': gp['totalAmount'],
                   'charges': gp['totalAmount'],
+                  'totalAmount': gp['totalAmount'],
                   'createdAt': gp['createdAt'],
                   'mobileNumber': gp['mobileNumber'],
                   'optionalMobileNumber': gp['optionalMobileNumber'],
                   'goingMode': 'party_request', // unified for the feed
+                  'ticketCode': gp['ticketCode'],
+                  'ticketUrl': gp['ticketUrl'],
+                  'isSmallGroupParty': true, // flag to distinguish from large party bookings
                 });
               }
             }

@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import bookingsApi from '../../api/bookings';
 import venuesApi from '../../api/venues';
 import { useThemeMode } from '../../context/ThemeContext';
+import { VenueRevenueDetailsModal } from '../../components/VenueRevenueDetailsModal';
 
 export const VenueBookingSummary = () => {
     const { mode } = useThemeMode();
@@ -14,6 +15,8 @@ export const VenueBookingSummary = () => {
     const [summary, setSummary] = useState<any>(null);
     const [venuesData, setVenuesData] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [selectedVenueModal, setSelectedVenueModal] = useState<{ venueId: string; venueName: string } | null>(null);
+
 
     // Filters
     const [fromDate, setFromDate] = useState('');
@@ -397,11 +400,23 @@ export const VenueBookingSummary = () => {
                                         <th style={{ textAlign: 'right' }}>Refund Amt</th>
                                     </tr>
                                 </thead>
-                                <tbody>
+                                 <tbody>
                                     {venuesData.map((v, index) => (
-                                        <tr key={v.venueId} onClick={() => navigate('/bookings', { state: { venueId: v.venueId, showVenueDetails: true } })} style={{ cursor: 'pointer', transition: 'background-color 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                                        <tr
+                                            key={v.venueId}
+                                            onClick={() => setSelectedVenueModal({ venueId: v.venueId, venueName: v.venueName })}
+                                            style={{ cursor: 'pointer', transition: 'background-color 0.2s' }}
+                                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)'}
+                                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                            title="Click to view detailed revenue graphics & records"
+                                        >
                                             <td>{((page - 1) * 15) + index + 1}</td>
-                                            <td style={{ fontWeight: 600, color: 'var(--vz-primary)' }}>{v.venueName}</td>
+                                            <td style={{ fontWeight: 600, color: 'var(--vz-primary)' }}>
+                                                {v.venueName}
+                                                <span className="badge bg-purple-subtle text-purple" style={{ marginLeft: '8px', fontSize: '0.68rem', fontWeight: 600 }}>
+                                                    📊 Revenue Analytics
+                                                </span>
+                                            </td>
                                             <td style={{ textAlign: 'center', fontWeight: 600 }}>{v.totalBookings}</td>
                                             <td style={{ textAlign: 'center', color: 'var(--vz-success)' }}>{v.confirmedBookings}</td>
                                             <td style={{ textAlign: 'center', color: 'var(--vz-warning)' }}>{v.pendingBookings}</td>
@@ -457,6 +472,16 @@ export const VenueBookingSummary = () => {
                     </div>
                 )}
             </div>
+
+            {/* Targeted Venue Revenue Analytics Modal */}
+            {selectedVenueModal && (
+                <VenueRevenueDetailsModal
+                    venueId={selectedVenueModal.venueId}
+                    venueName={selectedVenueModal.venueName}
+                    onClose={() => setSelectedVenueModal(null)}
+                />
+            )}
         </div>
     );
 };
+
