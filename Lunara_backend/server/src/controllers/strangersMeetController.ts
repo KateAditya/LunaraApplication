@@ -82,23 +82,29 @@ function formatRequest(r: StrangersMeetRequest) {
     const venue = (r as any).venue;
     const joiners = (r as any).joiners || [];
 
-    let userPhotoUrl = user?.profileImageUrl ?? null;
-    if (user?.photos?.length > 0) {
+    let userPhotoUrl = user?.profileImageUrl ?? user?.photoUrl ?? null;
+    if (!userPhotoUrl && user?.photos?.length > 0) {
         const primary = user.photos.find((p: any) => p.isPrimary) || user.photos[0];
         if (primary?.filePath) {
-            const cleanUserPath = primary.filePath.replace(/\\/g, '/');
-            userPhotoUrl = cleanUserPath.startsWith('/') ? cleanUserPath : '/' + cleanUserPath;
+            userPhotoUrl = primary.filePath;
         }
     }
+    if (userPhotoUrl && typeof userPhotoUrl === 'string' && !userPhotoUrl.startsWith('http') && !userPhotoUrl.startsWith('assets/')) {
+        const cleanUserPath = userPhotoUrl.replace(/\\/g, '/');
+        userPhotoUrl = cleanUserPath.startsWith('/') ? cleanUserPath : '/' + cleanUserPath;
+    }
 
-    let venueImageUrl = venue?.imageUrl ?? null;
+    let venueImageUrl = venue?.imageUrl ?? venue?.coverImageUrl ?? venue?.image ?? null;
     if (!venueImageUrl && venue?.images?.length > 0) {
         const primary = venue.images?.find((img: any) => img.isPrimary) || venue.images[0];
-        const rawPath = primary?.filePath || primary?.imageUrl;
+        const rawPath = primary?.filePath || primary?.imageUrl || primary?.url;
         if (rawPath) {
-            const cleanPath = rawPath.replace(/\\/g, '/');
-            venueImageUrl = cleanPath.startsWith('/') ? cleanPath : '/' + cleanPath;
+            venueImageUrl = rawPath;
         }
+    }
+    if (venueImageUrl && typeof venueImageUrl === 'string' && !venueImageUrl.startsWith('http') && !venueImageUrl.startsWith('assets/')) {
+        const cleanPath = venueImageUrl.replace(/\\/g, '/');
+        venueImageUrl = cleanPath.startsWith('/') ? cleanPath : '/' + cleanPath;
     }
 
 

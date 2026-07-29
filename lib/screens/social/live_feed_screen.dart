@@ -1460,29 +1460,42 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   Widget _buildGroupPartiesFeed() {
     final filteredBookings = _largePartyBookings.where((booking) {
       if (_subFilterIndexTab2 == 0) return true;
-      final rawStatus =
-          (booking['adminApprovalStatus'] ??
-                  booking['admin_approval_status'] ??
-                  booking['status'] ??
-                  booking['bookingStatus'] ??
-                  'pending')
-              .toString()
-              .toLowerCase();
-      if (_subFilterIndexTab2 == 1) {
-        return rawStatus == 'pending' ||
-            rawStatus == 'unpaid' ||
-            rawStatus == 'submitted'; // Pending
+
+      final rawPayStatus = (booking['paymentStatus'] ?? booking['payment_status'] ?? '').toString().toLowerCase();
+      final rawAdminStatus = (booking['adminApprovalStatus'] ?? booking['admin_approval_status'] ?? '').toString().toLowerCase();
+      final rawBookingStatus = (booking['status'] ?? booking['bookingStatus'] ?? booking['booking_status'] ?? '').toString().toLowerCase();
+
+      final isPaid = rawPayStatus == 'paid' ||
+          rawPayStatus == 'confirmed' ||
+          rawPayStatus == 'payment_done' ||
+          rawBookingStatus == 'paid' ||
+          rawBookingStatus == 'confirmed' ||
+          rawBookingStatus == 'payment_done';
+
+      final isRejected = rawBookingStatus == 'rejected' ||
+          rawBookingStatus == 'cancelled' ||
+          rawAdminStatus == 'rejected';
+
+      if (_subFilterIndexTab2 == 1) { // Pending
+        return !isPaid && !isRejected && (
+            rawAdminStatus == 'pending' ||
+            rawBookingStatus == 'pending' ||
+            rawBookingStatus == 'unpaid' ||
+            rawBookingStatus == 'submitted'
+        );
       }
-      if (_subFilterIndexTab2 == 2) {
-        return rawStatus == 'approved' ||
-            rawStatus == 'approved_awaiting_payment' ||
-            rawStatus == 'awaiting_payment' ||
-            rawStatus == 'payment_sent'; // Approved
+      if (_subFilterIndexTab2 == 2) { // Approved (Payment Pending)
+        return !isPaid && !isRejected && (
+            rawAdminStatus == 'approved' ||
+            rawAdminStatus == 'approved_awaiting_payment' ||
+            rawAdminStatus == 'awaiting_payment' ||
+            rawAdminStatus == 'payment_sent' ||
+            rawBookingStatus == 'approved' ||
+            rawBookingStatus == 'approved_awaiting_payment'
+        );
       }
-      if (_subFilterIndexTab2 == 3) {
-        return rawStatus == 'paid' ||
-            rawStatus == 'confirmed' ||
-            rawStatus == 'payment_done'; // Confirmed Bookings
+      if (_subFilterIndexTab2 == 3) { // Confirmed Bookings
+        return isPaid;
       }
       return true;
     }).toList();
@@ -1539,15 +1552,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               : (venue['imageUrl'] ?? venue['image_url'])?.toString())
         : null);
 
-    final rawStatus =
-        (booking['adminApprovalStatus'] ??
-                booking['admin_approval_status'] ??
-                booking['status'] ??
-                booking['bookingStatus'] ??
-                booking['booking_status'] ??
-                'pending')
-            .toString()
-            .toLowerCase();
+    final rawPayStatus = (booking['paymentStatus'] ?? booking['payment_status'] ?? '').toString().toLowerCase();
+    final rawAdminStatus = (booking['adminApprovalStatus'] ?? booking['admin_approval_status'] ?? '').toString().toLowerCase();
+    final rawBookingStatus = (booking['status'] ?? booking['bookingStatus'] ?? booking['booking_status'] ?? 'pending').toString().toLowerCase();
+
     final guests =
         (booking['numberOfGuests'] ?? booking['number_of_guests'] ?? '?')
             .toString();
@@ -1569,17 +1577,28 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final createdAt = (booking['createdAt'] ?? booking['created_at'])
         ?.toString();
 
-    // Normalise status
-    final isAwaitingPayment =
-        rawStatus == 'approved' ||
-        rawStatus == 'approved_awaiting_payment' ||
-        rawStatus == 'awaiting_payment' ||
-        rawStatus == 'payment_sent';
-    final isPaid =
-        rawStatus == 'paid' ||
-        rawStatus == 'confirmed' ||
-        rawStatus == 'payment_done';
-    final isRejected = rawStatus == 'rejected' || rawStatus == 'cancelled';
+    // Normalise status prioritizing completed payment
+    final isPaid = rawPayStatus == 'paid' ||
+        rawPayStatus == 'confirmed' ||
+        rawPayStatus == 'payment_done' ||
+        rawBookingStatus == 'paid' ||
+        rawBookingStatus == 'confirmed' ||
+        rawBookingStatus == 'payment_done';
+
+    final isRejected = rawBookingStatus == 'rejected' ||
+        rawBookingStatus == 'cancelled' ||
+        rawAdminStatus == 'rejected';
+
+    final isAwaitingPayment = !isPaid && !isRejected && (
+        rawAdminStatus == 'approved' ||
+        rawAdminStatus == 'approved_awaiting_payment' ||
+        rawAdminStatus == 'awaiting_payment' ||
+        rawAdminStatus == 'payment_sent' ||
+        rawBookingStatus == 'approved' ||
+        rawBookingStatus == 'approved_awaiting_payment' ||
+        rawBookingStatus == 'awaiting_payment' ||
+        rawBookingStatus == 'payment_sent'
+    );
 
     Color statusColor;
     String statusLabel;
@@ -1666,7 +1685,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 color: LunaraTheme.electricViolet.withValues(alpha: 0.12),
                 child: venueImage != null && venueImage.isNotEmpty
                     ? Image.network(
-                        venueImage,
+                        ApiService.formatImageUrl(venueImage) ?? venueImage,
                         fit: BoxFit.cover,
                         errorBuilder: (_, _, _) =>
                             _groupPartyHeaderPlaceholder(venueName),

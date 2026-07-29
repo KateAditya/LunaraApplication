@@ -206,21 +206,25 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
       final vMap = post['venue'] as Map;
       if (vMap['images'] is List && (vMap['images'] as List).isNotEmpty) {
         final first = (vMap['images'] as List).first;
-        rawCover = first is Map ? (first['url'] ?? first['imageUrl'] ?? first['filePath']) : first?.toString();
+        rawCover = first is Map ? (first['url'] ?? first['imageUrl'] ?? first['filePath']) : (first is String ? first : null);
       }
       rawCover ??= (vMap['imageUrl'] ?? vMap['coverImage'] ?? vMap['photoUrl'] ?? vMap['image'])?.toString();
     }
 
-    if (rawCover == null || rawCover.toString().isEmpty) {
+    if (rawCover == null || rawCover.toString().isEmpty || rawCover.startsWith('Instance of')) {
       rawCover = matchedVenue.imageUrl;
       if ((rawCover == null || rawCover.isEmpty) && matchedVenue.images != null && matchedVenue.images!.isNotEmpty) {
         final firstImg = matchedVenue.images!.first;
         if (firstImg is Map) {
           rawCover = (firstImg['url'] ?? firstImg['imageUrl'] ?? firstImg['filePath'])?.toString();
-        } else if (firstImg != null) {
-          rawCover = firstImg.toString();
+        } else if (firstImg is String) {
+          rawCover = firstImg;
         }
       }
+    }
+
+    if (rawCover != null && (rawCover.startsWith('Instance of') || rawCover.startsWith('{'))) {
+      rawCover = null;
     }
 
     // Use venue cover image as background; fall back to user avatar
