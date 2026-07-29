@@ -2642,15 +2642,19 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 function buildUserData(plan: PartyPlan) {
-    const creator = (plan as any).creator;
+    const creator = (plan as any).creator || (plan as any).user;
     if (!creator) return null;
 
-    let photoUrl = creator.profileImageUrl ?? null;
-    if (creator.photos && creator.photos.length > 0) {
+    let photoUrl = creator.profileImageUrl ?? creator.photoUrl ?? null;
+    if (!photoUrl && creator.photos && creator.photos.length > 0) {
         const primary = creator.photos.find((p: any) => p.isPrimary) || creator.photos[0];
         if (primary && primary.filePath) {
-            photoUrl = '/' + primary.filePath.replace(/\\/g, '/');
+            photoUrl = primary.filePath;
         }
+    }
+    if (photoUrl && typeof photoUrl === 'string' && !photoUrl.startsWith('http') && !photoUrl.startsWith('assets/')) {
+        const clean = photoUrl.replace(/\\/g, '/');
+        photoUrl = clean.startsWith('/') ? clean : '/' + clean;
     }
 
     return {
@@ -2660,6 +2664,7 @@ function buildUserData(plan: PartyPlan) {
         email: creator.email,
         phone: creator.phone,
         profilePhotoUrl: photoUrl,
+        photoUrl: photoUrl,
         bio: creator.profile?.bio ?? null,
         occupation: creator.profile?.occupation ?? null,
         gender: creator.profile?.gender ?? null,
@@ -2671,12 +2676,17 @@ function buildVenueData(plan: PartyPlan) {
     const venue = (plan as any).venue;
     if (!venue) return null;
 
-    let coverImageUrl = null;
-    if (venue.images && venue.images.length > 0) {
+    let coverImageUrl = venue.coverImageUrl || venue.imageUrl || venue.image || null;
+    if (!coverImageUrl && venue.images && venue.images.length > 0) {
         const coverImage = venue.images[0];
-        if (coverImage && coverImage.filePath) {
-            coverImageUrl = '/' + coverImage.filePath.replace(/\\/g, '/');
+        const rawPath = coverImage?.filePath || coverImage?.url || coverImage?.imageUrl;
+        if (rawPath) {
+            coverImageUrl = rawPath;
         }
+    }
+    if (coverImageUrl && typeof coverImageUrl === 'string' && !coverImageUrl.startsWith('http') && !coverImageUrl.startsWith('assets/')) {
+        const clean = coverImageUrl.replace(/\\/g, '/');
+        coverImageUrl = clean.startsWith('/') ? clean : '/' + clean;
     }
 
     return {
@@ -2690,6 +2700,7 @@ function buildVenueData(plan: PartyPlan) {
         coverChargeMale: venue.coverChargeMale,
         coverChargeFemale: venue.coverChargeFemale,
         coverImageUrl: coverImageUrl,
+        imageUrl: coverImageUrl,
     };
 }
 
