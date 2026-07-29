@@ -753,6 +753,8 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                 boostsRemaining: boosts,
                 isBoosted: boosts > 0,
                 plansCount: plansMap[user.id] || 0,
+                doostCount: plansMap[user.id] || 0,
+                doost: plansMap[user.id] || 0,
                 points,
                 rankScore,
                 subscriptionTier: tierMap[user.id] ?? 'FREE',

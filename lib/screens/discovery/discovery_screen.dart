@@ -2406,25 +2406,25 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   Widget _buildProfileMetricChip(IconData icon, String label, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2.5),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: color.withValues(alpha: 0.25),
+          color: color.withValues(alpha: 0.2),
           width: 0.8,
         ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: color, size: 10),
-          const SizedBox(width: 3),
+          Icon(icon, color: color, size: 9.5),
+          const SizedBox(width: 2.5),
           Text(
             label,
             style: TextStyle(
               color: color,
-              fontSize: 9.5,
+              fontSize: 8.5,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -2524,7 +2524,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           )
         else
           SizedBox(
-            height: 138,
+            height: 122,
             child: ListView.builder(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               scrollDirection: Axis.horizontal,
@@ -2541,10 +2541,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                 
                 final int likes = (user['likesCount'] is num ? user['likesCount'] : int.tryParse(user['likesCount']?.toString() ?? '0') ?? 0).toInt();
                 final int superLikes = (user['superLikesCount'] is num ? user['superLikesCount'] : int.tryParse(user['superLikesCount']?.toString() ?? '0') ?? 0).toInt();
+                final dynamic dRaw = user['doostCount'] ?? user['doost'] ?? user['plansCount'] ?? user['groupPartiesCount'];
+                final int doost = (dRaw is num ? dRaw : int.tryParse(dRaw?.toString() ?? '0') ?? 0).toInt();
                 final dynamic bRaw = user['boostCount'] ?? user['boostsRemaining'];
                 final int boosts = (bRaw is num ? bRaw : int.tryParse(bRaw?.toString() ?? '0') ?? 0).toInt();
                 final bool isBoosted = user['isBoosted'] == true || boosts > 0;
-                final int points = (user['points'] is num ? user['points'] : int.tryParse(user['points']?.toString() ?? '0') ?? (120 + (10 - index) * 15)).toInt();
 
                 return GestureDetector(
                   onTap: () {
@@ -2571,12 +2572,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     );
                   },
                   child: Container(
-                    width: 300,
+                    width: 235,
                     margin: const EdgeInsets.only(right: 12),
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
                       gradient: LunaraTheme.cardGradient,
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(16),
                       border: Border.all(
                         color: isBoosted ? Colors.amber.withValues(alpha: 0.6) : const Color(0xFF7F00FF).withValues(alpha: 0.08),
                         width: isBoosted ? 1.8 : 1.2,
@@ -2599,7 +2600,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                               children: [
                                 LunaraProfileImage(
                                   userData: user,
-                                  radius: 24,
+                                  radius: 20,
                                   showGradientBorder: isBoosted,
                                   isInteractive: false,
                                 ),
@@ -2631,7 +2632,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                 ),
                               ],
                             ),
-                            const SizedBox(width: 12),
+                            const SizedBox(width: 8),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2748,14 +2749,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                             ),
                           ],
                         ),
-                        // Row of Metrics: Boost, Superlike, Likes, Points
+                        // Row of Metrics: Superlikes, Likes, Doost
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            _buildProfileMetricChip(Icons.bolt, '$boosts Boost', Colors.amber),
                             _buildProfileMetricChip(Icons.star_rounded, '$superLikes Super', const Color(0xFF9333EA)),
                             _buildProfileMetricChip(Icons.favorite_rounded, '$likes Likes', const Color(0xFFEC4899)),
-                            _buildProfileMetricChip(Icons.emoji_events_rounded, '$points Pts', const Color(0xFF10B981)),
+                            _buildProfileMetricChip(Icons.groups_rounded, '$doost Doost', const Color(0xFF10B981)),
                           ],
                         ),
                       ],
