@@ -120,7 +120,7 @@ export const getMyGroupParties = async (req: Request, res: Response): Promise<vo
                 {
                     model: Venue,
                     as: 'venue',
-                    attributes: ['id', 'name', 'addressLine1', 'city', 'imageUrl'],
+                    attributes: ['id', 'name', 'addressLine1', 'city'],
                     include: [
                         { model: VenueImage, as: 'images', attributes: ['id', 'filePath', 'imageType', 'isPrimary'], required: false },
                     ],
@@ -147,7 +147,7 @@ export const getGroupPartyTicket = async (req: Request, res: Response): Promise<
                 {
                     model: Venue,
                     as: 'venue',
-                    attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'latitude', 'longitude', 'imageUrl'],
+                    attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'latitude', 'longitude'],
                     include: [
                         { model: VenueImage, as: 'images', attributes: ['id', 'filePath', 'imageType', 'isPrimary'], required: false },
                     ],

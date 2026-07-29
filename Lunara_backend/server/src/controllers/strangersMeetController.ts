@@ -25,7 +25,7 @@ const razorpay = new Razorpay({
 
 // ─── Shared attributes ────────────────────────────────────────────────────────
 const USER_ATTRS = ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'];
-const VENUE_ATTRS = ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'imageUrl'];
+const VENUE_ATTRS = ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone'];
 const PROFILE_ATTRS = ['bio', 'occupation', 'city', 'gender'];
 
 function genTicketId(): string {
@@ -1734,7 +1734,7 @@ export const getStrangersMeetTicket = async (req: Request, res: Response): Promi
                 {
                     model: Venue,
                     as: 'venue',
-                    attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'latitude', 'longitude', 'imageUrl'],
+                    attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'latitude', 'longitude'],
                     include: [
                         { model: VenueImage, as: 'images', attributes: ['id', 'filePath', 'imageType', 'isPrimary'], required: false },
                     ],
