@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
 import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
@@ -16,6 +17,7 @@ class PartyPlanDetailScreen extends StatefulWidget {
 class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   bool _isJoining = false;
   bool _alreadyRequested = false;
+  String? _fetchedVenueImageUrl;
 
   @override
   void initState() {
@@ -24,6 +26,79 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     // pre-mark as already requested if provided by feed data.
     _alreadyRequested = widget.plan['hasRequested'] == true;
     _checkRequestStatus();
+    _loadVenueDetailsIfNeeded();
+  }
+
+  Future<void> _loadVenueDetailsIfNeeded() async {
+    final initialUrl = _getVenueImageUrl();
+    if (initialUrl != null && initialUrl.isNotEmpty) return;
+
+    final venueId = widget.plan['venueId']?.toString() ??
+        widget.plan['venue']?['id']?.toString() ??
+        '';
+    if (venueId.isEmpty) return;
+
+    try {
+      final response = await ApiService.get('/api/venues/$venueId');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['venue'] is Map) {
+          final v = Map<String, dynamic>.from(data['venue']);
+          final raw = v['imageUrl'] ??
+              v['coverImageUrl'] ??
+              v['coverImage'] ??
+              v['image'] ??
+              (v['gallery'] is List && (v['gallery'] as List).isNotEmpty
+                  ? (v['gallery'] as List).first
+                  : null) ??
+              (v['images'] is List && (v['images'] as List).isNotEmpty
+                  ? ((v['images'] as List).first is Map
+                      ? ((v['images'] as List).first['filePath'] ??
+                          (v['images'] as List).first['url'] ??
+                          (v['images'] as List).first['imageUrl'])
+                      : (v['images'] as List).first)
+                  : null);
+          if (raw != null) {
+            final formatted = ApiService.formatImageUrl(raw);
+            if (mounted && formatted != null && formatted.isNotEmpty) {
+              setState(() {
+                _fetchedVenueImageUrl = formatted;
+              });
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading venue details in PartyPlanDetailScreen: $e');
+    }
+  }
+
+  String? _getVenueImageUrl() {
+    if (_fetchedVenueImageUrl != null && _fetchedVenueImageUrl!.isNotEmpty) {
+      return _fetchedVenueImageUrl;
+    }
+    final venue = widget.plan['venue'] as Map<String, dynamic>? ?? {};
+    final plan = widget.plan;
+
+    final raw = venue['imageUrl'] ??
+        venue['coverImageUrl'] ??
+        venue['cover_image_url'] ??
+        venue['image'] ??
+        venue['coverImage'] ??
+        (venue['images'] is List && (venue['images'] as List).isNotEmpty
+            ? ((venue['images'] as List).first is Map
+                ? ((venue['images'] as List).first['filePath'] ??
+                    (venue['images'] as List).first['url'] ??
+                    (venue['images'] as List).first['imageUrl'])
+                : (venue['images'] as List).first)
+            : null) ??
+        plan['venueImageUrl'] ??
+        plan['venue_image_url'] ??
+        plan['venueImage'] ??
+        plan['imageUrl'] ??
+        plan['image'];
+
+    return ApiService.formatImageUrl(raw);
   }
 
   Future<void> _checkRequestStatus() async {
@@ -236,6 +311,8 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     final visibility = (plan['visibility'] as String? ?? 'public').toUpperCase();
     final status = (plan['status'] as String? ?? 'active').toUpperCase();
 
+    final venueImageUrl = _getVenueImageUrl();
+
     return Scaffold(
       backgroundColor: const Color(0xFF0A0014),
       body: CustomScrollView(
@@ -281,15 +358,22 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                       ),
                     ),
                   ),
-                  // Bottom overlay
+                  // Venue Image if available
+                  if (venueImageUrl != null && venueImageUrl.isNotEmpty)
+                    Image.network(
+                      venueImageUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    ),
+                  // Dark overlay gradient for contrast
                   Container(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          Colors.transparent,
-                          Colors.black.withValues(alpha: 0.85),
+                          Colors.black.withValues(alpha: 0.4),
+                          Colors.black.withValues(alpha: 0.88),
                         ],
                       ),
                     ),

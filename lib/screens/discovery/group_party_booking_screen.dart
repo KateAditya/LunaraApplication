@@ -1,3 +1,4 @@
+// ignore_for_file: use_build_context_synchronously
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -9,6 +10,7 @@ import 'payment_confirmation_screen.dart';
 import '../../services/app_tour_service.dart';
 import '../../widgets/venue_timing_error_dialog.dart';
 import '../../widgets/venue_cover_charge_notice.dart';
+import '../social/large_party_ticket_screen.dart';
 
 
 class GroupPartyBookingScreen extends StatefulWidget {
@@ -1857,16 +1859,34 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                                             razorpayPaymentId: paymentId,
                                             razorpaySignature: signature,
                                           );
+                                      if (!parentContext.mounted) return;
                                       if (success) {
-                                        ScaffoldMessenger.of(
+                                        // Navigate to ticket screen
+                                        final groupPartyId = (result['data'] is Map)
+                                            ? result['data']['id']?.toString()
+                                            : null;
+                                        Navigator.pushAndRemoveUntil(
                                           parentContext,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              'Group Party Booked Successfully!',
+                                          MaterialPageRoute(
+                                            builder: (_) => LargePartyTicketScreen(
+                                              booking: {
+                                                'id': groupPartyId,
+                                                'bookingId': groupPartyId,
+                                                'bookingDate': partyDateStr,
+                                                'partyDate': partyDateStr,
+                                                'startTime': formattedTime,
+                                                'status': 'confirmed',
+                                                'paymentStatus': 'paid',
+                                                'venue': widget.venue.toMap(),
+                                                'venueName': widget.venue.name,
+                                                'numberOfGuests': parsed,
+                                                'partySubject': 'Group Party',
+                                                'totalAmount': totalPrice,
+                                              },
+                                              venue: widget.venue.toMap(),
                                             ),
-                                            backgroundColor: Colors.green,
                                           ),
+                                          (route) => route.isFirst,
                                         );
                                       } else {
                                         ScaffoldMessenger.of(
@@ -1894,16 +1914,33 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                                         razorpayPaymentId: 'mock_payment',
                                         razorpaySignature: 'mock_signature',
                                       );
+                                  if (!parentContext.mounted) return;
                                   if (success) {
-                                    ScaffoldMessenger.of(
+                                    final groupPartyId = (result['data'] is Map)
+                                        ? result['data']['id']?.toString()
+                                        : null;
+                                    Navigator.pushAndRemoveUntil(
                                       parentContext,
-                                    ).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Group Party Booked Successfully!',
+                                      MaterialPageRoute(
+                                        builder: (_) => LargePartyTicketScreen(
+                                          booking: {
+                                            'id': groupPartyId,
+                                            'bookingId': groupPartyId,
+                                            'bookingDate': partyDateStr,
+                                            'partyDate': partyDateStr,
+                                            'startTime': formattedTime,
+                                            'status': 'confirmed',
+                                            'paymentStatus': 'paid',
+                                            'venue': widget.venue.toMap(),
+                                            'venueName': widget.venue.name,
+                                            'numberOfGuests': parsed,
+                                            'partySubject': 'Group Party',
+                                            'totalAmount': totalPrice,
+                                          },
+                                          venue: widget.venue.toMap(),
                                         ),
-                                        backgroundColor: Colors.green,
                                       ),
+                                      (route) => route.isFirst,
                                     );
                                   } else {
                                     ScaffoldMessenger.of(

@@ -2402,10 +2402,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                             child: Container(
                               padding: const EdgeInsets.symmetric(vertical: 11),
                               decoration: BoxDecoration(
-                                color: Colors.blue.withValues(alpha: 0.1),
+                                color: LunaraTheme.electricViolet.withValues(
+                                  alpha: 0.1,
+                                ),
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
-                                  color: Colors.blue.withValues(alpha: 0.5),
+                                  color: LunaraTheme.electricViolet.withValues(
+                                    alpha: 0.5,
+                                  ),
                                 ),
                               ),
                               child: const Row(
@@ -2413,14 +2417,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                 children: [
                                   Icon(
                                     Icons.check_circle_outline,
-                                    color: Colors.blue,
+                                    color: LunaraTheme.electricViolet,
                                     size: 15,
                                   ),
                                   SizedBox(width: 6),
                                   Text(
                                     'JOINED',
                                     style: TextStyle(
-                                      color: Colors.blue,
+                                      color: LunaraTheme.electricViolet,
                                       fontSize: 11,
                                       fontWeight: FontWeight.bold,
                                     ),
@@ -3849,19 +3853,26 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     padding: const EdgeInsets.all(12),
                     width: double.infinity,
                     decoration: BoxDecoration(
-                      color: Colors.yellow.withValues(alpha: 0.1),
+                      color: isDark
+                          ? Colors.amber.withValues(alpha: 0.15)
+                          : const Color(0xFFFEF3C7),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: Colors.yellow.withValues(alpha: 0.3),
+                        color: isDark
+                            ? Colors.amber.withValues(alpha: 0.4)
+                            : const Color(0xFFF59E0B).withValues(alpha: 0.6),
                       ),
                     ),
-                    child: const Center(
+                    child: Center(
                       child: Text(
                         'PENDING ADMIN APPROVAL',
                         style: TextStyle(
-                          color: Colors.yellow,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 11,
+                          color: isDark
+                              ? const Color(0xFFFBBF24)
+                              : const Color(0xFFB45309),
+                          fontWeight: FontWeight.w900,
+                          fontSize: 11.5,
+                          letterSpacing: 0.8,
                         ),
                       ),
                     ),
@@ -3870,10 +3881,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.blue.withValues(alpha: 0.1),
+                      color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: Colors.blue.withValues(alpha: 0.3),
+                        color: LunaraTheme.electricViolet.withValues(
+                          alpha: 0.3,
+                        ),
                       ),
                     ),
                     child: Column(
@@ -3881,7 +3894,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                         Text(
                           'APPROVED! PAYMENT REQUIRED: ₹${booking['totalAmount'] ?? '0'}',
                           style: const TextStyle(
-                            color: Colors.blue,
+                            color: LunaraTheme.electricViolet,
                             fontWeight: FontWeight.bold,
                             fontSize: 12,
                           ),
@@ -3893,7 +3906,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                               child: _actionButton(
                                 icon: Icons.payment,
                                 label: 'PAY NOW',
-                                color: Colors.blue,
+                                color: LunaraTheme.electricViolet,
                                 outline: false,
                                 onTap: () async {
                                   final bookingId =
@@ -4204,19 +4217,26 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     padding: const EdgeInsets.all(12),
                     width: double.infinity,
                     decoration: BoxDecoration(
-                      color: Colors.yellow.withValues(alpha: 0.1),
+                      color: isDark
+                          ? Colors.amber.withValues(alpha: 0.15)
+                          : const Color(0xFFFEF3C7),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: Colors.yellow.withValues(alpha: 0.3),
+                        color: isDark
+                            ? Colors.amber.withValues(alpha: 0.4)
+                            : const Color(0xFFF59E0B).withValues(alpha: 0.6),
                       ),
                     ),
-                    child: const Center(
+                    child: Center(
                       child: Text(
                         'PENDING ADMIN APPROVAL',
                         style: TextStyle(
-                          color: Colors.yellow,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 11,
+                          color: isDark
+                              ? const Color(0xFFFBBF24)
+                              : const Color(0xFFB45309),
+                          fontWeight: FontWeight.w900,
+                          fontSize: 11.5,
+                          letterSpacing: 0.8,
                         ),
                       ),
                     ),
@@ -4308,10 +4328,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     padding: const EdgeInsets.all(12),
                     width: double.infinity,
                     decoration: BoxDecoration(
-                      color: Colors.blue.withValues(alpha: 0.1),
+                      color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: Colors.blue.withValues(alpha: 0.3),
+                        color: LunaraTheme.electricViolet.withValues(
+                          alpha: 0.3,
+                        ),
                       ),
                     ),
                     child: Row(
@@ -4319,7 +4341,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                       children: [
                         const Icon(
                           Icons.check_circle,
-                          color: Colors.blue,
+                          color: LunaraTheme.electricViolet,
                           size: 16,
                         ),
                         const SizedBox(width: 6),
@@ -4329,7 +4351,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                 ? 'COMPLETED'
                                 : 'PAYMENT CONFIRMED & PUBLISHED',
                             style: const TextStyle(
-                              color: Colors.blue,
+                              color: LunaraTheme.electricViolet,
                               fontWeight: FontWeight.bold,
                               fontSize: 12,
                             ),
@@ -4543,19 +4565,26 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     padding: const EdgeInsets.all(12),
                     width: double.infinity,
                     decoration: BoxDecoration(
-                      color: Colors.yellow.withValues(alpha: 0.1),
+                      color: isDark
+                          ? Colors.amber.withValues(alpha: 0.15)
+                          : const Color(0xFFFEF3C7),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: Colors.yellow.withValues(alpha: 0.3),
+                        color: isDark
+                            ? Colors.amber.withValues(alpha: 0.4)
+                            : const Color(0xFFF59E0B).withValues(alpha: 0.6),
                       ),
                     ),
-                    child: const Center(
+                    child: Center(
                       child: Text(
                         'PENDING HOST APPROVAL',
                         style: TextStyle(
-                          color: Colors.yellow,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 11,
+                          color: isDark
+                              ? const Color(0xFFFBBF24)
+                              : const Color(0xFFB45309),
+                          fontWeight: FontWeight.w900,
+                          fontSize: 11.5,
+                          letterSpacing: 0.8,
                         ),
                       ),
                     ),
@@ -4776,10 +4805,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.blue.withValues(alpha: 0.1),
+                        color: LunaraTheme.electricViolet.withValues(
+                          alpha: 0.1,
+                        ),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: Colors.blue.withValues(alpha: 0.3),
+                          color: LunaraTheme.electricViolet.withValues(
+                            alpha: 0.3,
+                          ),
                         ),
                       ),
                       child: Column(
@@ -4787,7 +4820,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                           const Text(
                             'YOU WERE INVITED!',
                             style: TextStyle(
-                              color: Colors.blue,
+                              color: LunaraTheme.electricViolet,
                               fontWeight: FontWeight.bold,
                               fontSize: 12,
                             ),
@@ -4860,19 +4893,26 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                       padding: const EdgeInsets.all(12),
                       width: double.infinity,
                       decoration: BoxDecoration(
-                        color: Colors.yellow.withValues(alpha: 0.1),
+                        color: isDark
+                            ? Colors.amber.withValues(alpha: 0.15)
+                            : const Color(0xFFFEF3C7),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: Colors.yellow.withValues(alpha: 0.3),
+                          color: isDark
+                              ? Colors.amber.withValues(alpha: 0.4)
+                              : const Color(0xFFF59E0B).withValues(alpha: 0.6),
                         ),
                       ),
-                      child: const Center(
+                      child: Center(
                         child: Text(
                           'PENDING HOST APPROVAL',
                           style: TextStyle(
-                            color: Colors.yellow,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 11,
+                            color: isDark
+                                ? const Color(0xFFFBBF24)
+                                : const Color(0xFFB45309),
+                            fontWeight: FontWeight.w900,
+                            fontSize: 11.5,
+                            letterSpacing: 0.8,
                           ),
                         ),
                       ),
