@@ -426,7 +426,11 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
           ],
           Expanded(
             child: LunaraActionButton(
-              text: 'PAY NOW',
+              text: (widget.totalPrice?.toLowerCase().contains('free') == true ||
+                      widget.totalPrice == '₹0' ||
+                      widget.totalPrice == '0')
+                  ? 'CONFIRM FREE BOOKING'
+                  : 'PAY NOW',
               onPressed: () => _handlePayment(context),
             ),
           ),
@@ -470,14 +474,50 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
       ),
     );
 
-    // Try to open Razorpay payment screen by default for premium integration testing
-    int amountInPaise = 9900;
+    int amountInPaise = 0;
     if (widget.totalPrice != null) {
       final cleanPrice = widget.totalPrice!.replaceAll(RegExp(r'[^\d]'), '');
       final parsed = int.tryParse(cleanPrice);
       if (parsed != null) {
         amountInPaise = parsed * 100;
       }
+    }
+
+    bool isFree = amountInPaise == 0 ||
+        (widget.totalPrice != null &&
+            (widget.totalPrice!.toLowerCase().contains('free') ||
+                widget.totalPrice!.replaceAll(RegExp(r'[^\d]'), '') == '0'));
+
+    if (isFree) {
+      Future.delayed(const Duration(milliseconds: 500), () async {
+        if (!context.mounted) return;
+        if (widget.bookingId != null && widget.bookingId!.isNotEmpty) {
+          await ApiService.payNowBooking(widget.bookingId!);
+        }
+        if (widget.onRazorpayPaymentSuccess != null) {
+          await widget.onRazorpayPaymentSuccess!('free_booking', 'free_signature');
+        } else if (widget.onPaymentSuccess != null) {
+          await widget.onPaymentSuccess!();
+        }
+        if (!context.mounted) return;
+        Navigator.pop(context); // Close processing dialog
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => DigitalTicketScreen(
+              venue: widget.venue,
+              date: widget.date,
+              package: widget.package,
+              time: widget.time,
+              table: widget.table,
+              guests: widget.guests,
+              totalPrice: 'FREE (₹0)',
+              ticketId: widget.bookingId ?? 'FREE_TICKET',
+            ),
+          ),
+        );
+      });
+      return;
     }
 
     var options = {

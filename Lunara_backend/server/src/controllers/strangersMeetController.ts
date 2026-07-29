@@ -643,21 +643,22 @@ export const getFeedRequests = async (req: Request, res: Response): Promise<void
         const limitNum = Math.min(100, Math.max(1, parseInt(limit as string)));
         const offset = (pageNum - 1) * limitNum;
 
+        const now = new Date();
         const feedWhere = {
             status: StrangersMeetStatus.APPROVED,
-            eventDateTime: { [Op.gte]: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+            eventDateTime: { [Op.gte]: now },
         };
 
         let count = await StrangersMeetRequest.count({ where: feedWhere });
         let rows = await StrangersMeetRequest.findAll({
             where: feedWhere,
             include: buildIncludes(),
-            order: [['eventDateTime', 'DESC'], ['createdAt', 'DESC']],
+            order: [['eventDateTime', 'ASC'], ['createdAt', 'DESC']],
             limit: limitNum,
             offset,
         });
 
-        // Fallback: If no future/recent events found, return approved meets so feed is never empty
+        // Fallback for Live Feed: If no future events exist, display approved events so Live Feed tab is available
         if (count === 0) {
             const fallbackWhere = { status: StrangersMeetStatus.APPROVED };
             count = await StrangersMeetRequest.count({ where: fallbackWhere });
@@ -1817,4 +1818,6 @@ export const getStrangersMeetTicket = async (req: Request, res: Response): Promi
         res.status(500).json({ success: false, error: err.message });
     }
 };
+
+
 

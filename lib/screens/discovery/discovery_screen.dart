@@ -338,8 +338,28 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           }
 
           if (rawStrangersMeet.isNotEmpty) {
+            final now = DateTime.now();
+            final activeStrangersMeets = rawStrangersMeet.where((meet) {
+              final status = meet['status']?.toString().toLowerCase();
+              if (status == 'ended' ||
+                  status == 'expired' ||
+                  status == 'completed' ||
+                  status == 'cancelled' ||
+                  status == 'rejected') {
+                return false;
+              }
+              final dtStr = (meet['eventDateTime'] ?? meet['event_date_time'])?.toString();
+              if (dtStr != null && dtStr.isNotEmpty) {
+                final dt = DateTime.tryParse(dtStr)?.toLocal();
+                if (dt != null && dt.isBefore(now)) {
+                  return false;
+                }
+              }
+              return true;
+            }).toList();
+
             combinedPosts.addAll(
-              rawStrangersMeet.map((meet) {
+              activeStrangersMeets.map((meet) {
                 final user =
                     (meet['user'] ?? meet['host']) as Map<String, dynamic>? ??
                     {};

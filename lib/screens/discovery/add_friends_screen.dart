@@ -341,31 +341,33 @@ class _AddFriendsScreenState extends State<AddFriendsScreen> {
                 ),
               ),
             ),
-          LunaraActionButton(
-            text: 'PROCEED TO PAYMENT',
-            onPressed: () {
-              final chargesVal = widget.venue['tableBookingCharges'];
-              String chargesStr = '20';
-              if (chargesVal != null) {
-                final parsed = double.tryParse(chargesVal.toString());
-                if (parsed != null) {
-                  chargesStr = parsed.toStringAsFixed(0);
-                }
+          (() {
+            final chargesVal = widget.venue['tableBookingCharges'] ?? widget.venue['table_booking_charges'];
+            String chargesStr = '0';
+            if (chargesVal != null) {
+              final parsed = double.tryParse(chargesVal.toString());
+              if (parsed != null) {
+                chargesStr = parsed.toStringAsFixed(0);
               }
-
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PaymentConfirmationScreen(
-                    venue: widget.venue,
-                    date: widget.date,
-                    package: widget.package,
-                    totalPrice: '₹$chargesStr',
+            }
+            final bool isFree = chargesStr == '0';
+            return LunaraActionButton(
+              text: isFree ? 'CONFIRM FREE BOOKING' : 'PROCEED TO PAYMENT',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => PaymentConfirmationScreen(
+                      venue: widget.venue,
+                      date: widget.date,
+                      package: widget.package,
+                      totalPrice: isFree ? 'FREE (₹0)' : '₹$chargesStr',
+                    ),
                   ),
-                ),
-              );
-            },
-          ),
+                );
+              },
+            );
+          })(),
         ],
       ),
     );

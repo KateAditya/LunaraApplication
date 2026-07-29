@@ -76,7 +76,7 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
 
   // ── Fetch fresh profile photos + ticketCode from backend ───────────────────
   Future<void> _fetchTicketData() async {
-    final reqId = widget.request['id']?.toString();
+    final reqId = widget.request['id']?.toString() ?? widget.request['reqId']?.toString();
     if (reqId == null) return;
     if (!mounted) return;
     setState(() => _isFetchingTicket = true);
@@ -87,18 +87,22 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
           final planData = data['plan'];
           final requestData = data['request'];
 
-          if (planData is Map) {
-            final hostObj = planData['user'] ?? planData['creator'] ?? planData['host'];
-            if (hostObj is Map) {
-              _freshHostUser = Map<String, dynamic>.from(hostObj);
-            }
+          final hostObj = data['host'] ??
+              (planData is Map
+                  ? (planData['host'] ?? planData['creator'] ?? planData['user'])
+                  : null);
+          if (hostObj is Map) {
+            _freshHostUser = Map<String, dynamic>.from(hostObj);
           }
-          if (requestData is Map) {
-            final joinerObj = requestData['requester'] ?? requestData['joiner'] ?? requestData['user'];
-            if (joinerObj is Map) {
-              _freshJoinerUser = Map<String, dynamic>.from(joinerObj);
-            }
+
+          final joinerObj = data['joiner'] ??
+              (requestData is Map
+                  ? (requestData['requester'] ?? requestData['joiner'] ?? requestData['user'])
+                  : null);
+          if (joinerObj is Map) {
+            _freshJoinerUser = Map<String, dynamic>.from(joinerObj);
           }
+
           _canonicalTicketCode = data['ticketCode']?.toString();
           _ticketUrl = data['ticketUrl']?.toString();
         });
@@ -247,15 +251,37 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
     if (_freshHostUser != null && _freshHostUser!.isNotEmpty) {
       return _freshHostUser!;
     }
+    if (widget.plan['host'] is Map) return Map<String, dynamic>.from(widget.plan['host']);
     if (widget.plan['creator'] is Map) return Map<String, dynamic>.from(widget.plan['creator']);
     if (widget.plan['user'] is Map) return Map<String, dynamic>.from(widget.plan['user']);
-    if (widget.plan['host'] is Map) return Map<String, dynamic>.from(widget.plan['host']);
-    if (widget.request['plan'] is Map && widget.request['plan']['creator'] is Map) {
-      return Map<String, dynamic>.from(widget.request['plan']['creator']);
+    
+    if (widget.request['host'] is Map) return Map<String, dynamic>.from(widget.request['host']);
+    if (widget.request['plan'] is Map) {
+      final p = widget.request['plan'];
+      if (p['host'] is Map) return Map<String, dynamic>.from(p['host']);
+      if (p['creator'] is Map) return Map<String, dynamic>.from(p['creator']);
+      if (p['user'] is Map) return Map<String, dynamic>.from(p['user']);
     }
-    if (widget.request['plan'] is Map && widget.request['plan']['user'] is Map) {
-      return Map<String, dynamic>.from(widget.request['plan']['user']);
+
+    final myUser = ApiService.cachedCurrentUser;
+    final planUserId = widget.plan['userId']?.toString() ??
+        widget.plan['creatorId']?.toString() ??
+        widget.request['plan']?['userId']?.toString() ??
+        widget.request['plan']?['creatorId']?.toString();
+
+    final isMe = widget.isHost || (myUser != null && planUserId != null && planUserId == myUser.id);
+    if (isMe && myUser != null) {
+      return <String, dynamic>{
+        'id': myUser.id,
+        'firstName': myUser.firstName,
+        'lastName': myUser.lastName,
+        'username': myUser.displayName ?? myUser.firstName.toLowerCase(),
+        'profilePhotoUrl': myUser.profilePhoto,
+        'image': myUser.profilePhoto,
+        'bio': myUser.bio,
+      };
     }
+
     return <String, dynamic>{};
   }
 
@@ -270,7 +296,6 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
     if (widget.request['joiner'] is Map) {
       return Map<String, dynamic>.from(widget.request['joiner']);
     }
-    // Fallback: check widget.request['user'] ONLY if its ID doesn't match hostUser
     if (widget.request['user'] is Map) {
       final cand = Map<String, dynamic>.from(widget.request['user']);
       final hostId = hostUser['id']?.toString();
@@ -279,6 +304,20 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
         return cand;
       }
     }
+
+    final myUser = ApiService.cachedCurrentUser;
+    if (!widget.isHost && myUser != null) {
+      return <String, dynamic>{
+        'id': myUser.id,
+        'firstName': myUser.firstName,
+        'lastName': myUser.lastName,
+        'username': myUser.displayName ?? myUser.firstName.toLowerCase(),
+        'profilePhotoUrl': myUser.profilePhoto,
+        'image': myUser.profilePhoto,
+        'bio': myUser.bio,
+      };
+    }
+
     return <String, dynamic>{};
   }
 
@@ -297,20 +336,42 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
         : DateTime.now();
 
     final hostUser = _resolveHostUser();
-    final hostNameRaw = '${hostUser['firstName'] ?? ''} ${hostUser['lastName'] ?? ''}'.trim();
-    final cleanHostName = hostNameRaw.isNotEmpty ? hostNameRaw : 'Ananya Deshmukh';
-    final hostUsernameRaw = hostUser['username']?.toString() ?? hostUser['firstName']?.toString().toLowerCase();
+    final hostFirstName = hostUser['firstName']?.toString() ?? '';
+    final hostLastName = hostUser['lastName']?.toString() ?? '';
+    final hostNameRaw = '$hostFirstName $hostLastName'.trim();
+    final cleanHostName = hostNameRaw.isNotEmpty
+        ? hostNameRaw
+        : (hostUser['name']?.toString() ??
+            (widget.isHost && ApiService.cachedCurrentUser != null
+                ? '${ApiService.cachedCurrentUser!.firstName} ${ApiService.cachedCurrentUser!.lastName}'.trim()
+                : 'Host User'));
+    final hostUsernameRaw = hostUser['username']?.toString() ??
+        hostUser['displayName']?.toString() ??
+        (hostFirstName.isNotEmpty ? hostFirstName.toLowerCase() : null);
     final hostUsername = hostUsernameRaw != null && hostUsernameRaw.isNotEmpty
         ? (hostUsernameRaw.startsWith('@') ? hostUsernameRaw : '@$hostUsernameRaw')
-        : '@ananya_d';
+        : (widget.isHost && ApiService.cachedCurrentUser != null
+            ? '@${(ApiService.cachedCurrentUser!.displayName ?? ApiService.cachedCurrentUser!.firstName).toLowerCase()}'
+            : '@host');
 
     final joinerUser = _resolveJoinerUser(hostUser);
-    final joinerNameRaw = '${joinerUser['firstName'] ?? ''} ${joinerUser['lastName'] ?? ''}'.trim();
-    final cleanJoinerName = joinerNameRaw.isNotEmpty ? joinerNameRaw : 'Vishal Karpe';
-    final joinerUsernameRaw = joinerUser['username']?.toString() ?? joinerUser['firstName']?.toString().toLowerCase();
+    final joinerFirstName = joinerUser['firstName']?.toString() ?? '';
+    final joinerLastName = joinerUser['lastName']?.toString() ?? '';
+    final joinerNameRaw = '$joinerFirstName $joinerLastName'.trim();
+    final cleanJoinerName = joinerNameRaw.isNotEmpty
+        ? joinerNameRaw
+        : (joinerUser['name']?.toString() ??
+            (!widget.isHost && ApiService.cachedCurrentUser != null
+                ? '${ApiService.cachedCurrentUser!.firstName} ${ApiService.cachedCurrentUser!.lastName}'.trim()
+                : 'Partner Guest'));
+    final joinerUsernameRaw = joinerUser['username']?.toString() ??
+        joinerUser['displayName']?.toString() ??
+        (joinerFirstName.isNotEmpty ? joinerFirstName.toLowerCase() : null);
     final joinerUsername = joinerUsernameRaw != null && joinerUsernameRaw.isNotEmpty
         ? (joinerUsernameRaw.startsWith('@') ? joinerUsernameRaw : '@$joinerUsernameRaw')
-        : '@vishal_karpe';
+        : (!widget.isHost && ApiService.cachedCurrentUser != null
+            ? '@${(ApiService.cachedCurrentUser!.displayName ?? ApiService.cachedCurrentUser!.firstName).toLowerCase()}'
+            : '@guest');
 
     final ticketId = (_canonicalTicketCode ?? widget.request['id']?.toString() ?? 'C6013F7A-760').toUpperCase();
     final headlineText = "Let's party at $venueName!";

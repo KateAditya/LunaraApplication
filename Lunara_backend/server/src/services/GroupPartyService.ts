@@ -109,7 +109,7 @@ export class GroupPartyService {
         }
 
         // Validate venue operating timing and holidays
-        const timingValidation = validateVenueTimingAndHolidays(venue, partyDate);
+        const timingValidation = validateVenueTimingAndHolidays(venue, partyDate, startTime);
         if (!timingValidation.isValid) {
             throw new Error(timingValidation.reason || 'Venue is closed on selected date or timing');
         }

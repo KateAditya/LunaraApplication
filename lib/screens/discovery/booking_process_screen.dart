@@ -1305,20 +1305,21 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                       widget.venue['table_booking_charges']?.toString() ??
                       widget.venue['pricePerHead']?.toString() ??
                       widget.venue['price_per_head']?.toString() ??
-                      '500',
+                      '0',
                 ) ??
-                500.0;
-            final double basePrice = rawTableCharge > 0 ? rawTableCharge : 500.0;
-            final double subtotal = basePrice * guests;
+                0.0;
+            final double basePrice = rawTableCharge >= 0 ? rawTableCharge : 0.0;
+            final double subtotal = basePrice * (isSolo ? 1 : guests);
             final double discountPercent =
                 double.tryParse(
                   widget.venue['discountPercentage']?.toString() ??
                       widget.venue['discount_percentage']?.toString() ??
-                      '10',
+                      '0',
                 ) ??
-                10.0;
+                0.0;
             final double discountAmount = (subtotal * discountPercent) / 100;
-            final double totalPrice = subtotal - discountAmount;
+            final double totalPrice = (subtotal - discountAmount) < 0 ? 0.0 : (subtotal - discountAmount);
+            final bool isFreeBooking = totalPrice <= 0;
 
             return Container(
               margin: EdgeInsets.only(
@@ -1729,11 +1730,11 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                           ),
                                         ),
                                         Text(
-                                          '₹ ${totalPrice.toStringAsFixed(0)}',
-                                          style: const TextStyle(
+                                          isFreeBooking ? 'FREE (₹0)' : '₹ ${totalPrice.toStringAsFixed(0)}',
+                                          style: TextStyle(
                                             fontWeight: FontWeight.bold,
                                             fontSize: 16,
-                                            color: LunaraTheme.electricViolet,
+                                            color: isFreeBooking ? Colors.teal : LunaraTheme.electricViolet,
                                           ),
                                         ),
                                       ],

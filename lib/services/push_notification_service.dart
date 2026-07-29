@@ -297,9 +297,18 @@ class PushNotificationService {
       return;
     }
 
-    final type = data['type']?.toString() ?? '';
+    final rawType = (data['type'] ??
+            data['eventType'] ??
+            data['actionType'] ??
+            data['event_type'] ??
+            data['category'] ??
+            data['entityType'] ??
+            '')
+        .toString()
+        .toLowerCase();
 
-    switch (type) {
+    switch (rawType) {
+      // ── Strangers Meet Notifications (Tab 0 in LiveFeedScreen) ─────────────
       case 'strangers_meet_join_request':
       case 'strangers_meet_request_accepted':
       case 'strangers_meet_request_rejected':
@@ -311,42 +320,64 @@ class PushNotificationService {
       case 'strangers_meet_published':
       case 'strangers_meet_awaiting_payment':
       case 'strangers_meet_starting_soon':
-      case 'STRANGER_MEET_ACCEPTED':
-      case 'STRANGER_MEET_DECLINED':
-      case 'STRANGER_MEET_JOIN_REQUEST':
+      case 'stranger_meet_request':
+      case 'stranger_meet_accepted':
+      case 'stranger_meet_declined':
+      case 'stranger_meet_join_request':
+      case 'stranger_meet_matched':
+      case 'stranger_meet':
+      case 'strangers_meet':
         final requestId = data['requestId']?.toString() ??
             data['id']?.toString() ??
             data['entityId']?.toString() ??
             data['strangersMeetRequestId']?.toString() ??
-            data['meetId']?.toString() ??
-            data['partyId']?.toString();
+            data['meetId']?.toString();
         if (requestId != null && requestId.isNotEmpty) {
           _navigateToStrangersMeet(navigator, requestId);
         } else {
           navigator.push(
             MaterialPageRoute(
-              builder: (_) => const LiveFeedScreen(initialTabIndex: 1),
+              builder: (_) => const LiveFeedScreen(initialTabIndex: 0), // Tab 0 = Stranger Meet
             ),
           );
         }
         break;
+
+      // ── Venue Offers & Details ──────────────────────────────────────────────
       case 'offer':
       case 'club_pub_offer':
         _navigateToVenueDetail(navigator, data);
         break;
+
+      // ── Messages & Chat ─────────────────────────────────────────────────────
       case 'message':
-      case 'new_message': // Backend sends 'new_message' for chat notifications
-      case 'match': // Navigate to chat on mutual match
+      case 'new_message':
+      case 'match':
+      case 'match_created':
         _navigateToChat(navigator, data);
         break;
+
+      // ── Party Plan Notifications (Tab 1 in LiveFeedScreen) ──────────────────
       case 'new_party_plan':
       case 'party_plan_created':
+      case 'party_plan_approved':
+      case 'party_plan_published':
+      case 'party_plan_starting_soon':
+      case 'party_plan_joined':
+      case 'party_plan_payment_success':
+      case 'party_plan':
+      case 'party_plan_declined':
+      case 'party_safety_check':
+      case 'cooldown_expiring_soon':
+      case 'payment_window_expiring':
+      case 'lock_expired':
         navigator.push(
           MaterialPageRoute(
-            builder: (_) => const LiveFeedScreen(initialTabIndex: 0),
+            builder: (_) => const LiveFeedScreen(initialTabIndex: 1), // Tab 1 = Party Plan
           ),
         );
         break;
+
       case 'participant_payment_required':
       case 'party_plan_request_accepted':
       case 'party_plan_request':
@@ -356,6 +387,7 @@ class PushNotificationService {
           ),
         );
         break;
+
       case 'host_payment_required':
       case 'host_payment_successful':
         navigator.push(
@@ -364,6 +396,26 @@ class PushNotificationService {
           ),
         );
         break;
+
+      // ── Group Party Notifications (Tab 2 in LiveFeedScreen) ────────────────
+      case 'group_party_initiated':
+      case 'group_party_approved':
+      case 'group_party_rejected':
+      case 'group_party_confirmed':
+      case 'group_party_cancelled':
+      case 'group_invite_sent':
+      case 'group_invite_accepted':
+      case 'group_member_joined':
+      case 'group_full':
+      case 'group_party':
+        navigator.push(
+          MaterialPageRoute(
+            builder: (_) => const LiveFeedScreen(initialTabIndex: 2), // Tab 2 = Group Parties
+          ),
+        );
+        break;
+
+      // ── Bookings & Digital Tickets ──────────────────────────────────────────
       case 'booking_confirmed':
       case 'booking_pending':
       case 'booking_cancelled':
@@ -373,11 +425,6 @@ class PushNotificationService {
       case 'large_party_payment_link':
       case 'large_party_pending':
       case 'large_party_rejected':
-      case 'group_party_initiated':
-      case 'group_party_approved':
-      case 'group_party_rejected':
-      case 'group_party_confirmed':
-      case 'group_party_cancelled':
       case 'ticket_generated':
         navigator.push(
           MaterialPageRoute(
@@ -385,6 +432,8 @@ class PushNotificationService {
           ),
         );
         break;
+
+      // ── Subscription Notifications ──────────────────────────────────────────
       case 'subscription_expired':
         _showSubscriptionDialog(
           navigator,
@@ -393,6 +442,7 @@ class PushNotificationService {
           buttonText: 'View Wallet',
         );
         break;
+
       case 'subscription_extended':
         _showSubscriptionDialog(
           navigator,
@@ -401,8 +451,30 @@ class PushNotificationService {
           buttonText: 'Check Wallet',
         );
         break;
+
       default:
-        debugPrint('🔔 Unknown notification type: $type');
+        // Smart fallback matcher based on payload string contents
+        if (rawType.contains('party_plan') || rawType.contains('plan')) {
+          navigator.push(
+            MaterialPageRoute(
+              builder: (_) => const LiveFeedScreen(initialTabIndex: 1), // Party Plan tab
+            ),
+          );
+        } else if (rawType.contains('stranger') || rawType.contains('meet')) {
+          navigator.push(
+            MaterialPageRoute(
+              builder: (_) => const LiveFeedScreen(initialTabIndex: 0), // Stranger Meet tab
+            ),
+          );
+        } else if (rawType.contains('group')) {
+          navigator.push(
+            MaterialPageRoute(
+              builder: (_) => const LiveFeedScreen(initialTabIndex: 2), // Group Parties tab
+            ),
+          );
+        } else {
+          debugPrint('🔔 Unknown notification type: $rawType');
+        }
     }
   }
 

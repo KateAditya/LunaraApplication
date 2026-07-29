@@ -1115,7 +1115,9 @@ export const VenueForm: React.FC<VenueFormProps> = ({ venue, onClose, onSave }) 
             </div>
             <div style={gridTwo}>
                 <div style={field}>
-                    <label style={labelStyle}>Discount Percentage % *</label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <label style={labelStyle}>Discount Percentage % *</label>
+                    </div>
                     <input 
                         className="vz-form-control" 
                         type="number" step="0.01" placeholder="e.g. 10" 
@@ -1124,17 +1126,57 @@ export const VenueForm: React.FC<VenueFormProps> = ({ venue, onClose, onSave }) 
                         style={formErrors.discountPercentage ? { borderColor: '#ef4444' } : {}}
                     />
                     {errMsg('discountPercentage')}
+                    {(() => {
+                        const charge = parseFloat(form.tableBookingCharges || '0') || 0;
+                        const disc = parseFloat(form.discountPercentage || '0') || 0;
+                        if (charge > 0 && disc > 0) {
+                            const finalPrice = Math.max(0, charge - (charge * disc) / 100);
+                            return (
+                                <span style={{ fontSize: '0.75rem', color: '#10b981', marginTop: '0.25rem', display: 'block', fontWeight: 500 }}>
+                                    💡 User pays: ₹{finalPrice.toFixed(2)} / table (Discount: {disc}% OFF)
+                                </span>
+                            );
+                        }
+                        return null;
+                    })()}
                 </div>
                 <div style={field}>
-                    <label style={labelStyle}>Table Booking Charges ₹ *</label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                        <label style={{ ...labelStyle, marginBottom: 0 }}>Table Booking Charges ₹ *</label>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                set('tableBookingCharges', '0.00');
+                                if (formErrors.tableBookingCharges) setFormErrors(p => ({ ...p, tableBookingCharges: '' }));
+                            }}
+                            style={{
+                                padding: '0.125rem 0.5rem',
+                                borderRadius: '4px',
+                                border: '1px solid #10b981',
+                                background: form.tableBookingCharges === '0' || form.tableBookingCharges === '0.00' || form.tableBookingCharges === '0.0' ? '#10b981' : 'transparent',
+                                color: form.tableBookingCharges === '0' || form.tableBookingCharges === '0.00' || form.tableBookingCharges === '0.0' ? '#fff' : '#10b981',
+                                fontSize: '0.6875rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                            }}
+                        >
+                            {form.tableBookingCharges === '0' || form.tableBookingCharges === '0.00' || form.tableBookingCharges === '0.0' ? '✓ FREE ACTIVE' : '⚡ SET FREE (₹0)'}
+                        </button>
+                    </div>
                     <input 
                         className="vz-form-control" 
-                        type="number" step="0.01" placeholder="e.g. 500" 
+                        type="number" step="0.01" placeholder="e.g. 500 (Set 0 for Free)" 
                         value={form.tableBookingCharges} 
                         onChange={e => { set('tableBookingCharges', e.target.value); if (formErrors.tableBookingCharges) setFormErrors(p => ({...p, tableBookingCharges: ''})); }}
-                        style={formErrors.tableBookingCharges ? { borderColor: '#ef4444' } : {}}
+                        style={formErrors.tableBookingCharges ? { borderColor: '#ef4444' } : (form.tableBookingCharges === '0' || form.tableBookingCharges === '0.00' || form.tableBookingCharges === '0.0' ? { borderColor: '#10b981', background: 'rgba(16, 185, 129, 0.05)' } : {})}
                     />
                     {errMsg('tableBookingCharges')}
+                    {(form.tableBookingCharges === '0' || form.tableBookingCharges === '0.00' || form.tableBookingCharges === '0.0') && (
+                        <span style={{ fontSize: '0.75rem', color: '#10b981', marginTop: '0.25rem', display: 'block', fontWeight: 600 }}>
+                            🎉 FREE Table Booking Enabled — Users can book tables for ₹0 with instant confirmation!
+                        </span>
+                    )}
                 </div>
                 <div style={field}>
                     <label style={labelStyle}>Couple Entry Fee ₹</label>

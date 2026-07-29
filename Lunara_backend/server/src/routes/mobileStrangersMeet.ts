@@ -23,6 +23,7 @@ import {
 const router = Router();
 
 router.get('/requests/:id/ticket', getStrangersMeetTicket);
+router.get('/:id/financials', getMeetFinancials);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/mobile/strangers-meet

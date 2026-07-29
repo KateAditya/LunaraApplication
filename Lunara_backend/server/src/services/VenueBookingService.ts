@@ -57,7 +57,7 @@ export class VenueBookingService {
 
         if (isStandardOrGroup) {
             const rawCharge = Number(venue.tableBookingCharges);
-            const basePrice = (!isNaN(rawCharge) && rawCharge > 0) ? rawCharge : 500;
+            const basePrice = (!isNaN(rawCharge) && rawCharge >= 0) ? rawCharge : 0;
             const subtotal = basePrice * numberOfGuests;
             const discountPercent = Number(venue.discountPercentage || 0);
             const discountAmount = (subtotal * discountPercent) / 100;
@@ -72,7 +72,7 @@ export class VenueBookingService {
                 totalAmount = Number(pkg.price);
             } else {
                 const rawCharge = Number(venue.tableBookingCharges);
-                const basePrice = (!isNaN(rawCharge) && rawCharge > 0) ? rawCharge : 500;
+                const basePrice = (!isNaN(rawCharge) && rawCharge >= 0) ? rawCharge : 0;
                 totalAmount = basePrice * numberOfGuests;
             }
         }
@@ -105,7 +105,7 @@ export class VenueBookingService {
             throw new Error(`Maximum capacity for this venue is ${venue.capacity} guests.`);
         }
 
-        const timingValidation = validateVenueTimingAndHolidays(venue, bookingDate);
+        const timingValidation = validateVenueTimingAndHolidays(venue, bookingDate, startTime);
         if (!timingValidation.isValid) {
             throw new Error(timingValidation.reason || 'Venue is closed on selected date.');
         }
