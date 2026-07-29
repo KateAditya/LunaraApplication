@@ -598,6 +598,7 @@ export const getAllRequests = async (req: Request, res: Response): Promise<void>
             order: [['createdAt', 'DESC']],
             limit: limitNum,
             offset,
+            distinct: true,
         });
 
         // Counts by status for badge display
@@ -647,6 +648,7 @@ export const getFeedRequests = async (req: Request, res: Response): Promise<void
             order: [['eventDateTime', 'DESC'], ['createdAt', 'DESC']],
             limit: limitNum,
             offset,
+            distinct: true,
         });
 
         // Fallback: If no future/recent events found, return approved meets so feed is never empty
@@ -659,6 +661,7 @@ export const getFeedRequests = async (req: Request, res: Response): Promise<void
                 order: [['eventDateTime', 'DESC'], ['createdAt', 'DESC']],
                 limit: limitNum,
                 offset,
+                distinct: true,
             });
             count = fallback.count;
             rows = fallback.rows;

@@ -48,17 +48,13 @@ export const changePasswordValidation = [
     body('currentPassword').notEmpty().withMessage('Current password is required'),
     body('newPassword')
         .notEmpty().withMessage('New password is required')
-        .isLength({ min: 8 }).withMessage('Password must be at least 8 characters long')
-        .matches(/[A-Z]/).withMessage('Password must contain at least 1 uppercase letter')
-        .matches(/[a-z]/).withMessage('Password must contain at least 1 lowercase letter')
-        .matches(/[0-9]/).withMessage('Password must contain at least 1 number')
-        .matches(/[^A-Za-z0-9]/).withMessage('Password must contain at least 1 special character')
+        .isLength({ min: 3 }).withMessage('Password must contain minimum 3 characters')
         .custom((value, { req }) => {
             if (value === req.body.currentPassword) {
                 throw new Error('New password cannot be the same as current password');
             }
-            if (value !== req.body.confirmPassword) {
-                throw new Error('New password and confirm password must match');
+            if (req.body.confirmPassword && value !== req.body.confirmPassword) {
+                throw new Error('Passwords do not match');
             }
             return true;
         }),

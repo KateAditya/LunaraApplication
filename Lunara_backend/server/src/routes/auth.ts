@@ -41,7 +41,7 @@ const resetPasswordValidation = [
 
 const changePasswordValidation = [
     body('currentPassword').notEmpty().withMessage('Current password is required'),
-    body('newPassword').isLength({ min: 3 }).withMessage('New password must be at least 3 characters'),
+    body('newPassword').isLength({ min: 3 }).withMessage('Password must contain minimum 3 characters'),
     validate,
 ];
 

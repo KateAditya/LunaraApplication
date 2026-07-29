@@ -53,6 +53,8 @@ class PaymentConfirmationScreen extends StatefulWidget {
 
 class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
   late Razorpay _razorpay;
+  // Track whether the processing loading dialog is currently shown
+  bool _isProcessingDialogOpen = false;
 
   @override
   void initState() {
@@ -70,7 +72,14 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
   }
 
   void _handlePaymentSuccess(PaymentSuccessResponse response) async {
-    Navigator.pop(context); // Close dialog if open
+    // Only pop the processing dialog if one is actually open.
+    // DO NOT pop the screen itself here — Razorpay closes its own UI.
+    // Prematurely popping here was causing the PaymentConfirmationScreen to
+    // close before the onPaymentSuccess callbacks ran, breaking navigation.
+    if (_isProcessingDialogOpen && mounted) {
+      _isProcessingDialogOpen = false;
+      Navigator.pop(context); // Close the processing dialog only
+    }
 
     if (widget.bookingId != null && widget.bookingId!.isNotEmpty) {
       await ApiService.payNowBooking(widget.bookingId!);
@@ -87,6 +96,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
 
     if (!mounted) return;
     if (widget.package == 'Party Plan Safety Deposit') {
+      // Pop the PaymentConfirmationScreen back to live feed
       Navigator.pop(context);
     } else {
       Navigator.pushReplacement(
@@ -108,19 +118,29 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
   }
 
   void _handlePaymentError(PaymentFailureResponse response) {
-    Navigator.pop(context); // Close dialog if open
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Payment failed: ${response.message}')),
-    );
+    if (_isProcessingDialogOpen && mounted) {
+      _isProcessingDialogOpen = false;
+      Navigator.pop(context); // Close the processing dialog
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Payment failed: ${response.message}')),
+      );
+    }
   }
 
   void _handleExternalWallet(ExternalWalletResponse response) {
-    Navigator.pop(context); // Close dialog if open
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('External Wallet selected: ${response.walletName}'),
-      ),
-    );
+    if (_isProcessingDialogOpen && mounted) {
+      _isProcessingDialogOpen = false;
+      Navigator.pop(context); // Close the processing dialog
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('External Wallet selected: ${response.walletName}'),
+        ),
+      );
+    }
   }
 
   @override
@@ -473,6 +493,8 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
     try {
       _razorpay.open(options);
       razorpayOpened = true;
+      // Mark dialog as open so _handlePaymentSuccess can close it properly
+      _isProcessingDialogOpen = true;
     } catch (e) {
       debugPrint(
         'Error opening Razorpay, falling back to simulated payment: $e',

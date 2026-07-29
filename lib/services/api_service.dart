@@ -1662,7 +1662,7 @@ class ApiService {
     return false;
   }
 
-  static Future<bool> changePassword(
+  static Future<Map<String, dynamic>> changePassword(
     String currentPassword,
     String newPassword,
     String confirmPassword,
@@ -1676,14 +1676,34 @@ class ApiService {
           'confirmPassword': confirmPassword,
         },
       );
+      final body = json.decode(response.body);
       if (response.statusCode == 200 || response.statusCode == 201) {
-        // Just return true if status is 200/201
-        return true;
+        return {
+          'success': true,
+          'message': body['message'] ?? 'Password updated successfully!',
+        };
+      } else {
+        String msg = body['message'] ?? 'Failed to update password';
+        if (body['errors'] is List && (body['errors'] as List).isNotEmpty) {
+          final firstErr = body['errors'][0];
+          if (firstErr is Map && firstErr['msg'] != null) {
+            msg = firstErr['msg'];
+          } else if (firstErr is String) {
+            msg = firstErr;
+          }
+        }
+        return {
+          'success': false,
+          'message': msg,
+        };
       }
     } catch (e) {
       debugPrint('changePassword error: $e');
+      return {
+        'success': false,
+        'message': 'Failed to update password. Please try again.',
+      };
     }
-    return false;
   }
 
   static Future<http.Response> put(

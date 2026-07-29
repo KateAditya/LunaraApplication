@@ -583,8 +583,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               setModalState(() {
                 if (val.isEmpty) {
                   newError = 'New password is required';
-                } else if (val.length < 6) {
-                  newError = 'Password must be at least 6 characters';
+                } else if (val.length < 3) {
+                  newError = 'Password must contain minimum 3 characters';
+                } else if (oldController.text.isNotEmpty && val == oldController.text) {
+                  newError = 'New password cannot be the same as current password';
                 } else {
                   newError = null;
                 }
@@ -854,7 +856,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                               setModalState(() => isUpdating = true);
 
-                              final success = await ApiService.changePassword(
+                              final res = await ApiService.changePassword(
                                 oldController.text,
                                 newController.text,
                                 confirmController.text,
@@ -863,24 +865,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               if (!mounted) return;
                               setModalState(() => isUpdating = false);
 
-                              if (success) {
+                              if (res['success'] == true) {
                                 Navigator.pop(ctx);
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
+                                  SnackBar(
                                     content: Text(
-                                      'Password updated successfully!',
+                                      res['message'] ?? 'Password updated successfully!',
                                     ),
                                     backgroundColor: Colors.green,
                                     behavior: SnackBarBehavior.floating,
                                   ),
                                 );
                               } else {
+                                final msg = res['message']?.toString() ?? 'Failed to update password.';
                                 setModalState(() {
-                                  oldError = 'Incorrect current password';
+                                  final lowerMsg = msg.toLowerCase();
+                                  if (lowerMsg.contains('current') || lowerMsg.contains('incorrect')) {
+                                    oldError = msg;
+                                  } else if (lowerMsg.contains('match') || lowerMsg.contains('confirm')) {
+                                    confirmError = msg;
+                                  } else {
+                                    newError = msg;
+                                  }
                                 });
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Failed to update password.'),
+                                  SnackBar(
+                                    content: Text(msg),
                                     backgroundColor: Colors.red,
                                     behavior: SnackBarBehavior.floating,
                                   ),

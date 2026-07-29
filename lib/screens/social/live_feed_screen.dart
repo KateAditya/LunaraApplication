@@ -291,11 +291,26 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (!mounted) return;
     try {
       final reqId = data['requestId']?.toString();
-      if (reqId != null) {
+      final planId = data['planId']?.toString();
+      if (reqId != null || planId != null) {
         setState(() {
           for (var item in _feedItems) {
-            if (item['id']?.toString() == reqId) {
+            // Update request item status
+            if (reqId != null && item['id']?.toString() == reqId) {
               item['status'] = 'host_paid';
+              // Also update nested plan.hostPaymentStatus so PAY button hides
+              if (item['plan'] is Map) {
+                (item['plan'] as Map)['hostPaymentStatus'] = 'paid';
+              }
+              if (item['planDetails'] is Map) {
+                (item['planDetails'] as Map)['hostPaymentStatus'] = 'paid';
+              }
+            }
+            // Update party_plan posts by planId
+            if (planId != null && item['type'] == 'party_plan_post') {
+              if (item['plan']?['id']?.toString() == planId) {
+                (item['plan'] as Map)['hostPaymentStatus'] = 'paid';
+              }
             }
           }
         });
@@ -3113,6 +3128,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               );
               if (!mounted) return;
               if (success) {
+                // Optimistically mark as paid so PAY button hides immediately
+                setState(() {
+                  for (final item in _feedItems) {
+                    if (item['plan']?['id']?.toString() == planId) {
+                      if (item['plan'] is Map) {
+                        (item['plan'] as Map)['hostPaymentStatus'] = 'paid';
+                      }
+                    }
+                  }
+                });
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Host deposit paid successfully! ✅'),
@@ -3148,6 +3173,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               );
               if (!mounted) return;
               if (success) {
+                // Optimistically mark as paid so PAY button hides immediately
+                setState(() {
+                  for (final item in _feedItems) {
+                    if (item['plan']?['id']?.toString() == planId) {
+                      if (item['plan'] is Map) {
+                        (item['plan'] as Map)['hostPaymentStatus'] = 'paid';
+                      }
+                    }
+                  }
+                });
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Host deposit paid successfully! ✅'),
