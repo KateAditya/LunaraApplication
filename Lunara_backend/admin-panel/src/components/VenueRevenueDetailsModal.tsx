@@ -1,20 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Chart from 'react-apexcharts';
-import { ApexOptions } from 'apexcharts';
+import type { ApexOptions } from 'apexcharts';
 import {
     BiX,
-    BiCalendar,
-    BiMoney,
     BiTrendingUp,
     BiRefresh,
     BiDownload,
     BiSearch,
-    BiUser,
-    BiFilterAlt,
-    BiBuildingHouse,
-    BiArrowBack
-} from 'react-icons/icons';
-import { BiBarChartAlt2, BiCheckCircle, BiGroup, BiParty } from 'react-icons/bi';
+    BiArrowBack,
+    BiBarChartAlt2,
+} from 'react-icons/bi';
 import toast from 'react-hot-toast';
 import bookingsApi from '../api/bookings';
 import { useThemeMode } from '../context/ThemeContext';

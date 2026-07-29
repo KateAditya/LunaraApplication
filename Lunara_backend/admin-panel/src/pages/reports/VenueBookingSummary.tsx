@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { BiSearch, BiRefresh, BiFilterAlt, BiDownload, BiBuildingHouse, BiCalendar, BiMoney, BiCheckCircle } from 'react-icons/bi';
 import toast from 'react-hot-toast';
 import bookingsApi from '../../api/bookings';
@@ -10,7 +9,6 @@ import { VenueRevenueDetailsModal } from '../../components/VenueRevenueDetailsMo
 export const VenueBookingSummary = () => {
     const { mode } = useThemeMode();
     const isDark = mode === 'dark';
-    const navigate = useNavigate();
 
     const [summary, setSummary] = useState<any>(null);
     const [venuesData, setVenuesData] = useState<any[]>([]);
