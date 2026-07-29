@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import GroupParty, { GroupPartyPaymentStatus } from '../models/GroupParty';
 import Venue from '../models/Venue';
+import VenueImage from '../models/VenueImage';
 import User from '../models/User';
 import UserProfile from '../models/UserProfile';
 import UserPhoto from '../models/UserPhoto';
@@ -119,7 +120,10 @@ export const getMyGroupParties = async (req: Request, res: Response): Promise<vo
                 {
                     model: Venue,
                     as: 'venue',
-                    attributes: ['id', 'name', 'addressLine1', 'city', 'images', 'imageUrl'],
+                    attributes: ['id', 'name', 'addressLine1', 'city', 'imageUrl'],
+                    include: [
+                        { model: VenueImage, as: 'images', attributes: ['id', 'filePath', 'imageType', 'isPrimary'], required: false },
+                    ],
                 },
             ],
             order: [['createdAt', 'DESC']],
@@ -143,7 +147,10 @@ export const getGroupPartyTicket = async (req: Request, res: Response): Promise<
                 {
                     model: Venue,
                     as: 'venue',
-                    attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'latitude', 'longitude', 'images', 'imageUrl'],
+                    attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'latitude', 'longitude', 'imageUrl'],
+                    include: [
+                        { model: VenueImage, as: 'images', attributes: ['id', 'filePath', 'imageType', 'isPrimary'], required: false },
+                    ],
                 },
                 {
                     model: User,
