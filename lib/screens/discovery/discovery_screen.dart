@@ -80,7 +80,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     });
   }
 
-  Future<void> _determinePosition({bool requestIfNeeded = false, bool showLoader = false}) async {
+  Future<void> _determinePosition({
+    bool requestIfNeeded = false,
+    bool showLoader = false,
+  }) async {
     if (showLoader && mounted) {
       showDialog(
         context: context,
@@ -90,7 +93,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         ),
       );
     }
-    
+
     bool serviceEnabled;
     LocationPermission permission;
 
@@ -130,7 +133,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
     try {
       final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
       );
       if (mounted) {
         setState(() {
@@ -147,26 +152,32 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   void _startLocationUpdates() {
     _positionStreamSubscription?.cancel();
-    _positionStreamSubscription = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 10,
-      ),
-    ).listen((Position position) {
-      if (mounted) {
-        setState(() {
-          _currentPosition = position;
-        });
-      }
-    }, onError: (e) {
-      debugPrint("Error in location stream: $e");
-    });
+    _positionStreamSubscription =
+        Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 10,
+          ),
+        ).listen(
+          (Position position) {
+            if (mounted) {
+              setState(() {
+                _currentPosition = position;
+              });
+            }
+          },
+          onError: (e) {
+            debugPrint("Error in location stream: $e");
+          },
+        );
   }
 
   void _fetchGoogleRatingsForVenues(List<Venue> venues) {
     for (final venue in venues) {
       if (venue.name.isNotEmpty && !_googleRatings.containsKey(venue.id)) {
-        GooglePlacesService.fetchGoogleRating(venue.name, venue.city).then((result) {
+        GooglePlacesService.fetchGoogleRating(venue.name, venue.city).then((
+          result,
+        ) {
           if (result != null && mounted) {
             setState(() {
               _googleRatings[venue.id] = result;
@@ -241,8 +252,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           if (rawPartyPlans.isNotEmpty) {
             combinedPosts.addAll(
               rawPartyPlans.map((plan) {
-                final user = (plan['user'] ?? plan['creator'] ?? plan['host']) as Map<String, dynamic>? ?? {};
-                final venue = (plan['venue'] ?? plan['venueMap']) as Map<String, dynamic>? ?? {};
+                final user =
+                    (plan['user'] ?? plan['creator'] ?? plan['host'])
+                        as Map<String, dynamic>? ??
+                    {};
+                final venue =
+                    (plan['venue'] ?? plan['venueMap'])
+                        as Map<String, dynamic>? ??
+                    {};
 
                 String timeStr =
                     plan['planDateTime'] ?? plan['createdAt'] ?? '';
@@ -253,27 +270,44 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   } catch (_) {}
                 }
 
-                final targetVenueId = (plan['venueId'] ?? venue['id'])?.toString() ?? '';
+                final targetVenueId =
+                    (plan['venueId'] ?? venue['id'])?.toString() ?? '';
 
                 // Resolve venue cover image from multiple possible fields
-                dynamic rawImg = venue['coverImageUrl'] ??
+                dynamic rawImg =
+                    venue['coverImageUrl'] ??
                     venue['imageUrl'] ??
                     venue['image'] ??
-                    (venue['coverImage'] is Map ? venue['coverImage']['url'] ?? venue['coverImage']['filePath'] : null) ??
-                    (venue['images'] is List && (venue['images'] as List).isNotEmpty
+                    (venue['coverImage'] is Map
+                        ? venue['coverImage']['url'] ??
+                              venue['coverImage']['filePath']
+                        : null) ??
+                    (venue['images'] is List &&
+                            (venue['images'] as List).isNotEmpty
                         ? ((venue['images'] as List).first is Map
-                            ? (venue['images'] as List).first['url'] ?? (venue['images'] as List).first['filePath']
-                            : (venue['images'] as List).first)
+                              ? (venue['images'] as List).first['url'] ??
+                                    (venue['images'] as List).first['filePath']
+                              : (venue['images'] as List).first)
                         : null);
 
-                if ((rawImg == null || rawImg.toString().isEmpty || rawImg.toString().startsWith('Instance of')) && targetVenueId.isNotEmpty) {
+                if ((rawImg == null ||
+                        rawImg.toString().isEmpty ||
+                        rawImg.toString().startsWith('Instance of')) &&
+                    targetVenueId.isNotEmpty) {
                   try {
-                    final matchedV = _allVenues.firstWhere((v) => v.id == targetVenueId);
+                    final matchedV = _allVenues.firstWhere(
+                      (v) => v.id == targetVenueId,
+                    );
                     rawImg = matchedV.imageUrl;
                   } catch (_) {}
                 }
 
-                final String? photoUrl = (user['profilePhotoUrl'] ?? user['photoUrl'] ?? user['profilePhoto'] ?? user['image'])?.toString();
+                final String? photoUrl =
+                    (user['profilePhotoUrl'] ??
+                            user['photoUrl'] ??
+                            user['profilePhoto'] ??
+                            user['image'])
+                        ?.toString();
 
                 return {
                   'id': plan['id'],
@@ -289,7 +323,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   'venueId': targetVenueId,
                   'content': plan['message'] ?? '',
                   'time': timeStr,
-                  'coverImageUrl': (rawImg != null && !rawImg.toString().startsWith('Instance of')) ? rawImg.toString() : '',
+                  'coverImageUrl':
+                      (rawImg != null &&
+                          !rawImg.toString().startsWith('Instance of'))
+                      ? rawImg.toString()
+                      : '',
                   'userId': user['id'] ?? plan['userId'],
                   'user': user,
                   'venueMap': venue,
@@ -302,8 +340,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           if (rawStrangersMeet.isNotEmpty) {
             combinedPosts.addAll(
               rawStrangersMeet.map((meet) {
-                final user = (meet['user'] ?? meet['host']) as Map<String, dynamic>? ?? {};
-                final venue = (meet['venue'] ?? meet['venueMap']) as Map<String, dynamic>? ?? {};
+                final user =
+                    (meet['user'] ?? meet['host']) as Map<String, dynamic>? ??
+                    {};
+                final venue =
+                    (meet['venue'] ?? meet['venueMap'])
+                        as Map<String, dynamic>? ??
+                    {};
 
                 String timeStr =
                     meet['eventDateTime'] ?? meet['createdAt'] ?? '';
@@ -314,10 +357,19 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   } catch (_) {}
                 }
 
-                final String extractedVenueId = (meet['venueId'] ?? venue['id'] ?? (meet['venue'] is Map ? meet['venue']['id'] : null) ?? (meet['venue'] is String ? meet['venue'] : ''))?.toString() ?? '';
+                final String extractedVenueId =
+                    (meet['venueId'] ??
+                            venue['id'] ??
+                            (meet['venue'] is Map
+                                ? meet['venue']['id']
+                                : null) ??
+                            (meet['venue'] is String ? meet['venue'] : ''))
+                        ?.toString() ??
+                    '';
 
                 // Resolve venue cover image from multiple possible fields
-                dynamic rawImg = venue['coverImageUrl'] ??
+                dynamic rawImg =
+                    venue['coverImageUrl'] ??
                     venue['imageUrl'] ??
                     venue['image'] ??
                     meet['coverImageUrl'] ??
@@ -325,21 +377,36 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     meet['venueImage'] ??
                     meet['bannerUrl'] ??
                     meet['bannerImage'] ??
-                    (venue['coverImage'] is Map ? venue['coverImage']['url'] ?? venue['coverImage']['filePath'] : null) ??
-                    (venue['images'] is List && (venue['images'] as List).isNotEmpty
+                    (venue['coverImage'] is Map
+                        ? venue['coverImage']['url'] ??
+                              venue['coverImage']['filePath']
+                        : null) ??
+                    (venue['images'] is List &&
+                            (venue['images'] as List).isNotEmpty
                         ? ((venue['images'] as List).first is Map
-                            ? (venue['images'] as List).first['url'] ?? (venue['images'] as List).first['filePath']
-                            : (venue['images'] as List).first)
+                              ? (venue['images'] as List).first['url'] ??
+                                    (venue['images'] as List).first['filePath']
+                              : (venue['images'] as List).first)
                         : null);
 
-                if ((rawImg == null || rawImg.toString().isEmpty || rawImg.toString().startsWith('Instance of')) && extractedVenueId.isNotEmpty) {
+                if ((rawImg == null ||
+                        rawImg.toString().isEmpty ||
+                        rawImg.toString().startsWith('Instance of')) &&
+                    extractedVenueId.isNotEmpty) {
                   try {
-                    final matchedV = _allVenues.firstWhere((v) => v.id == extractedVenueId);
+                    final matchedV = _allVenues.firstWhere(
+                      (v) => v.id == extractedVenueId,
+                    );
                     rawImg = matchedV.imageUrl;
                   } catch (_) {}
                 }
 
-                final String? photoUrl = (user['photoUrl'] ?? user['profilePhotoUrl'] ?? user['profilePhoto'] ?? user['image'])?.toString();
+                final String? photoUrl =
+                    (user['photoUrl'] ??
+                            user['profilePhotoUrl'] ??
+                            user['profilePhoto'] ??
+                            user['image'])
+                        ?.toString();
 
                 return {
                   'id': meet['id'],
@@ -351,12 +418,20 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   'city': venue['city'] ?? user['city'] ?? 'Unknown',
                   'bio': user['bio'] ?? '',
                   'gender': user['gender'] ?? 'Unknown',
-                  'venue': venue['name'] ?? meet['venueName'] ?? (meet['venue'] is String ? meet['venue'] : null) ?? 'Venue',
+                  'venue':
+                      venue['name'] ??
+                      meet['venueName'] ??
+                      (meet['venue'] is String ? meet['venue'] : null) ??
+                      'Venue',
                   'venueId': extractedVenueId,
                   'venueMap': venue,
                   'content': meet['tagline'] ?? meet['subject'] ?? '',
                   'time': timeStr,
-                  'coverImageUrl': (rawImg != null && !rawImg.toString().startsWith('Instance of')) ? rawImg.toString() : '',
+                  'coverImageUrl':
+                      (rawImg != null &&
+                          !rawImg.toString().startsWith('Instance of'))
+                      ? rawImg.toString()
+                      : '',
                   'userId': user['id'] ?? meet['userId'],
                   'user': user,
                   'createdAt': meet['createdAt'],
@@ -377,9 +452,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           _partyPlans = combinedPosts;
 
           final fetchedCities = _allVenues.map((v) => v.city).toSet().toList();
-          final fallbackCities = [
-            'Pune'
-          ];
+          final fallbackCities = ['Pune'];
           _availableCities = {...fetchedCities, ...fallbackCities}.toList();
           if (_availableCities.isNotEmpty) {
             _availableCities.sort();
@@ -418,6 +491,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       debugPrint('Error in _loadVenues: $e');
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _refreshData() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+    await _loadVenues();
   }
 
   List<Venue> get _filteredVenues {
@@ -645,18 +724,24 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => EditProfileScreen(user: _currentUser!),
+                          builder: (context) =>
+                              EditProfileScreen(user: _currentUser!),
                         ),
                       ).then((_) => _loadVenues());
                     }
                   },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                        color: LunaraTheme.electricViolet.withValues(
+                          alpha: 0.3,
+                        ),
                       ),
                     ),
                     child: Row(
@@ -693,7 +778,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => EditProfileScreen(user: _currentUser!),
+                      builder: (context) =>
+                          EditProfileScreen(user: _currentUser!),
                     ),
                   ).then((_) => _loadVenues());
                 } else {
@@ -765,7 +851,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     child: _buildAdBanner(),
                   ),
                   const SizedBox(height: 24),
-  
+
                   // 2. Upcoming Nights
                   if (_upcomingNights.isNotEmpty) ...[
                     const Padding(
@@ -789,7 +875,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     _buildUpcomingNights(),
                     const SizedBox(height: 24),
                   ],
-  
+
                   // 3. Featured Venues
                   Padding(
                     padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
@@ -798,106 +884,106 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                        Row(
-                          children: [
-                            const Text(
-                              'FEATURED VENUES',
-                              style: TextStyle(
-                                fontFamily: 'AllroundGothic',
-                                letterSpacing: 2,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black,
-                                fontSize: 15,
+                          Row(
+                            children: [
+                              const Text(
+                                'FEATURED VENUES',
+                                style: TextStyle(
+                                  fontFamily: 'AllroundGothic',
+                                  letterSpacing: 2,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black,
+                                  fontSize: 15,
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            GestureDetector(
-                              onTap: () async {
-                                if (_currentPosition == null) {
-                                  await _determinePosition(
-                                    requestIfNeeded: true,
-                                    showLoader: true,
-                                  );
-                                  if (_currentPosition != null) {
+                              const SizedBox(width: 8),
+                              GestureDetector(
+                                onTap: () async {
+                                  if (_currentPosition == null) {
+                                    await _determinePosition(
+                                      requestIfNeeded: true,
+                                      showLoader: true,
+                                    );
+                                    if (_currentPosition != null) {
+                                      setState(() {
+                                        _sortByDistance = true;
+                                      });
+                                    }
+                                  } else {
                                     setState(() {
-                                      _sortByDistance = true;
+                                      _sortByDistance = !_sortByDistance;
                                     });
                                   }
-                                } else {
-                                  setState(() {
-                                    _sortByDistance = !_sortByDistance;
-                                  });
-                                }
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: _sortByDistance
-                                      ? LunaraTheme.electricViolet
-                                      : LunaraTheme.electricViolet.withValues(
-                                          alpha: 0.1,
-                                        ),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
                                     color: _sortByDistance
                                         ? LunaraTheme.electricViolet
                                         : LunaraTheme.electricViolet.withValues(
-                                            alpha: 0.2,
+                                            alpha: 0.1,
                                           ),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.my_location_rounded,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
                                       color: _sortByDistance
-                                          ? Colors.white
-                                          : LunaraTheme.electricViolet,
-                                      size: 12,
+                                          ? LunaraTheme.electricViolet
+                                          : LunaraTheme.electricViolet
+                                                .withValues(alpha: 0.2),
                                     ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'NEAR ME',
-                                      style: TextStyle(
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.my_location_rounded,
                                         color: _sortByDistance
                                             ? Colors.white
                                             : LunaraTheme.electricViolet,
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.bold,
+                                        size: 12,
                                       ),
-                                    ),
-                                  ],
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'NEAR ME',
+                                        style: TextStyle(
+                                          color: _sortByDistance
+                                              ? Colors.white
+                                              : LunaraTheme.electricViolet,
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
+                            ],
+                          ),
+                          GestureDetector(
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    AllVenuesScreen(venues: _allVenues),
+                              ),
                             ),
-                          ],
-                        ),
-                        GestureDetector(
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => AllVenuesScreen(venues: _allVenues),
+                            child: const Text(
+                              'SEE ALL',
+                              style: TextStyle(
+                                fontFamily: 'AllroundGothic',
+                                letterSpacing: 1,
+                                fontWeight: FontWeight.bold,
+                                color: LunaraTheme.electricViolet,
+                                fontSize: 15,
+                              ),
                             ),
                           ),
-                          child: const Text(
-                            'SEE ALL',
-                            style: TextStyle(
-                              fontFamily: 'AllroundGothic',
-                              letterSpacing: 1,
-                              fontWeight: FontWeight.bold,
-                              color: LunaraTheme.electricViolet,
-                              fontSize: 15,
-                            ),
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Container(
@@ -923,9 +1009,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   ],
                   _buildVenueList(),
                   const SizedBox(height: 32),
-  
+
                   // 4. Recent Posts
-                  if (_filteredPartyPlans.any((p) => p['type'] == 'party_plan')) ...[
+                  if (_filteredPartyPlans.any(
+                    (p) => p['type'] == 'party_plan',
+                  )) ...[
                     Padding(
                       padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
                       child: Row(
@@ -942,7 +1030,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                           ),
                           GestureDetector(
                             onTap: () {
-                              final displayFeeds = _filteredPartyPlans.where((p) => p['type'] == 'party_plan').toList();
+                              final displayFeeds = _filteredPartyPlans
+                                  .where((p) => p['type'] == 'party_plan')
+                                  .toList();
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
@@ -966,14 +1056,25 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                         ],
                       ),
                     ),
-                    _buildFeedsList(_filteredPartyPlans.where((p) => p['type'] == 'party_plan').toList()),
+                    _buildFeedsList(
+                      _filteredPartyPlans
+                          .where((p) => p['type'] == 'party_plan')
+                          .toList(),
+                    ),
                   ],
 
-                  if (_filteredPartyPlans.any((p) => p['type'] == 'party_plan') && _filteredPartyPlans.any((p) => p['type'] == 'strangers_meet'))
+                  if (_filteredPartyPlans.any(
+                        (p) => p['type'] == 'party_plan',
+                      ) &&
+                      _filteredPartyPlans.any(
+                        (p) => p['type'] == 'strangers_meet',
+                      ))
                     const SizedBox(height: 32),
 
                   // 4b. Strangers Meet
-                  if (_filteredPartyPlans.any((p) => p['type'] == 'strangers_meet')) ...[
+                  if (_filteredPartyPlans.any(
+                    (p) => p['type'] == 'strangers_meet',
+                  )) ...[
                     Padding(
                       padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
                       child: Row(
@@ -990,7 +1091,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                           ),
                           GestureDetector(
                             onTap: () {
-                              final displayFeeds = _filteredPartyPlans.where((p) => p['type'] == 'strangers_meet').toList();
+                              final displayFeeds = _filteredPartyPlans
+                                  .where((p) => p['type'] == 'strangers_meet')
+                                  .toList();
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
@@ -1014,9 +1117,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                         ],
                       ),
                     ),
-                    _buildFeedsList(_filteredPartyPlans.where((p) => p['type'] == 'strangers_meet').toList()),
+                    _buildFeedsList(
+                      _filteredPartyPlans
+                          .where((p) => p['type'] == 'strangers_meet')
+                          .toList(),
+                    ),
                   ],
-  
+
                   // 5. Top Profiles
                   _buildTopProfiles(),
                 ],
@@ -1041,7 +1148,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Image.asset(LunaraTheme.logoIcon, height: 28),
+                        GestureDetector(
+                          onTap: _refreshData,
+                          child: Image.asset(LunaraTheme.logoIcon, height: 28),
+                        ),
                         Expanded(
                           child: GestureDetector(
                             onTap: _showCitySelector,
@@ -1323,14 +1433,16 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   if (matchingVenue != null) {
                     final venueMap = matchingVenue.toMap();
                     if (_googleRatings.containsKey(matchingVenue.id)) {
-                      venueMap['googleRating'] = _googleRatings[matchingVenue.id]?['rating'];
-                      venueMap['googleRatingCount'] = _googleRatings[matchingVenue.id]?['user_ratings_total'];
+                      venueMap['googleRating'] =
+                          _googleRatings[matchingVenue.id]?['rating'];
+                      venueMap['googleRatingCount'] =
+                          _googleRatings[matchingVenue
+                              .id]?['user_ratings_total'];
                     }
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) =>
-                            VenueDetailScreen(venue: venueMap),
+                        builder: (_) => VenueDetailScreen(venue: venueMap),
                       ),
                     );
                   } else if (ad['venue'] != null) {
@@ -1350,8 +1462,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     };
                     final venueId = ad['venueId'] ?? ad['venue']['id'] ?? '';
                     if (_googleRatings.containsKey(venueId)) {
-                      minimalVenue['googleRating'] = _googleRatings[venueId]?['rating'];
-                      minimalVenue['googleRatingCount'] = _googleRatings[venueId]?['user_ratings_total'];
+                      minimalVenue['googleRating'] =
+                          _googleRatings[venueId]?['rating'];
+                      minimalVenue['googleRatingCount'] =
+                          _googleRatings[venueId]?['user_ratings_total'];
                     }
                     Navigator.push(
                       context,
@@ -1766,8 +1880,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                 onTap: () {
                   final venueMap = venue.toMap();
                   if (_googleRatings.containsKey(venue.id)) {
-                    venueMap['googleRating'] = _googleRatings[venue.id]?['rating'];
-                    venueMap['googleRatingCount'] = _googleRatings[venue.id]?['user_ratings_total'];
+                    venueMap['googleRating'] =
+                        _googleRatings[venue.id]?['rating'];
+                    venueMap['googleRatingCount'] =
+                        _googleRatings[venue.id]?['user_ratings_total'];
                   }
                   Navigator.push(
                     context,
@@ -1856,11 +1972,17 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                     ),
                                     Builder(
                                       builder: (context) {
-                                        final googleRatingData = _googleRatings[venue.id];
-                                        final double displayRating = googleRatingData != null
-                                            ? (googleRatingData['rating'] as num?)?.toDouble() ?? venue.averageRating
+                                        final googleRatingData =
+                                            _googleRatings[venue.id];
+                                        final double displayRating =
+                                            googleRatingData != null
+                                            ? (googleRatingData['rating']
+                                                          as num?)
+                                                      ?.toDouble() ??
+                                                  venue.averageRating
                                             : venue.averageRating;
-                                        final displayRatingStr = displayRating > 0.0
+                                        final displayRatingStr =
+                                            displayRating > 0.0
                                             ? displayRating.toStringAsFixed(1)
                                             : '4.5';
                                         return Text(
@@ -1871,7 +1993,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                             fontSize: 12,
                                           ),
                                         );
-                                      }
+                                      },
                                     ),
                                     const SizedBox(width: 4),
                                     Image.asset(
@@ -1938,7 +2060,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                   ),
                                 ),
                               ] else ...[
-                                 InkWell(
+                                InkWell(
                                   onTap: () async {
                                     await _determinePosition(
                                       requestIfNeeded: true,
@@ -1952,9 +2074,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                   },
                                   borderRadius: BorderRadius.circular(8),
                                   child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
                                     decoration: BoxDecoration(
-                                      color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                                      color: LunaraTheme.electricViolet
+                                          .withValues(alpha: 0.1),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Row(
@@ -1990,18 +2116,24 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (_) => BookingProcessScreen(venue: venue.toMap()),
+                                      builder: (_) => BookingProcessScreen(
+                                        venue: venue.toMap(),
+                                      ),
                                     ),
                                   );
                                 },
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 8,
+                                  ),
                                   decoration: BoxDecoration(
                                     gradient: LunaraTheme.purpleGradient,
                                     borderRadius: BorderRadius.circular(12),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                                        color: LunaraTheme.electricViolet
+                                            .withValues(alpha: 0.3),
                                         blurRadius: 8,
                                         offset: const Offset(0, 4),
                                       ),
@@ -2144,7 +2276,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
           // Handle nested user object or flat structure
           final userObj = feed['user'] is Map ? feed['user'] as Map : feed;
-          final String? userPhotoRaw = (userObj['profilePhotoUrl'] ?? userObj['photoUrl'] ?? userObj['profilePhoto'] ?? feed['profilePhotoUrl'] ?? feed['profilePhoto'])?.toString();
+          final String? userPhotoRaw =
+              (userObj['profilePhotoUrl'] ??
+                      userObj['photoUrl'] ??
+                      userObj['profilePhoto'] ??
+                      feed['profilePhotoUrl'] ??
+                      feed['profilePhoto'])
+                  ?.toString();
           final String? avatarUrl = ApiService.formatImageUrl(userPhotoRaw);
 
           // Resolve venue name & ID
@@ -2154,20 +2292,36 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           } else {
             venueName = feed['venue']?.toString() ?? '';
           }
-          final String targetVenueId = (feed['venueId'] ?? (feed['venue'] is Map ? feed['venue']['id'] : null))?.toString() ?? '';
+          final String targetVenueId =
+              (feed['venueId'] ??
+                      (feed['venue'] is Map ? feed['venue']['id'] : null))
+                  ?.toString() ??
+              '';
 
           // Try to get cover image from all possible fields and venue lookup
-          String? rawCover = feed['coverImageUrl']?.toString().isNotEmpty == true
+          String? rawCover =
+              feed['coverImageUrl']?.toString().isNotEmpty == true
               ? feed['coverImageUrl']
-              : (feed['venueImageUrl'] ?? feed['venueImage'] ?? feed['bannerUrl'] ?? feed['bannerImage']);
+              : (feed['venueImageUrl'] ??
+                    feed['venueImage'] ??
+                    feed['bannerUrl'] ??
+                    feed['bannerImage']);
 
-          if ((rawCover == null || rawCover.toString().isEmpty) && feed['venue'] is Map) {
+          if ((rawCover == null || rawCover.toString().isEmpty) &&
+              feed['venue'] is Map) {
             final vMap = feed['venue'] as Map;
             if (vMap['images'] is List && (vMap['images'] as List).isNotEmpty) {
               final first = (vMap['images'] as List).first;
-              rawCover = first is Map ? (first['url'] ?? first['imageUrl'] ?? first['filePath']) : first?.toString();
+              rawCover = first is Map
+                  ? (first['url'] ?? first['imageUrl'] ?? first['filePath'])
+                  : first?.toString();
             }
-            rawCover ??= (vMap['imageUrl'] ?? vMap['coverImage'] ?? vMap['photoUrl'] ?? vMap['image'])?.toString();
+            rawCover ??=
+                (vMap['imageUrl'] ??
+                        vMap['coverImage'] ??
+                        vMap['photoUrl'] ??
+                        vMap['image'])
+                    ?.toString();
           }
 
           // Search in _allVenues by ID first, then by Name
@@ -2175,14 +2329,18 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             Venue? matchedVenue;
             if (targetVenueId.isNotEmpty) {
               try {
-                matchedVenue = _allVenues.firstWhere((v) => v.id == targetVenueId);
+                matchedVenue = _allVenues.firstWhere(
+                  (v) => v.id == targetVenueId,
+                );
               } catch (_) {}
             }
             if (matchedVenue == null && venueName.isNotEmpty) {
               final vNameLower = venueName.toLowerCase().trim();
               for (final v in _allVenues) {
                 final nameLower = v.name.toLowerCase().trim();
-                if (nameLower == vNameLower || nameLower.contains(vNameLower) || vNameLower.contains(nameLower)) {
+                if (nameLower == vNameLower ||
+                    nameLower.contains(vNameLower) ||
+                    vNameLower.contains(nameLower)) {
                   matchedVenue = v;
                   break;
                 }
@@ -2191,13 +2349,23 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
             if (matchedVenue != null) {
               rawCover = matchedVenue.imageUrl;
-              if ((rawCover == null || rawCover.isEmpty) && matchedVenue.images != null && matchedVenue.images!.isNotEmpty) {
+              if ((rawCover == null || rawCover.isEmpty) &&
+                  matchedVenue.images != null &&
+                  matchedVenue.images!.isNotEmpty) {
                 final firstImg = matchedVenue.images!.first;
                 if (firstImg is Map) {
-                  rawCover = (firstImg['url'] ?? firstImg['imageUrl'] ?? firstImg['filePath'])?.toString();
+                  rawCover =
+                      (firstImg['url'] ??
+                              firstImg['imageUrl'] ??
+                              firstImg['filePath'])
+                          ?.toString();
                 } else if (firstImg != null) {
                   try {
-                    rawCover = ((firstImg as dynamic).url ?? (firstImg as dynamic).filePath ?? firstImg.toString())?.toString();
+                    rawCover =
+                        ((firstImg as dynamic).url ??
+                                (firstImg as dynamic).filePath ??
+                                firstImg.toString())
+                            ?.toString();
                   } catch (_) {
                     rawCover = firstImg.toString();
                   }
@@ -2225,7 +2393,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             rawCover = null;
           }
 
-          final String? coverImageUrl = ApiService.formatImageUrl(rawCover?.toString()) ?? avatarUrl;
+          final String? coverImageUrl =
+              ApiService.formatImageUrl(rawCover?.toString()) ?? avatarUrl;
 
           return RepaintBoundary(
             child: Container(
@@ -2262,165 +2431,177 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     ),
                     Positioned.fill(
                       child: InkWell(
-                onTap: () {
-                  final venue = _allVenues.firstWhere(
-                    (v) => v.name.toLowerCase() == venueName.toLowerCase(),
-                    orElse: () => _allVenues.isNotEmpty
-                        ? _allVenues.first
-                        : Venue(
-                            id: '0',
-                            name: venueName,
-                            city: 'Pune',
-                            addressLine1: 'Pune',
-                            averageRating: 0.0,
-                          ),
-                  );
-
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          PostDetailScreen(post: feed, venue: venue.toMap()),
-                    ),
-                  );
-                },
-                borderRadius: BorderRadius.circular(24),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          LunaraProfileImage(
-                            userData: userObj,
-                            radius: 18,
-                          ),
-
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  (userObj['firstName'] != null &&
-                                          userObj['lastName'] != null)
-                                      ? '${userObj['firstName']} ${userObj['lastName']}'
-                                      : (userObj['userName'] ?? 'Lunara User'),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                    color: Colors.white,
+                        onTap: () {
+                          final venue = _allVenues.firstWhere(
+                            (v) =>
+                                v.name.toLowerCase() == venueName.toLowerCase(),
+                            orElse: () => _allVenues.isNotEmpty
+                                ? _allVenues.first
+                                : Venue(
+                                    id: '0',
+                                    name: venueName,
+                                    city: 'Pune',
+                                    addressLine1: 'Pune',
+                                    averageRating: 0.0,
                                   ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  feed['time'] ?? '',
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 9,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Expanded(
-                        child: Text(
-                          feed['content'] ?? feed['message'] ?? '',
-                          style: const TextStyle(
-                            fontSize: 12.5,
-                            height: 1.4,
-                            color: Colors.white,
-                          ),
-                          maxLines: 4,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          if (feed['type'] == 'strangers_meet')
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 6,
-                              ),
-                              margin: const EdgeInsets.only(right: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.amber.withValues(alpha: 0.25),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Text(
-                                'STRANGER MEET',
-                                style: TextStyle(
-                                  color: Colors.amber,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 0.5,
-                                ),
+                          );
+
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => PostDetailScreen(
+                                post: feed,
+                                venue: venue.toMap(),
                               ),
                             ),
-                          Flexible(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.35),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: Colors.white.withValues(alpha: 0.2),
-                                  width: 0.8,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
+                          );
+                        },
+                        borderRadius: BorderRadius.circular(24),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
                                 children: [
-                                  const Icon(
-                                    Icons.star_rounded,
-                                    color: Colors.amber,
-                                    size: 12,
+                                  LunaraProfileImage(
+                                    userData: userObj,
+                                    radius: 18,
                                   ),
-                                  const SizedBox(width: 4),
-                                  Flexible(
-                                    child: Text(
-                                      venueName.toUpperCase(),
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.w900,
-                                        letterSpacing: 0.5,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Text(
+                                          (userObj['firstName'] != null &&
+                                                  userObj['lastName'] != null)
+                                              ? '${userObj['firstName']} ${userObj['lastName']}'
+                                              : (userObj['userName'] ??
+                                                    'Lunara User'),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                            color: Colors.white,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          feed['time'] ?? '',
+                                          style: const TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 9,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ],
                               ),
-                            ),
+                              const SizedBox(height: 12),
+                              Expanded(
+                                child: Text(
+                                  feed['content'] ?? feed['message'] ?? '',
+                                  style: const TextStyle(
+                                    fontSize: 12.5,
+                                    height: 1.4,
+                                    color: Colors.white,
+                                  ),
+                                  maxLines: 4,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  if (feed['type'] == 'strangers_meet')
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
+                                      margin: const EdgeInsets.only(right: 8),
+                                      decoration: BoxDecoration(
+                                        color: Colors.amber.withValues(
+                                          alpha: 0.25,
+                                        ),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: const Text(
+                                        'STRANGER MEET',
+                                        style: TextStyle(
+                                          color: Colors.amber,
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: 0.5,
+                                        ),
+                                      ),
+                                    ),
+                                  Flexible(
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.35,
+                                        ),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: Colors.white.withValues(
+                                            alpha: 0.2,
+                                          ),
+                                          width: 0.8,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(
+                                            Icons.star_rounded,
+                                            color: Colors.amber,
+                                            size: 12,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Flexible(
+                                            child: Text(
+                                              venueName.toUpperCase(),
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 9,
+                                                fontWeight: FontWeight.w900,
+                                                letterSpacing: 0.5,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          ],
-        ),
+          );
+        },
       ),
-    ),
-  );
-},
-),
-);
+    );
   }
 
   Widget _buildProfileMetricChip(IconData icon, String label, Color color) {
@@ -2429,10 +2610,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: color.withValues(alpha: 0.2),
-          width: 0.8,
-        ),
+        border: Border.all(color: color.withValues(alpha: 0.2), width: 0.8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -2477,8 +2655,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
     // Sort by rankScore (Boost + Superlikes + Likes + Points)
     users.sort((a, b) {
-      final scoreA = (a['rankScore'] is num ? a['rankScore'] : double.tryParse(a['rankScore']?.toString() ?? '0') ?? 0);
-      final scoreB = (b['rankScore'] is num ? b['rankScore'] : double.tryParse(b['rankScore']?.toString() ?? '0') ?? 0);
+      final scoreA = (a['rankScore'] is num
+          ? a['rankScore']
+          : double.tryParse(a['rankScore']?.toString() ?? '0') ?? 0);
+      final scoreB = (b['rankScore'] is num
+          ? b['rankScore']
+          : double.tryParse(b['rankScore']?.toString() ?? '0') ?? 0);
       return scoreB.compareTo(scoreA);
     });
 
@@ -2557,13 +2739,40 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                             'User')
                         .toString();
                 final vibe = user['gender'] ?? user['vibe'] ?? 'Discovery';
-                
-                final int likes = (user['likesCount'] is num ? user['likesCount'] : int.tryParse(user['likesCount']?.toString() ?? '0') ?? 0).toInt();
-                final int superLikes = (user['superLikesCount'] is num ? user['superLikesCount'] : int.tryParse(user['superLikesCount']?.toString() ?? '0') ?? 0).toInt();
-                final dynamic dRaw = user['doostCount'] ?? user['doost'] ?? user['plansCount'] ?? user['groupPartiesCount'];
-                final int doost = (dRaw is num ? dRaw : int.tryParse(dRaw?.toString() ?? '0') ?? 0).toInt();
-                final dynamic bRaw = user['boostCount'] ?? user['boostsRemaining'];
-                final int boosts = (bRaw is num ? bRaw : int.tryParse(bRaw?.toString() ?? '0') ?? 0).toInt();
+
+                final int likes =
+                    (user['likesCount'] is num
+                            ? user['likesCount']
+                            : int.tryParse(
+                                    user['likesCount']?.toString() ?? '0',
+                                  ) ??
+                                  0)
+                        .toInt();
+                final int superLikes =
+                    (user['superLikesCount'] is num
+                            ? user['superLikesCount']
+                            : int.tryParse(
+                                    user['superLikesCount']?.toString() ?? '0',
+                                  ) ??
+                                  0)
+                        .toInt();
+                final dynamic dRaw =
+                    user['doostCount'] ??
+                    user['doost'] ??
+                    user['plansCount'] ??
+                    user['groupPartiesCount'];
+                final int doost =
+                    (dRaw is num
+                            ? dRaw
+                            : int.tryParse(dRaw?.toString() ?? '0') ?? 0)
+                        .toInt();
+                final dynamic bRaw =
+                    user['boostCount'] ?? user['boostsRemaining'];
+                final int boosts =
+                    (bRaw is num
+                            ? bRaw
+                            : int.tryParse(bRaw?.toString() ?? '0') ?? 0)
+                        .toInt();
                 final bool isBoosted = user['isBoosted'] == true || boosts > 0;
 
                 return GestureDetector(
@@ -2577,7 +2786,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     final List<User> resolvedAllProfiles = [];
                     for (var u in users) {
                       try {
-                        resolvedAllProfiles.add(User.fromJson(Map<String, dynamic>.from(u)));
+                        resolvedAllProfiles.add(
+                          User.fromJson(Map<String, dynamic>.from(u)),
+                        );
                       } catch (_) {}
                     }
                     Navigator.push(
@@ -2598,12 +2809,16 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                       gradient: LunaraTheme.cardGradient,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: isBoosted ? Colors.amber.withValues(alpha: 0.6) : const Color(0xFF7F00FF).withValues(alpha: 0.08),
+                        color: isBoosted
+                            ? Colors.amber.withValues(alpha: 0.6)
+                            : const Color(0xFF7F00FF).withValues(alpha: 0.08),
                         width: isBoosted ? 1.8 : 1.2,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: isBoosted ? Colors.amber.withValues(alpha: 0.15) : const Color(0xFF7F00FF).withValues(alpha: 0.06),
+                          color: isBoosted
+                              ? Colors.amber.withValues(alpha: 0.15)
+                              : const Color(0xFF7F00FF).withValues(alpha: 0.06),
                           blurRadius: 16,
                           offset: const Offset(0, 6),
                         ),
@@ -2627,17 +2842,45 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                   bottom: -2,
                                   right: -4,
                                   child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 5,
+                                      vertical: 1.5,
+                                    ),
                                     decoration: BoxDecoration(
                                       gradient: index == 0
-                                          ? const LinearGradient(colors: [Color(0xFFFFD700), Color(0xFFFFA500)])
+                                          ? const LinearGradient(
+                                              colors: [
+                                                Color(0xFFFFD700),
+                                                Color(0xFFFFA500),
+                                              ],
+                                            )
                                           : index == 1
-                                              ? const LinearGradient(colors: [Color(0xFFC0C0C0), Color(0xFF808080)])
-                                              : index == 2
-                                                  ? const LinearGradient(colors: [Color(0xFFCD7F32), Color(0xFF8B4513)])
-                                                  : const LinearGradient(colors: [Color(0xFF7F00FF), Color(0xFFE100FF)]),
+                                          ? const LinearGradient(
+                                              colors: [
+                                                Color(0xFFC0C0C0),
+                                                Color(0xFF808080),
+                                              ],
+                                            )
+                                          : index == 2
+                                          ? const LinearGradient(
+                                              colors: [
+                                                Color(0xFFCD7F32),
+                                                Color(0xFF8B4513),
+                                              ],
+                                            )
+                                          : const LinearGradient(
+                                              colors: [
+                                                Color(0xFF7F00FF),
+                                                Color(0xFFE100FF),
+                                              ],
+                                            ),
                                       borderRadius: BorderRadius.circular(8),
-                                      boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+                                      boxShadow: const [
+                                        BoxShadow(
+                                          color: Colors.black26,
+                                          blurRadius: 4,
+                                        ),
+                                      ],
                                     ),
                                     child: Text(
                                       '#${index + 1}',
@@ -2680,15 +2923,24 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                       if (isBoosted) ...[
                                         const SizedBox(width: 4),
                                         Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 5,
+                                            vertical: 2,
+                                          ),
                                           decoration: BoxDecoration(
                                             color: Colors.amber,
-                                            borderRadius: BorderRadius.circular(6),
+                                            borderRadius: BorderRadius.circular(
+                                              6,
+                                            ),
                                           ),
                                           child: const Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              Icon(Icons.bolt, color: Colors.black, size: 9),
+                                              Icon(
+                                                Icons.bolt,
+                                                color: Colors.black,
+                                                size: 9,
+                                              ),
                                               Text(
                                                 'BOOST',
                                                 style: TextStyle(
@@ -2772,9 +3024,21 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            _buildProfileMetricChip(Icons.star_rounded, '$superLikes Super', const Color(0xFF9333EA)),
-                            _buildProfileMetricChip(Icons.favorite_rounded, '$likes Likes', const Color(0xFFEC4899)),
-                            _buildProfileMetricChip(Icons.groups_rounded, '$doost Doost', const Color(0xFF10B981)),
+                            _buildProfileMetricChip(
+                              Icons.star_rounded,
+                              '$superLikes Super',
+                              const Color(0xFF9333EA),
+                            ),
+                            _buildProfileMetricChip(
+                              Icons.favorite_rounded,
+                              '$likes Likes',
+                              const Color(0xFFEC4899),
+                            ),
+                            _buildProfileMetricChip(
+                              Icons.groups_rounded,
+                              '$doost Doost',
+                              const Color(0xFF10B981),
+                            ),
                           ],
                         ),
                       ],

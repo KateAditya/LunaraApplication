@@ -99,8 +99,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (showFullScreenLoader) {
       setState(() => _isLoading = true);
     }
+    final rawId = widget.post['id'] ??
+        widget.post['requestId'] ??
+        widget.post['entityId'] ??
+        widget.post['strangersMeetRequestId'] ??
+        widget.post['meetId'];
+
+    if (rawId == null || rawId.toString().trim().isEmpty) {
+      if (mounted) {
+        setState(() {
+          _meetRequest = null;
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+
     final req = await ApiService.fetchStrangersMeetRequestById(
-      widget.post['id'],
+      rawId.toString(),
     );
     if (mounted) {
       setState(() {
@@ -139,12 +155,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Future<void> _initiateJoinFlow() async {
-    if (_meetRequest == null) return;
+    final req = _meetRequest;
+    if (req == null) return;
     setState(() => _isProcessing = true);
 
     // Call checkout / initiate endpoint on backend
     final checkoutData = await ApiService.initiateStrangersMeetJoinPayment(
-      _meetRequest!.id,
+      req.id,
     );
 
     if (checkoutData == null) {
@@ -159,7 +176,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       return;
     }
 
-    final double charges = _meetRequest!.chargesPerHead;
+    final double charges = req.chargesPerHead;
 
     if (charges > 0) {
       final String orderId = checkoutData['razorpayOrderId'];
@@ -207,10 +224,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     String paymentId,
     String signature,
   ) async {
-    if (_meetRequest == null) return;
+    final req = _meetRequest;
+    if (req == null) return;
     final messenger = ScaffoldMessenger.of(context);
     final result = await ApiService.payStrangersMeetJoin(
-      _meetRequest!.id,
+      req.id,
       orderId,
       paymentId,
       signature,
@@ -456,10 +474,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     String foodPref,
     String drinkPref,
   ) async {
-    if (_meetRequest == null) return;
+    final req = _meetRequest;
+    if (req == null) return;
     setState(() => _isProcessing = true);
     final success = await ApiService.sendStrangersMeetJoinRequest(
-      _meetRequest!.id,
+      req.id,
       foodPreference: foodPref,
       drinkPreference: drinkPref,
     );
@@ -518,7 +537,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       ),
     );
 
-    if (confirm != true) return;
+    if (confirm != true || _meetRequest == null) return;
     setState(() => _isProcessing = true);
     final success = await ApiService.completeStrangersMeet(_meetRequest!.id);
     if (!mounted) return;
@@ -554,6 +573,49 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     if (widget.post['type'] == 'strangers_meet') {
+      if (_meetRequest == null) {
+        return Scaffold(
+          backgroundColor: Colors.white,
+          appBar: AppBar(
+            backgroundColor: Colors.white,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black, size: 20),
+              onPressed: () => Navigator.pop(context),
+            ),
+            title: const Text(
+              'STRANGER MEET',
+              style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          ),
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.info_outline_rounded, color: LunaraTheme.electricViolet, size: 48),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Stranger Meet details unavailable or request pending.',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => _loadStrangersMeetDetails(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: LunaraTheme.electricViolet,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('RETRY', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
       return _buildStrangersMeetDetails();
     } else {
       return _buildPartyPlanDetails();
@@ -562,7 +624,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   // ─── Strangers Meet Details Layout ─────────────────────────────────────────
   Widget _buildStrangersMeetDetails() {
-    final req = _meetRequest!;
+    final req = _meetRequest;
+    if (req == null) return const SizedBox.shrink();
     final String subject = req.subject;
     final String tagline = req.tagline;
     final double charges = req.chargesPerHead;
@@ -1218,10 +1281,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Future<void> _handleRequest(String joinerId, String action) async {
-    if (_meetRequest == null) return;
+    final req = _meetRequest;
+    if (req == null) return;
     setState(() => _isProcessing = true);
     final success = await ApiService.handleStrangersMeetJoinRequest(
-      _meetRequest!.id,
+      req.id,
       joinerId,
       action,
     );

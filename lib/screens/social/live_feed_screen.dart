@@ -16,6 +16,7 @@ import 'strangers_meet_ticket_screen.dart';
 import 'chat_screen.dart';
 import 'large_party_ticket_screen.dart';
 import 'notification_center_screen.dart';
+import '../../widgets/top_notification_banner.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 class LiveFeedScreen extends StatefulWidget {
@@ -166,6 +167,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       'notification_created',
       _onNotificationCreated,
     );
+    ApiService.addSocketListener(
+      'group_party_payment_success',
+      _onGroupPartyUpdated,
+    );
+    ApiService.addSocketListener(
+      'large_party_status_update',
+      _onGroupPartyUpdated,
+    );
+    ApiService.addSocketListener(
+      'group_party_status_update',
+      _onGroupPartyUpdated,
+    );
   }
 
   void _disposeSocketListeners() {
@@ -192,11 +205,45 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       'notification_created',
       _onNotificationCreated,
     );
+    ApiService.removeSocketListener(
+      'group_party_payment_success',
+      _onGroupPartyUpdated,
+    );
+    ApiService.removeSocketListener(
+      'large_party_status_update',
+      _onGroupPartyUpdated,
+    );
+    ApiService.removeSocketListener(
+      'group_party_status_update',
+      _onGroupPartyUpdated,
+    );
   }
 
   void _onNotificationCreated(dynamic data) {
     if (!mounted) return;
     _loadFeed(showLoader: false);
+    _loadGroupPartyBookings();
+    if (data is Map) {
+      final notifMap = Map<String, dynamic>.from(data);
+      TopNotificationBanner.show(
+        title: notifMap['title'] ?? 'New Notification 🔔',
+        body: notifMap['body'] ?? '',
+        data: notifMap['data'] is Map ? Map<String, dynamic>.from(notifMap['data']) : null,
+      );
+    }
+  }
+
+  void _onGroupPartyUpdated(dynamic data) {
+    if (!mounted) return;
+    _loadGroupPartyBookings();
+    if (data is Map) {
+      final notifMap = Map<String, dynamic>.from(data);
+      TopNotificationBanner.show(
+        title: notifMap['title'] ?? 'Group Party Updated 🎉',
+        body: notifMap['body'] ?? notifMap['message'] ?? 'Your group party booking status has been updated.',
+        data: notifMap['data'] is Map ? Map<String, dynamic>.from(notifMap['data']) : null,
+      );
+    }
   }
 
   void _onPartyPlanCreated(dynamic data) {
@@ -479,6 +526,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (verified) {
         // Refresh bookings and show success
         await _loadGroupPartyBookings();
+        TopNotificationBanner.show(
+          title: 'Group Party Confirmed! 🎉',
+          body: 'Your payment was verified successfully. Tap to view your ticket!',
+          data: {'type': 'group_party_confirmed', 'partyId': bookingId},
+        );
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
@@ -616,6 +668,28 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     // Fire-and-forget: local state already updated
     ApiService.markNotificationRead(nId);
+  }
+
+  Future<void> _handleNotificationCardTap(Map<String, dynamic> notif) async {
+    await _markNotificationAsRead(notif);
+
+    final Map<String, dynamic> payloadData = {};
+    if (notif['data'] is Map) {
+      payloadData.addAll(Map<String, dynamic>.from(notif['data']));
+    }
+    if (notif['metadata'] is Map) {
+      payloadData.addAll(Map<String, dynamic>.from(notif['metadata']));
+    }
+    payloadData.addAll(notif);
+
+    if (!payloadData.containsKey('type') && notif['eventType'] != null) {
+      payloadData['type'] = notif['eventType'];
+    }
+    if (!payloadData.containsKey('requestId') && notif['entityId'] != null) {
+      payloadData['requestId'] = notif['entityId'];
+    }
+
+    PushNotificationService.navigateFromPayload(payloadData);
   }
 
   Future<void> _clearAllNotifications() async {
@@ -5188,7 +5262,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       child: Padding(
         padding: const EdgeInsets.only(bottom: 12),
         child: GestureDetector(
-          onTap: () => _markNotificationAsRead(notif),
+          onTap: () => _handleNotificationCardTap(notif),
           child: Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(

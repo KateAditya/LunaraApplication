@@ -5,6 +5,8 @@ import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../../services/push_notification_service.dart';
+import '../../models/user.dart';
+import '../profile/profile_screen.dart';
 import '../../widgets/lunara_profile_image.dart';
 import '../../widgets/top_notification_banner.dart';
 
@@ -120,9 +122,22 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       });
     }
 
-    final payloadData = item['data'] is Map
-        ? Map<String, dynamic>.from(item['data'])
-        : (item is Map ? Map<String, dynamic>.from(item) : <String, dynamic>{});
+    final Map<String, dynamic> payloadData = {};
+    if (item is Map) {
+      payloadData.addAll(Map<String, dynamic>.from(item));
+      if (item['data'] is Map) {
+        payloadData.addAll(Map<String, dynamic>.from(item['data']));
+      }
+      if (item['metadata'] is Map) {
+        payloadData.addAll(Map<String, dynamic>.from(item['metadata']));
+      }
+      if (!payloadData.containsKey('type') && item['eventType'] != null) {
+        payloadData['type'] = item['eventType'];
+      }
+      if (!payloadData.containsKey('requestId') && item['entityId'] != null) {
+        payloadData['requestId'] = item['entityId'];
+      }
+    }
     PushNotificationService.navigateFromPayload(payloadData);
   }
 
@@ -172,6 +187,17 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     });
 
     try {
+      final payloadData = item['data'] is Map
+          ? Map<String, dynamic>.from(item['data'])
+          : (item['metadata'] is Map ? Map<String, dynamic>.from(item['metadata']) : <String, dynamic>{});
+      final requestId = payloadData['requestId']?.toString() ?? item['entityId']?.toString();
+      final entityType = (item['entityType'] ?? payloadData['type'] ?? '').toString();
+
+      if ((entityType == 'night_partner' || entityType == 'NightPartnerRequest' || entityType.contains('PARTNER_REQUEST')) && requestId != null && requestId.isNotEmpty) {
+        final act = action.toUpperCase() == 'ACCEPT' ? 'accept' : 'decline';
+        await ApiService.respondToNightPartnerRequest(requestId: requestId, action: act);
+      }
+
       final response = await ApiService.post(
         '/api/mobile/notifications/$notifId/action',
         body: {'action': action, 'userId': currentUid},
@@ -180,8 +206,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       if (response.statusCode == 200 && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Action "$action" processed'),
-            backgroundColor: LunaraTheme.electricViolet,
+            content: Text(action.toUpperCase() == 'ACCEPT' ? '🎉 Invite Accepted!' : 'Invite Declined'),
+            backgroundColor: action.toUpperCase() == 'ACCEPT' ? Colors.green : Colors.grey[800],
           ),
         );
         _fetchNotifications();
@@ -615,11 +641,46 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     return _buildGenericCard(item);
   }
 
+  void _openUserProfile(dynamic actorData) {
+    if (actorData == null) return;
+    Map<String, dynamic> userMap = {};
+    if (actorData is Map) {
+      userMap = Map<String, dynamic>.from(actorData);
+    } else if (actorData is String && actorData.trim().isNotEmpty) {
+      userMap = {'id': actorData.trim()};
+    }
+
+    if (userMap.isEmpty) return;
+
+    final uid = userMap['id']?.toString() ??
+        userMap['userId']?.toString() ??
+        userMap['_id']?.toString() ??
+        userMap['actorUserId']?.toString() ??
+        '';
+    if (uid.isEmpty) return;
+
+    final userObj = User.fromJson({
+      'id': uid,
+      'firstName': userMap['firstName'] ?? userMap['name'] ?? userMap['username'] ?? 'User',
+      'lastName': userMap['lastName'] ?? '',
+      'photos': userMap['photos'] ?? (userMap['photoUrl'] != null ? [{'url': userMap['photoUrl']}] : []),
+      'profile': userMap['profile'] ?? {},
+      'bio': userMap['bio'] ?? '',
+    });
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ProfileScreen(user: userObj),
+      ),
+    );
+  }
+
   // ── 1. Partner Request Card Component ──────────────────────────────────────
   Widget _buildPartnerRequestCard(dynamic item) {
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
-    final actor = item['actor'] ?? item['sender'];
-    final actorName = actor?['firstName'] ?? actor?['name'] ?? 'User';
+    final actor = item['actor'] ?? item['sender'] ?? item['actorUserId'];
+    final actorName = actor is Map ? (actor['firstName'] ?? actor['name'] ?? 'User') : 'User';
     final body = item['body']?.toString() ?? 'Wants to join your event.';
     final timeStr = _formatTimeAgo(item['createdAt']);
 
@@ -629,22 +690,25 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              LunaraProfileImage(userData: actor is Map ? Map<String, dynamic>.from(actor) : {}, radius: 20),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('$actorName wants to join your event', style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold, fontSize: 13.5)),
-                    const SizedBox(height: 2),
-                    Text(timeStr, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5, fontWeight: FontWeight.w500)),
-                  ],
+          GestureDetector(
+            onTap: () => _openUserProfile(actor),
+            child: Row(
+              children: [
+                LunaraProfileImage(userData: actor is Map ? Map<String, dynamic>.from(actor) : {}, radius: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('$actorName wants to join your event', style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold, fontSize: 13.5)),
+                      const SizedBox(height: 2),
+                      Text(timeStr, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5, fontWeight: FontWeight.w500)),
+                    ],
+                  ),
                 ),
-              ),
-              if (isUnread) _buildUnreadDot(),
-            ],
+                if (isUnread) _buildUnreadDot(),
+              ],
+            ),
           ),
           const SizedBox(height: 10),
           Text(body, style: const TextStyle(color: Color(0xFF475569), fontSize: 12, height: 1.3)),
@@ -653,7 +717,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: () => _markAsRead(item),
+                  onPressed: () => _openUserProfile(actor),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Color(0xFFCBD5E1)),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -698,30 +762,33 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              if (actor != null && actor is Map && actor.isNotEmpty) ...[
-                LunaraProfileImage(userData: Map<String, dynamic>.from(actor), radius: 18),
+          GestureDetector(
+            onTap: () => _openUserProfile(actor),
+            child: Row(
+              children: [
+                if (actor != null && actor is Map && actor.isNotEmpty) ...[
+                  LunaraProfileImage(userData: Map<String, dynamic>.from(actor), radius: 18),
+                  const SizedBox(width: 10),
+                ] else
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: const BoxDecoration(color: Color(0xFFFCE7F3), shape: BoxShape.circle),
+                    child: const Icon(Icons.favorite_rounded, color: LunaraTheme.hotPink, size: 18),
+                  ),
                 const SizedBox(width: 10),
-              ] else
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: const BoxDecoration(color: Color(0xFFFCE7F3), shape: BoxShape.circle),
-                  child: const Icon(Icons.favorite_rounded, color: LunaraTheme.hotPink, size: 18),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('❤️ New Interest', style: TextStyle(color: LunaraTheme.hotPink, fontWeight: FontWeight.w900, fontSize: 12, letterSpacing: 0.5)),
+                      const SizedBox(height: 2),
+                      Text(timeStr, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5)),
+                    ],
+                  ),
                 ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('❤️ New Interest', style: TextStyle(color: LunaraTheme.hotPink, fontWeight: FontWeight.w900, fontSize: 12, letterSpacing: 0.5)),
-                    const SizedBox(height: 2),
-                    Text(timeStr, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5)),
-                  ],
-                ),
-              ),
-              if (isUnread) _buildUnreadDot(),
-            ],
+                if (isUnread) _buildUnreadDot(),
+              ],
+            ),
           ),
           const SizedBox(height: 10),
           Text(body, style: const TextStyle(color: Color(0xFF0F172A), fontSize: 13, fontWeight: FontWeight.w600, height: 1.3)),
@@ -729,23 +796,28 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           Row(
             children: [
               Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF3E8FF),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Center(
-                    child: Text(
-                      'View Interest',
-                      style: TextStyle(color: LunaraTheme.electricViolet, fontSize: 12, fontWeight: FontWeight.w900),
+                child: GestureDetector(
+                  onTap: () => _markAsRead(item),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF3E8FF),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Center(
+                      child: Text(
+                        'View Interest',
+                        style: TextStyle(color: LunaraTheme.electricViolet, fontSize: 12, fontWeight: FontWeight.w900),
+                      ),
                     ),
                   ),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Container(
+                child: GestureDetector(
+                  onTap: () => _handleNotificationAction(item, 'DECLINE'),
+                  child: Container(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   decoration: BoxDecoration(
                     color: const Color(0xFFF1F5F9),
@@ -782,7 +854,10 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         children: [
           Row(
             children: [
-              LunaraProfileImage(userData: actor is Map ? Map<String, dynamic>.from(actor) : {}, radius: 20),
+              GestureDetector(
+                onTap: () => _openUserProfile(actor),
+                child: LunaraProfileImage(userData: actor is Map ? Map<String, dynamic>.from(actor) : {}, radius: 20),
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -991,7 +1066,10 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       onTap: () => _markAsRead(item),
       child: Row(
         children: [
-          LunaraProfileImage(userData: actor is Map ? Map<String, dynamic>.from(actor) : {}, radius: 20),
+          GestureDetector(
+            onTap: () => _openUserProfile(actor),
+            child: LunaraProfileImage(userData: actor is Map ? Map<String, dynamic>.from(actor) : {}, radius: 20),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(

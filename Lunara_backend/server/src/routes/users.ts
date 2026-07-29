@@ -44,6 +44,13 @@ router.get('/', userController.getUsers);
  */
 router.get('/autoblocked', userController.getAutoblockedUsers);
 
+/**
+ * @route   GET /api/users/reported
+ * @desc    Get all reported users
+ * @access  Private (Admin)
+ */
+router.get('/reported', userController.getReportedUsers);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Deleted Accounts Archive — must be registered BEFORE /:id routes to avoid
 // the UUID param validator intercepting 'deleted-accounts' as an :id value.

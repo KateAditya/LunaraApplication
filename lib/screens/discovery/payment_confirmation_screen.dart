@@ -4,6 +4,7 @@ import '../../widgets/action_button.dart';
 import 'split_payment_screen.dart';
 import 'digital_ticket_screen.dart';
 import '../../services/api_service.dart';
+import '../../widgets/top_notification_banner.dart';
 
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
@@ -86,6 +87,12 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
     }
 
     if (!mounted) return;
+
+    TopNotificationBanner.show(
+      title: 'Booking Confirmed! 🎉',
+      body: 'Your payment at ${widget.venue['name'] ?? 'Venue'} is confirmed. Digital ticket generated!',
+      data: {'bookingId': widget.bookingId},
+    );
     if (widget.package == 'Party Plan Safety Deposit') {
       Navigator.pop(context);
     } else {

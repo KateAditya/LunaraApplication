@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { User, UserProfile, UserPreference, UserRole, SocialConnection, Plan, PartyPlan, StrangersMeetRequest, PlanJoinRequest, PartyPlanRequest } from '../models';
+import { User, UserProfile, UserPreference, UserRole, SocialConnection, Plan, PartyPlan, StrangersMeetRequest, PlanJoinRequest, PartyPlanRequest, UserPenalty } from '../models';
 import { ConnectionStatus } from '../models/SocialConnection';
 import DeletedAccount from '../models/DeletedAccount';
 import bcrypt from 'bcryptjs';
@@ -264,6 +264,49 @@ export const getAutoblockedUsers = async (req: Request, res: Response): Promise<
         res.status(500).json({
             success: false,
             message: 'Server Error fetching autoblocked users',
+        });
+    }
+};
+
+/**
+ * @desc    Get all reported users (Users with at least one UserPenalty)
+ * @route   GET /api/users/reported
+ * @access  Private/Admin
+ */
+export const getReportedUsers = async (req: Request, res: Response): Promise<void | Response> => {
+    try {
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 50;
+        const offset = (page - 1) * limit;
+
+        const { count, rows } = await UserPenalty.findAndCountAll({
+            include: [
+                { 
+                    model: User, 
+                    as: 'user', 
+                    attributes: ['id', 'email', 'firstName', 'lastName', 'isActive', 'isAutoblocked', 'blockCount'],
+                    include: [{ model: UserProfile, as: 'profile', attributes: ['displayName'] }]
+                }
+            ],
+            limit,
+            offset,
+            order: [['createdAt', 'DESC']],
+        });
+
+        // Group by user if needed, but since penalties are individual events, 
+        // we can return the penalty records which includes the user details.
+        res.status(200).json({
+            success: true,
+            count,
+            totalPages: Math.ceil(count / limit),
+            currentPage: page,
+            reports: rows,
+        });
+    } catch (error) {
+        console.error('Error fetching reported users:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch reported users.',
         });
     }
 };
