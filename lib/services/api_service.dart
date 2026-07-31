@@ -2606,11 +2606,13 @@ class ApiService {
       final response = await post(
         '/api/mobile/bookings/$bookingId/initiate-large-party-payment',
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
           return Map<String, dynamic>.from(data);
         }
+      } else {
+        debugPrint('initiateLargePartyPayment error [${response.statusCode}]: ${response.body}');
       }
     } catch (e) {
       debugPrint('initiateLargePartyPayment error: $e');

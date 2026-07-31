@@ -754,6 +754,13 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
   @override
   void initState() {
     super.initState();
+    final userPhone = ApiService.cachedCurrentUser?.phone;
+    if (userPhone != null && userPhone.isNotEmpty) {
+      final clean = userPhone.replaceAll(RegExp(r'\D'), '');
+      if (clean.length >= 10) {
+        _mobileController.text = clean.substring(clean.length - 10);
+      }
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       AppTourService.showGroupPartyBookingTour(context);
     });
@@ -1716,9 +1723,8 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                               venueId: widget.venue.id,
                               date:
                                   '${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}',
-                              time: _formatTimeOfBooking(
-                                '${_selectedTime!.hour.toString().padLeft(2, '0')}:${_selectedTime!.minute.toString().padLeft(2, '0')}',
-                              ),
+                              time:
+                                  '${_selectedTime!.hour.toString().padLeft(2, '0')}:${_selectedTime!.minute.toString().padLeft(2, '0')}',
                               guests: parsed,
                               subject: _partySubjectController.text,
                               requirement: _partyRequirementController.text,
