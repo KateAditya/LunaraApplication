@@ -8,7 +8,7 @@ import {
     BiDownload,
     BiSearch,
     BiArrowBack,
-    BiBarChartAlt2
+    BiBarChartAlt2,
 } from 'react-icons/bi';
 import toast from 'react-hot-toast';
 import bookingsApi from '../api/bookings';
