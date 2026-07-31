@@ -546,7 +546,9 @@ export const initiateLargePartyPayment = async (req: Request, res: Response) => 
             if (!groupParty) {
                 return res.status(404).json({ success: false, message: 'Booking or Group Party not found' });
             }
-            if (groupParty.status !== GroupPartyStatus.PENDING && groupParty.status !== GroupPartyStatus.APPROVED) {
+            const pStatus = (groupParty.status || '').toLowerCase();
+            const pPayStatus = (groupParty.paymentStatus || '').toLowerCase();
+            if (pStatus === 'cancelled' || pPayStatus === 'paid') {
                 return res.status(400).json({ success: false, message: 'Group party is already confirmed/cancelled' });
             }
             const amount = Number(groupParty.totalAmount);
@@ -556,7 +558,7 @@ export const initiateLargePartyPayment = async (req: Request, res: Response) => 
             const options = {
                 amount: Math.round(amount * 100),
                 currency: 'INR',
-                receipt: `gp_${groupParty.id}`,
+                receipt: `gp_${groupParty.id.replace(/-/g, '').slice(0, 30)}`,
             };
             let order: any = { id: `order_mock_${Date.now()}`, amount: options.amount, currency: options.currency };
             if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id') {
@@ -576,23 +578,38 @@ export const initiateLargePartyPayment = async (req: Request, res: Response) => 
             });
         }
         
-        if (!booking.isLargePartyRequest) {
-            return res.status(400).json({ success: false, message: 'Not a large party request booking' });
+        const goingMode = (booking.goingMode || '').toLowerCase();
+        const isLargeParty = booking.isLargePartyRequest || goingMode === 'party_request' || goingMode === 'group_party' || (booking.numberOfGuests || 0) > 20;
+
+        if (!isLargeParty) {
+            return res.status(400).json({ success: false, message: 'Not a group or large party request booking' });
         }
 
-        if (booking.adminApprovalStatus !== 'approved' && booking.adminApprovalStatus !== 'payment_sent') {
-            return res.status(400).json({ success: false, message: 'Booking is not approved by admin or payment already done/initiated' });
+        const adminStatus = (booking.adminApprovalStatus || '').toLowerCase();
+        const bookingStatus = (booking.status || '').toLowerCase();
+
+        const isApproved = adminStatus === 'approved' ||
+            adminStatus === 'approved_awaiting_payment' ||
+            adminStatus === 'awaiting_payment' ||
+            adminStatus === 'payment_sent' ||
+            bookingStatus === 'approved' ||
+            bookingStatus === 'confirmed' ||
+            bookingStatus === 'payment_sent' ||
+            bookingStatus === 'pending';
+
+        if (!isApproved) {
+            return res.status(400).json({ success: false, message: 'Booking is not approved by admin or payment already completed' });
         }
 
         const amount = Number(booking.adminPaymentAmount || booking.totalAmount);
         if (isNaN(amount) || amount <= 0) {
-            return res.status(400).json({ success: false, message: 'Invalid total amount set by admin' });
+            return res.status(400).json({ success: false, message: 'Invalid total amount set for booking' });
         }
 
         const options = {
             amount: Math.round(amount * 100), // in paise
             currency: 'INR',
-            receipt: `booking_lp_${booking.id}`,
+            receipt: `blp_${booking.id.replace(/-/g, '').slice(0, 30)}`,
         };
 
         let order: any = { id: `order_mock_${Date.now()}`, amount: options.amount, currency: options.currency };
