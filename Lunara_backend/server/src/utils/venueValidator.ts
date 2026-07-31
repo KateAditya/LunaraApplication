@@ -2,6 +2,40 @@ import { VenueAttributes } from '../models/Venue';
 import { logger } from '../config/logger';
 
 /**
+ * Safely converts any time string ('8:00 PM', '08:00 PM', '20:00', '8:00') into 24-hour 'HH:mm' format.
+ */
+export const normalizeStartTime = (timeStr?: string): string => {
+    if (!timeStr) return '20:00';
+    const clean = timeStr.trim();
+    if (!clean) return '20:00';
+
+    const upper = clean.toUpperCase();
+    const isPm = upper.includes('PM');
+    const isAm = upper.includes('AM');
+
+    if (isPm || isAm) {
+        const timeOnly = upper.replace('AM', '').replace('PM', '').trim();
+        const parts = timeOnly.split(':');
+        if (parts.length >= 1) {
+            let h = parseInt(parts[0], 10) || 0;
+            const m = parts.length > 1 ? parseInt(parts[1], 10) || 0 : 0;
+            if (isPm && h < 12) h += 12;
+            if (isAm && h === 12) h = 0;
+            return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+        }
+    }
+
+    const parts = clean.split(':');
+    if (parts.length >= 2) {
+        const h = parseInt(parts[0], 10) || 0;
+        const m = parseInt(parts[1], 10) || 0;
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+
+    return clean;
+};
+
+/**
  * Validates if a proposed event date/time is valid for a given venue's operating hours and holidays.
  * @param venue The venue object containing openingTime, closingTime, daysOpen, and closedDates
  * @param eventDateTime The proposed date/time for the event
@@ -19,12 +53,14 @@ export const validateVenueTimingAndHolidays = (
         let hour: number | null = null;
         let minute: number | null = null;
 
+        const normalizedTime = startTime ? normalizeStartTime(startTime) : undefined;
+
         // If a separate startTime (e.g. '20:00' or '19:30') is passed alongside a date string or object
         let combinedString: string | null = null;
         if (typeof eventDateTime === 'string') {
             const trimmed = eventDateTime.trim();
-            if (startTime && /^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-                combinedString = `${trimmed}T${startTime.trim()}:00`;
+            if (normalizedTime && /^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+                combinedString = `${trimmed}T${normalizedTime}:00`;
             } else {
                 combinedString = trimmed;
             }

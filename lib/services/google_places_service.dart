@@ -63,11 +63,14 @@ class GooglePlacesService {
   }
 
   static Future<Map<String, dynamic>?> fetchGoogleRating(String venueName, String city) async {
+    // Direct REST API calls to maps.googleapis.com are blocked by browser CORS policies on Web
+    if (kIsWeb) return null;
+
     try {
       final query = Uri.encodeComponent('$venueName $city');
       final url = 'https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=$query&inputtype=textquery&fields=rating,user_ratings_total,place_id&key=$_apiKey';
 
-      final response = await http.get(Uri.parse(url));
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 5));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['status'] == 'OK' && data['candidates'] != null && (data['candidates'] as List).isNotEmpty) {
@@ -76,7 +79,6 @@ class GooglePlacesService {
       }
       return null;
     } catch (e) {
-      debugPrint('Error fetching Google rating: $e');
       return null;
     }
   }
@@ -87,10 +89,10 @@ class GooglePlacesService {
     double destLat,
     double destLng,
   ) async {
-    // 1. Try OSRM API (Free, actual street routing)
+    // 1. Try OSRM API (Free, actual street routing, supports CORS)
     try {
       final url = 'https://router.project-osrm.org/route/v1/driving/$originLng,$originLat;$destLng,$destLat?overview=full&geometries=geojson';
-      final response = await http.get(Uri.parse(url));
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 5));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['code'] == 'Ok' &&
@@ -105,13 +107,15 @@ class GooglePlacesService {
         }
       }
     } catch (e) {
-      debugPrint('OSRM routing failed, trying Google fallback: $e');
+      debugPrint('OSRM routing failed: $e');
     }
 
-    // 2. Fallback to Google Directions API
+    // 2. Fallback to Google Directions API (mobile only, blocked by browser CORS on Web)
+    if (kIsWeb) return [];
+
     try {
       final url = 'https://maps.googleapis.com/maps/api/directions/json?origin=$originLat,$originLng&destination=$destLat,$destLng&key=$_apiKey';
-      final response = await http.get(Uri.parse(url));
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 5));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['status'] == 'OK' &&

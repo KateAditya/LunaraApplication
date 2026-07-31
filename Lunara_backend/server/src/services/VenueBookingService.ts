@@ -2,7 +2,7 @@ import Booking, { BookingStatus, PaymentStatus, GoingMode, AdminApprovalStatus }
 import Venue from '../models/Venue';
 import BookingTablePackage, { TablePackageName } from '../models/BookingTablePackage';
 import { PlanEligibilityService } from './PlanEligibilityService';
-import { validateVenueTimingAndHolidays } from '../utils/venueValidator';
+import { validateVenueTimingAndHolidays, normalizeStartTime } from '../utils/venueValidator';
 import { checkExistingBookingForDate } from '../utils/bookingLimitValidator';
 import { generateTicketForBookingHelper } from './ticketService';
 import { NotificationService } from './NotificationService';
@@ -125,7 +125,8 @@ export class VenueBookingService {
             ? (numberOfGuests <= 20 ? AdminApprovalStatus.APPROVED : AdminApprovalStatus.PENDING)
             : undefined;
 
-        const bookingStartDateTime = new Date(`${bookingDate}T${startTime}:00`);
+        const normalizedStart = normalizeStartTime(startTime);
+        const bookingStartDateTime = new Date(`${bookingDate}T${normalizedStart}:00`);
         if (isNaN(bookingStartDateTime.getTime())) {
             throw new Error('Invalid bookingDate or startTime format');
         }
@@ -161,7 +162,7 @@ export class VenueBookingService {
                     userId,
                     venueId,
                     bookingDate: new Date(bookingDate),
-                    startTime,
+                    startTime: normalizedStart,
                     numberOfGuests: numberOfGuests || (pricing.pkg ? pricing.pkg.maxGuests : 1),
                     totalAmount: pricing.totalAmount,
                     depositAmount: 0,

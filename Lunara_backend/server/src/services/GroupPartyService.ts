@@ -4,7 +4,7 @@ import Booking, { BookingStatus, PaymentStatus, GoingMode, AdminApprovalStatus, 
 import Venue from '../models/Venue';
 import User from '../models/User';
 import { PlanEligibilityService } from './PlanEligibilityService';
-import { validateVenueTimingAndHolidays } from '../utils/venueValidator';
+import { validateVenueTimingAndHolidays, normalizeStartTime } from '../utils/venueValidator';
 import { checkExistingBookingForDate } from '../utils/bookingLimitValidator';
 import { generateTicketForGroupPartyHelper } from './ticketService';
 import { logger } from '../config/logger';
@@ -196,7 +196,7 @@ export class GroupPartyService {
                         userId,
                         venueId,
                         bookingDate: new Date(partyDate),
-                        startTime: startTime || '08:00 PM',
+                        startTime: normalizeStartTime(startTime),
                         tablePackage: 'large_party_request',
                         goingMode: GoingMode.PARTY_REQUEST,
                         isLargePartyRequest: true,
