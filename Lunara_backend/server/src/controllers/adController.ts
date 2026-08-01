@@ -214,20 +214,54 @@ export const createAd = async (req: Request, res: Response): Promise<Response> =
             logger.warn('[AdController] Socket broadcast warning:', socketErr.message);
         }
 
-        // Trigger Multicast Push Notification to active users
+        // Trigger Multicast Push Notification & persist DB Notifications for active users
         setImmediate(async () => {
             try {
                 const activeUsers = await User.findAll({
-                    attributes: ['fcmToken'],
+                    attributes: ['id', 'fcmToken'],
                     where: {
-                        fcmToken: { [Op.ne]: null },
+                        isActive: true
                     },
                 });
+
+                const notifTitle = newAd.type === 'Party' ? '🎉 Live Party Event Announced!' : '📢 Special App Announcement';
+                const notifBody = newAd.title || newAd.aboutEvent || 'Check out the new offer on Lunara!';
+
+                // 1. Bulk Create DB Notifications for all users
+                try {
+                    const NotificationModel = (await import('../models/Notification')).default;
+                    const notifRecords = activeUsers.map(u => ({
+                        recipientUserId: u.id,
+                        eventType: 'new_ad_published',
+                        category: 'announcements' as any,
+                        entityType: 'ad',
+                        entityId: newAd.id,
+                        title: notifTitle,
+                        body: notifBody,
+                        imageUrl: newAd.imagePath,
+                        priority: 'HIGH' as any,
+                        isRead: false,
+                        metadata: {
+                            adId: newAd.id,
+                            adType: newAd.type,
+                            venueId: newAd.venueId,
+                            city: newAd.city,
+                            area: newAd.area,
+                            liveCountdownTarget: new Date(newAd.toDate).getTime()
+                        }
+                    }));
+
+                    await NotificationModel.bulkCreate(notifRecords, { ignoreDuplicates: true }).catch(() => {});
+                } catch (dbErr: any) {
+                    logger.warn('[AdController] Bulk DB notification creation warning: ' + dbErr.message);
+                }
+
+                // 2. Multicast Push Notification to mobile devices
                 const tokens = activeUsers.map(u => u.fcmToken).filter(t => t && t.trim() !== '') as string[];
                 if (tokens.length > 0) {
                     await sendMulticastPushNotification(tokens, {
-                        title: newAd.type === 'Party' ? '🎉 Live Party Event Announced!' : '📢 Special App Announcement',
-                        body: newAd.title || newAd.aboutEvent || 'Check out the new offer on Lunara!',
+                        title: notifTitle,
+                        body: notifBody,
                         data: {
                             type: 'new_ad_published',
                             adId: newAd.id,
