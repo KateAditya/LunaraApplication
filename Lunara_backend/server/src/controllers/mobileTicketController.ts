@@ -91,7 +91,7 @@ export class MobileTicketController {
                 where: { [Op.or]: [{ id }, { ticketId: id }] },
                 include: [
                     { model: Venue, as: 'venue' },
-                    { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email', 'mobileNumber'] },
+                    { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email', 'phone'] },
                 ],
             });
 

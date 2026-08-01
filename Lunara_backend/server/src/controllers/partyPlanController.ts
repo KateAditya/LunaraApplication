@@ -2491,7 +2491,7 @@ export const cancelPartyPlan = async (req: Request, res: Response): Promise<void
 // GET /api/mobile/party-plans/requests/:reqId/ticket
 // Fetch a complete ticket payload (plan + both users with photos + ticketCode)
 // ─────────────────────────────────────────────────────────────────────────────
-const TICKET_USER_ATTRS = ['id', 'firstName', 'lastName', 'email', 'username', 'profileImageUrl', 'subscriptionTier'];
+const TICKET_USER_ATTRS = ['id', 'firstName', 'lastName', 'email', 'profileImageUrl'];
 
 export const getPartyPlanTicket = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -2571,9 +2571,9 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
             id: hostRaw.id,
             firstName: hostRaw.firstName,
             lastName: hostRaw.lastName,
-            username: hostRaw.username,
+            username: hostRaw.profile?.displayName || (hostRaw.firstName ? `${hostRaw.firstName}_${hostRaw.lastName}`.toLowerCase() : 'user'),
             profilePhotoUrl: resolveUserPhoto(hostRaw),
-            subscriptionTier: hostRaw.subscriptionTier,
+            subscriptionTier: 'FREE',
             bio: hostRaw.profile?.bio ?? null,
             city: hostRaw.profile?.city ?? null,
         } : null;
@@ -2582,9 +2582,9 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
             id: joinerRaw.id,
             firstName: joinerRaw.firstName,
             lastName: joinerRaw.lastName,
-            username: joinerRaw.username,
+            username: joinerRaw.profile?.displayName || (joinerRaw.firstName ? `${joinerRaw.firstName}_${joinerRaw.lastName}`.toLowerCase() : 'user'),
             profilePhotoUrl: resolveUserPhoto(joinerRaw),
-            subscriptionTier: joinerRaw.subscriptionTier,
+            subscriptionTier: 'FREE',
             bio: joinerRaw.profile?.bio ?? null,
             city: joinerRaw.profile?.city ?? null,
         } : null;

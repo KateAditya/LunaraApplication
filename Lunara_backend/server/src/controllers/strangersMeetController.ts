@@ -1743,7 +1743,7 @@ export const getStrangersMeetTicket = async (req: Request, res: Response): Promi
                 {
                     model: User,
                     as: 'user',
-                    attributes: ['id', 'firstName', 'lastName', 'username', 'profileImageUrl', 'subscriptionTier'],
+                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'],
                     include: [
                         { model: UserProfile, as: 'profile', attributes: ['bio', 'city'], required: false },
                         { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary'], required: false },
@@ -1774,9 +1774,9 @@ export const getStrangersMeetTicket = async (req: Request, res: Response): Promi
             id: hostRaw.id,
             firstName: hostRaw.firstName,
             lastName: hostRaw.lastName,
-            username: hostRaw.username,
+            username: hostRaw.profile?.displayName || (hostRaw.firstName ? `${hostRaw.firstName}_${hostRaw.lastName}`.toLowerCase() : 'user'),
             profilePhotoUrl: resolveUserPhoto(hostRaw),
-            subscriptionTier: hostRaw.subscriptionTier,
+            subscriptionTier: 'FREE',
         } : null;
 
         let ticketUrl = request.ticketUrl ?? null;
