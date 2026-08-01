@@ -360,7 +360,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                 shape: BoxShape.circle,
               ),
               child: Image.asset(
-                'assets/images/logo.png',
+                LunaraTheme.logoIcon,
                 width: 30,
                 height: 30,
                 color: Colors.white,
