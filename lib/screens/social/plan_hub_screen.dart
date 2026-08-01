@@ -450,6 +450,11 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                 width: 48,
                                 height: 48,
                                 color: Colors.white,
+                                errorBuilder: (_, __, ___) => const Icon(
+                                  Icons.flash_on,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
                               ),
                             ),
                           ),
@@ -648,7 +653,16 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                     children: [
                       Positioned.fill(
                         child: night['isAsset'] == true
-                            ? Image.asset(night['image']!, fit: BoxFit.cover)
+                            ? Image.asset(
+                                night['image']!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Container(
+                                  color: Colors.purple.shade900,
+                                  child: const Center(
+                                    child: Icon(Icons.nightlife, color: Colors.white),
+                                  ),
+                                ),
+                              )
                             : Image.network(
                                 ApiService.formatImageUrl(night['image']) ?? night['image']!,
                                 fit: BoxFit.cover,

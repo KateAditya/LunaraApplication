@@ -1183,7 +1183,28 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                       children: [
                         GestureDetector(
                           onTap: _refreshData,
-                          child: Image.asset(LunaraTheme.logoIcon, height: 28),
+                          child: Image.asset(
+                            LunaraTheme.logoIcon,
+                            height: 28,
+                            errorBuilder: (_, __, ___) => Container(
+                              height: 28,
+                              width: 28,
+                              decoration: const BoxDecoration(
+                                gradient: LunaraTheme.purpleGradient,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Center(
+                                child: Text(
+                                  'L',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                         Expanded(
                           child: GestureDetector(
@@ -1683,7 +1704,16 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   children: [
                     Positioned.fill(
                       child: night['isAsset'] == true
-                          ? Image.asset(night['image']!, fit: BoxFit.cover)
+                          ? Image.asset(
+                              night['image']!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(
+                                color: Colors.purple.shade900,
+                                child: const Center(
+                                  child: Icon(Icons.nightlife, color: Colors.white),
+                                ),
+                              ),
+                            )
                           : Image.network(
                               night['image']!,
                               fit: BoxFit.cover,

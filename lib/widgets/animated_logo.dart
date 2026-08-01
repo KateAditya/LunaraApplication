@@ -72,6 +72,24 @@ class _AnimatedLogoWidgetState extends State<AnimatedLogoWidget> with SingleTick
                     child: Image.asset(
                       LunaraTheme.logoIcon,
                       height: 120,
+                      errorBuilder: (_, __, ___) => Container(
+                        height: 90,
+                        width: 90,
+                        decoration: const BoxDecoration(
+                          gradient: LunaraTheme.purpleGradient,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Center(
+                          child: Text(
+                            'L',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 42,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),

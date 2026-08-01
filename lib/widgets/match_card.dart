@@ -15,7 +15,16 @@ class MatchCard extends StatelessWidget {
         children: [
           Positioned.fill(
             child: profile['isAsset'] == true
-                ? Image.asset(profile['image'], fit: BoxFit.cover)
+                ? Image.asset(
+                    profile['image'],
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      color: Colors.grey[900],
+                      child: const Center(
+                        child: Icon(Icons.person, color: Colors.white54, size: 48),
+                      ),
+                    ),
+                  )
                 : Image.network(profile['image'] ?? 'https://picsum.photos/400/600', fit: BoxFit.cover),
           ),
           Positioned.fill(

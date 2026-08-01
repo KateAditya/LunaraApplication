@@ -61,6 +61,11 @@ class VIPUpgradeButton extends StatelessWidget {
           width: iconSize,
           height: iconSize,
           color: color,
+          errorBuilder: (_, __, ___) => Icon(
+            Icons.bolt,
+            color: color,
+            size: iconSize,
+          ),
         ),
       ),
     );

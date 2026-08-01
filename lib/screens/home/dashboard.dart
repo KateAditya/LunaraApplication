@@ -364,6 +364,11 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                 width: 30,
                 height: 30,
                 color: Colors.white,
+                errorBuilder: (_, __, ___) => const Icon(
+                  Icons.add,
+                  color: Colors.white,
+                  size: 24,
+                ),
               ),
             ),
             label: 'Post',

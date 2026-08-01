@@ -283,7 +283,16 @@ class _MatchedProfileDetailScreen extends StatelessWidget {
           // Full-screen profile image
           Positioned.fill(
             child: profile['isAsset'] == true
-                ? Image.asset(profile['image'] ?? '', fit: BoxFit.cover)
+                ? Image.asset(
+                    profile['image'] ?? '',
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      color: Colors.grey[900],
+                      child: const Center(
+                        child: Icon(Icons.person, color: Colors.white54, size: 64),
+                      ),
+                    ),
+                  )
                 : Image.network(profile['image'] ?? '', fit: BoxFit.cover),
           ),
 

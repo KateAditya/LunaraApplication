@@ -92,7 +92,28 @@ class _LoginHubState extends State<LoginHub> {
                 const SizedBox(height: 40),
                 Hero(
                   tag: 'lunara_logo',
-                  child: Image.asset(LunaraTheme.logoIcon, height: 120),
+                  child: Image.asset(
+                    LunaraTheme.logoIcon,
+                    height: 120,
+                    errorBuilder: (_, __, ___) => Container(
+                      height: 90,
+                      width: 90,
+                      decoration: const BoxDecoration(
+                        gradient: LunaraTheme.purpleGradient,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Center(
+                        child: Text(
+                          'L',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 42,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 const Text(
