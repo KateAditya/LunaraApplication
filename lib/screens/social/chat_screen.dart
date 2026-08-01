@@ -5,6 +5,8 @@ import '../../services/api_service.dart';
 import '../../services/push_notification_service.dart';
 import 'icebreaker_modal.dart';
 import '../../services/block_service.dart';
+import 'party_plan_detail_screen.dart';
+import '../discovery/venue_detail_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final Map<String, dynamic> user;
@@ -952,29 +954,73 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildEventContextCard() {
-    final contextType = widget.user['contextType']?.toString();
-    final eventTitle =
-        widget.user['eventTitle']?.toString() ??
-        widget.user['subject']?.toString() ??
-        widget.user['planName']?.toString();
-    final venueName =
-        widget.user['venueName']?.toString() ??
-        widget.user['venue']?['name']?.toString() ??
-        widget.user['location']?.toString() ??
-        'Favela';
-    final eventTime = widget.user['eventTime']?.toString() ?? 'Today, 8:00 PM';
+    final rawPlan = widget.user['plan'] ?? widget.user['partyPlan'];
+    Map<String, dynamic>? planMap;
+    if (rawPlan is Map<String, dynamic>) {
+      planMap = rawPlan;
+    } else if (rawPlan is Map) {
+      planMap = Map<String, dynamic>.from(rawPlan);
+    }
 
-    if (contextType == null &&
-        widget.user['planId'] == null &&
-        eventTitle == null) {
+    final eventTitle = widget.user['eventTitle']?.toString() ??
+        widget.user['subject']?.toString() ??
+        widget.user['planName']?.toString() ??
+        widget.user['title']?.toString() ??
+        planMap?['title']?.toString() ??
+        planMap?['subject']?.toString() ??
+        planMap?['planName']?.toString() ??
+        planMap?['eventTitle']?.toString();
+
+    // If there is no real event title/subject/plan name, do NOT display any fake fallback card!
+    if (eventTitle == null || eventTitle.trim().isEmpty) {
       return const SizedBox.shrink();
     }
 
-    final title = eventTitle ?? 'College Party';
+    final title = eventTitle.trim();
+
+    final venueName = widget.user['venueName']?.toString() ??
+        widget.user['venue']?['name']?.toString() ??
+        widget.user['location']?.toString() ??
+        planMap?['venue']?['name']?.toString() ??
+        planMap?['venueName']?.toString() ??
+        planMap?['location']?.toString();
+
+    final eventTime = widget.user['eventTime']?.toString() ??
+        widget.user['planDateTime']?.toString() ??
+        widget.user['eventDateTime']?.toString() ??
+        widget.user['time']?.toString() ??
+        planMap?['planDateTime']?.toString() ??
+        planMap?['eventDateTime']?.toString() ??
+        planMap?['eventTime']?.toString();
+
+    final venueText = venueName?.trim();
+    final timeText = eventTime?.trim();
+
+    final rawVenue = widget.user['venue'] ?? planMap?['venue'];
+    Map<String, dynamic>? venueMap;
+    if (rawVenue is Map<String, dynamic>) {
+      venueMap = rawVenue;
+    } else if (rawVenue is Map) {
+      venueMap = Map<String, dynamic>.from(rawVenue);
+    }
 
     return GestureDetector(
       onTap: () {
-        // Tapping event card opens event detail screen if applicable
+        if (planMap != null) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PartyPlanDetailScreen(plan: planMap!),
+            ),
+          );
+        } else if (venueMap != null) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => VenueDetailScreen(venue: venueMap!),
+            ),
+          );
+        }
       },
       child: Container(
         margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -1001,64 +1047,86 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 children: [
                   Text(
                     title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 13,
                       color: Color(0xFF6B21A8),
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.location_on_outlined,
-                        size: 12,
-                        color: Color(0xFF7C3AED),
-                      ),
-                      const SizedBox(width: 2),
-                      Text(
-                        venueName,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Color(0xFF64748B),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      const Icon(
-                        Icons.access_time_rounded,
-                        size: 12,
-                        color: Color(0xFF7C3AED),
-                      ),
-                      const SizedBox(width: 2),
-                      Text(
-                        eventTime,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Color(0xFF64748B),
-                        ),
-                      ),
-                    ],
-                  ),
+                  if ((venueText != null && venueText.isNotEmpty) ||
+                      (timeText != null && timeText.isNotEmpty)) ...[
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        if (venueText != null && venueText.isNotEmpty) ...[
+                          const Icon(
+                            Icons.location_on_outlined,
+                            size: 12,
+                            color: Color(0xFF7C3AED),
+                          ),
+                          const SizedBox(width: 2),
+                          Flexible(
+                            child: Text(
+                              venueText,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
+                          ),
+                        ],
+                        if (venueText != null &&
+                            venueText.isNotEmpty &&
+                            timeText != null &&
+                            timeText.isNotEmpty)
+                          const SizedBox(width: 6),
+                        if (timeText != null && timeText.isNotEmpty) ...[
+                          const Icon(
+                            Icons.access_time_rounded,
+                            size: 12,
+                            color: Color(0xFF7C3AED),
+                          ),
+                          const SizedBox(width: 2),
+                          Flexible(
+                            child: Text(
+                              timeText,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
-            const Row(
-              children: [
-                Text(
-                  'View details',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
+            if (planMap != null || venueMap != null)
+              const Row(
+                children: [
+                  Text(
+                    'View details',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF7C3AED),
+                    ),
+                  ),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 16,
                     color: Color(0xFF7C3AED),
                   ),
-                ),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  size: 16,
-                  color: Color(0xFF7C3AED),
-                ),
-              ],
-            ),
+                ],
+              ),
           ],
         ),
       ),
