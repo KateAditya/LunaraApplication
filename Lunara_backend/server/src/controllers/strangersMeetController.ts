@@ -255,34 +255,20 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
             drinkPreference,
         });
 
-        // Send request submitted push notification to creator
-        try {
-            const creator = await User.findByPk(userId);
-            if (creator?.fcmToken) {
-                const { sendPushNotification } = require('../services/fcmService');
-                await sendPushNotification(creator.fcmToken, {
-                    title: '📝 Request Submitted',
-                    body: 'Your Stranger Meet request has been submitted for admin approval.',
-                    data: {
-                        type: 'strangers_meet_request_submitted',
-                        requestId: request.id,
-                    }
-                });
+        // Multi-channel notification engine
+        await StrangersMeetService.emitNotification({
+            recipientUserId: userId,
+            eventType: 'strangers_meet_request_submitted',
+            title: '📝 Strangers Meet Submitted',
+            body: `Your Strangers Meetup request for ${request.numberOfPersons} persons has been submitted for admin approval.`,
+            entityId: request.id,
+            notifyAdmins: true,
+            metadata: {
+                requestId: request.id,
+                numberOfPersons: request.numberOfPersons,
+                eventDateTime: request.eventDateTime
             }
-        } catch (notifErr: any) {
-            logger.warn('Failed to send request submitted notification: ' + notifErr.message);
-        }
-
-        try {
-            const { io } = require('../server');
-            io.to('admin').emit('admin_notification', {
-                title: 'New Stranger Meet Request',
-                message: `A new Stranger Meet request for ${request.numberOfPersons} persons requires admin approval.`,
-                type: 'stranger_meet_request'
-            });
-        } catch (adminErr: any) {
-            logger.warn('Failed to emit admin_notification: ' + adminErr.message);
-        }
+        });
 
         res.status(201).json({
             success: true,
@@ -1430,37 +1416,14 @@ export const handleJoinRequest = async (req: Request, res: Response): Promise<vo
         if (action === 'accept') {
             await joiner.update({ status: 'accepted' as any });
 
-            // Notify participant
-            try {
-                const participant = await User.findByPk(joiner.userId);
-                if (participant?.fcmToken) {
-                    const { sendPushNotification } = require('../services/fcmService');
-                    await sendPushNotification(participant.fcmToken, {
-                        title: '🎉 Request Accepted!',
-                        body: `Your request to join "${request.subject}" has been accepted! Please complete the payment to secure your spot.`,
-                        data: {
-                            type: 'strangers_meet_request_accepted',
-                            requestId: request.id,
-                        }
-                    });
-                }
-
-                // Emit socket event notification_created
-                const { io } = require('../server');
-                io.to(`user_${joiner.userId}`).emit('notification_created', {
-                    id: `sm_req_accepted_${joiner.id}`,
-                    title: 'Request Accepted',
-                    body: `Your request to join "${request.subject}" was accepted by the host.`,
-                    createdAt: new Date().toISOString(),
-                    read: false,
-                    data: {
-                        type: 'strangers_meet_request_accepted',
-                        requestId: request.id,
-                    }
-                });
-            } catch (notifErr: any) {
-                logger.warn('Failed to send join request accepted notifications: ' + notifErr.message);
-            }
+            // Multi-channel notification engine for accepted joiner
+            await StrangersMeetService.emitNotification({
+                recipientUserId: joiner.userId,
+                eventType: 'strangers_meet_request_accepted',
+                title: '🎉 Request Accepted!',
+                body: `Your request to join "${request.subject}" has been accepted by the host! Complete payment to secure your spot.`,
+                entityId: request.id
+            });
 
             // Emit socket event for real-time slots updates
             try {
@@ -1483,37 +1446,14 @@ export const handleJoinRequest = async (req: Request, res: Response): Promise<vo
         } else {
             await joiner.update({ status: 'rejected' as any });
 
-            // Notify participant of rejection
-            try {
-                const participant = await User.findByPk(joiner.userId);
-                if (participant?.fcmToken) {
-                    const { sendPushNotification } = require('../services/fcmService');
-                    await sendPushNotification(participant.fcmToken, {
-                        title: 'Declined Request',
-                        body: `Your request to join "${request.subject}" was declined by the host.`,
-                        data: {
-                            type: 'strangers_meet_request_rejected',
-                            requestId: request.id,
-                        }
-                    });
-                }
-
-                // Emit socket event notification_created
-                const { io } = require('../server');
-                io.to(`user_${joiner.userId}`).emit('notification_created', {
-                    id: `sm_req_rejected_${joiner.id}`,
-                    title: 'Request Declined',
-                    body: `Your request to join "${request.subject}" was declined by the host.`,
-                    createdAt: new Date().toISOString(),
-                    read: false,
-                    data: {
-                        type: 'strangers_meet_request_rejected',
-                        requestId: request.id,
-                    }
-                });
-            } catch (notifErr: any) {
-                logger.warn('Failed to send join request rejected notifications: ' + notifErr.message);
-            }
+            // Multi-channel notification engine for rejected joiner
+            await StrangersMeetService.emitNotification({
+                recipientUserId: joiner.userId,
+                eventType: 'strangers_meet_request_rejected',
+                title: 'Declined Request ❌',
+                body: `Your request to join "${request.subject}" was declined by the host.`,
+                entityId: request.id
+            });
 
             // Emit socket event for real-time slots updates
             try {

@@ -153,6 +153,14 @@ export class StrangersMeetService {
             logger.error(`[StrangersMeetService] Ticket generation error for SM Request ${request.id}:`, tErr);
         }
 
+        await this.emitNotification({
+            recipientUserId: request.userId,
+            eventType: 'strangers_meet_deposit_paid',
+            title: '🎉 Deposit Verified!',
+            body: 'Your Strangers Meetup is LIVE and open for joiners!',
+            entityId: request.id
+        });
+
         return request;
     }
 
@@ -217,5 +225,124 @@ export class StrangersMeetService {
         }
 
         return { joiner, order: razorpayOrder };
+    }
+
+    /**
+     * Helper to dispatch Strangers Meet notifications across DB, FCM Push, and Socket.IO
+     */
+    public static async emitNotification(options: {
+        recipientUserId: string;
+        eventType: string;
+        title: string;
+        body: string;
+        entityId: string;
+        metadata?: Record<string, any>;
+        notifyAdmins?: boolean;
+    }): Promise<void> {
+        try {
+            const { recipientUserId, eventType, title, body, entityId, metadata, notifyAdmins } = options;
+
+            // 1. Create DB Notification Record for Recipient
+            try {
+                const Notification = (await import('../models/Notification')).default;
+                await Notification.create({
+                    recipientUserId,
+                    eventType,
+                    category: 'bookings' as any,
+                    entityType: 'strangers_meet',
+                    entityId,
+                    title,
+                    body,
+                    priority: 'HIGH' as any,
+                    isRead: false,
+                    metadata: metadata || { entityId }
+                });
+            } catch (dbErr) {
+                logger.warn(`[StrangersMeetService] Failed to create DB Notification: ${dbErr}`);
+            }
+
+            // 2. Send FCM Push Notification to Recipient
+            try {
+                const User = (await import('../models/User')).default;
+                const user = await User.findByPk(recipientUserId, { attributes: ['id', 'fcmToken'] });
+                if (user && user.fcmToken) {
+                    const { sendPushNotification } = require('./fcmService');
+                    await sendPushNotification(user.fcmToken, {
+                        title,
+                        body,
+                        data: { type: eventType, entityId }
+                    });
+                }
+            } catch (pushErr) {
+                logger.warn(`[StrangersMeetService] FCM Push warning: ${pushErr}`);
+            }
+
+            // 3. Send Socket.IO Real-time Events
+            try {
+                const { io } = require('../server');
+                if (io) {
+                    io.to(`user_${recipientUserId}`).emit('strangers_meet_status_update', { entityId, eventType });
+                    io.to(`user_${recipientUserId}`).emit('notification_created', {
+                        id: `sm_${entityId}_${Date.now()}`,
+                        title,
+                        body,
+                        createdAt: new Date().toISOString(),
+                        read: false,
+                        data: { type: eventType, entityId }
+                    });
+                }
+            } catch (sockErr) {
+                logger.warn(`[StrangersMeetService] Socket emit warning: ${sockErr}`);
+            }
+
+            // 4. If requested, alert all Admins
+            if (notifyAdmins) {
+                try {
+                    const User = (await import('../models/User')).default;
+                    const Notification = (await import('../models/Notification')).default;
+                    const admins = await User.findAll({ where: { role: 'admin' }, attributes: ['id', 'fcmToken'] });
+                    const adminTitle = 'New Strangers Meet Request 🚨';
+                    const adminBody = title;
+
+                    for (const admin of admins) {
+                        await Notification.create({
+                            recipientUserId: admin.id,
+                            eventType: 'strangers_meet_request_submitted',
+                            category: 'bookings' as any,
+                            entityType: 'strangers_meet',
+                            entityId,
+                            title: adminTitle,
+                            body: adminBody,
+                            priority: 'HIGH' as any,
+                            isRead: false,
+                            metadata: metadata || { entityId }
+                        }).catch(() => {});
+
+                        if (admin.fcmToken) {
+                            const { sendPushNotification } = require('./fcmService');
+                            sendPushNotification(admin.fcmToken, {
+                                title: adminTitle,
+                                body: adminBody,
+                                data: { type: 'strangers_meet_request_submitted', entityId }
+                            }).catch(() => {});
+                        }
+                    }
+
+                    const { io } = require('../server');
+                    if (io) {
+                        io.to('admin_notifications').emit('admin_notification_created', {
+                            title: adminTitle,
+                            body: adminBody,
+                            entityId,
+                            createdAt: new Date().toISOString()
+                        });
+                    }
+                } catch (adminErr) {
+                    logger.warn(`[StrangersMeetService] Admin notification warning: ${adminErr}`);
+                }
+            }
+        } catch (err) {
+            logger.warn(`[StrangersMeetService] emitNotification global error: ${err}`);
+        }
     }
 }
