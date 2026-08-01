@@ -359,16 +359,10 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                 gradient: LunaraTheme.deepPurpleGradient,
                 shape: BoxShape.circle,
               ),
-              child: Image.asset(
-                LunaraTheme.logoIcon,
-                width: 30,
-                height: 30,
+              child: const Icon(
+                Icons.add_rounded,
                 color: Colors.white,
-                errorBuilder: (_, __, ___) => const Icon(
-                  Icons.add,
-                  color: Colors.white,
-                  size: 24,
-                ),
+                size: 28,
               ),
             ),
             label: 'Post',

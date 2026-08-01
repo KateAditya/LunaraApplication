@@ -434,7 +434,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                         // Animated logo icon
                         if (MediaQuery.of(context).size.width > 350)
                           Container(
-                            padding: const EdgeInsets.all(16),
+                            padding: const EdgeInsets.all(14),
                             decoration: BoxDecoration(
                               color: Colors.white.withValues(alpha: 0.2),
                               shape: BoxShape.circle,
@@ -445,16 +445,10 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             ),
                             child: Transform.rotate(
                               angle: _rotateAnim.value * 2,
-                              child: Image.asset(
-                                'assets/images/logo.png',
-                                width: 48,
-                                height: 48,
+                              child: const Icon(
+                                Icons.explore_rounded,
                                 color: Colors.white,
-                                errorBuilder: (_, __, ___) => const Icon(
-                                  Icons.flash_on,
-                                  color: Colors.white,
-                                  size: 24,
-                                ),
+                                size: 36,
                               ),
                             ),
                           ),

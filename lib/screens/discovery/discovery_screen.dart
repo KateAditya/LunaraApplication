@@ -1183,25 +1183,18 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                       children: [
                         GestureDetector(
                           onTap: _refreshData,
-                          child: Image.asset(
-                            LunaraTheme.logoIcon,
-                            height: 28,
-                            errorBuilder: (_, __, ___) => Container(
-                              height: 28,
-                              width: 28,
-                              decoration: const BoxDecoration(
-                                gradient: LunaraTheme.purpleGradient,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Center(
-                                child: Text(
-                                  'L',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                ),
+                          child: Container(
+                            height: 32,
+                            width: 32,
+                            decoration: const BoxDecoration(
+                              gradient: LunaraTheme.purpleGradient,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Center(
+                              child: Icon(
+                                Icons.flash_on_rounded,
+                                color: Colors.white,
+                                size: 18,
                               ),
                             ),
                           ),
