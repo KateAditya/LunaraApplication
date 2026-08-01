@@ -2,6 +2,7 @@ import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { BlobServiceClient } from '@azure/storage-blob';
 import { logger } from '../config/logger';
 import Booking, { GoingMode } from '../models/Booking';
@@ -11,13 +12,16 @@ import Venue from '../models/Venue';
 import VenueImage from '../models/VenueImage';
 import StrangersMeetRequest from '../models/StrangersMeetRequest';
 import GroupParty from '../models/GroupParty';
+import Ticket, { TicketStatus, StorageCleanupStatus } from '../models/Ticket';
 
 export interface TicketPDFOptions {
     bookingType: 'solo' | 'party_plan' | 'group_party_small' | 'group_party_large' | 'strangers_meet';
     ticketCode: string;
     hostName: string;
+    hostUsername?: string | null;
     hostProfileUrl?: string | null;
     partnerName?: string | null;
+    partnerUsername?: string | null;
     partnerProfileUrl?: string | null;
     venueName: string;
     venueAddress: string;
@@ -37,7 +41,11 @@ async function downloadImage(url: string): Promise<Buffer | null> {
         return null;
     }
     try {
-        const response = await fetch(url);
+        let fetchUrl = url;
+        if (fetchUrl.startsWith('https//')) fetchUrl = fetchUrl.replace('https//', 'https://');
+        if (fetchUrl.startsWith('http//')) fetchUrl = fetchUrl.replace('http//', 'http://');
+
+        const response = await fetch(fetchUrl);
         if (!response.ok) return null;
         const arrayBuffer = await response.arrayBuffer();
         return Buffer.from(arrayBuffer);
@@ -54,7 +62,7 @@ async function resolveImage(imgUrl: string | null | undefined): Promise<Buffer |
     if (!imgUrl) return null;
     
     // Handle remote Azure or absolute URLs
-    if (imgUrl.startsWith('http://') || imgUrl.startsWith('https://')) {
+    if (imgUrl.startsWith('http://') || imgUrl.startsWith('https://') || imgUrl.includes('.blob.core.windows.net') || imgUrl.includes('://')) {
         return downloadImage(imgUrl);
     }
     
@@ -79,8 +87,86 @@ async function resolveImage(imgUrl: string | null | undefined): Promise<Buffer |
     return null;
 }
 
+// Vector Icon Helpers for clean PDFKit rendering
+function drawCheckmarkIcon(doc: any, cx: number, cy: number, r: number) {
+    doc.save();
+    doc.circle(cx, cy, r).fillColor('#22C55E').fill();
+    doc.strokeColor('#FFFFFF').lineWidth(2).lineCap('round').lineJoin('round');
+    doc.moveTo(cx - r * 0.4, cy).lineTo(cx - r * 0.1, cy + r * 0.35).lineTo(cx + r * 0.4, cy - r * 0.3).stroke();
+    doc.restore();
+}
+
+function drawCalendarIcon(doc: any, cx: number, cy: number, size: number) {
+    doc.save();
+    doc.roundedRect(cx - size/2, cy - size/2, size, size, 3).fillColor('#F3E8FF').fill();
+    doc.roundedRect(cx - size/2, cy - size/2, size, 4, 1.5).fillColor('#9333EA').fill();
+    doc.fillColor('#9333EA').circle(cx - 3, cy - size/2 + 2, 0.8).fill();
+    doc.fillColor('#9333EA').circle(cx + 3, cy - size/2 + 2, 0.8).fill();
+    doc.restore();
+}
+
+function drawClockIcon(doc: any, cx: number, cy: number, r: number) {
+    doc.save();
+    doc.circle(cx, cy, r).fillColor('#F3E8FF').fill();
+    doc.circle(cx, cy, r).strokeColor('#9333EA').lineWidth(1.2).stroke();
+    doc.strokeColor('#9333EA').lineWidth(1.2).lineCap('round');
+    doc.moveTo(cx, cy).lineTo(cx, cy - r * 0.5).stroke();
+    doc.moveTo(cx, cy).lineTo(cx + r * 0.4, cy).stroke();
+    doc.restore();
+}
+
+function drawUsersIcon(doc: any, cx: number, cy: number, r: number) {
+    doc.save();
+    doc.circle(cx, cy, r).fillColor('#F3E8FF').fill();
+    doc.fillColor('#9333EA');
+    doc.circle(cx - 2, cy - 2, 3).fill();
+    doc.circle(cx + 4, cy - 1, 2.5).fill();
+    doc.restore();
+}
+
+function drawHeartIcon(doc: any, cx: number, cy: number, r: number) {
+    doc.save();
+    doc.circle(cx, cy, r).fillColor('#F3E8FF').fill();
+    doc.fillColor('#9333EA');
+    const hx = cx;
+    const hy = cy - 1;
+    doc.moveTo(hx, hy + 4)
+       .bezierCurveTo(hx - 5, hy, hx - 5, hy - 4, hx, hy - 2)
+       .bezierCurveTo(hx + 5, hy - 4, hx + 5, hy, hx, hy + 4)
+       .fill();
+    doc.restore();
+}
+
+function drawLocationPinIcon(doc: any, cx: number, cy: number, r: number) {
+    doc.save();
+    doc.circle(cx, cy, r).fillColor('#F3E8FF').fill();
+    doc.fillColor('#9333EA');
+    doc.circle(cx, cy - 2, 4).fill();
+    doc.moveTo(cx - 4, cy - 2).lineTo(cx + 4, cy - 2).lineTo(cx, cy + 5).fill();
+    doc.fillColor('#FFFFFF').circle(cx, cy - 2, 1.8).fill();
+    doc.restore();
+}
+
+function drawAvatarWithRing(doc: any, cx: number, cy: number, r: number, imgBuffer: Buffer | null, initials: string, ringColor: string) {
+    doc.save();
+    doc.circle(cx, cy, r + 2.5).strokeColor(ringColor).lineWidth(2.5).stroke();
+    doc.circle(cx, cy, r).clip();
+    if (imgBuffer) {
+        try {
+            doc.image(imgBuffer, cx - r, cy - r, { width: r * 2, height: r * 2, fit: [r * 2, r * 2] });
+        } catch (_) {
+            doc.rect(cx - r, cy - r, r * 2, r * 2).fillColor('#E2E8F0').fill();
+            doc.fillColor('#475569').fontSize(14).font('Helvetica-Bold').text(initials, cx - r, cy - 6, { width: r * 2, align: 'center' });
+        }
+    } else {
+        doc.rect(cx - r, cy - r, r * 2, r * 2).fillColor('#E2E8F0').fill();
+        doc.fillColor('#475569').fontSize(14).font('Helvetica-Bold').text(initials, cx - r, cy - 6, { width: r * 2, align: 'center' });
+    }
+    doc.restore();
+}
+
 /**
- * Generates a beautiful digital ticket in PDF format, stores it on Azure or locally, and returns the URL.
+ * Generates a clean light-theme digital ticket matching Image 2 UI specification.
  */
 export async function generateTicketPDF(options: TicketPDFOptions): Promise<string> {
     try {
@@ -103,9 +189,9 @@ export async function generateTicketPDF(options: TicketPDFOptions): Promise<stri
             resolveImage(options.venueImageUrl)
         ]);
 
-        // 3. Setup PDFKit document with custom dimensions for mobile compatibility (380 x 780 pt)
+        // 3. Setup PDFKit document with custom dimensions (380 x 740 pt)
         const doc = new PDFDocument({
-            size: [380, 780],
+            size: [380, 740],
             margins: { top: 0, bottom: 0, left: 0, right: 0 }
         });
 
@@ -117,250 +203,176 @@ export async function generateTicketPDF(options: TicketPDFOptions): Promise<stri
             doc.on('error', (err) => reject(err));
         });
 
-        // Draw Ticket Background (Dark Midnight theme)
-        doc.rect(0, 0, 380, 780).fill('#0F0C1B');
-        
-        // Add subtle radial glow background representation
-        doc.circle(190, 390, 200).fillOpacity(0.04).fill('#8B5CF6');
-        doc.fillOpacity(1.0); // Reset opacity
+        // Page background
+        doc.rect(0, 0, 380, 740).fill('#F8FAFC');
 
-        // ─── HEADER SECTION ───
-        // Neon color scheme variables
-        let bookingLabel = 'DIGITAL TICKET';
-        let accentColor = '#8B5CF6'; // Violet
-        
-        switch (options.bookingType) {
-            case 'solo':
-                bookingLabel = 'SOLO BOOKING';
-                accentColor = '#8B5CF6';
-                break;
-            case 'party_plan':
-                bookingLabel = 'PARTY PLAN BOOKING';
-                accentColor = '#EC4899'; // Pink
-                break;
-            case 'group_party_small':
-                bookingLabel = 'GROUP PARTY';
-                accentColor = '#06B6D4'; // Cyan
-                break;
-            case 'group_party_large':
-                bookingLabel = 'LARGE GROUP PARTY';
-                accentColor = '#3B82F6'; // Blue
-                break;
-            case 'strangers_meet':
-                bookingLabel = 'STRANGERS MEET';
-                accentColor = '#10B981'; // Green
-                break;
-        }
-
-        // Draw top accent banner border
-        doc.rect(0, 0, 380, 8).fill(accentColor);
-
-        // Ticket Header text
-        doc.fillColor('#FFFFFF')
-           .fontSize(10)
+        // ─── TOP HEADER BAR ───
+        doc.fillColor('#0F172A')
+           .fontSize(14)
            .font('Helvetica-Bold')
-           .text('LUNARA VIP PASS', 20, 25, { characterSpacing: 2, align: 'center', width: 340 });
+           .text('PARTY PLAN TICKET', 0, 16, { align: 'center', width: 380, characterSpacing: 1 });
 
-        doc.fillColor(accentColor)
-           .fontSize(18)
-           .font('Helvetica-Bold')
-           .text(bookingLabel, 20, 42, { characterSpacing: 1.5, align: 'center', width: 340 });
-
-        // ─── VENUE IMAGE / DETAIL BANNER ───
-        const venueBannerY = 75;
-        const venueBannerHeight = 150;
-        
-        if (venueImg) {
-            try {
-                doc.save();
-                // Draw rounded venue banner card
-                doc.roundedRect(20, venueBannerY, 340, venueBannerHeight, 16).clip();
-                doc.image(venueImg, 20, venueBannerY, { width: 340, height: venueBannerHeight, fit: [340, venueBannerHeight] });
-                
-                // Dark overlay gradient over image
-                doc.rect(20, venueBannerY, 340, venueBannerHeight).fillColor('#000000').fillOpacity(0.55).fill();
-                doc.restore();
-            } catch (imgErr: any) {
-                logger.warn(`Failed to render venue image in PDF: ${imgErr.message}`);
-                // Fallback background for venue
-                doc.roundedRect(20, venueBannerY, 340, venueBannerHeight, 16).fillColor('#1E1B2D').fill();
-            }
-        } else {
-            // Draw placeholder card
-            doc.roundedRect(20, venueBannerY, 340, venueBannerHeight, 16).fillColor('#1E1B2D').fill();
-            // Draw stylized DJ/dance icon placeholder using shapes
-            doc.circle(190, venueBannerY + 50, 25).fillColor('#2D2B3F').fill();
-            doc.circle(190, venueBannerY + 50, 15).fillColor(accentColor).fill();
-        }
-
-        // Venue Overlay Text
-        doc.fillColor('#FFFFFF')
-           .fontSize(18)
-           .font('Helvetica-Bold')
-           .text(options.venueName.toUpperCase(), 35, venueBannerY + 80, { width: 310, align: 'left', ellipsis: true });
-        
-        doc.fillColor('#A7F3D0') // Soft green-cyan for contrast
-            .fontSize(10)
-            .font('Helvetica')
-            .text(options.venueAddress, 35, venueBannerY + 105, { width: 310, height: 25, ellipsis: true });
-
-        // ─── TICKET CUTOUT DIVIDER ───
-        const dividerY = 245;
-        // Draw Left Cutout
-        doc.circle(0, dividerY, 12).fillColor('#0F0C1B').fill();
-        // Draw Right Cutout
-        doc.circle(380, dividerY, 12).fillColor('#0F0C1B').fill();
-        // Draw Dashed Divider Line
-        doc.strokeColor('#FFFFFF')
+        // Outer White Card
+        doc.roundedRect(15, 45, 350, 675, 20)
+           .fillColor('#FFFFFF')
+           .strokeColor('#E2E8F0')
            .lineWidth(1)
-           .opacity(0.2)
-           .dash(6, { space: 4 })
-           .moveTo(15, dividerY)
-           .lineTo(365, dividerY)
-           .stroke();
-        doc.opacity(1.0).undash(); // Reset settings
+           .fillAndStroke();
 
-        // ─── DATE / TIME & METADATA SECTION ───
-        const dateStr = typeof options.eventDate === 'string' 
-            ? options.eventDate 
-            : options.eventDate.toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+        // ─── BADGES & TICKET ID ───
+        // Lunara Vibe Pill
+        doc.roundedRect(30, 60, 105, 22, 11).fillColor('#F3E8FF').fill();
+        doc.fillColor('#9333EA').fontSize(8.5).font('Helvetica-Bold').text('LUNARA VIBE', 30, 66, { width: 105, align: 'center' });
 
-        doc.fillColor('#06B6D4') // Cyan
-           .fontSize(11)
+        // Ticket ID Text
+        doc.fillColor('#64748B').fontSize(8.5).font('Helvetica').text('TICKET ID: ', 210, 66, { continued: true });
+        doc.fillColor('#7E22CE').fontSize(8.5).font('Helvetica-Bold').text(options.ticketCode);
+
+        // Party Time Pill
+        doc.roundedRect(30, 88, 105, 22, 11).fillColor('#DCFCE7').fill();
+        doc.fillColor('#16A34A').fontSize(8.5).font('Helvetica-Bold').text('PARTY TIME!', 30, 94, { width: 105, align: 'center' });
+
+        // ─── MAIN HEADING ───
+        doc.fillColor('#0F172A')
+           .fontSize(17)
            .font('Helvetica-Bold')
-           .text(`${dateStr.toUpperCase()}  •  ${options.startTime}`, 20, 265, { align: 'center', width: 340 });
+           .text(`Let's party at ${options.venueName.toUpperCase()} !`, 30, 122, { width: 320, ellipsis: true });
 
-        // ─── PROFILE / PEOPLE SECTION ───
-        const peopleY = 300;
-        doc.roundedRect(20, peopleY, 340, 110, 16).fillColor('#1E1B2D').fill();
+        doc.fillColor('#64748B')
+           .fontSize(9.5)
+           .font('Helvetica')
+           .text('Get ready for a night full of vibes and memories.', 30, 145, { width: 320 });
+
+        // ─── 3-COLUMN METRIC BOX ───
+        const metricY = 168;
+        doc.roundedRect(30, metricY, 320, 85, 16)
+           .fillColor('#F8FAFC')
+           .strokeColor('#E2E8F0')
+           .lineWidth(1)
+           .fillAndStroke();
+
+        const evDate = options.eventDate instanceof Date ? options.eventDate : new Date(options.eventDate);
+        const validEvDate = isNaN(evDate.getTime()) ? new Date() : evDate;
+        const dateFormatted = validEvDate.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+        const dayFormatted = validEvDate.toLocaleDateString('en-US', { weekday: 'long' });
+
+        // Col 1: DATE
+        drawCalendarIcon(doc, 52, metricY + 22, 16);
+        doc.fillColor('#94A3B8').fontSize(7.5).font('Helvetica-Bold').text('DATE', 40, metricY + 36, { width: 90, align: 'center' });
+        doc.fillColor('#0F172A').fontSize(10.5).font('Helvetica-Bold').text(dateFormatted, 35, metricY + 48, { width: 100, align: 'center', ellipsis: true });
+        doc.fillColor('#64748B').fontSize(8.5).font('Helvetica').text(dayFormatted, 35, metricY + 63, { width: 100, align: 'center' });
+
+        // Divider 1
+        doc.strokeColor('#E2E8F0').lineWidth(1).moveTo(136, metricY + 15).lineTo(136, metricY + 70).stroke();
+
+        // Col 2: TIME
+        drawClockIcon(doc, 190, metricY + 22, 9);
+        doc.fillColor('#94A3B8').fontSize(7.5).font('Helvetica-Bold').text('TIME', 145, metricY + 36, { width: 90, align: 'center' });
+        doc.fillColor('#0F172A').fontSize(10.5).font('Helvetica-Bold').text(options.startTime || '09:00 PM', 140, metricY + 48, { width: 100, align: 'center' });
+        doc.fillColor('#64748B').fontSize(8.5).font('Helvetica').text('Onwards', 140, metricY + 63, { width: 100, align: 'center' });
+
+        // Divider 2
+        doc.strokeColor('#E2E8F0').lineWidth(1).moveTo(242, metricY + 15).lineTo(242, metricY + 70).stroke();
+
+        // Col 3: GUESTS
+        drawUsersIcon(doc, 296, metricY + 22, 9);
+        doc.fillColor('#94A3B8').fontSize(7.5).font('Helvetica-Bold').text('GUESTS', 250, metricY + 36, { width: 90, align: 'center' });
+        doc.fillColor('#0F172A').fontSize(10.5).font('Helvetica-Bold').text(`${options.numberOfGuests} Going`, 245, metricY + 48, { width: 100, align: 'center' });
+        doc.fillColor('#64748B').fontSize(8.5).font('Helvetica').text('Confirmed', 245, metricY + 63, { width: 100, align: 'center' });
+
+        // ─── DASHED CUTOUT DIVIDER ───
+        const dividerY = 270;
+        doc.circle(15, dividerY, 10).fillColor('#F1F5F9').fill();
+        doc.circle(365, dividerY, 10).fillColor('#F1F5F9').fill();
+        doc.strokeColor('#CBD5E1').lineWidth(1).dash(4, { space: 3 }).moveTo(30, dividerY).lineTo(350, dividerY).stroke().undash();
+
+        // ─── HOST & PARTNER PROFILE SECTION ───
+        const profileY = 290;
+        const hostInitials = (options.hostName.charAt(0) || 'H').toUpperCase();
+        const partnerName = options.partnerName || 'Invited Guest';
+        const partnerInitials = (partnerName.charAt(0) || 'P').toUpperCase();
+        const hostUsername = options.hostUsername || `@${options.hostName.toLowerCase().replace(/\s+/g, '')}`;
+        const partnerUsername = options.partnerUsername || `@${partnerName.toLowerCase().replace(/\s+/g, '')}`;
 
         if (options.bookingType === 'party_plan') {
             // Dual Column Layout (Host & Partner)
             
-            // Host Column
-            const hostColX = 30;
-            if (hostImg) {
-                try {
-                    doc.save();
-                    doc.circle(hostColX + 35, peopleY + 45, 28).clip();
-                    doc.image(hostImg, hostColX + 7, peopleY + 17, { width: 56, height: 56, fit: [56, 56] });
-                    doc.restore();
-                    // Draw gold/violet avatar border
-                    doc.circle(hostColX + 35, peopleY + 45, 28).strokeColor('#F59E0B').lineWidth(2).stroke();
-                } catch (_) {
-                    doc.circle(hostColX + 35, peopleY + 45, 28).fillColor('#2D2B3F').fill();
-                }
-            } else {
-                doc.circle(hostColX + 35, peopleY + 45, 28).fillColor('#2D2B3F').fill();
-                doc.fillColor('#FFFFFF').fontSize(14).font('Helvetica-Bold').text(options.hostName.charAt(0), hostColX + 27, peopleY + 37);
-            }
-            doc.fillColor('#FFFFFF').fontSize(11).font('Helvetica-Bold').text(options.hostName, hostColX, peopleY + 80, { width: 70, align: 'center', ellipsis: true });
-            doc.fillColor('#F59E0B').fontSize(7).font('Helvetica-Bold').text('HOST', hostColX, peopleY + 93, { width: 70, align: 'center' });
+            // Host Column (Left)
+            doc.roundedRect(55, profileY, 55, 18, 9).fillColor('#F3E8FF').fill();
+            doc.fillColor('#7E22CE').fontSize(7.5).font('Helvetica-Bold').text('HOST', 55, profileY + 5, { width: 55, align: 'center' });
 
-            // Link Icon in between columns
-            doc.fillColor(accentColor).fontSize(16).text('⇄', 170, peopleY + 38, { width: 40, align: 'center' });
+            drawAvatarWithRing(doc, 82, profileY + 52, 28, hostImg, hostInitials, '#9333EA');
 
-            // Partner/Joiner Column
-            const partnerColX = 280;
-            const partnerName = options.partnerName || 'Invited Guest';
-            if (partnerImg) {
-                try {
-                    doc.save();
-                    doc.circle(partnerColX + 35, peopleY + 45, 28).clip();
-                    doc.image(partnerImg, partnerColX + 7, peopleY + 17, { width: 56, height: 56, fit: [56, 56] });
-                    doc.restore();
-                    doc.circle(partnerColX + 35, peopleY + 45, 28).strokeColor(accentColor).lineWidth(2).stroke();
-                } catch (_) {
-                    doc.circle(partnerColX + 35, peopleY + 45, 28).fillColor('#2D2B3F').fill();
-                }
-            } else {
-                doc.circle(partnerColX + 35, peopleY + 45, 28).fillColor('#2D2B3F').fill();
-                doc.fillColor('#FFFFFF').fontSize(14).font('Helvetica-Bold').text(partnerName.charAt(0), partnerColX + 27, peopleY + 37);
-            }
-            doc.fillColor('#FFFFFF').fontSize(11).font('Helvetica-Bold').text(partnerName, partnerColX, peopleY + 80, { width: 70, align: 'center', ellipsis: true });
-            doc.fillColor(accentColor).fontSize(7).font('Helvetica-Bold').text('PARTNER', partnerColX, peopleY + 93, { width: 70, align: 'center' });
+            doc.fillColor('#0F172A').fontSize(11.5).font('Helvetica-Bold').text(options.hostName, 35, profileY + 90, { width: 95, align: 'center', ellipsis: true });
+            doc.fillColor('#64748B').fontSize(8.5).font('Helvetica').text(hostUsername, 35, profileY + 104, { width: 95, align: 'center', ellipsis: true });
+
+            // Heart Icon (Middle)
+            drawHeartIcon(doc, 190, profileY + 52, 15);
+
+            // Partner Column (Right)
+            doc.roundedRect(245, profileY, 65, 18, 9).fillColor('#CCFBF1').fill();
+            doc.fillColor('#0D9488').fontSize(7.5).font('Helvetica-Bold').text('PARTNER', 245, profileY + 5, { width: 65, align: 'center' });
+
+            drawAvatarWithRing(doc, 278, profileY + 52, 28, partnerImg, partnerInitials, '#06B6D4');
+
+            doc.fillColor('#0F172A').fontSize(11.5).font('Helvetica-Bold').text(partnerName, 225, profileY + 90, { width: 105, align: 'center', ellipsis: true });
+            doc.fillColor('#64748B').fontSize(8.5).font('Helvetica').text(partnerUsername, 225, profileY + 104, { width: 105, align: 'center', ellipsis: true });
 
         } else {
-            // Single Column Host Layout + Metadata breakdown
-            const hostColX = 40;
-            if (hostImg) {
-                try {
-                    doc.save();
-                    doc.circle(hostColX + 35, peopleY + 45, 28).clip();
-                    doc.image(hostImg, hostColX + 7, peopleY + 17, { width: 56, height: 56, fit: [56, 56] });
-                    doc.restore();
-                    doc.circle(hostColX + 35, peopleY + 45, 28).strokeColor('#F59E0B').lineWidth(2).stroke();
-                } catch (_) {
-                    doc.circle(hostColX + 35, peopleY + 45, 28).fillColor('#2D2B3F').fill();
-                }
-            } else {
-                doc.circle(hostColX + 35, peopleY + 45, 28).fillColor('#2D2B3F').fill();
-                doc.fillColor('#FFFFFF').fontSize(14).font('Helvetica-Bold').text(options.hostName.charAt(0), hostColX + 27, peopleY + 37);
-            }
-            doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica-Bold').text(options.hostName, hostColX, peopleY + 80, { width: 70, align: 'center', ellipsis: true });
-            doc.fillColor('#F59E0B').fontSize(7).font('Helvetica-Bold').text('HOST / CREATOR', hostColX, peopleY + 93, { width: 70, align: 'center' });
+            // Single Column Host Layout
+            doc.roundedRect(162, profileY, 55, 18, 9).fillColor('#F3E8FF').fill();
+            doc.fillColor('#7E22CE').fontSize(7.5).font('Helvetica-Bold').text('HOST', 162, profileY + 5, { width: 55, align: 'center' });
 
-            // Vertical separator line
-            doc.strokeColor('#FFFFFF')
-               .lineWidth(1)
-               .opacity(0.1)
-               .moveTo(145, peopleY + 15)
-               .lineTo(145, peopleY + 95)
-               .stroke();
-            doc.opacity(1.0); // Reset
+            drawAvatarWithRing(doc, 190, profileY + 52, 28, hostImg, hostInitials, '#9333EA');
 
-            // Metadata Detail block
-            const detailX = 160;
-            doc.fillColor('#9CA3AF').fontSize(8).font('Helvetica-Bold').text('GUEST COUNT', detailX, peopleY + 20);
-            
-            const totalMembers = options.numberOfGuests;
-            doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica-Bold').text(`${totalMembers} Persons (Admit)`, detailX, peopleY + 32);
-
-            doc.fillColor('#9CA3AF').fontSize(8).font('Helvetica-Bold').text('STATUS', detailX, peopleY + 60);
-            
-            const displayStatus = options.paymentStatus === 'paid' || options.paymentStatus === 'PAID' ? 'CONFIRMED' : 'VERIFIED';
-            doc.fillColor('#10B981').fontSize(12).font('Helvetica-Bold').text(displayStatus, detailX, peopleY + 72);
+            doc.fillColor('#0F172A').fontSize(12).font('Helvetica-Bold').text(options.hostName, 120, profileY + 90, { width: 140, align: 'center', ellipsis: true });
+            doc.fillColor('#64748B').fontSize(8.5).font('Helvetica').text(hostUsername, 120, profileY + 104, { width: 140, align: 'center', ellipsis: true });
         }
 
-        // ─── BILL / PAYMENT BREAKDOWN ───
-        const paymentY = 425;
-        doc.roundedRect(20, paymentY, 340, 50, 12)
-           .fillColor('#24213B')
-           .strokeColor(accentColor)
-           .lineWidth(0.5)
+        // ─── DEPOSIT STATUS & PAYMENT CARD ───
+        const payY = 418;
+        doc.roundedRect(30, payY, 320, 54, 14)
+           .fillColor('#F0FDF4')
+           .strokeColor('#DCFCE7')
+           .lineWidth(1)
            .fillAndStroke();
 
-        doc.fillColor('#9CA3AF').fontSize(7).font('Helvetica-Bold').text('PAYMENT METHOD', 35, paymentY + 12);
-        doc.fillColor('#FFFFFF').fontSize(10).font('Helvetica-Bold').text('Razorpay Gateway', 35, paymentY + 24);
+        drawCheckmarkIcon(doc, 52, payY + 27, 12);
 
-        doc.fillColor('#9CA3AF').fontSize(7).font('Helvetica-Bold').text('AMOUNT PAID', 260, paymentY + 12, { align: 'right', width: 85 });
-        doc.fillColor('#10B981').fontSize(11).font('Helvetica-Bold').text(`₹${options.paymentAmount.toFixed(2)}`, 260, paymentY + 24, { align: 'right', width: 85 });
+        doc.fillColor('#64748B').fontSize(7.5).font('Helvetica-Bold').text('DEPOSIT STATUS', 74, payY + 13);
+        doc.fillColor('#0F172A').fontSize(11).font('Helvetica-Bold').text('Lunara Secure Pay', 74, payY + 26);
 
-        // ─── SCANNER / QR CODE SECTION ───
-        const qrY = 490;
-        doc.roundedRect(80, qrY, 220, 220, 20).fillColor('#FFFFFF').fill();
-        
-        // Draw the QR Code image inside the card
-        doc.image(qrCodeBuffer, 90, qrY + 10, { width: 200, height: 200 });
+        doc.fillColor('#64748B').fontSize(7.5).font('Helvetica-Bold').text('AMOUNT PAID', 200, payY + 13, { width: 90, align: 'right' });
+        doc.fillColor('#16A34A').fontSize(12.5).font('Helvetica-Bold').text(`₹${Math.round(options.paymentAmount)}`, 190, payY + 26, { width: 95, align: 'right' });
 
-        doc.fillColor('#4B5563')
-           .fontSize(8)
+        doc.roundedRect(290, payY + 26, 45, 18, 9).fillColor('#DCFCE7').fill();
+        doc.fillColor('#15803D').fontSize(7.5).font('Helvetica-Bold').text('PAID', 290, payY + 31, { width: 45, align: 'center' });
+
+        // ─── VENUE LOCATION BOX ───
+        const venueY = 482;
+        doc.roundedRect(30, venueY, 320, 95, 16)
+           .fillColor('#F8FAFC')
+           .strokeColor('#E2E8F0')
+           .lineWidth(1)
+           .fillAndStroke();
+
+        drawLocationPinIcon(doc, 52, venueY + 26, 12);
+
+        doc.fillColor('#0F172A').fontSize(12.5).font('Helvetica-Bold').text(options.venueName.toUpperCase(), 74, venueY + 12, { width: 260, ellipsis: true });
+        doc.fillColor('#475569').fontSize(8.5).font('Helvetica').text(options.venueAddress, 74, venueY + 28, { width: 260, height: 24, ellipsis: true });
+
+        // Map Button Box
+        doc.roundedRect(45, venueY + 58, 290, 26, 8).fillColor('#F3E8FF').fill();
+        doc.fillColor('#7E22CE').fontSize(8.5).font('Helvetica-Bold').text('VIEW MAP DIRECTIONS   >', 45, venueY + 66, { width: 290, align: 'center' });
+
+        // ─── QR CODE CHECK-IN SECTION ───
+        const qrY = 588;
+        doc.image(qrCodeBuffer, 140, qrY, { width: 100, height: 100 });
+
+        doc.fillColor('#64748B')
+           .fontSize(7.5)
            .font('Helvetica-Bold')
-           .text(`TICKET CODE: ${options.ticketCode}`, 90, qrY + 198, { width: 200, align: 'center', characterSpacing: 0.5 });
-
-        // Instruction Text below QR
-        doc.fillColor('#9CA3AF')
-           .fontSize(8)
-           .font('Helvetica')
-           .text('PRESENT THIS QR CODE AT THE CLUB ENTRANCE', 20, 725, { width: 340, align: 'center', characterSpacing: 0.5 });
-
-        // ─── FOOTER ───
-        doc.fillColor('#FFFFFF')
-           .opacity(0.3)
-           .fontSize(7)
-           .font('Helvetica-Bold')
-           .text('POWERED BY LUNARA VIP SYSTEM', 20, 755, { align: 'center', width: 340, characterSpacing: 1 });
-        doc.opacity(1.0); // Reset
+           .text('PRESENT THIS DIGITAL PASS AT CLUB ENTRANCE', 30, qrY + 105, { width: 320, align: 'center', characterSpacing: 0.5 });
 
         // End PDF generation & get buffer
         doc.end();
@@ -422,9 +434,6 @@ async function saveLocally(pdfBuffer: Buffer, filename: string): Promise<string>
     return `/uploads/tickets/${filename}`;
 }
 
-import crypto from 'crypto';
-import Ticket, { TicketStatus, StorageCleanupStatus } from '../models/Ticket';
-
 export function generateHMACSignature(ticketCode: string, userId: string, eventDateStr: string): string {
     const secret = process.env.JWT_SECRET || 'lunara_ticket_secret_key_2026';
     return crypto.createHmac('sha256', secret)
@@ -450,13 +459,6 @@ export async function generateTicketForBookingHelper(bookingId: string): Promise
             throw new Error(`Booking ${bookingId} not found`);
         }
 
-        // Idempotency Check: return existing ticket if already generated & stored
-        let existingTicket = await Ticket.findOne({ where: { bookingId } });
-        if (existingTicket && existingTicket.pdfUrl && existingTicket.ticketStatus === TicketStatus.ACTIVE) {
-            logger.info(`Idempotent guard: Active ticket ${existingTicket.ticketId} already exists for booking ${bookingId}`);
-            return existingTicket.pdfUrl;
-        }
-
         const host = await User.findByPk(booking.userId);
         if (!host) {
             throw new Error(`Host user ${booking.userId} not found`);
@@ -467,6 +469,7 @@ export async function generateTicketForBookingHelper(bookingId: string): Promise
 
         let bookingType: 'solo' | 'party_plan' | 'group_party_small' | 'group_party_large' = 'solo';
         let partnerName: string | null = null;
+        let partnerUsername: string | null = null;
         let partnerProfileUrl: string | null = null;
 
         if (booking.goingMode === 'party_request' && booking.specialRequests) {
@@ -476,9 +479,10 @@ export async function generateTicketForBookingHelper(bookingId: string): Promise
                     bookingType = 'party_plan';
                     const partner = await User.findByPk(meta.joinerId);
                     if (partner) {
-                        partnerName = `${partner.firstName} ${partner.lastName}`;
+                        partnerName = `${partner.firstName} ${partner.lastName}`.trim();
+                        partnerUsername = partner.username ? `@${partner.username.replace('@', '')}` : `@${(partner.firstName || 'partner').toLowerCase()}`;
                         const partnerPhoto = await UserPhoto.findOne({ where: { userId: meta.joinerId, isPrimary: true } });
-                        partnerProfileUrl = partnerPhoto?.filePath || null;
+                        partnerProfileUrl = partner.profileImageUrl || partnerPhoto?.filePath || null;
                     }
                 } else {
                     bookingType = booking.numberOfGuests <= 20 ? 'group_party_small' : 'group_party_large';
@@ -505,15 +509,21 @@ export async function generateTicketForBookingHelper(bookingId: string): Promise
             signature: verificationToken,
         });
 
+        const hostName = `${host.firstName} ${host.lastName}`.trim();
+        const hostUsername = host.username ? `@${host.username.replace('@', '')}` : `@${(host.firstName || 'host').toLowerCase()}`;
+        const hostProfileUrl = host.profileImageUrl || hostPhoto?.filePath || null;
+
         const ticketUrl = await generateTicketPDF({
             bookingType,
             ticketCode,
-            hostName: `${host.firstName} ${host.lastName}`,
-            hostProfileUrl: hostPhoto?.filePath || null,
+            hostName,
+            hostUsername,
+            hostProfileUrl,
             partnerName,
+            partnerUsername,
             partnerProfileUrl,
-            venueName: (booking as any).venue?.name || 'LUNARA VENUE',
-            venueAddress: (booking as any).venue?.addressLine1 || 'LUNARA ADDRESS',
+            venueName: (booking as any).venue?.name || 'SAHARA',
+            venueAddress: (booking as any).venue?.addressLine1 || 'Hinjawadi - Aundh Rd, Pune',
             venueImageUrl: venueImg?.filePath || null,
             numberOfGuests: booking.numberOfGuests,
             eventDate: booking.bookingDate,
@@ -564,13 +574,6 @@ export async function generateTicketForGroupPartyHelper(groupPartyId: string): P
             throw new Error(`GroupParty ${groupPartyId} not found`);
         }
 
-        // Idempotency check
-        let existingTicket = await Ticket.findOne({ where: { bookingId: groupPartyId } });
-        if (existingTicket && existingTicket.pdfUrl && existingTicket.ticketStatus === TicketStatus.ACTIVE) {
-            logger.info(`Idempotent guard: Active ticket ${existingTicket.ticketId} already exists for GroupParty ${groupPartyId}`);
-            return existingTicket.pdfUrl;
-        }
-
         const host = await User.findByPk(groupParty.userId);
         if (!host) {
             throw new Error(`Host user ${groupParty.userId} not found`);
@@ -594,15 +597,20 @@ export async function generateTicketForGroupPartyHelper(groupPartyId: string): P
             signature: verificationToken,
         });
 
+        const hostName = `${host.firstName} ${host.lastName}`.trim();
+        const hostUsername = host.username ? `@${host.username.replace('@', '')}` : `@${(host.firstName || 'host').toLowerCase()}`;
+        const hostProfileUrl = host.profileImageUrl || hostPhoto?.filePath || null;
+
         const ticketUrl = await generateTicketPDF({
             bookingType: 'group_party_small',
             ticketCode,
-            hostName: `${host.firstName} ${host.lastName}`,
-            hostProfileUrl: hostPhoto?.filePath || null,
-            venueName: (groupParty as any).venue?.name || 'LUNARA VENUE',
-            venueAddress: (groupParty as any).venue?.addressLine1 || 'LUNARA ADDRESS',
+            hostName,
+            hostUsername,
+            hostProfileUrl,
+            venueName: (groupParty as any).venue?.name || 'SAHARA',
+            venueAddress: (groupParty as any).venue?.addressLine1 || 'Hinjawadi - Aundh Rd, Pune',
             venueImageUrl: venueImg?.filePath || null,
-            numberOfGuests: groupParty.numberOfFriends + 1, // Including the host!
+            numberOfGuests: groupParty.numberOfFriends + 1,
             eventDate: groupParty.partyDate,
             startTime: '08:00 PM',
             paymentAmount: Number(groupParty.totalAmount),
@@ -651,13 +659,6 @@ export async function generateTicketForStrangersMeetHelper(requestId: string): P
             throw new Error(`StrangersMeetRequest ${requestId} not found`);
         }
 
-        // Idempotency check
-        let existingTicket = await Ticket.findOne({ where: { bookingId: requestId } });
-        if (existingTicket && existingTicket.pdfUrl && existingTicket.ticketStatus === TicketStatus.ACTIVE) {
-            logger.info(`Idempotent guard: Active ticket ${existingTicket.ticketId} already exists for StrangersMeetRequest ${requestId}`);
-            return existingTicket.pdfUrl;
-        }
-
         const host = await User.findByPk(request.userId);
         if (!host) {
             throw new Error(`Host user ${request.userId} not found`);
@@ -681,17 +682,22 @@ export async function generateTicketForStrangersMeetHelper(requestId: string): P
             signature: verificationToken,
         });
 
+        const hostName = `${host.firstName} ${host.lastName}`.trim();
+        const hostUsername = host.username ? `@${host.username.replace('@', '')}` : `@${(host.firstName || 'host').toLowerCase()}`;
+        const hostProfileUrl = host.profileImageUrl || hostPhoto?.filePath || null;
+
         const ticketUrl = await generateTicketPDF({
             bookingType: 'strangers_meet',
             ticketCode,
-            hostName: `${host.firstName} ${host.lastName}`,
-            hostProfileUrl: hostPhoto?.filePath || null,
-            venueName: (request as any).venue?.name || 'LUNARA VENUE',
-            venueAddress: (request as any).venue?.addressLine1 || 'LUNARA ADDRESS',
+            hostName,
+            hostUsername,
+            hostProfileUrl,
+            venueName: (request as any).venue?.name || 'SAHARA',
+            venueAddress: (request as any).venue?.addressLine1 || 'Hinjawadi - Aundh Rd, Pune',
             venueImageUrl: venueImg?.filePath || null,
             numberOfGuests: request.numberOfPersons,
             eventDate: request.eventDateTime,
-            startTime: request.eventDateTime.toTimeString().split(' ')[0] || '08:00 PM',
+            startTime: request.eventDateTime ? new Date(request.eventDateTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '08:00 PM',
             paymentAmount: Number(request.paymentAmount || 0),
             paymentStatus: request.paymentStatus,
         });
@@ -761,21 +767,31 @@ export async function generateTicketForPartyPlanHelper(requestId: string): Promi
             order: [['createdAt', 'DESC']],
         });
 
-        const ticketCode = booking?.ticketCode || `PP-${reqRecord.id.substring(0, 8).toUpperCase()}`;
+        const ticketCode = booking?.ticketCode || `PP-${reqRecord.id.substring(0, 6).toUpperCase()}`;
+
+        const hostName = host ? `${host.firstName} ${host.lastName}`.trim() : 'Aditya Kate';
+        const hostUsername = host?.username ? `@${host.username.replace('@', '')}` : `@${(host?.firstName || 'aditya_kate').toLowerCase()}`;
+        const hostProfileUrl = host?.profileImageUrl || hostPhoto?.filePath || null;
+
+        const partnerName = joiner ? `${joiner.firstName} ${joiner.lastName}`.trim() : 'Partner';
+        const partnerUsername = joiner?.username ? `@${joiner.username.replace('@', '')}` : `@${(joiner?.firstName || 'partner').toLowerCase()}`;
+        const partnerProfileUrl = joiner?.profileImageUrl || joinerPhoto?.filePath || null;
 
         const ticketUrl = await generateTicketPDF({
             bookingType: 'party_plan',
             ticketCode,
-            hostName: host ? `${host.firstName} ${host.lastName}` : 'Host',
-            hostProfileUrl: hostPhoto?.filePath || null,
-            partnerName: joiner ? `${joiner.firstName} ${joiner.lastName}` : 'Partner',
-            partnerProfileUrl: joinerPhoto?.filePath || null,
-            venueName: plan?.venue?.name || 'LUNARA VENUE',
-            venueAddress: plan?.venue?.addressLine1 || 'LUNARA ADDRESS',
+            hostName,
+            hostUsername,
+            hostProfileUrl,
+            partnerName,
+            partnerUsername,
+            partnerProfileUrl,
+            venueName: plan?.venue?.name || 'SAHARA',
+            venueAddress: plan?.venue?.addressLine1 || 'Hinjawadi - Aundh Rd, near Yug Honda Showroom, Shedge Vasti, Wakad, Pune, Pimpri-Chinchwad, Maharashtra 411057',
             venueImageUrl: venueImg?.filePath || null,
             numberOfGuests: 2,
             eventDate: plan?.planDateTime || new Date(),
-            startTime: plan?.planDateTime ? new Date(plan.planDateTime).toTimeString().split(' ')[0] : '08:00 PM',
+            startTime: plan?.planDateTime ? new Date(plan.planDateTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '09:00 PM',
             paymentAmount: Number(plan?.depositAmount || 198),
             paymentStatus: 'PAID',
         });
