@@ -11,9 +11,15 @@ router.get('/', MobileTicketController.getUserTickets);
 
 /**
  * GET /api/mobile/tickets/share/:token
- * Public preview endpoint for ticket share links
+ * Public HTML ticket preview page for share link recipients
  */
 router.get('/share/:token', MobileTicketController.getShareTicketPreview);
+
+/**
+ * GET /api/mobile/tickets/share/:token/pdf
+ * Redirect/serve the actual PDF file for a share token
+ */
+router.get('/share/:token/pdf', MobileTicketController.getShareTicketPdf);
 
 /**
  * POST /api/mobile/tickets/verify
