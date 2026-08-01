@@ -3,6 +3,8 @@ import { Op } from 'sequelize';
 import fs from 'fs';
 import Ad from '../models/Ad';
 import Venue from '../models/Venue';
+import User from '../models/User';
+import { sendMulticastPushNotification } from '../services/fcmService';
 import { compressImageTo300KB } from '../utils/imageProcessor';
 import { logger } from '../config/logger';
 
@@ -179,6 +181,64 @@ export const createAd = async (req: Request, res: Response): Promise<Response> =
             isActive: isActive === 'true' || isActive === true,
             aboutEvent: getValidValue(aboutEvent),
             socialLinks,
+        });
+
+        // Broadcast real-time WebSocket event and System Notification
+        try {
+            const { io } = require('../server');
+            if (io) {
+                const broadcastPayload = {
+                    id: `ad_${newAd.id}`,
+                    type: newAd.type === 'Party' ? 'new_party_event' : 'new_ad_banner',
+                    title: newAd.title || (newAd.type === 'Party' ? '🎉 Live Party Event!' : '📢 Special Announcement'),
+                    body: newAd.aboutEvent || (newAd.type === 'Party' ? `Exclusive Party Event in ${newAd.city || 'your area'}!` : 'New special offer available on Lunara!'),
+                    ad: {
+                        id: newAd.id,
+                        type: newAd.type,
+                        title: newAd.title,
+                        venueId: newAd.venueId,
+                        city: newAd.city,
+                        area: newAd.area,
+                        imagePath: newAd.imagePath,
+                        fromDate: newAd.fromDate,
+                        toDate: newAd.toDate,
+                        aboutEvent: newAd.aboutEvent,
+                        socialLinks: newAd.socialLinks,
+                    },
+                    createdAt: new Date().toISOString(),
+                };
+                io.emit('new_ad_published', broadcastPayload);
+                io.emit('notification_created', broadcastPayload);
+            }
+        } catch (socketErr: any) {
+            logger.warn('[AdController] Socket broadcast warning:', socketErr.message);
+        }
+
+        // Trigger Multicast Push Notification to active users
+        setImmediate(async () => {
+            try {
+                const activeUsers = await User.findAll({
+                    attributes: ['fcmToken'],
+                    where: {
+                        fcmToken: { [Op.ne]: null },
+                    },
+                });
+                const tokens = activeUsers.map(u => u.fcmToken).filter(t => t && t.trim() !== '') as string[];
+                if (tokens.length > 0) {
+                    await sendMulticastPushNotification(tokens, {
+                        title: newAd.type === 'Party' ? '🎉 Live Party Event Announced!' : '📢 Special App Announcement',
+                        body: newAd.title || newAd.aboutEvent || 'Check out the new offer on Lunara!',
+                        data: {
+                            type: 'new_ad_published',
+                            adId: newAd.id,
+                            adType: newAd.type,
+                            venueId: newAd.venueId || '',
+                        },
+                    });
+                }
+            } catch (pushErr: any) {
+                logger.warn('[AdController] Multicast push warning:', pushErr.message);
+            }
         });
 
         return res.status(201).json({ success: true, message: 'Ad created successfully', data: newAd });

@@ -9,16 +9,17 @@ import { compressImageIfNeeded } from '../utils/mediaValidation';
 
 interface AdFormProps {
     ad: Ad | null;
+    defaultType?: 'Ads' | 'Party';
     onClose: () => void;
     onSuccess: () => void;
 }
 
-export default function AdForm({ ad, onClose, onSuccess }: AdFormProps) {
+export default function AdForm({ ad, defaultType = 'Ads', onClose, onSuccess }: AdFormProps) {
     const [loading, setLoading] = useState(false);
     const [venues, setVenues] = useState<Venue[]>([]);
 
     // Form State
-    const [type, setType] = useState<'Ads' | 'Party'>(ad?.type || 'Ads');
+    const [type, setType] = useState<'Ads' | 'Party'>(ad?.type || defaultType || 'Ads');
     const [city, setCity] = useState(ad?.city || '');
     const [area, setArea] = useState(ad?.area || '');
     const [venueId, setVenueId] = useState(ad?.venueId || '');

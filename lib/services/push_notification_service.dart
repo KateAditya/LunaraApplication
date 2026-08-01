@@ -17,6 +17,7 @@ import '../screens/social/post_detail_screen.dart';
 import '../screens/post_booking/ticket_pocket_screen.dart';
 import '../screens/social/party_plan_requests_screen.dart';
 import '../screens/social/host_party_plan_manager_screen.dart';
+import '../widgets/ad_announcement_dialog.dart';
 
 /// Top-level background message handler.
 /// Must be a top-level function (not a class method) for Firebase.
@@ -77,6 +78,7 @@ class PushNotificationService {
     ApiService.addSocketListener('notification_created', _onSocketNotificationReceived);
     ApiService.addSocketListener('notification_received', _onSocketNotificationReceived);
     ApiService.addSocketListener('push_notification', _onSocketNotificationReceived);
+    ApiService.addSocketListener('new_ad_published', _onSocketAdPublished);
 
     // 8. Notification tap handler (app in background, not terminated)
     FirebaseMessaging.onMessageOpenedApp.listen(_onNotificationTap);
@@ -210,6 +212,17 @@ class PushNotificationService {
       data: payloadData,
       senderData: senderData,
     );
+  }
+
+  static void _onSocketAdPublished(dynamic data) {
+    if (data == null) return;
+    final Map<String, dynamic> notifMap = data is Map ? Map<String, dynamic>.from(data) : {};
+    final adMap = notifMap['ad'] is Map ? Map<String, dynamic>.from(notifMap['ad']) : notifMap;
+
+    final context = NotificationNavigator.navigatorKey.currentContext;
+    if (context != null) {
+      AdAnnouncementDialog.show(context, adMap);
+    }
   }
 
   static void _onForegroundMessage(RemoteMessage message) {

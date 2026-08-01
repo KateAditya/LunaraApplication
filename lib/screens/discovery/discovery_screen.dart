@@ -23,6 +23,7 @@ import '../profile/edit_profile_screen.dart';
 import '../profile/lunara_wallet_screen.dart';
 import '../../services/app_tour_service.dart';
 import '../../widgets/vip_upgrade_button.dart';
+import '../../widgets/ad_announcement_dialog.dart';
 import '../../main.dart';
 
 class DiscoveryScreen extends StatefulWidget {
@@ -51,6 +52,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   List<Map<String, dynamic>> _upcomingNights = [];
   bool _sortByDistance = false;
   bool _isProfileCardDismissed = false;
+  bool _hasShownAdPopup = false;
 
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
@@ -241,6 +243,18 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             }).toList();
           } else {
             _upcomingNights = [];
+          }
+
+          if (!_hasShownAdPopup) {
+            _hasShownAdPopup = true;
+            final popupAds = [...dynamicPartyAds, ..._activeAds];
+            if (popupAds.isNotEmpty) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  AdAnnouncementDialog.showList(context, popupAds);
+                }
+              });
+            }
           }
 
           final rawPartyPlans = results[3] as List<Map<String, dynamic>>;
