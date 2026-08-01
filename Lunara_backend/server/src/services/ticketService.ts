@@ -183,10 +183,9 @@ export async function generateTicketPDF(options: TicketPDFOptions): Promise<stri
         });
 
         // 2. Fetch images in parallel
-        const [hostImg, partnerImg, venueImg] = await Promise.all([
+        const [hostImg, partnerImg] = await Promise.all([
             resolveImage(options.hostProfileUrl),
-            resolveImage(options.partnerProfileUrl),
-            resolveImage(options.venueImageUrl)
+            resolveImage(options.partnerProfileUrl)
         ]);
 
         // 3. Setup PDFKit document with custom dimensions (380 x 740 pt)
@@ -480,7 +479,7 @@ export async function generateTicketForBookingHelper(bookingId: string): Promise
                     const partner = await User.findByPk(meta.joinerId);
                     if (partner) {
                         partnerName = `${partner.firstName} ${partner.lastName}`.trim();
-                        partnerUsername = partner.username ? `@${partner.username.replace('@', '')}` : `@${(partner.firstName || 'partner').toLowerCase()}`;
+                        partnerUsername = `@${(partner.firstName || 'partner').toLowerCase()}_${(partner.lastName || '').toLowerCase()}`.replace(/_+$/, '');
                         const partnerPhoto = await UserPhoto.findOne({ where: { userId: meta.joinerId, isPrimary: true } });
                         partnerProfileUrl = partner.profileImageUrl || partnerPhoto?.filePath || null;
                     }
@@ -510,7 +509,7 @@ export async function generateTicketForBookingHelper(bookingId: string): Promise
         });
 
         const hostName = `${host.firstName} ${host.lastName}`.trim();
-        const hostUsername = host.username ? `@${host.username.replace('@', '')}` : `@${(host.firstName || 'host').toLowerCase()}`;
+        const hostUsername = `@${(host.firstName || 'host').toLowerCase()}_${(host.lastName || '').toLowerCase()}`.replace(/_+$/, '');
         const hostProfileUrl = host.profileImageUrl || hostPhoto?.filePath || null;
 
         const ticketUrl = await generateTicketPDF({
@@ -598,7 +597,7 @@ export async function generateTicketForGroupPartyHelper(groupPartyId: string): P
         });
 
         const hostName = `${host.firstName} ${host.lastName}`.trim();
-        const hostUsername = host.username ? `@${host.username.replace('@', '')}` : `@${(host.firstName || 'host').toLowerCase()}`;
+        const hostUsername = `@${(host.firstName || 'host').toLowerCase()}_${(host.lastName || '').toLowerCase()}`.replace(/_+$/, '');
         const hostProfileUrl = host.profileImageUrl || hostPhoto?.filePath || null;
 
         const ticketUrl = await generateTicketPDF({
@@ -683,7 +682,7 @@ export async function generateTicketForStrangersMeetHelper(requestId: string): P
         });
 
         const hostName = `${host.firstName} ${host.lastName}`.trim();
-        const hostUsername = host.username ? `@${host.username.replace('@', '')}` : `@${(host.firstName || 'host').toLowerCase()}`;
+        const hostUsername = `@${(host.firstName || 'host').toLowerCase()}_${(host.lastName || '').toLowerCase()}`.replace(/_+$/, '');
         const hostProfileUrl = host.profileImageUrl || hostPhoto?.filePath || null;
 
         const ticketUrl = await generateTicketPDF({
@@ -770,11 +769,11 @@ export async function generateTicketForPartyPlanHelper(requestId: string): Promi
         const ticketCode = booking?.ticketCode || `PP-${reqRecord.id.substring(0, 6).toUpperCase()}`;
 
         const hostName = host ? `${host.firstName} ${host.lastName}`.trim() : 'Aditya Kate';
-        const hostUsername = host?.username ? `@${host.username.replace('@', '')}` : `@${(host?.firstName || 'aditya_kate').toLowerCase()}`;
+        const hostUsername = `@${(host?.firstName || 'aditya').toLowerCase()}_${(host?.lastName || 'kate').toLowerCase()}`.replace(/_+$/, '');
         const hostProfileUrl = host?.profileImageUrl || hostPhoto?.filePath || null;
 
         const partnerName = joiner ? `${joiner.firstName} ${joiner.lastName}`.trim() : 'Partner';
-        const partnerUsername = joiner?.username ? `@${joiner.username.replace('@', '')}` : `@${(joiner?.firstName || 'partner').toLowerCase()}`;
+        const partnerUsername = `@${(joiner?.firstName || 'partner').toLowerCase()}_${(joiner?.lastName || '').toLowerCase()}`.replace(/_+$/, '');
         const partnerProfileUrl = joiner?.profileImageUrl || joinerPhoto?.filePath || null;
 
         const ticketUrl = await generateTicketPDF({
