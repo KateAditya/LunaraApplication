@@ -96,7 +96,7 @@ export const getCurrentSubscription = async (req: Request, res: Response): Promi
         const subscription = await UserSubscription.findOne({
             where: {
                 userId,
-                status: SubscriptionStatus.ACTIVE,
+                status: { [Op.in]: [SubscriptionStatus.ACTIVE, 'ACTIVE', 'active'] },
                 endDate: { [Op.gt]: new Date() },
             },
             include: [{ model: SubscriptionPackage, as: 'package' }],
@@ -219,14 +219,14 @@ export const purchaseSubscription = async (req: Request, res: Response): Promise
 
         // Determine transaction type
         const existingSub = await UserSubscription.findOne({
-            where: { userId, status: SubscriptionStatus.ACTIVE },
+            where: { userId, status: { [Op.in]: [SubscriptionStatus.ACTIVE, 'ACTIVE', 'active'] } },
         });
         const txnType = existingSub ? TransactionType.UPGRADE : TransactionType.PURCHASE;
 
         // Expire current subscriptions
         await UserSubscription.update(
             { status: SubscriptionStatus.EXPIRED },
-            { where: { userId, status: SubscriptionStatus.ACTIVE } }
+            { where: { userId, status: { [Op.in]: [SubscriptionStatus.ACTIVE, 'ACTIVE', 'active'] } } }
         );
 
         // Create new subscription
@@ -659,7 +659,7 @@ export const useBoost = async (req: Request, res: Response): Promise<void> => {
         const userId = (req as any).user.id;
 
         const sub = await UserSubscription.findOne({
-            where: { userId, status: SubscriptionStatus.ACTIVE },
+            where: { userId, status: { [Op.in]: [SubscriptionStatus.ACTIVE, 'ACTIVE', 'active'] } },
             order: [['createdAt', 'DESC']],
         });
 

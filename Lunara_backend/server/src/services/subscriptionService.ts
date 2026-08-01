@@ -88,7 +88,7 @@ export class SubscriptionService {
         const subscription = await UserSubscription.findOne({
             where: {
                 userId,
-                status: SubscriptionStatus.ACTIVE,
+                status: { [Op.in]: [SubscriptionStatus.ACTIVE, 'ACTIVE', 'active'] },
                 endDate: { [Op.gt]: new Date() },
             },
             include: [{ model: SubscriptionPackage, as: 'package' }],
@@ -359,7 +359,7 @@ export class SubscriptionService {
             const subscription = await UserSubscription.findOne({
                 where: {
                     userId,
-                    status: SubscriptionStatus.ACTIVE,
+                    status: { [Op.in]: [SubscriptionStatus.ACTIVE, 'ACTIVE', 'active'] },
                     endDate: { [Op.gt]: new Date() },
                 },
                 order: [['createdAt', 'DESC']],

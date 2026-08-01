@@ -320,6 +320,7 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
         const showProfilePhoto = req.body.showProfilePhoto !== undefined ? Boolean(req.body.showProfilePhoto) : true;
         const showHostName = req.body.showHostName !== undefined ? Boolean(req.body.showHostName) : true;
         const showVenueDetails = req.body.showVenueDetails !== undefined ? Boolean(req.body.showVenueDetails) : true;
+        const showDateDetails = req.body.showDateDetails !== undefined ? Boolean(req.body.showDateDetails) : true;
 
         // ── Validate required fields ─────────────────────────────────────────
         const errors: Record<string, string> = {};
@@ -429,6 +430,7 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                     showProfilePhoto,
                     showHostName,
                     showVenueDetails,
+                    showDateDetails,
                 }, { transaction });
 
                 // Auto-generate accepted requests for invited users of private or both plan
@@ -867,27 +869,38 @@ export const getAllPartyPlans = async (req: Request, res: Response): Promise<voi
             offset,
         });
 
-        const data = plans.map(p => ({
-            id: p.id,
-            status: p.status,
-            visibility: p.visibility,
-            selectedUsers: p.selectedUsers,
-            message: p.message,
-            planDateTime: p.planDateTime,
-            createdAt: p.createdAt,
-            hostPaymentStatus: p.hostPaymentStatus,
-            hostRazorpayOrderId: p.hostRazorpayOrderId,
-            isLive: p.isLive,
-            depositAmount: p.depositAmount,
-            mobileNumber: p.mobileNumber,
-            optionalMobileNumber: p.optionalMobileNumber,
-            expiresAt: p.expiresAt,
-            paymentStatus: p.paymentStatus,
-            foodPreference: p.foodPreference,
-            drinkPreference: p.drinkPreference,
-            user: buildUserData(p),
-            venue: buildVenueData(p),
-        }));
+        const currentUserId = (requesterId as string) || (req as any).user?.id;
+
+        const data = plans.map(p => {
+            const isSecretDate = p.showDateDetails === false && !!currentUserId && currentUserId !== p.userId;
+            return {
+                id: p.id,
+                status: p.status,
+                visibility: p.visibility,
+                selectedUsers: p.selectedUsers,
+                message: p.message,
+                planDateTime: isSecretDate ? 'Flexible Date & Time 🔒' : p.planDateTime,
+                actualPlanDateTime: p.planDateTime,
+                isSecretDate,
+                createdAt: p.createdAt,
+                hostPaymentStatus: p.hostPaymentStatus,
+                hostRazorpayOrderId: p.hostRazorpayOrderId,
+                isLive: p.isLive,
+                depositAmount: p.depositAmount,
+                mobileNumber: p.mobileNumber,
+                optionalMobileNumber: p.optionalMobileNumber,
+                expiresAt: p.expiresAt,
+                paymentStatus: p.paymentStatus,
+                foodPreference: p.foodPreference,
+                drinkPreference: p.drinkPreference,
+                showProfilePhoto: p.showProfilePhoto ?? true,
+                showHostName: p.showHostName ?? true,
+                showVenueDetails: p.showVenueDetails ?? true,
+                showDateDetails: p.showDateDetails ?? true,
+                user: buildUserData(p, currentUserId),
+                venue: buildVenueData(p, currentUserId),
+            };
+        });
 
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
         res.json({
@@ -2650,9 +2663,12 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-function buildUserData(plan: PartyPlan) {
+function buildUserData(plan: PartyPlan, currentUserId?: string, isAcceptedJoiner: boolean = false) {
     const creator = (plan as any).creator || (plan as any).user;
     if (!creator) return null;
+
+    const isSecretName = plan.showHostName === false && !!currentUserId && currentUserId !== plan.userId && !isAcceptedJoiner;
+    const isSecretPhoto = plan.showProfilePhoto === false && !!currentUserId && currentUserId !== plan.userId && !isAcceptedJoiner;
 
     let photoUrl = creator.profileImageUrl ?? creator.photoUrl ?? null;
     if (!photoUrl && creator.photos && creator.photos.length > 0) {
@@ -2666,24 +2682,48 @@ function buildUserData(plan: PartyPlan) {
         photoUrl = clean.startsWith('/') ? clean : '/' + clean;
     }
 
+    const finalPhoto = isSecretPhoto
+        ? 'https://placehold.co/400x400/2a1b38/e0a0ff.png?text=Secret+Host+%F0%9F%94%92'
+        : photoUrl;
+
     return {
         id: creator.id,
-        firstName: creator.firstName,
-        lastName: creator.lastName,
-        email: creator.email,
-        phone: creator.phone,
-        profilePhotoUrl: photoUrl,
-        photoUrl: photoUrl,
+        firstName: isSecretName ? 'Secret' : creator.firstName,
+        lastName: isSecretName ? 'Host 🔒' : creator.lastName,
+        email: isSecretName ? null : creator.email,
+        phone: isSecretName ? null : creator.phone,
+        profilePhotoUrl: finalPhoto,
+        photoUrl: finalPhoto,
         bio: creator.profile?.bio ?? null,
         occupation: creator.profile?.occupation ?? null,
         gender: creator.profile?.gender ?? null,
         city: creator.profile?.city ?? null,
+        isSecretHost: isSecretName || isSecretPhoto,
     };
 }
 
-function buildVenueData(plan: PartyPlan) {
+function buildVenueData(plan: PartyPlan, currentUserId?: string, isAcceptedJoiner: boolean = false) {
     const venue = (plan as any).venue;
     if (!venue) return null;
+
+    const isSecret = plan.showVenueDetails === false && !!currentUserId && currentUserId !== plan.userId && !isAcceptedJoiner;
+
+    if (isSecret) {
+        return {
+            id: venue.id,
+            name: 'Secret Venue 🔒',
+            addressLine1: 'Revealed upon host approval',
+            area: venue.area ? `${venue.area}` : 'Secret Location',
+            city: venue.city,
+            category: venue.category,
+            phone: null,
+            coverChargeMale: venue.coverChargeMale,
+            coverChargeFemale: venue.coverChargeFemale,
+            coverImageUrl: 'https://placehold.co/600x400/2a1b38/e0a0ff.png?text=Secret+Venue+%F0%9F%94%92',
+            imageUrl: 'https://placehold.co/600x400/2a1b38/e0a0ff.png?text=Secret+Venue+%F0%9F%94%92',
+            isSecret: true,
+        };
+    }
 
     let coverImageUrl = venue.coverImageUrl || venue.imageUrl || venue.image || null;
     if (!coverImageUrl && venue.images && venue.images.length > 0) {
@@ -2710,6 +2750,7 @@ function buildVenueData(plan: PartyPlan) {
         coverChargeFemale: venue.coverChargeFemale,
         coverImageUrl: coverImageUrl,
         imageUrl: coverImageUrl,
+        isSecret: false,
     };
 }
 

@@ -49,6 +49,7 @@ export interface PartyPlanAttributes {
     showProfilePhoto?: boolean;
     showHostName?: boolean;
     showVenueDetails?: boolean;
+    showDateDetails?: boolean;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -56,7 +57,7 @@ export interface PartyPlanAttributes {
 export interface PartyPlanCreationAttributes
     extends Optional<
         PartyPlanAttributes,
-        'id' | 'status' | 'visibility' | 'createdAt' | 'updatedAt' | 'selectedUsers' | 'depositAmount' | 'hostPaymentStatus' | 'isLive' | 'expiresAt' | 'hostLatLangCheckIn' | 'paymentStatus' | 'optionalMobileNumber' | 'foodPreference' | 'drinkPreference' | 'paymentType' | 'showProfilePhoto' | 'showHostName' | 'showVenueDetails'
+        'id' | 'status' | 'visibility' | 'createdAt' | 'updatedAt' | 'selectedUsers' | 'depositAmount' | 'hostPaymentStatus' | 'isLive' | 'expiresAt' | 'hostLatLangCheckIn' | 'paymentStatus' | 'optionalMobileNumber' | 'foodPreference' | 'drinkPreference' | 'paymentType' | 'showProfilePhoto' | 'showHostName' | 'showVenueDetails' | 'showDateDetails'
     > { }
 
 class PartyPlan
@@ -86,6 +87,7 @@ class PartyPlan
     public showProfilePhoto!: boolean;
     public showHostName!: boolean;
     public showVenueDetails!: boolean;
+    public showDateDetails!: boolean;
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 }
@@ -226,6 +228,11 @@ PartyPlan.init(
             type: DataTypes.BOOLEAN,
             defaultValue: true,
             field: 'show_venue_details',
+        },
+        showDateDetails: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: true,
+            field: 'show_date_details',
         },
     },
     {

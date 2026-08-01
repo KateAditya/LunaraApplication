@@ -194,6 +194,18 @@ export const completeProfileSetup = async (req: Request, res: Response): Promise
 
         const data = req.body as ProfileSetupBody;
 
+        if (data.showMeInMatching === false) {
+            const { SubscriptionService } = require('../services/subscriptionService');
+            const canHide = await SubscriptionService.hasAccess(userId, 'hide_profile');
+            if (!canHide) {
+                return res.status(403).json({
+                    success: false,
+                    code: 'UPGRADE_REQUIRED',
+                    message: 'Hiding your profile from matching requires a PLUS, PRO, or ELITE subscription tier.'
+                });
+            }
+        }
+
         // Parallel update of Profile and Preferences
         await Promise.all([
             UserProfile.update(
@@ -1148,7 +1160,7 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
             const activeSub = await UserSubscription.findOne({
                 where: {
                     userId,
-                    status: 'active',
+                    status: { [Op.in]: [SubscriptionStatus.ACTIVE, 'ACTIVE', 'active'] },
                     endDate: { [Op.gt]: new Date() },
                 },
                 include: [{ model: SubscriptionPackage, as: 'package' }],
@@ -1167,6 +1179,8 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
             if (activeSub.superlikesRemaining < 9999) {
                 activeSub.superlikesRemaining = activeSub.superlikesRemaining - 1;
                 await activeSub.save();
+                const { SubscriptionService } = require('../services/subscriptionService');
+                SubscriptionService.invalidateCache(userId);
             }
         }
 
@@ -1406,21 +1420,60 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
 // ─────────────────────────────────────────────────────────────────────────────
 export const getMyLikesAndMatches = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const { userId } = req.query;
+        const userId = (req.query.userId as string) || req.user?.id;
         if (!userId) {
             return res.status(400).json({ success: false, message: 'userId is required' });
         }
 
+        const { SubscriptionService } = require('../services/subscriptionService');
+        const canSeeWhoLiked = await SubscriptionService.hasAccess(userId, 'who_liked_me');
+
         const matches = await UserMatch.findAll({
             where: {
                 [Op.or]: [
-                    { user1Id: userId as string },
-                    { user2Id: userId as string }
+                    { user1Id: userId },
+                    { user2Id: userId }
                 ]
-            }
+            },
+            include: [
+                {
+                    model: User,
+                    as: 'user1',
+                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl']
+                },
+                {
+                    model: User,
+                    as: 'user2',
+                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl']
+                }
+            ],
+            order: [['createdAt', 'DESC']],
         });
 
-        return res.status(200).json({ success: true, data: matches });
+        // Mask sender profile for incoming pending likes if user lacks who_liked_me permission
+        const processed = matches.map((m: any) => {
+            const json = m.toJSON();
+            const isIncomingPendingLike = json.user2Id === userId && json.status === 'pending';
+
+            if (isIncomingPendingLike && !canSeeWhoLiked) {
+                return {
+                    ...json,
+                    isMasked: true,
+                    user1: {
+                        id: json.user1Id,
+                        firstName: 'Lunara',
+                        lastName: 'Member',
+                        profileImageUrl: 'https://placehold.co/400x400/2a1b38/e0a0ff.png?text=Upgrade+to+See',
+                    }
+                };
+            }
+            return {
+                ...json,
+                isMasked: false,
+            };
+        });
+
+        return res.status(200).json({ success: true, data: processed, canSeeWhoLiked });
     } catch (error: any) {
         logger.error('[MobileUser] Error fetching matches:', error);
         return res.status(500).json({ success: false, message: 'Failed to fetch matches' });
@@ -1478,7 +1531,7 @@ export const getSwipeStatus = async (req: Request, res: Response): Promise<Respo
             const activeSub = await UserSubscription.findOne({
                 where: {
                     userId,
-                    status: 'active',
+                    status: { [Op.in]: [SubscriptionStatus.ACTIVE, 'ACTIVE', 'active'] },
                     endDate: { [Op.gt]: new Date() },
                 },
                 include: [{ model: SubscriptionPackage, as: 'package' }],

@@ -1708,6 +1708,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     String selectedFoodPref = 'Both';
     String selectedDrinkPref = 'Both';
     String selectedPaymentType = 'split';
+    bool showVenueDetails = true;
+    bool showDateDetails = true;
+    bool showHostProfile = true;
 
     showModalBottomSheet(
       context: context,
@@ -2667,6 +2670,152 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             ),
                           );
                         }).toList(),
+                      ),
+
+                      const SizedBox(height: 14),
+                      const Text(
+                        'PRIVACY & SECURITY OPTIONS',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.5,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Control which sensitive plan details are visible on the public feed before join requests are approved.',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Column(
+                          children: [
+                            // Secret Venue Toggle
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Row(
+                                        children: [
+                                          Icon(Icons.lock_outline_rounded, size: 13, color: LunaraTheme.electricViolet),
+                                          SizedBox(width: 5),
+                                          Text(
+                                            'Secret Venue',
+                                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Hide venue name & address from public feed until request is approved.',
+                                        style: TextStyle(fontSize: 9.5, color: Colors.grey[600]),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Switch.adaptive(
+                                  value: !showVenueDetails,
+                                  activeTrackColor: LunaraTheme.electricViolet,
+                                  activeThumbColor: Colors.white,
+                                  onChanged: (val) {
+                                    setSheetState(() {
+                                      showVenueDetails = !val;
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                            const Divider(height: 12),
+                            // Secret Date & Time Toggle
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Row(
+                                        children: [
+                                          Icon(Icons.event_available_rounded, size: 13, color: LunaraTheme.electricViolet),
+                                          SizedBox(width: 5),
+                                          Text(
+                                            'Flexible / Secret Date',
+                                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Hide exact date & timing from public feed.',
+                                        style: TextStyle(fontSize: 9.5, color: Colors.grey[600]),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Switch.adaptive(
+                                  value: !showDateDetails,
+                                  activeColor: LunaraTheme.electricViolet,
+                                  onChanged: (val) {
+                                    setSheetState(() {
+                                      showDateDetails = !val;
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                            const Divider(height: 12),
+                            // Secret Host Toggle
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Row(
+                                        children: [
+                                          Icon(Icons.person_off_rounded, size: 13, color: LunaraTheme.electricViolet),
+                                          SizedBox(width: 5),
+                                          Text(
+                                            'Secret Host Profile',
+                                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Obfuscate host name & photo on public feed.',
+                                        style: TextStyle(fontSize: 9.5, color: Colors.grey[600]),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Switch.adaptive(
+                                  value: !showHostProfile,
+                                  activeColor: LunaraTheme.electricViolet,
+                                  onChanged: (val) {
+                                    setSheetState(() {
+                                      showHostProfile = !val;
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
 
                       const SizedBox(height: 14),
@@ -3761,6 +3910,10 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         'optionalMobileNumber': '',
                                         'foodPreference': selectedFoodPref,
                                         'drinkPreference': selectedDrinkPref,
+                                        'showVenueDetails': showVenueDetails,
+                                        'showDateDetails': showDateDetails,
+                                        'showHostName': showHostProfile,
+                                        'showProfilePhoto': showHostProfile,
                                       },
                                     );
 
