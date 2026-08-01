@@ -201,15 +201,47 @@ export class VenueBookingService {
                     actionType: 'view_ticket',
                     deepLink: `/ticket/${booking.id}`,
                 });
+
+                // Notify Venue Owner
+                if (venue.ownerId) {
+                    await NotificationService.dispatch({
+                        recipientUserId: venue.ownerId,
+                        eventType: 'venue_booking_received',
+                        category: 'bookings',
+                        entityType: 'Booking',
+                        entityId: booking.id,
+                        title: '🎟 New Booking Received!',
+                        body: `A new booking of ${numberOfGuests} guests at ${venue.name} for ${bookingDate} has been confirmed.`,
+                        priority: 'HIGH',
+                        idempotencyKey: `venue_owner_booking_${booking.id}`,
+                    }).catch(() => {});
+                }
+            } else if (razorpayOrder) {
+                await NotificationService.dispatch({
+                    recipientUserId: userId,
+                    eventType: 'booking_pending_payment',
+                    category: 'bookings',
+                    entityType: 'Booking',
+                    entityId: booking.id,
+                    title: '🎟 Booking Reserved',
+                    body: `Your booking at ${venue.name} for ${bookingDate} is reserved. Complete payment to secure your ticket!`,
+                    priority: 'HIGH',
+                    idempotencyKey: `booking_pending_${booking.id}`,
+                    actionType: 'pay_now',
+                    deepLink: `/checkout/${booking.id}`,
+                });
             }
 
             if (isLargeParty || isUpcomingNight) {
                 const { io } = require('../server');
-                io.to('admin').emit('admin_notification', {
-                    title: isLargeParty ? 'New Large Party Request' : 'New Upcoming Night Request',
-                    message: `A new request for ${numberOfGuests} guests requires admin attention.`,
-                    type: 'booking_request'
-                });
+                if (io) {
+                    io.to('admin_notifications').emit('admin_notification_created', {
+                        title: isLargeParty ? 'New Large Party Request' : 'New Upcoming Night Request',
+                        body: `A new request for ${numberOfGuests} guests at ${venue.name} requires admin attention.`,
+                        type: 'booking_request',
+                        entityId: booking.id
+                    });
+                }
             }
         } catch (adminErr: any) {
             logger.warn('Failed to emit notification for booking: ' + adminErr.message);
@@ -250,7 +282,9 @@ export class VenueBookingService {
 
         try {
             await generateTicketForBookingHelper(booking.id);
-            const venue = await Venue.findByPk(booking.venueId, { attributes: ['name'] });
+            const venue = await Venue.findByPk(booking.venueId, { attributes: ['name', 'ownerId'] });
+            const venueName = venue ? venue.name : 'venue';
+
             await NotificationService.dispatch({
                 recipientUserId: booking.userId,
                 eventType: 'booking_confirmed',
@@ -258,12 +292,26 @@ export class VenueBookingService {
                 entityType: 'Booking',
                 entityId: booking.id,
                 title: '🎉 Booking Confirmed!',
-                body: `Your payment for ${venue ? venue.name : 'venue'} is confirmed! Your ticket is ready in your Wallet.`,
+                body: `Your payment for ${venueName} is confirmed! Your ticket is ready in your Wallet.`,
                 priority: 'HIGH',
                 idempotencyKey: `booking_verified_${booking.id}`,
                 actionType: 'view_ticket',
                 deepLink: `/ticket/${booking.id}`,
             });
+
+            if (venue && venue.ownerId) {
+                await NotificationService.dispatch({
+                    recipientUserId: venue.ownerId,
+                    eventType: 'venue_booking_received',
+                    category: 'bookings',
+                    entityType: 'Booking',
+                    entityId: booking.id,
+                    title: '🎟 New Booking Received!',
+                    body: `A new booking at ${venueName} has been confirmed.`,
+                    priority: 'HIGH',
+                    idempotencyKey: `venue_owner_verified_${booking.id}`,
+                }).catch(() => {});
+            }
         } catch (tErr) {
             logger.error(`[VenueBookingService] Ticket generation/notification error for Booking ${booking.id}:`, tErr);
         }
