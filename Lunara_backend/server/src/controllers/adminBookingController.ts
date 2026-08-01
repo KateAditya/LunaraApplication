@@ -1307,7 +1307,7 @@ export const getVenueRevenueDetails = async (req: Request, res: Response) => {
                 {
                     model: User,
                     as: 'user',
-                    attributes: ['id', 'firstName', 'lastName', 'email', 'mobileNumber']
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone']
                 }
             ],
             order: [['bookingDate', 'DESC'], ['createdAt', 'DESC']]
@@ -1455,7 +1455,7 @@ export const getVenueRevenueDetails = async (req: Request, res: Response) => {
                 bookingDate: b.bookingDate,
                 createdAt: b.createdAt,
                 userName,
-                userMobile: u?.mobileNumber || 'N/A',
+                userMobile: u?.phone || (u as any)?.mobileNumber || b.mobileNumber || 'N/A',
                 userEmail: u?.email || 'N/A',
                 goingMode: b.goingMode,
                 numberOfGuests: b.numberOfGuests || 1,
