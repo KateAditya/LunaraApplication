@@ -10,15 +10,7 @@ import {
 import bookingsApi, { type Booking } from '../api/bookings';
 import venuesApi from '../api/venues';
 
-const getImageUrl = (filePath?: string | any): string => {
-    if (!filePath) return '';
-    const pathStr = typeof filePath === 'object' ? filePath.filePath : filePath;
-    if (!pathStr || typeof pathStr !== 'string') return '';
-    if (pathStr.startsWith('http')) return pathStr;
-    const normalizedPath = pathStr.replace(/\\/g, '/');
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-    return `${baseUrl}/${normalizedPath}`;
-};
+import { getImageUrl } from '../utils/imageUrl';
 
 const getStatusBadgeClass = (status: string) => {
     const map: Record<string, string> = {

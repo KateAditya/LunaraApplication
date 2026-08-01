@@ -5,13 +5,7 @@ import { type Ad, adsApi } from '../api/ads';
 import AdForm from '../components/AdForm';
 import { format } from 'date-fns';
 
-const getImageUrl = (filePath?: string): string => {
-    if (!filePath) return '';
-    if (filePath.startsWith('http')) return filePath;
-    const normalizedPath = filePath.replace(/\\/g, '/');
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-    return `${baseUrl}/${normalizedPath}`;
-};
+import { getImageUrl } from '../utils/imageUrl';
 
 export default function Ads() {
     const [ads, setAds] = useState<Ad[]>([]);

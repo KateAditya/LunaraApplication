@@ -43,7 +43,7 @@ app.use(helmet({
     contentSecurityPolicy: {
         directives: {
             ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-            "img-src": ["'self'", "data:", "blob:", "*.blob.core.windows.net", "placehold.co", "*.placehold.co", "images.unsplash.com"],
+            "img-src": ["'self'", "data:", "blob:", "https:", "*.blob.core.windows.net", "placehold.co", "*.placehold.co", "images.unsplash.com"],
             "connect-src": ["'self'", "*.azurewebsites.net", "*.windows.net"],
         },
     },

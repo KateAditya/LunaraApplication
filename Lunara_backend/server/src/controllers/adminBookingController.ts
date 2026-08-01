@@ -1272,10 +1272,23 @@ export const getVenueRevenueDetails = async (req: Request, res: Response) => {
             startDate.setHours(0, 0, 0, 0);
         }
 
+        if (isNaN(startDate.getTime())) {
+            startDate = new Date();
+            startDate.setMonth(startDate.getMonth() - 11, 1);
+            startDate.setHours(0, 0, 0, 0);
+        }
+        if (isNaN(endDate.getTime())) {
+            endDate = new Date();
+            endDate.setHours(23, 59, 59, 999);
+        }
+
+        const startDateStr = startDate.toISOString().split('T')[0];
+        const endDateStr = endDate.toISOString().split('T')[0];
+
         // Build Booking query
         let bookingWhere: any = {
             venueId: venue.id,
-            bookingDate: { [Op.between]: [startDate.toISOString().split('T')[0], endDate.toISOString().split('T')[0]] }
+            bookingDate: { [Op.between]: [startDateStr, endDateStr] }
         };
 
         if (status && status !== 'all') {
@@ -1410,7 +1423,9 @@ export const getVenueRevenueDetails = async (req: Request, res: Response) => {
             }
 
             // Trend grouping key
-            const bDate = new Date(b.bookingDate || b.createdAt);
+            const rawDate = b.bookingDate || b.createdAt;
+            const bDate = rawDate ? new Date(rawDate) : new Date();
+            if (isNaN(bDate.getTime())) return;
             let trendKey = '';
 
             if (periodStr === 'daily' || periodStr === 'custom') {

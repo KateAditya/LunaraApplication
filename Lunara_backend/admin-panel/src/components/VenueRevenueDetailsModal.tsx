@@ -542,7 +542,7 @@ export const VenueRevenueDetailsModal: React.FC<Props> = ({ venueId, venueName, 
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {data?.records?.length === 0 ? (
+                                            {!data?.records || data.records.length === 0 ? (
                                                 <tr>
                                                     <td colSpan={9} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
                                                         No booking records found for this period filter.

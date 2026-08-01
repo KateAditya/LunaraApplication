@@ -81,13 +81,7 @@ interface DbVenue {
     images?: any[];
 }
 
-const getImageUrl = (filePath?: string): string => {
-    if (!filePath) return '';
-    if (filePath.startsWith('http')) return filePath;
-    const normalizedPath = filePath.replace(/\\/g, '/');
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-    return `${baseUrl}/${normalizedPath}`;
-};
+import { getImageUrl } from '../utils/imageUrl';
 
 const toRichVenue = (v: DbVenue) => {
     const coverImageObj = (v as any).coverImage;

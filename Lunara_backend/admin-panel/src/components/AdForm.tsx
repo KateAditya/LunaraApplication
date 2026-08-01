@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getImageUrl } from '../utils/imageUrl';
 import { BiX, BiUpload, BiTrash, BiPlus, BiCheck } from 'react-icons/bi';
 import toast from 'react-hot-toast';
 import { type Ad, adsApi, type SocialLink } from '../api/ads';
@@ -68,12 +69,7 @@ export default function AdForm({ ad, defaultType = 'Ads', onClose, onSuccess }: 
         }
     }, [area, ad]);
 
-    function getImageUrl(filePath: string): string {
-        if (filePath.startsWith('http')) return filePath;
-        const normalizedPath = filePath.replace(/\\/g, '/');
-        const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-        return `${baseUrl}/${normalizedPath}`;
-    }
+
 
     const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
