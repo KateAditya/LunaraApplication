@@ -166,7 +166,7 @@ function drawAvatarWithRing(doc: any, cx: number, cy: number, r: number, imgBuff
 }
 
 /**
- * Generates a clean light-theme digital ticket matching Image 2 UI specification.
+ * Generates a clean light-theme digital ticket matching the custom format for each booking type.
  */
 export async function generateTicketPDF(options: TicketPDFOptions): Promise<string> {
     try {
@@ -205,11 +205,86 @@ export async function generateTicketPDF(options: TicketPDFOptions): Promise<stri
         // Page background
         doc.rect(0, 0, 380, 740).fill('#F8FAFC');
 
+        // Dynamic Header titles & badges per format type
+        let headerTitle = 'PARTY PLAN TICKET';
+        let badge1Text = 'LUNARA VIBE';
+        let badge1Bg = '#F3E8FF';
+        let badge1Color = '#9333EA';
+
+        let badge2Text = 'PARTY TIME!';
+        let badge2Bg = '#DCFCE7';
+        let badge2Color = '#16A34A';
+
+        let mainHeadingText = `Let's party at ${options.venueName.toUpperCase()} !`;
+        let guestCountLabel = `${options.numberOfGuests} Going`;
+
+        switch (options.bookingType) {
+            case 'solo':
+                headerTitle = 'SOLO BOOKING TICKET';
+                badge1Text = 'SOLO PASS';
+                badge1Bg = '#F3E8FF';
+                badge1Color = '#9333EA';
+                badge2Text = 'CONFIRMED';
+                badge2Bg = '#DCFCE7';
+                badge2Color = '#16A34A';
+                mainHeadingText = `Party at ${options.venueName.toUpperCase()} !`;
+                guestCountLabel = '1 Solo';
+                break;
+
+            case 'group_party_small':
+                headerTitle = 'FRIENDS PARTY TICKET';
+                badge1Text = 'LUNARA VIBE';
+                badge1Bg = '#F3E8FF';
+                badge1Color = '#9333EA';
+                badge2Text = 'SQUAD PARTY';
+                badge2Bg = '#DBEAFE';
+                badge2Color = '#1D4ED8';
+                mainHeadingText = `Squad Party at ${options.venueName.toUpperCase()} !`;
+                guestCountLabel = `${options.numberOfGuests} Friends`;
+                break;
+
+            case 'party_plan':
+                headerTitle = 'PARTY PLAN TICKET';
+                badge1Text = 'LUNARA VIBE';
+                badge1Bg = '#F3E8FF';
+                badge1Color = '#9333EA';
+                badge2Text = 'PARTY TIME!';
+                badge2Bg = '#DCFCE7';
+                badge2Color = '#16A34A';
+                mainHeadingText = `Let's party at ${options.venueName.toUpperCase()} !`;
+                guestCountLabel = `2 Going`;
+                break;
+
+            case 'group_party_large':
+                headerTitle = 'GROUP PARTY VIP PASS';
+                badge1Text = 'LUNARA VIBE';
+                badge1Bg = '#F3E8FF';
+                badge1Color = '#9333EA';
+                badge2Text = 'GROUP VIP';
+                badge2Bg = '#FEF3C7';
+                badge2Color = '#D97706';
+                mainHeadingText = `VIP Group Night at ${options.venueName.toUpperCase()} !`;
+                guestCountLabel = `${options.numberOfGuests} Guests`;
+                break;
+
+            case 'strangers_meet':
+                headerTitle = 'STRANGERS MEET TICKET';
+                badge1Text = 'LUNARA VIBE';
+                badge1Bg = '#F3E8FF';
+                badge1Color = '#9333EA';
+                badge2Text = 'MEETUP';
+                badge2Bg = '#E0E7FF';
+                badge2Color = '#4338CA';
+                mainHeadingText = `Social Meetup at ${options.venueName.toUpperCase()} !`;
+                guestCountLabel = `${options.numberOfGuests} Members`;
+                break;
+        }
+
         // ─── TOP HEADER BAR ───
         doc.fillColor('#0F172A')
            .fontSize(14)
            .font('Helvetica-Bold')
-           .text('PARTY PLAN TICKET', 0, 16, { align: 'center', width: 380, characterSpacing: 1 });
+           .text(headerTitle, 0, 16, { align: 'center', width: 380, characterSpacing: 1 });
 
         // Outer White Card
         doc.roundedRect(15, 45, 350, 675, 20)
@@ -219,23 +294,23 @@ export async function generateTicketPDF(options: TicketPDFOptions): Promise<stri
            .fillAndStroke();
 
         // ─── BADGES & TICKET ID ───
-        // Lunara Vibe Pill
-        doc.roundedRect(30, 60, 105, 22, 11).fillColor('#F3E8FF').fill();
-        doc.fillColor('#9333EA').fontSize(8.5).font('Helvetica-Bold').text('LUNARA VIBE', 30, 66, { width: 105, align: 'center' });
+        // Badge 1 Pill
+        doc.roundedRect(30, 60, 105, 22, 11).fillColor(badge1Bg).fill();
+        doc.fillColor(badge1Color).fontSize(8.5).font('Helvetica-Bold').text(badge1Text, 30, 66, { width: 105, align: 'center' });
 
         // Ticket ID Text
         doc.fillColor('#64748B').fontSize(8.5).font('Helvetica').text('TICKET ID: ', 210, 66, { continued: true });
         doc.fillColor('#7E22CE').fontSize(8.5).font('Helvetica-Bold').text(options.ticketCode);
 
-        // Party Time Pill
-        doc.roundedRect(30, 88, 105, 22, 11).fillColor('#DCFCE7').fill();
-        doc.fillColor('#16A34A').fontSize(8.5).font('Helvetica-Bold').text('PARTY TIME!', 30, 94, { width: 105, align: 'center' });
+        // Badge 2 Pill
+        doc.roundedRect(30, 88, 105, 22, 11).fillColor(badge2Bg).fill();
+        doc.fillColor(badge2Color).fontSize(8.5).font('Helvetica-Bold').text(badge2Text, 30, 94, { width: 105, align: 'center' });
 
         // ─── MAIN HEADING ───
         doc.fillColor('#0F172A')
            .fontSize(17)
            .font('Helvetica-Bold')
-           .text(`Let's party at ${options.venueName.toUpperCase()} !`, 30, 122, { width: 320, ellipsis: true });
+           .text(mainHeadingText, 30, 122, { width: 320, ellipsis: true });
 
         doc.fillColor('#64748B')
            .fontSize(9.5)
@@ -276,7 +351,7 @@ export async function generateTicketPDF(options: TicketPDFOptions): Promise<stri
         // Col 3: GUESTS
         drawUsersIcon(doc, 296, metricY + 22, 9);
         doc.fillColor('#94A3B8').fontSize(7.5).font('Helvetica-Bold').text('GUESTS', 250, metricY + 36, { width: 90, align: 'center' });
-        doc.fillColor('#0F172A').fontSize(10.5).font('Helvetica-Bold').text(`${options.numberOfGuests} Going`, 245, metricY + 48, { width: 100, align: 'center' });
+        doc.fillColor('#0F172A').fontSize(10.5).font('Helvetica-Bold').text(guestCountLabel, 245, metricY + 48, { width: 100, align: 'center' });
         doc.fillColor('#64748B').fontSize(8.5).font('Helvetica').text('Confirmed', 245, metricY + 63, { width: 100, align: 'center' });
 
         // ─── DASHED CUTOUT DIVIDER ───
@@ -285,7 +360,7 @@ export async function generateTicketPDF(options: TicketPDFOptions): Promise<stri
         doc.circle(365, dividerY, 10).fillColor('#F1F5F9').fill();
         doc.strokeColor('#CBD5E1').lineWidth(1).dash(4, { space: 3 }).moveTo(30, dividerY).lineTo(350, dividerY).stroke().undash();
 
-        // ─── HOST & PARTNER PROFILE SECTION ───
+        // ─── HOST & PROFILE SECTION (Dynamic Per Format) ───
         const profileY = 290;
         const hostInitials = (options.hostName.charAt(0) || 'H').toUpperCase();
         const partnerName = options.partnerName || 'Invited Guest';
@@ -294,7 +369,7 @@ export async function generateTicketPDF(options: TicketPDFOptions): Promise<stri
         const partnerUsername = options.partnerUsername || `@${partnerName.toLowerCase().replace(/\s+/g, '')}`;
 
         if (options.bookingType === 'party_plan') {
-            // Dual Column Layout (Host & Partner)
+            // FORMAT 3: Party Plan Duo (Host & Joined Partner)
             
             // Host Column (Left)
             doc.roundedRect(55, profileY, 55, 18, 9).fillColor('#F3E8FF').fill();
@@ -317,15 +392,42 @@ export async function generateTicketPDF(options: TicketPDFOptions): Promise<stri
             doc.fillColor('#0F172A').fontSize(11.5).font('Helvetica-Bold').text(partnerName, 225, profileY + 90, { width: 105, align: 'center', ellipsis: true });
             doc.fillColor('#64748B').fontSize(8.5).font('Helvetica').text(partnerUsername, 225, profileY + 104, { width: 105, align: 'center', ellipsis: true });
 
-        } else {
-            // Single Column Host Layout
-            doc.roundedRect(162, profileY, 55, 18, 9).fillColor('#F3E8FF').fill();
-            doc.fillColor('#7E22CE').fontSize(7.5).font('Helvetica-Bold').text('HOST', 162, profileY + 5, { width: 55, align: 'center' });
+        } else if (options.bookingType === 'solo') {
+            // FORMAT 1: Going Solo (Host details + Solo Pass badge)
+            doc.roundedRect(152, profileY, 76, 18, 9).fillColor('#F3E8FF').fill();
+            doc.fillColor('#7E22CE').fontSize(7.5).font('Helvetica-Bold').text('SOLO VISITOR', 152, profileY + 5, { width: 76, align: 'center' });
 
             drawAvatarWithRing(doc, 190, profileY + 52, 28, hostImg, hostInitials, '#9333EA');
 
             doc.fillColor('#0F172A').fontSize(12).font('Helvetica-Bold').text(options.hostName, 120, profileY + 90, { width: 140, align: 'center', ellipsis: true });
             doc.fillColor('#64748B').fontSize(8.5).font('Helvetica').text(hostUsername, 120, profileY + 104, { width: 140, align: 'center', ellipsis: true });
+
+        } else {
+            // FORMAT 2, 4, 5: Friends / Group Party / Strangers Meet (Host Details + Total Members Box)
+            
+            // Host Column (Left)
+            const rolePillText = options.bookingType === 'group_party_large' ? 'ORGANIZER' : options.bookingType === 'strangers_meet' ? 'MEETUP HOST' : 'SQUAD HOST';
+            doc.roundedRect(40, profileY, 85, 18, 9).fillColor('#F3E8FF').fill();
+            doc.fillColor('#7E22CE').fontSize(7.5).font('Helvetica-Bold').text(rolePillText, 40, profileY + 5, { width: 85, align: 'center' });
+
+            drawAvatarWithRing(doc, 82, profileY + 52, 28, hostImg, hostInitials, '#9333EA');
+
+            doc.fillColor('#0F172A').fontSize(11.5).font('Helvetica-Bold').text(options.hostName, 30, profileY + 90, { width: 105, align: 'center', ellipsis: true });
+            doc.fillColor('#64748B').fontSize(8.5).font('Helvetica').text(hostUsername, 30, profileY + 104, { width: 105, align: 'center', ellipsis: true });
+
+            // Members Summary Box (Right)
+            doc.roundedRect(155, profileY + 15, 190, 80, 14)
+               .fillColor('#F8FAFC')
+               .strokeColor('#E2E8F0')
+               .lineWidth(1)
+               .fillAndStroke();
+
+            const summaryTitle = options.bookingType === 'group_party_large' ? 'GROUP CAPACITY' : options.bookingType === 'strangers_meet' ? 'MEETUP SEATS' : 'TOTAL SQUAD';
+            const summarySub = options.bookingType === 'group_party_large' ? 'VIP Table Entry Pass' : options.bookingType === 'strangers_meet' ? 'Community Social Meetup' : 'Confirmed Squad Members';
+
+            doc.fillColor('#94A3B8').fontSize(7.5).font('Helvetica-Bold').text(summaryTitle, 168, profileY + 28);
+            doc.fillColor('#0F172A').fontSize(14).font('Helvetica-Bold').text(`${options.numberOfGuests} Persons`, 168, profileY + 41);
+            doc.fillColor('#64748B').fontSize(8.5).font('Helvetica').text(summarySub, 168, profileY + 62);
         }
 
         // ─── DEPOSIT STATUS & PAYMENT CARD ───
@@ -491,6 +593,12 @@ export async function generateTicketForBookingHelper(bookingId: string): Promise
             }
         } else if (booking.goingMode === 'party_request') {
             bookingType = booking.numberOfGuests <= 20 ? 'group_party_small' : 'group_party_large';
+        } else if (booking.goingMode === 'group_booking' || booking.isGroupBooking) {
+            bookingType = 'group_party_small';
+        } else if (booking.isLargePartyRequest) {
+            bookingType = 'group_party_large';
+        } else {
+            bookingType = 'solo';
         }
 
         const ticketCode = booking.ticketCode || generateUniqueTicketCode('BK');
@@ -534,7 +642,7 @@ export async function generateTicketForBookingHelper(bookingId: string): Promise
         await Ticket.upsert({
             ticketId: ticketCode,
             bookingId: booking.id,
-            bookingType: 'solo',
+            bookingType: bookingType === 'party_plan' ? 'party_plan' : bookingType === 'group_party_large' ? 'large_party' : bookingType === 'group_party_small' ? 'group_party' : 'solo',
             userId: booking.userId,
             venueId: booking.venueId,
             ticketStatus: TicketStatus.ACTIVE,
