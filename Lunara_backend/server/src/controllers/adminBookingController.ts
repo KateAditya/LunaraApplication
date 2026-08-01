@@ -137,16 +137,15 @@ export const approveLargePartyRequest = async (req: Request, res: Response) => {
             // Create DB Notification Record
             try {
                 const NotificationModel = (await import('../models/Notification')).default;
-                const { NotificationCategory, NotificationPriority } = await import('../types/NotificationEventTypes');
                 await NotificationModel.create({
                     recipientUserId: booking.userId,
                     eventType: notifType,
-                    category: NotificationCategory.BOOKING,
+                    category: 'bookings' as any,
                     entityType: 'booking',
                     entityId: booking.id,
                     title: notifTitle,
                     body: notifBody,
-                    priority: NotificationPriority.HIGH,
+                    priority: 'HIGH' as any,
                     isRead: false,
                     metadata: { bookingId: booking.id, status, venueName }
                 });

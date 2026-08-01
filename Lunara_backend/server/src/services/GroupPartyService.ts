@@ -332,17 +332,16 @@ export class GroupPartyService {
             // 1. Create DB Notification Record for Host
             try {
                 const Notification = (await import('../models/Notification')).default;
-                const { NotificationCategory, NotificationPriority } = await import('../types/NotificationEventTypes');
                 
                 await Notification.create({
                     recipientUserId: userId,
                     eventType: type,
-                    category: NotificationCategory.BOOKING,
+                    category: 'bookings' as any,
                     entityType: eventType === 'large_submitted' ? 'booking' : 'group_party',
                     entityId,
                     title,
                     body,
-                    priority: NotificationPriority.HIGH,
+                    priority: 'HIGH' as any,
                     isRead: false,
                     metadata: {
                         venueName,
@@ -369,7 +368,6 @@ export class GroupPartyService {
             if (eventType === 'large_submitted') {
                 try {
                     const Notification = (await import('../models/Notification')).default;
-                    const { NotificationCategory, NotificationPriority } = await import('../types/NotificationEventTypes');
 
                     const admins = await User.findAll({ where: { role: 'admin' }, attributes: ['id', 'fcmToken'] });
                     const adminTitle = 'New Large Party Request 🚨';
@@ -379,12 +377,12 @@ export class GroupPartyService {
                         await Notification.create({
                             recipientUserId: admin.id,
                             eventType: 'large_party_request_submitted',
-                            category: NotificationCategory.BOOKING,
+                            category: 'bookings' as any,
                             entityType: 'booking',
                             entityId,
                             title: adminTitle,
                             body: adminBody,
-                            priority: NotificationPriority.HIGH,
+                            priority: 'HIGH' as any,
                             isRead: false,
                             metadata: { venueName, guestCount, entityId }
                         }).catch(() => {});
