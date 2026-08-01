@@ -300,7 +300,7 @@ export class GroupPartyService {
     }
 
     /**
-     * Helper to dispatch Socket & Push Notifications idempotently
+     * Helper to dispatch Socket & Push Notifications idempotently and persist DB records.
      */
     private static async emitNotifications(
         userId: string,
@@ -329,14 +329,104 @@ export class GroupPartyService {
                 type = 'large_party_request_submitted';
             }
 
-            if (host && host.fcmToken) {
-                const { sendPushNotification } = require('./fcmService');
-                await sendPushNotification(host.fcmToken, { title, body, data: { type, entityId } });
+            // 1. Create DB Notification Record for Host
+            try {
+                const Notification = (await import('../models/Notification')).default;
+                const { NotificationCategory, NotificationPriority } = await import('../types/NotificationEventTypes');
+                
+                await Notification.create({
+                    recipientUserId: userId,
+                    eventType: type,
+                    category: NotificationCategory.BOOKING,
+                    entityType: eventType === 'large_submitted' ? 'booking' : 'group_party',
+                    entityId,
+                    title,
+                    body,
+                    priority: NotificationPriority.HIGH,
+                    isRead: false,
+                    metadata: {
+                        venueName,
+                        guestCount,
+                        eventType,
+                        liveCountdownTarget: Date.now() + 24 * 60 * 60 * 1000
+                    }
+                });
+            } catch (dbErr) {
+                logger.warn(`[GroupPartyService] Failed to save DB Notification for host: ${dbErr}`);
             }
 
+            // 2. Send FCM Push to Host
+            if (host && host.fcmToken) {
+                try {
+                    const { sendPushNotification } = require('./fcmService');
+                    await sendPushNotification(host.fcmToken, { title, body, data: { type, entityId } });
+                } catch (pushErr) {
+                    logger.warn(`[GroupPartyService] Push send warning: ${pushErr}`);
+                }
+            }
+
+            // 3. For Large Group Party (> 20 guests): Notify Admins & Venue Owner
+            if (eventType === 'large_submitted') {
+                try {
+                    const Notification = (await import('../models/Notification')).default;
+                    const { NotificationCategory, NotificationPriority } = await import('../types/NotificationEventTypes');
+
+                    const admins = await User.findAll({ where: { role: 'admin' }, attributes: ['id', 'fcmToken'] });
+                    const adminTitle = 'New Large Party Request 🚨';
+                    const adminBody = `New large party request of ${guestCount} guests at ${venueName} submitted for approval.`;
+
+                    for (const admin of admins) {
+                        await Notification.create({
+                            recipientUserId: admin.id,
+                            eventType: 'large_party_request_submitted',
+                            category: NotificationCategory.BOOKING,
+                            entityType: 'booking',
+                            entityId,
+                            title: adminTitle,
+                            body: adminBody,
+                            priority: NotificationPriority.HIGH,
+                            isRead: false,
+                            metadata: { venueName, guestCount, entityId }
+                        }).catch(() => {});
+
+                        if (admin.fcmToken) {
+                            const { sendPushNotification } = require('./fcmService');
+                            sendPushNotification(admin.fcmToken, {
+                                title: adminTitle,
+                                body: adminBody,
+                                data: { type: 'large_party_request_submitted', entityId }
+                            }).catch(() => {});
+                        }
+                    }
+
+                    const { io } = require('../server');
+                    if (io) {
+                        io.to('admin_notifications').emit('admin_notification_created', {
+                            title: adminTitle,
+                            body: adminBody,
+                            entityId,
+                            guestCount,
+                            venueName,
+                            createdAt: new Date().toISOString()
+                        });
+                    }
+                } catch (adminNotifErr) {
+                    logger.warn(`[GroupPartyService] Admin notification emit warning: ${adminNotifErr}`);
+                }
+            }
+
+            // 4. Send Live Socket Event to Host
             const { io } = require('../server');
             if (io) {
                 io.to(`user_${userId}`).emit('group_party_status_update', { partyId: entityId, eventType });
+                io.to(`user_${userId}`).emit('notification_created', {
+                    id: `gp_${entityId}_${Date.now()}`,
+                    title,
+                    body,
+                    createdAt: new Date().toISOString(),
+                    read: false,
+                    data: { type, entityId }
+                });
             }
         } catch (err) {
             logger.warn(`[GroupPartyService] Notification emit warning: ${err}`);

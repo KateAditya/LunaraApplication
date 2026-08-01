@@ -128,15 +128,39 @@ export const approveLargePartyRequest = async (req: Request, res: Response) => {
             const host = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
             const venue = await Venue.findByPk(booking.venueId, { attributes: ['id', 'name'] });
             const venueName = venue?.name || 'Venue';
+            const notifTitle = status === 'approved' ? 'Large Party Approved! 🎉' : 'Large Party Rejected ❌';
+            const notifBody = status === 'approved'
+                ? `Your large party request at ${venueName} has been approved! Complete payment to confirm.`
+                : `Your large party request at ${venueName} was rejected by the admin.`;
+            const notifType = status === 'approved' ? 'large_party_approved' : 'large_party_rejected';
+
+            // Create DB Notification Record
+            try {
+                const NotificationModel = (await import('../models/Notification')).default;
+                const { NotificationCategory, NotificationPriority } = await import('../types/NotificationEventTypes');
+                await NotificationModel.create({
+                    recipientUserId: booking.userId,
+                    eventType: notifType,
+                    category: NotificationCategory.BOOKING,
+                    entityType: 'booking',
+                    entityId: booking.id,
+                    title: notifTitle,
+                    body: notifBody,
+                    priority: NotificationPriority.HIGH,
+                    isRead: false,
+                    metadata: { bookingId: booking.id, status, venueName }
+                });
+            } catch (dbErr) {
+                logger.warn('Failed to save DB notification for admin approval: ' + dbErr);
+            }
+
             if (host && host.fcmToken) {
                 const { sendPushNotification } = require('../services/fcmService');
                 await sendPushNotification(host.fcmToken, {
-                    title: status === 'approved' ? 'Large Party Approved! 🎉' : 'Large Party Rejected ❌',
-                    body: status === 'approved'
-                        ? `Your large party request at ${venueName} has been approved! Complete payment to confirm.`
-                        : `Your large party request at ${venueName} was rejected by the admin.`,
+                    title: notifTitle,
+                    body: notifBody,
                     data: {
-                        type: status === 'approved' ? 'large_party_approved' : 'large_party_rejected',
+                        type: notifType,
                         bookingId: booking.id,
                     }
                 });
@@ -150,14 +174,12 @@ export const approveLargePartyRequest = async (req: Request, res: Response) => {
             // Emit notification_created
             io.to(`user_${booking.userId}`).emit('notification_created', {
                 id: `large_party_${booking.id}_${status}`,
-                title: status === 'approved' ? 'Large Party Approved! 🎉' : 'Large Party Rejected ❌',
-                body: status === 'approved'
-                    ? `Your large party request at ${venueName} has been approved! Complete payment to confirm.`
-                    : `Your large party request at ${venueName} was rejected by the admin.`,
+                title: notifTitle,
+                body: notifBody,
                 createdAt: new Date().toISOString(),
                 read: false,
                 data: {
-                    type: status === 'approved' ? 'large_party_approved' : 'large_party_rejected',
+                    type: notifType,
                     bookingId: booking.id,
                 }
             });
