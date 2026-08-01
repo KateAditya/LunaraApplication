@@ -241,6 +241,11 @@ Booking.belongsTo(User, {
     as: 'customer',
 });
 
+Booking.belongsTo(User, {
+    foreignKey: 'userId',
+    as: 'user',
+});
+
 Booking.belongsTo(Venue, {
     foreignKey: 'venueId',
     as: 'venue',

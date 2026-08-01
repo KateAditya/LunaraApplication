@@ -1447,7 +1447,7 @@ export const getVenueRevenueDetails = async (req: Request, res: Response) => {
             }
 
             // User info
-            const u = bData.user;
+            const u = bData.user || bData.customer;
             const userName = u ? `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email || 'Guest' : 'Guest';
 
             formattedRecords.push({
