@@ -118,7 +118,8 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
             await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS show_profile_photo BOOLEAN DEFAULT TRUE;`);
             await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS show_host_name BOOLEAN DEFAULT TRUE;`);
             await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS show_venue_details BOOLEAN DEFAULT TRUE;`);
-            logger.info('users and messages table columns verified/migrated successfully.');
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS show_date_details BOOLEAN DEFAULT TRUE;`);
+            logger.info('users, messages, and party_plans table columns verified/migrated successfully.');
 
 
 
