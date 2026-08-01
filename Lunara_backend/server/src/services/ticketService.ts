@@ -593,9 +593,9 @@ export async function generateTicketForBookingHelper(bookingId: string): Promise
             }
         } else if (booking.goingMode === 'party_request') {
             bookingType = booking.numberOfGuests <= 20 ? 'group_party_small' : 'group_party_large';
-        } else if (booking.goingMode === 'group_booking' || booking.isGroupBooking) {
+        } else if ((booking.goingMode as string) === 'group_booking' || (booking as any).isGroupBooking) {
             bookingType = 'group_party_small';
-        } else if (booking.isLargePartyRequest) {
+        } else if ((booking as any).isLargePartyRequest) {
             bookingType = 'group_party_large';
         } else {
             bookingType = 'solo';
@@ -642,7 +642,7 @@ export async function generateTicketForBookingHelper(bookingId: string): Promise
         await Ticket.upsert({
             ticketId: ticketCode,
             bookingId: booking.id,
-            bookingType: bookingType === 'party_plan' ? 'party_plan' : bookingType === 'group_party_large' ? 'large_party' : bookingType === 'group_party_small' ? 'group_party' : 'solo',
+            bookingType: (bookingType === 'party_plan' ? 'party_plan' : bookingType.startsWith('group_party') ? 'group_party' : 'solo') as any,
             userId: booking.userId,
             venueId: booking.venueId,
             ticketStatus: TicketStatus.ACTIVE,
