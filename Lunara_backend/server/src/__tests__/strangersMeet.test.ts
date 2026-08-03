@@ -4,6 +4,7 @@ import User, { UserRole } from '../models/User';
 import Venue, { VenueCategory } from '../models/Venue';
 import StrangersMeetRequest from '../models/StrangersMeetRequest';
 import StrangersMeetJoiner, { StrangersMeetJoinerPaymentStatus, StrangersMeetJoinerStatus } from '../models/StrangersMeetJoiner';
+import PlanTimeLock from '../models/PlanTimeLock';
 
 jest.mock('razorpay', () => {
     return jest.fn().mockImplementation(() => {
@@ -34,6 +35,8 @@ describe('Strangers Meet Workflow Endpoints', () => {
     let joinerRecordId = '';
 
     beforeAll(async () => {
+        await PlanTimeLock.destroy({ where: {} });
+
         // Create users
         const host = await User.create({
             firstName: 'Host',
@@ -74,13 +77,14 @@ describe('Strangers Meet Workflow Endpoints', () => {
             capacity: 100,
             openingTime: '10:00:00',
             closingTime: '23:30:00',
-            daysOpen: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+            daysOpen: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
         });
         venueId = venue.id;
     });
 
     afterAll(async () => {
         // Cleanup
+        await PlanTimeLock.destroy({ where: {} });
         await StrangersMeetJoiner.destroy({ where: {} });
         await StrangersMeetRequest.destroy({ where: {} });
         await Venue.destroy({ where: { id: venueId } });
@@ -90,6 +94,7 @@ describe('Strangers Meet Workflow Endpoints', () => {
     it('should create a Strangers Meet request and ignore chargesPerHead', async () => {
         const eventDate = new Date();
         eventDate.setDate(eventDate.getDate() + 5); // 5 days in the future
+        eventDate.setHours(18, 0, 0, 0); // 6:00 PM (within venue opening hours)
 
         const res = await request(app)
             .post('/api/mobile/strangers-meet')
@@ -107,7 +112,7 @@ describe('Strangers Meet Workflow Endpoints', () => {
         expect(res.status).toBe(201);
         expect(res.body.success).toBe(true);
         expect(res.body.data.status).toBe('pending');
-        expect(res.body.data.chargesPerHead).toBe(0.0); // Verifies chargesPerHead is set to 0 on creation
+        expect(Number(res.body.data.chargesPerHead)).toBe(0.0); // Verifies chargesPerHead is set to 0 on creation
 
         requestId = res.body.data.id;
     });
@@ -124,12 +129,12 @@ describe('Strangers Meet Workflow Endpoints', () => {
         expect(res.status).toBe(200);
         expect(res.body.success).toBe(true);
         expect(res.body.data.status).toBe('approved');
-        expect(res.body.data.chargesPerHead).toBe(350.00);
-        expect(res.body.data.paymentAmount).toBe(99.00);
+        expect(Number(res.body.data.chargesPerHead)).toBe(350.00);
+        expect(Number(res.body.data.paymentAmount)).toBe(99.00);
 
         const reqDb = await StrangersMeetRequest.findByPk(requestId);
-        expect(reqDb?.chargesPerHead).toBe(350.00);
-        expect(reqDb?.paymentAmount).toBe(99.00);
+        expect(Number(reqDb?.chargesPerHead)).toBe(350.00);
+        expect(Number(reqDb?.paymentAmount)).toBe(99.00);
     });
 
     it('should allow host to publish Strangers Meet via deposit payment', async () => {

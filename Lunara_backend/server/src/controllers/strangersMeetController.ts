@@ -278,6 +278,7 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
                 subject: request.subject,
                 numberOfPersons: request.numberOfPersons,
                 status: request.status,
+                chargesPerHead: request.chargesPerHead,
             }
         });
     } catch (err: any) {
@@ -424,7 +425,10 @@ export const initiatePayment = async (req: Request, res: Response): Promise<void
         let order: any = { id: `order_mock_${Date.now()}`, amount: options.amount, currency: options.currency };
         if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id') {
             try {
-                order = await razorpay.orders.create(options);
+                const rzpOrder = await razorpay.orders.create(options);
+                if (rzpOrder && rzpOrder.id) {
+                    order = rzpOrder;
+                }
             } catch (err: any) {
                 logger.warn('Razorpay strangers meet order creation failed, using mock: ' + err.message);
             }
@@ -902,7 +906,9 @@ export const initiateJoinPayment = async (req: Request, res: Response): Promise<
                     receipt: `smjoin_${Date.now()}`
                 };
                 const order = await razorpay.orders.create(options);
-                orderId = order.id;
+                if (order && order.id) {
+                    orderId = order.id;
+                }
             } catch (err: any) {
                 logger.warn('Razorpay order failed, using mock: ' + err.message);
             }
