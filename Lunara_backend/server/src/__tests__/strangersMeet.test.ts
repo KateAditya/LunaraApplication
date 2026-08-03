@@ -10,7 +10,7 @@ jest.mock('razorpay', () => {
     return jest.fn().mockImplementation(() => {
         return {
             orders: {
-                create: jest.fn().mockImplementation((options) => {
+                create: jest.fn().mockImplementation((options: any) => {
                     return Promise.resolve({
                         id: `order_mock_${Math.random().toString(36).substr(2, 9)}`,
                         amount: options.amount,
