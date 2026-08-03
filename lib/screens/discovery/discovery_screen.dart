@@ -1185,16 +1185,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                           child: Container(
                             height: 32,
                             width: 32,
+                            padding: const EdgeInsets.all(4),
                             decoration: const BoxDecoration(
                               gradient: LunaraTheme.purpleGradient,
                               shape: BoxShape.circle,
                             ),
-                            child: const Center(
-                              child: Icon(
-                                Icons.flash_on_rounded,
-                                color: Colors.white,
-                                size: 18,
-                              ),
+                            child: Image.asset(
+                              LunaraTheme.logo,
+                              fit: BoxFit.contain,
                             ),
                           ),
                         ),

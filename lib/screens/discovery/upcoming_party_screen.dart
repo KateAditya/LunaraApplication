@@ -541,27 +541,33 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                                       ),
                                     ],
                             ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  _isInterested
-                                      ? Icons.favorite_rounded
-                                      : Icons.favorite_border_rounded,
-                                  color: LunaraTheme.electricViolet,
-                                  size: 22,
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 6.0),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      _isInterested
+                                          ? Icons.favorite_rounded
+                                          : Icons.favorite_border_rounded,
+                                      color: LunaraTheme.electricViolet,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      _isInterested ? 'INTERESTED ✓' : 'INTERESTED',
+                                      style: const TextStyle(
+                                        color: LunaraTheme.electricViolet,
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 13,
+                                        letterSpacing: 0.8,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  _isInterested ? 'INTERESTED ✓' : 'INTERESTED',
-                                  style: const TextStyle(
-                                    color: LunaraTheme.electricViolet,
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 13,
-                                    letterSpacing: 1.2,
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
                           ),
                         ),
@@ -619,13 +625,19 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                               ],
                             ),
                             child: const Center(
-                              child: Text(
-                                'BOOK NOW',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 14,
-                                  letterSpacing: 1.5,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 6.0),
+                                  child: Text(
+                                    'BOOK NOW',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 14,
+                                      letterSpacing: 1.2,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),

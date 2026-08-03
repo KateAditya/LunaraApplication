@@ -148,5 +148,6 @@ class LunaraTheme {
   static const String logoVerticalDark = 'assets/images/logo_vertical_dark.png';
   static const String logoVerticalLight = 'assets/images/logo_vertical_light.png';
   static const String logoIcon = 'assets/images/logo_icon.png';
+  static const String logo = 'assets/images/logo.png';
   static const String defaultAvatar = 'assets/images/default_avatar.png';
 }
