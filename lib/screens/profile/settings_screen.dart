@@ -2543,10 +2543,11 @@ class PermissionsSheet extends StatefulWidget {
 
 class _PermissionsSheetState extends State<PermissionsSheet>
     with WidgetsBindingObserver {
-  String _locationStatus = 'Checking...';
-  String _cameraStatus = 'Checking...';
-  String _photoStatus = 'Checking...';
-  String _notificationStatus = 'Checking...';
+  PermissionStatus _locationStatus = PermissionStatus.denied;
+  PermissionStatus _cameraStatus = PermissionStatus.denied;
+  PermissionStatus _photoStatus = PermissionStatus.denied;
+  PermissionStatus _notificationStatus = PermissionStatus.denied;
+  bool _isChecking = true;
 
   @override
   void initState() {
@@ -2576,48 +2577,141 @@ class _PermissionsSheetState extends State<PermissionsSheet>
 
     if (mounted) {
       setState(() {
-        _locationStatus = _getStatusText(location);
-        _cameraStatus = _getStatusText(camera);
-        _photoStatus = _getStatusText(photos);
-        _notificationStatus = _getStatusText(notification);
+        _locationStatus = location;
+        _cameraStatus = camera;
+        _photoStatus = photos;
+        _notificationStatus = notification;
+        _isChecking = false;
       });
     }
   }
 
-  String _getStatusText(PermissionStatus status) {
-    if (status.isGranted) return 'Enabled';
-    if (status.isPermanentlyDenied) {
-      return 'Permanently Denied (Tap to open Settings)';
-    }
-    if (status.isDenied) return 'Denied (Tap to request)';
-    if (status.isRestricted) return 'Restricted';
-    return 'Not Determined';
-  }
-
-  Future<void> _handlePermissionTap(Permission permission) async {
-    final status = await permission.status;
-    if (status.isPermanentlyDenied) {
-      await openAppSettings();
+  Future<void> _handlePermissionToggle(
+    Permission permission,
+    PermissionStatus currentStatus,
+    String name,
+    bool targetValue,
+  ) async {
+    if (targetValue) {
+      // User wants to turn permission ON
+      if (currentStatus.isPermanentlyDenied) {
+        await openAppSettings();
+      } else {
+        final newStatus = await permission.request();
+        if (newStatus.isPermanentlyDenied) {
+          await openAppSettings();
+        }
+      }
     } else {
-      await permission.request();
-      _checkPermissions();
+      // User wants to turn permission OFF
+      if (currentStatus.isGranted) {
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: Text(
+                'Disable $name Access',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+              ),
+              content: Text(
+                'To turn off $name access, please disable the permission in your device system settings.',
+                style: const TextStyle(fontSize: 14, color: Colors.black87),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text(
+                    'CANCEL',
+                    style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    openAppSettings();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: LunaraTheme.electricViolet,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'OPEN SETTINGS',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+      }
     }
+    await _checkPermissions();
   }
 
-  Widget _permissionTile(
-    IconData icon,
-    String title,
-    String subtitle,
-    VoidCallback onTap,
-  ) {
+  Widget _permissionTile({
+    required IconData icon,
+    required String title,
+    required PermissionStatus status,
+    required Permission permission,
+    required String name,
+  }) {
+    final bool isGranted = status.isGranted;
+
+    String subtitle = 'Checking...';
+    Color subtitleColor = Colors.black54;
+
+    if (!_isChecking) {
+      if (status.isGranted) {
+        subtitle = 'Allowed';
+        subtitleColor = LunaraTheme.electricViolet;
+      } else if (status.isPermanentlyDenied) {
+        subtitle = 'Disabled (Tap to open Settings)';
+        subtitleColor = Colors.orange[800]!;
+      } else if (status.isDenied) {
+        subtitle = 'Disabled (Tap to enable)';
+        subtitleColor = Colors.grey[600]!;
+      } else if (status.isRestricted) {
+        subtitle = 'Restricted by Device';
+        subtitleColor = Colors.redAccent;
+      } else {
+        subtitle = 'Not Determined';
+      }
+    }
+
     return InkWell(
-      onTap: onTap,
+      onTap: () => _handlePermissionToggle(permission, status, name, !isGranted),
       borderRadius: BorderRadius.circular(16),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
         child: Row(
           children: [
-            Icon(icon, color: LunaraTheme.electricViolet, size: 24),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: isGranted
+                    ? LunaraTheme.electricViolet.withValues(alpha: 0.1)
+                    : Colors.grey[100],
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                icon,
+                color: isGranted
+                    ? LunaraTheme.electricViolet
+                    : Colors.grey[400],
+                size: 22,
+              ),
+            ),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
@@ -2627,24 +2721,28 @@ class _PermissionsSheetState extends State<PermissionsSheet>
                     title,
                     style: const TextStyle(
                       color: Colors.black,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w900,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 2),
                   Text(
                     subtitle,
                     style: TextStyle(
-                      color: subtitle.contains('Denied')
-                          ? Colors.redAccent
-                          : Colors.black54,
+                      color: subtitleColor,
                       fontSize: 12,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
               ),
             ),
-            Icon(Icons.chevron_right, color: Colors.grey[400], size: 20),
+            Switch.adaptive(
+              value: isGranted,
+              activeTrackColor: LunaraTheme.electricViolet,
+              activeThumbColor: Colors.white,
+              onChanged: (val) => _handlePermissionToggle(permission, status, name, val),
+            ),
           ],
         ),
       ),
@@ -2669,45 +2767,49 @@ class _PermissionsSheetState extends State<PermissionsSheet>
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.grey[200],
+                color: Colors.grey[300],
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 24),
           const Text(
             'DATA & PERMISSIONS',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w900,
-              letterSpacing: 2,
+              letterSpacing: 1.5,
               color: Colors.black,
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
           _permissionTile(
-            Icons.location_on_outlined,
-            'Location',
-            _locationStatus,
-            () => _handlePermissionTap(Permission.location),
+            icon: Icons.location_on_outlined,
+            title: 'Location',
+            status: _locationStatus,
+            permission: Permission.location,
+            name: 'Location',
           ),
           _permissionTile(
-            Icons.camera_alt_outlined,
-            'Camera',
-            _cameraStatus,
-            () => _handlePermissionTap(Permission.camera),
+            icon: Icons.camera_alt_outlined,
+            title: 'Camera',
+            status: _cameraStatus,
+            permission: Permission.camera,
+            name: 'Camera',
           ),
           _permissionTile(
-            Icons.photo_library_outlined,
-            'Photo Library',
-            _photoStatus,
-            () => _handlePermissionTap(Permission.photos),
+            icon: Icons.photo_library_outlined,
+            title: 'Photo Library',
+            status: _photoStatus,
+            permission: Permission.photos,
+            name: 'Photo Library',
           ),
           _permissionTile(
-            Icons.notifications_none,
-            'Notifications',
-            _notificationStatus,
-            () => _handlePermissionTap(Permission.notification),
+            icon: Icons.notifications_none,
+            title: 'Notifications',
+            status: _notificationStatus,
+            permission: Permission.notification,
+            name: 'Notifications',
           ),
           const SizedBox(height: 16),
         ],

@@ -22,6 +22,7 @@ import { checkExistingBookingForDate } from '../utils/bookingLimitValidator';
 import Booking, { BookingStatus, GoingMode, PaymentStatus as BookingPaymentStatus } from '../models/Booking';
 import Payment, { PaymentMethod, PaymentStatus } from '../models/Payment';
 import { generateTicketForBookingHelper } from '../services/ticketService';
+import { NotificationService } from '../services/NotificationService';
 
 async function autoOpenChat(hostId: string, joinerId: string) {
     try {
@@ -230,16 +231,31 @@ async function rejectAndNotifyStaleRequests(plan: PartyPlan, acceptedRequestId: 
             transaction
         });
 
+        let venueName = 'Venue';
+        if (plan.venueId) {
+            const venue = await Venue.findByPk(plan.venueId, { transaction });
+            if (venue && venue.name) {
+                venueName = venue.name;
+            }
+        }
+
         for (const req of otherRequests) {
             await req.update({ status: PartyPlanRequestStatus.REJECTED }, { transaction });
             
-            let venueName = 'Club';
-            if (plan.venueId) {
-                const venue = await Venue.findByPk(plan.venueId, { transaction });
-                if (venue && venue.name) {
-                    venueName = venue.name;
-                }
-            }
+            await NotificationService.dispatch({
+                recipientUserId: req.requesterId,
+                actorUserId: plan.userId,
+                eventType: 'plan_unavailable',
+                category: 'requests',
+                entityType: 'party_plan_request',
+                entityId: req.id,
+                title: '🔒 Plan Unavailable',
+                body: `The Party Plan at ${venueName} has been confirmed with another partner by the host.`,
+                metadata: {
+                    partyPlanId: plan.id,
+                    requestId: req.id,
+                },
+            });
 
             try {
                 const { io } = require('../server');
@@ -247,15 +263,6 @@ async function rejectAndNotifyStaleRequests(plan: PartyPlan, acceptedRequestId: 
                 io.to(`user_${req.requesterId}`).emit('plan_unavailable', {
                     planId: plan.id,
                     requestId: req.id,
-                });
-                // Emit notification_created
-                io.to(`user_${req.requesterId}`).emit('notification_created', {
-                    id: `ppr_rejected_${req.id}`,
-                    title: 'Plan Unavailable',
-                    body: `The Party Plan at ${venueName} has been confirmed with another user. Feel free to find another plan!`,
-                    createdAt: new Date().toISOString(),
-                    read: false,
-                    type: 'plan_unavailable',
                 });
             } catch (socketErr) {
                 logger.warn(`Socket emission failed in rejectAndNotifyStaleRequests for request ${req.id}:`, socketErr);
@@ -1283,45 +1290,51 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
             latLangCheckIn: false,
         });
 
-        // Notify host about the request
-        try {
-            const host = await User.findByPk(plan.userId);
-            const requester = await User.findByPk(userId);
-            if (host && requester) {
-                const { io } = require('../server');
-                const venueName = (plan as any)?.venue?.name || 'Club';
-                const requesterName = `${requester.firstName} ${requester.lastName}`;
-                
-                io.to(`user_${plan.userId}`).emit('notification_created', {
-                    id: `ppr_req_${newReq.id}`,
-                    title: 'Join Request',
-                    body: `${requesterName} requested to join your Party Plan at ${venueName}.`,
-                    createdAt: new Date().toISOString(),
-                    read: false,
-                    sender: {
-                        id: requester.id,
-                        firstName: requester.firstName,
-                        lastName: requester.lastName,
-                        profileImageUrl: requester.profileImageUrl,
-                    }
-                });
+        // Notify host and requester via NotificationService
+        setImmediate(async () => {
+            try {
+                const host = await User.findByPk(plan.userId);
+                const requester = await User.findByPk(userId);
+                if (host && requester) {
+                    const venueName = (plan as any)?.venue?.name || 'Venue';
+                    const requesterName = `${requester.firstName} ${requester.lastName}`.trim();
 
-                if (host.fcmToken) {
-                    const { sendPushNotification } = require('../services/fcmService');
-                    await sendPushNotification(host.fcmToken, {
-                        title: 'Join Request',
+                    // Notify Host
+                    await NotificationService.dispatch({
+                        recipientUserId: plan.userId,
+                        actorUserId: userId,
+                        eventType: 'party_plan_request_received',
+                        category: 'requests',
+                        entityType: 'party_plan_request',
+                        entityId: newReq.id,
+                        title: '📩 New Party Plan Request!',
                         body: `${requesterName} requested to join your Party Plan at ${venueName}.`,
-                        data: {
-                            type: 'join_request',
+                        metadata: {
                             partyPlanId: plan.id,
                             requestId: newReq.id,
-                        }
+                        },
+                    });
+
+                    // Notify Requester
+                    await NotificationService.dispatch({
+                        recipientUserId: userId,
+                        actorUserId: plan.userId,
+                        eventType: 'party_plan_request_sent',
+                        category: 'requests',
+                        entityType: 'party_plan_request',
+                        entityId: newReq.id,
+                        title: '✅ Request Sent',
+                        body: `Your request to join ${host.firstName}'s Party Plan at ${venueName} was submitted successfully!`,
+                        metadata: {
+                            partyPlanId: plan.id,
+                            requestId: newReq.id,
+                        },
                     });
                 }
+            } catch (notifErr: any) {
+                logger.warn('Failed to dispatch party plan request notifications:', notifErr.message);
             }
-        } catch (pushErr: any) {
-            logger.warn('Failed to notify host for new party plan request:', pushErr.message);
-        }
+        });
 
         res.status(201).json({ success: true, message: 'Request sent successfully!', data: newReq });
     } catch (err: any) {

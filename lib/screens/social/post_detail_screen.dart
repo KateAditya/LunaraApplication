@@ -1808,17 +1808,49 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           : SafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                child: _alreadyRequested
+                child: (widget.post['status']?.toString().toLowerCase() == 'inactive' ||
+                        widget.post['status']?.toString().toLowerCase() == 'closed' ||
+                        widget.post['status']?.toString().toLowerCase() == 'cancelled' ||
+                        widget.post['status']?.toString().toLowerCase() == 'completed' ||
+                        widget.post['isLive'] == false)
                     ? Container(
                         width: double.infinity,
                         height: 60,
                         decoration: BoxDecoration(
-                          color: Colors.green.withValues(alpha: 0.15),
+                          color: Colors.grey[200],
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: Colors.green.withValues(alpha: 0.4),
+                          border: Border.all(color: Colors.grey[300]!),
+                        ),
+                        child: const Center(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.lock_rounded, color: Colors.grey),
+                              SizedBox(width: 8),
+                              Text(
+                                'PLAN CLOSED / CONFIRMED WITH ANOTHER USER',
+                                style: TextStyle(
+                                  fontFamily: 'AllroundGothic',
+                                  color: Colors.grey,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
+                      )
+                    : _alreadyRequested
+                        ? Container(
+                            width: double.infinity,
+                            height: 60,
+                            decoration: BoxDecoration(
+                              color: Colors.green.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: Colors.green.withValues(alpha: 0.4),
+                              ),
+                            ),
                         child: FittedBox(
                           fit: BoxFit.scaleDown,
                           child: Padding(

@@ -601,7 +601,11 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
         paymentStatus.toLowerCase() == 'refunded' ||
         isSelfPay;
 
-    if (lowerStatus == 'pending') {
+    if (lowerStatus == 'closed' || lowerStatus == 'cancelled') {
+      bg = Colors.grey.withValues(alpha: 0.15);
+      text = Colors.grey[700]!;
+      label = lowerStatus == 'closed' ? 'CLOSED' : 'CANCELLED';
+    } else if (lowerStatus == 'pending') {
       bg = Colors.orange.withValues(alpha: 0.1);
       text = Colors.orange;
     } else if (lowerStatus == 'rejected' || lowerStatus == 'payment_failed') {

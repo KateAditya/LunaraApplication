@@ -271,6 +271,15 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
       return '${ApiService.baseUrl}/${clean.startsWith('/') ? clean.substring(1) : clean}';
     }
 
+    if (venue['coverImageUrl'] != null && venue['coverImageUrl'].toString().isNotEmpty) {
+      return normalize(venue['coverImageUrl'].toString());
+    }
+    if (venue['photoUrl'] != null && venue['photoUrl'].toString().isNotEmpty) {
+      return normalize(venue['photoUrl'].toString());
+    }
+    if (venue['filePath'] != null && venue['filePath'].toString().isNotEmpty) {
+      return normalize(venue['filePath'].toString());
+    }
     if (venue['coverImage'] != null && venue['coverImage'] is Map) {
       final path = venue['coverImage']['url'] ?? venue['coverImage']['filePath'];
       if (path != null && path.toString().isNotEmpty) {

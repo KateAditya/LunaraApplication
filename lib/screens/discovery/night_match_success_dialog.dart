@@ -1,25 +1,30 @@
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../social/chat_screen.dart';
+import 'digital_ticket_screen.dart';
 
 class NightMatchSuccessDialog extends StatelessWidget {
   final String partnerName;
   final String? partnerPhoto;
   final String venueName;
+  final String? venuePhoto;
   final String date;
   final String time;
   final String? conversationId;
   final String? partnerId;
+  final String? ticketId;
 
   const NightMatchSuccessDialog({
     super.key,
     required this.partnerName,
     this.partnerPhoto,
     required this.venueName,
+    this.venuePhoto,
     required this.date,
     required this.time,
     this.conversationId,
     this.partnerId,
+    this.ticketId,
   });
 
   @override
@@ -205,7 +210,45 @@ class NightMatchSuccessDialog extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => DigitalTicketScreen(
+                        venue: {
+                          'name': venueName,
+                          'coverImageUrl': venuePhoto,
+                        },
+                        date: date,
+                        time: time,
+                        guests: '2',
+                        ticketId: ticketId ?? 'NIGHT-VIP',
+                      ),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.confirmation_number_outlined, color: LunaraTheme.electricViolet, size: 18),
+                label: const Text('VIEW DIGITAL TICKET'),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: LunaraTheme.electricViolet),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  textStyle: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: Text(

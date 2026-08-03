@@ -9,6 +9,8 @@ import '../../models/user.dart';
 import '../profile/profile_screen.dart';
 import '../../widgets/lunara_profile_image.dart';
 import '../../widgets/top_notification_banner.dart';
+import '../../widgets/upcoming_night_invite_dialog.dart';
+import '../../widgets/upcoming_night_host_confirm_dialog.dart';
 
 class NotificationCenterScreen extends StatefulWidget {
   const NotificationCenterScreen({super.key});
@@ -825,6 +827,56 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     );
   }
 
+  void _openUpcomingNightInvite(dynamic item) {
+    final payloadData = item['data'] is Map
+        ? Map<String, dynamic>.from(item['data'])
+        : (item['metadata'] is Map ? Map<String, dynamic>.from(item['metadata']) : <String, dynamic>{});
+    final requestId = payloadData['requestId']?.toString() ?? item['entityId']?.toString() ?? '';
+    final actor = item['actor'] ?? item['sender'];
+    final venueName = payloadData['venueName']?.toString() ?? 'Venue';
+    final date = payloadData['eventDate']?.toString() ?? 'Tonight';
+    final time = payloadData['eventTime']?.toString() ?? '20:00';
+
+    showDialog(
+      context: context,
+      builder: (_) => UpcomingNightInviteDialog(
+        requestId: requestId,
+        hostProfile: actor is Map ? Map<String, dynamic>.from(actor) : null,
+        venueName: venueName,
+        date: date,
+        time: time,
+        onAccepted: () {
+          _fetchNotifications();
+        },
+      ),
+    );
+  }
+
+  void _openUpcomingNightHostConfirm(dynamic item) {
+    final payloadData = item['data'] is Map
+        ? Map<String, dynamic>.from(item['data'])
+        : (item['metadata'] is Map ? Map<String, dynamic>.from(item['metadata']) : <String, dynamic>{});
+    final matchId = payloadData['matchId']?.toString() ?? item['entityId']?.toString() ?? '';
+    final actor = item['actor'] ?? item['sender'];
+    final partnerName = actor is Map ? (actor['firstName'] ?? actor['name'] ?? 'Partner') : 'Partner';
+    final partnerPhoto = actor is Map ? (actor['profilePhotoUrl'] ?? actor['primaryPhoto']) : null;
+    final venueName = payloadData['venueName']?.toString() ?? 'Venue';
+    final date = payloadData['eventDate']?.toString() ?? 'Tonight';
+    final time = payloadData['eventTime']?.toString() ?? '20:00';
+
+    showDialog(
+      context: context,
+      builder: (_) => UpcomingNightHostConfirmDialog(
+        matchId: matchId,
+        partnerName: partnerName,
+        partnerPhoto: partnerPhoto,
+        venueName: venueName,
+        date: date,
+        time: time,
+      ),
+    );
+  }
+
   // ── 1. Partner Request Card Component ──────────────────────────────────────
   Widget _buildPartnerRequestCard(dynamic item) {
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
@@ -914,7 +966,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: ElevatedButton(
-                  onPressed: () => _handleNotificationAction(item, 'ACCEPT'),
+                  onPressed: () => _openUpcomingNightInvite(item),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: LunaraTheme.electricViolet,
                     shape: RoundedRectangleBorder(
@@ -922,7 +974,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                     ),
                   ),
                   child: const Text(
-                    'Accept',
+                    'Accept Invite',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 11.5,
@@ -1139,14 +1191,17 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           ),
           const SizedBox(height: 12),
           ElevatedButton.icon(
-            onPressed: () => _markAsRead(item),
+            onPressed: () {
+              _markAsRead(item);
+              _openUpcomingNightHostConfirm(item);
+            },
             icon: const Icon(
-              Icons.chat_bubble_rounded,
+              Icons.payment_rounded,
               size: 14,
               color: Colors.white,
             ),
             label: const Text(
-              "Let's Chat",
+              "Confirm Booking & Pay",
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 12,
