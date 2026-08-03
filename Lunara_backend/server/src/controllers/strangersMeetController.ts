@@ -632,6 +632,7 @@ export const getFeedRequests = async (req: Request, res: Response): Promise<void
         const now = new Date();
         const feedWhere = {
             status: StrangersMeetStatus.APPROVED,
+            paymentStatus: StrangersMeetPaymentStatus.PAID,
             eventDateTime: { [Op.gte]: now },
         };
 
@@ -644,9 +645,12 @@ export const getFeedRequests = async (req: Request, res: Response): Promise<void
             offset,
         });
 
-        // Fallback for Live Feed: If no future events exist, display approved events so Live Feed tab is available
+        // Fallback for Live Feed: If no future events exist, display approved and paid events so Live Feed tab is available
         if (count === 0) {
-            const fallbackWhere = { status: StrangersMeetStatus.APPROVED };
+            const fallbackWhere = {
+                status: StrangersMeetStatus.APPROVED,
+                paymentStatus: StrangersMeetPaymentStatus.PAID,
+            };
             count = await StrangersMeetRequest.count({ where: fallbackWhere });
             rows = await StrangersMeetRequest.findAll({
                 where: fallbackWhere,
@@ -1279,6 +1283,11 @@ export const sendJoinRequest = async (req: Request, res: Response): Promise<void
 
         if (request.userId === userId) {
             res.status(400).json({ success: false, message: 'Host cannot join their own meetup' });
+            return;
+        }
+
+        if (request.status !== StrangersMeetStatus.APPROVED || request.paymentStatus !== StrangersMeetPaymentStatus.PAID) {
+            res.status(400).json({ success: false, message: 'Host has not completed platform deposit payment for this Stranger Meet yet' });
             return;
         }
 

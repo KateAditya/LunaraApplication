@@ -72,10 +72,23 @@ class _StrangersMeetPaymentScreenState
   Future<void> _handlePayment() async {
     setState(() => _isProcessing = true);
 
-    // Call checkout / initiate endpoint on backend
-    final checkoutData = widget.isJoinPayment
-        ? await ApiService.initiateStrangersMeetJoinPayment(widget.request.id)
-        : await ApiService.initiateStrangersMeetPayment(widget.request.id);
+    Map<String, dynamic>? checkoutData;
+    try {
+      checkoutData = widget.isJoinPayment
+          ? await ApiService.initiateStrangersMeetJoinPayment(widget.request.id)
+          : await ApiService.initiateStrangersMeetPayment(widget.request.id);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isProcessing = false);
+      final errorStr = e.toString().replaceAll('Exception: ', '');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(errorStr),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
 
     if (checkoutData == null) {
       if (!mounted) return;
@@ -130,19 +143,33 @@ class _StrangersMeetPaymentScreenState
     if (!mounted) return;
     setState(() => _isProcessing = true);
 
-    final result = widget.isJoinPayment
-        ? await ApiService.payStrangersMeetJoin(
-            widget.request.id,
-            orderId,
-            paymentId,
-            signature,
-          )
-        : await ApiService.payStrangersMeetRequest(
-            widget.request.id,
-            orderId,
-            paymentId,
-            signature,
-          );
+    Map<String, dynamic>? result;
+    try {
+      result = widget.isJoinPayment
+          ? await ApiService.payStrangersMeetJoin(
+              widget.request.id,
+              orderId,
+              paymentId,
+              signature,
+            )
+          : await ApiService.payStrangersMeetRequest(
+              widget.request.id,
+              orderId,
+              paymentId,
+              signature,
+            );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isProcessing = false);
+      final errorStr = e.toString().replaceAll('Exception: ', '');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(errorStr),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
 
     if (!mounted) return;
 

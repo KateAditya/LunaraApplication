@@ -270,6 +270,37 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
                 const SizedBox(height: 16),
                 const Divider(),
                 const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: LunaraTheme.electricViolet.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.rocket_launch_rounded,
+                        color: LunaraTheme.electricViolet,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Admin approved your request! Pay deposit of ₹${req.paymentAmount?.toStringAsFixed(0) ?? '0'} to publish it to the Home Screen.',
+                          style: const TextStyle(
+                            color: LunaraTheme.electricViolet,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -291,7 +322,7 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                       ),
-                      child: const Text('PROCEED TO PAYMENT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                      child: const Text('PAY PLATFORM FEE & PUBLISH', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
                     ),
                   ],
                 ),
@@ -507,17 +538,21 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
 
   Future<void> _onMarkCompleted(StrangersMeetRequest req) async {
     setState(() => _isLoading = true);
-    final success = await ApiService.completeStrangersMeet(req.id);
-    if (!mounted) return;
-    if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Meetup marked as successfully completed! 🎉')),
-      );
-      _loadRequests();
-    } else {
+    try {
+      final success = await ApiService.completeStrangersMeet(req.id);
+      if (!mounted) return;
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Meetup marked as successfully completed! 🎉')),
+        );
+        _loadRequests();
+      }
+    } catch (e) {
+      if (!mounted) return;
       setState(() => _isLoading = false);
+      final errorStr = e.toString().replaceAll('Exception: ', '');
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to mark meet as completed. Please try again.'), backgroundColor: Colors.red),
+        SnackBar(content: Text(errorStr), backgroundColor: Colors.red),
       );
     }
   }
@@ -564,17 +599,21 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
               }
               Navigator.pop(ctx);
               setState(() => _isLoading = true);
-              final success = await ApiService.submitStrangersMeetSettlement(req.id, bankDetails);
-              if (!mounted) return;
-              if (success) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Settlement request submitted successfully!')),
-                );
-                _loadRequests();
-              } else {
+              try {
+                final success = await ApiService.submitStrangersMeetSettlement(req.id, bankDetails);
+                if (!mounted) return;
+                if (success) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Settlement request submitted successfully!')),
+                  );
+                  _loadRequests();
+                }
+              } catch (e) {
+                if (!mounted) return;
                 setState(() => _isLoading = false);
+                final errorStr = e.toString().replaceAll('Exception: ', '');
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Failed to submit settlement request'), backgroundColor: Colors.red),
+                  SnackBar(content: Text(errorStr), backgroundColor: Colors.red),
                 );
               }
             },
@@ -593,20 +632,22 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
     String label = status.toUpperCase();
 
     if (status == 'pending') {
-      bg = Colors.orange.withValues(alpha: 0.1);
-      text = Colors.orange;
+      bg = Colors.orange.withValues(alpha: 0.15);
+      text = Colors.orange[800]!;
+      label = 'PENDING APPROVAL';
     } else if (status == 'rejected') {
-      bg = Colors.red.withValues(alpha: 0.1);
-      text = Colors.red;
+      bg = Colors.red.withValues(alpha: 0.15);
+      text = Colors.red[800]!;
+      label = 'REJECTED';
     } else {
       if (paymentStatus == 'paid') {
-        bg = Colors.green.withValues(alpha: 0.1);
-        text = Colors.green;
-        label = 'PAID';
+        bg = Colors.green.withValues(alpha: 0.15);
+        text = Colors.green[800]!;
+        label = 'PAID & LIVE';
       } else {
-        bg = LunaraTheme.electricViolet.withValues(alpha: 0.1);
-        text = LunaraTheme.electricViolet;
-        label = 'APPROVED';
+        bg = Colors.amber.withValues(alpha: 0.2);
+        text = Colors.amber[900]!;
+        label = 'APPROVED - PAYMENT PENDING';
       }
     }
 

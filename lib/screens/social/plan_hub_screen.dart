@@ -3890,7 +3890,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                       if (!mounted) return;
                                       setSheetState(() {
                                         isPosting = false;
-                                        sheetErrorMsg = 'Error: $e';
+                                        sheetErrorMsg = e.toString().replaceAll('Exception: ', '');
                                       });
                                     }
                                     return;
@@ -5547,66 +5547,77 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               ),
                             );
 
-                            final success =
-                                await ApiService.submitStrangersMeetRequest(
-                                  venueId: selectedVenue!.id,
-                                  subject: subjectCtrl.text.trim(),
-                                  tagline: taglineCtrl.text.trim(),
-                                  eventDateTime: _formatToISTString(
-                                    selectedDate!,
-                                    selectedTime!,
-                                  ),
-                                  numberOfPersons: numberOfPersons,
-                                  chargesPerHead: 0.0,
-                                  mobileNumber: mobileCtrl.text.trim(),
-                                  alternateMobileNumber: altMobileCtrl.text
-                                      .trim(),
-                                  // Bank/UPI/UPI Number details
-                                  upiId: selectedPaymentOption == 'upi_id'
-                                      ? upiCtrl.text.trim()
-                                      : null,
-                                  upiNumber:
-                                      selectedPaymentOption == 'upi_number'
-                                      ? upiNumberCtrl.text.trim()
-                                      : null,
-                                  bankName: selectedPaymentOption == 'bank'
-                                      ? bankNameCtrl.text.trim()
-                                      : null,
-                                  accountNumber: selectedPaymentOption == 'bank'
-                                      ? accountNumberCtrl.text.trim()
-                                      : null,
-                                  accountHolderName:
-                                      selectedPaymentOption == 'bank'
-                                      ? accountHolderCtrl.text.trim()
-                                      : null,
-                                  ifscCode: selectedPaymentOption == 'bank'
-                                      ? ifscCtrl.text.trim()
-                                      : null,
-                                  foodPreference: foodPreference,
-                                  drinkPreference: drinkPreference,
-                                );
-
-                            if (context.mounted) {
-                              Navigator.pop(context); // Close loading dialog
-                            }
-
-                            if (success) {
-                              if (context.mounted) {
-                                Navigator.pop(context); // Close bottom sheet
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Request submitted successfully! Admin will review it.',
+                            try {
+                              final success =
+                                  await ApiService.submitStrangersMeetRequest(
+                                    venueId: selectedVenue!.id,
+                                    subject: subjectCtrl.text.trim(),
+                                    tagline: taglineCtrl.text.trim(),
+                                    eventDateTime: _formatToISTString(
+                                      selectedDate!,
+                                      selectedTime!,
                                     ),
-                                    backgroundColor: Colors.green,
-                                  ),
-                                );
-                              }
-                            } else {
+                                    numberOfPersons: numberOfPersons,
+                                    chargesPerHead: 0.0,
+                                    mobileNumber: mobileCtrl.text.trim(),
+                                    alternateMobileNumber: altMobileCtrl.text
+                                        .trim(),
+                                    // Bank/UPI/UPI Number details
+                                    upiId: selectedPaymentOption == 'upi_id'
+                                        ? upiCtrl.text.trim()
+                                        : null,
+                                    upiNumber:
+                                        selectedPaymentOption == 'upi_number'
+                                        ? upiNumberCtrl.text.trim()
+                                        : null,
+                                    bankName: selectedPaymentOption == 'bank'
+                                        ? bankNameCtrl.text.trim()
+                                        : null,
+                                    accountNumber: selectedPaymentOption == 'bank'
+                                        ? accountNumberCtrl.text.trim()
+                                        : null,
+                                    accountHolderName:
+                                        selectedPaymentOption == 'bank'
+                                        ? accountHolderCtrl.text.trim()
+                                        : null,
+                                    ifscCode: selectedPaymentOption == 'bank'
+                                        ? ifscCtrl.text.trim()
+                                        : null,
+                                    foodPreference: foodPreference,
+                                    drinkPreference: drinkPreference,
+                                  );
+
                               if (context.mounted) {
+                                Navigator.pop(context); // Close loading dialog
+                              }
+
+                              if (success) {
+                                if (context.mounted) {
+                                  Navigator.pop(context); // Close bottom sheet
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Request submitted successfully! Admin will review it.',
+                                      ),
+                                      backgroundColor: Colors.green,
+                                    ),
+                                  );
+                                }
+                              } else {
+                                if (context.mounted) {
+                                  setSheetState(() {
+                                    sheetErrorMsg =
+                                        'Failed to submit request. Please try again.';
+                                  });
+                                }
+                              }
+                            } catch (e) {
+                              if (context.mounted) {
+                                Navigator.pop(context); // Close loading dialog
                                 setSheetState(() {
-                                  sheetErrorMsg =
-                                      'Failed to submit request. Please try again.';
+                                  sheetErrorMsg = e
+                                      .toString()
+                                      .replaceAll('Exception: ', '');
                                 });
                               }
                             }

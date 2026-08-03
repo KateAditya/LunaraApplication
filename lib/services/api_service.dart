@@ -1232,23 +1232,24 @@ class ApiService {
     String id,
   ) async {
     final userId = currentUserId;
-    if (userId == null) return null;
+    if (userId == null) throw Exception('User not logged in');
 
     try {
       final response = await post(
         '/api/mobile/strangers-meet/$id/initiate-payment',
         body: {'userId': userId},
       );
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          return data;
-        }
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        return data;
+      } else {
+        final msg = data['message'] ?? data['error'] ?? 'Failed to initiate payment';
+        throw Exception(msg);
       }
     } catch (e) {
       debugPrint('initiateStrangersMeetPayment error: $e');
+      rethrow;
     }
-    return null;
   }
 
   static Future<Map<String, dynamic>?> payStrangersMeetRequest(
@@ -1258,7 +1259,7 @@ class ApiService {
     String signature,
   ) async {
     final userId = currentUserId;
-    if (userId == null) return null;
+    if (userId == null) throw Exception('User not logged in');
 
     try {
       final response = await post(
@@ -1270,16 +1271,17 @@ class ApiService {
           'razorpay_signature': signature,
         },
       );
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          return data['data'];
-        }
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        return data['data'];
+      } else {
+        final msg = data['message'] ?? data['error'] ?? 'Failed to confirm payment';
+        throw Exception(msg);
       }
     } catch (e) {
       debugPrint('payStrangersMeetRequest error: $e');
+      rethrow;
     }
-    return null;
   }
 
   static Future<bool> updateStrangersMeetCharges(String id, double chargesPerHead) async {
@@ -1308,23 +1310,24 @@ class ApiService {
     String id,
   ) async {
     final userId = currentUserId;
-    if (userId == null) return null;
+    if (userId == null) throw Exception('User not logged in');
 
     try {
       final response = await post(
         '/api/mobile/strangers-meet/$id/join/initiate-payment',
         body: {'userId': userId},
       );
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          return data;
-        }
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        return data;
+      } else {
+        final msg = data['message'] ?? data['error'] ?? 'Failed to initiate join payment';
+        throw Exception(msg);
       }
     } catch (e) {
       debugPrint('initiateStrangersMeetJoinPayment error: $e');
+      rethrow;
     }
-    return null;
   }
 
   static Future<Map<String, dynamic>?> payStrangersMeetJoin(
@@ -1334,7 +1337,7 @@ class ApiService {
     String signature,
   ) async {
     final userId = currentUserId;
-    if (userId == null) return null;
+    if (userId == null) throw Exception('User not logged in');
 
     try {
       final response = await post(
@@ -1346,35 +1349,39 @@ class ApiService {
           'razorpay_signature': signature,
         },
       );
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          return data['data'];
-        }
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        return data['data'];
+      } else {
+        final msg = data['message'] ?? data['error'] ?? 'Failed to confirm join payment';
+        throw Exception(msg);
       }
     } catch (e) {
       debugPrint('payStrangersMeetJoin error: $e');
+      rethrow;
     }
-    return null;
   }
 
   static Future<bool> completeStrangersMeet(String id) async {
     final userId = currentUserId;
-    if (userId == null) return false;
+    if (userId == null) throw Exception('User not logged in');
 
     try {
       final response = await patch(
         '/api/mobile/strangers-meet/$id/complete',
         body: {'userId': userId},
       );
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data['success'] == true;
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        return true;
+      } else {
+        final msg = data['message'] ?? data['error'] ?? 'Failed to complete strangers meet';
+        throw Exception(msg);
       }
     } catch (e) {
       debugPrint('completeStrangersMeet error: $e');
+      rethrow;
     }
-    return false;
   }
 
   static Future<bool> sendStrangersMeetJoinRequest(
@@ -1383,7 +1390,7 @@ class ApiService {
     String? drinkPreference,
   }) async {
     final userId = currentUserId;
-    if (userId == null) return false;
+    if (userId == null) throw Exception('User not logged in');
 
     try {
       final response = await post(
@@ -1394,14 +1401,17 @@ class ApiService {
           if (drinkPreference != null && drinkPreference.isNotEmpty) 'drinkPreference': drinkPreference,
         },
       );
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data['success'] == true;
+      final data = jsonDecode(response.body);
+      if ((response.statusCode == 201 || response.statusCode == 200) && data['success'] == true) {
+        return true;
+      } else {
+        final msg = data['message'] ?? data['error'] ?? 'Failed to send join request';
+        throw Exception(msg);
       }
     } catch (e) {
       debugPrint('sendStrangersMeetJoinRequest error: $e');
+      rethrow;
     }
-    return false;
   }
 
   static Future<bool> handleStrangersMeetJoinRequest(
@@ -1410,21 +1420,24 @@ class ApiService {
     String action,
   ) async {
     final userId = currentUserId;
-    if (userId == null) return false;
+    if (userId == null) throw Exception('User not logged in');
 
     try {
       final response = await patch(
         '/api/mobile/strangers-meet/$id/join-request/$joinerId',
         body: {'userId': userId, 'action': action},
       );
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data['success'] == true;
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        return true;
+      } else {
+        final msg = data['message'] ?? data['error'] ?? 'Failed to handle join request';
+        throw Exception(msg);
       }
     } catch (e) {
       debugPrint('handleStrangersMeetJoinRequest error: $e');
+      rethrow;
     }
-    return false;
   }
 
   static Future<bool> submitStrangersMeetSettlement(
@@ -1432,21 +1445,24 @@ class ApiService {
     String bankDetails,
   ) async {
     final userId = currentUserId;
-    if (userId == null) return false;
+    if (userId == null) throw Exception('User not logged in');
 
     try {
       final response = await post(
         '/api/mobile/strangers-meet/$id/settlement-request',
         body: {'userId': userId, 'bankDetails': bankDetails},
       );
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data['success'] == true;
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        return true;
+      } else {
+        final msg = data['message'] ?? data['error'] ?? 'Failed to submit settlement request';
+        throw Exception(msg);
       }
     } catch (e) {
       debugPrint('submitStrangersMeetSettlement error: $e');
+      rethrow;
     }
-    return false;
   }
 
   /// Fetch financial breakdown for a Strangers Meet (platform fee, host profit, settlement)

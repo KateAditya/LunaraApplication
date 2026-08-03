@@ -354,13 +354,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             final now = DateTime.now();
             final activeStrangersMeets = rawStrangersMeet.where((meet) {
               final status = meet['status']?.toString().toLowerCase();
-              if (status == 'ended' ||
-                  status == 'expired' ||
-                  status == 'completed' ||
-                  status == 'cancelled' ||
-                  status == 'rejected') {
-                return false;
-              }
+              final payStatus = (meet['paymentStatus'] ?? meet['payment_status'])?.toString().toLowerCase();
+
+              // Require approved status AND paid host deposit
+              if (status != 'approved') return false;
+              if (payStatus != 'paid') return false;
+
               final dtStr = (meet['eventDateTime'] ?? meet['event_date_time'])?.toString();
               if (dtStr != null && dtStr.isNotEmpty) {
                 final dt = DateTime.tryParse(dtStr)?.toLocal();
