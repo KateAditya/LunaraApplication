@@ -2285,6 +2285,8 @@ class ApiService {
     return false;
   }
 
+  static bool get isLoggedIn => _authToken != null && _authToken!.trim().isNotEmpty;
+
   static String? get currentUserId {
     if (_authToken != null && _authToken!.trim().isNotEmpty) {
       try {

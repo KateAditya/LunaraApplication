@@ -127,32 +127,28 @@ class _SplashScreenState extends State<SplashScreen> {
       return;
     }
 
-    // Check 2: Strictly gate access - only allow Dashboard if user is authenticated & fully registered
-    if (ApiService.currentUserId != null) {
+    // Check 2: Keep user logged in if authentication token exists in storage
+    if (ApiService.isLoggedIn || ApiService.currentUserId != null) {
       try {
-        final user = await ApiService.fetchProfile();
-        final isRegistrationComplete = user != null &&
-            (user.displayName != null || user.firstName.isNotEmpty);
-
-        if (!mounted) return;
-
-        if (isRegistrationComplete) {
-          Navigator.pushReplacement(
-            context,
-            PageRouteBuilder(
-              pageBuilder: (_, _, _) => const Dashboard(),
-              transitionsBuilder: (_, a, _, child) => FadeTransition(opacity: a, child: child),
-              transitionDuration: const Duration(milliseconds: 400),
-            ),
-          );
-          return;
-        }
+        await ApiService.fetchProfile();
       } catch (e) {
         debugPrint('Error fetching profile in splash: $e');
       }
+
+      if (!mounted) return;
+
+      Navigator.pushReplacement(
+        context,
+        PageRouteBuilder(
+          pageBuilder: (_, _, _) => const Dashboard(),
+          transitionsBuilder: (_, a, _, child) => FadeTransition(opacity: a, child: child),
+          transitionDuration: const Duration(milliseconds: 400),
+        ),
+      );
+      return;
     }
 
-    // Fallback: If not logged in or registration incomplete, redirect to Welcome / Registration
+    // Fallback: If user is not logged in, redirect to Welcome / Registration
     if (!mounted) return;
     Navigator.pushReplacement(
       context,

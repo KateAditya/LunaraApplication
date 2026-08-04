@@ -62,7 +62,7 @@ router.put('/profile-setup', profileSetupValidation, mobileUserController.comple
  * In production, attach the authenticate middleware and use req.user.id.
  * Returns the user's name and profile photo.
  */
-router.get('/userprofile', mobileUserController.getMyProfile);
+router.get('/userprofile', optionalAuth, mobileUserController.getMyProfile);
 
 /**
  * GET /api/mobile/user/customers

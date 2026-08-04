@@ -92,7 +92,7 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
     return GestureDetector(
       onTap: () => Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => const ProfileScreen()),
+        MaterialPageRoute(builder: (_) => ProfileScreen(user: _currentUser)),
       ).then((_) => _loadProfile()),
       child: Padding(
         padding: const EdgeInsets.only(bottom: 24),

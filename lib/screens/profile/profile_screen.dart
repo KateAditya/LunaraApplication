@@ -215,18 +215,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
           final customers = await ApiService.fetchCustomers();
           if (customers.isNotEmpty && mounted) {
             final String? currentId = ApiService.currentUserId;
-            final userMap = customers.firstWhere(
-              (c) => c['id'] == currentId || c['_id'] == currentId,
-              orElse: () => customers.first,
-            );
-            final fallbackUser = User.fromJson(userMap);
-            ApiService.cachedCurrentUser = fallbackUser;
-            setState(() {
-              _displayUser = fallbackUser;
-              _isMe = true;
-              _isLoading = false;
-            });
-            _updateCurrentProfileIndex();
+            Map<String, dynamic>? userMap;
+            if (currentId != null && currentId.isNotEmpty) {
+              try {
+                userMap = customers.firstWhere(
+                  (c) => c['id'] == currentId || c['_id'] == currentId,
+                );
+              } catch (_) {}
+            }
+            if (userMap != null) {
+              final fallbackUser = User.fromJson(userMap);
+              ApiService.cachedCurrentUser = fallbackUser;
+              setState(() {
+                _displayUser = fallbackUser;
+                _isMe = true;
+                _isLoading = false;
+              });
+              _updateCurrentProfileIndex();
+            } else if (mounted) {
+              setState(() {
+                _isLoading = false;
+              });
+            }
           } else if (mounted) {
             setState(() {
               _displayUser = null;
