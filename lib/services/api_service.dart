@@ -191,8 +191,14 @@ class ApiService {
       }
       targetUserId ??= currentUserId ?? cachedCurrentUser?.id;
       if (targetUserId == null || targetUserId == 'undefined' || targetUserId == 'null' || targetUserId.trim().isEmpty) {
-        debugPrint('Error fetching profile: targetUserId is null');
-        return cachedCurrentUser;
+        if (_authToken == null) {
+          await initAuthToken();
+        }
+        targetUserId = currentUserId ?? cachedCurrentUser?.id;
+        if (targetUserId == null || targetUserId == 'undefined' || targetUserId == 'null' || targetUserId.trim().isEmpty) {
+          debugPrint('Error fetching profile: targetUserId is null');
+          return cachedCurrentUser;
+        }
       }
 
       // Use query parameter only, as Flutter Web (fetch) does not allow bodies in GET requests
@@ -331,7 +337,11 @@ class ApiService {
 
   static Future<List<Map<String, dynamic>>> fetchCustomers() async {
     try {
-      final response = await get('/api/mobile/user/customers');
+      final userId = currentUserId;
+      final response = await get(
+        '/api/mobile/user/customers',
+        queryParameters: userId != null ? {'userId': userId} : null,
+      );
       //debugPrint('Customers Response Status: ${response.statusCode}');
       //debugPrint('Customers Response Body: ${response.body}');
 
@@ -2326,11 +2336,17 @@ class ApiService {
     if (userId == null) return [];
     await loadLocalReadIds();
     try {
+      // Limit to max 20 IDs in query parameter to avoid HTTP 414 / 400 URL length limits
+      final recentReadNotifIds = localReadNotificationIds.toList();
+      final slicedNotifIds = recentReadNotifIds.length > 20
+          ? recentReadNotifIds.sublist(recentReadNotifIds.length - 20)
+          : recentReadNotifIds;
+
       final response = await get(
         '/api/mobile/user/notifications',
         queryParameters: {
           'userId': userId,
-          'readNotificationIds': localReadNotificationIds.join(','),
+          'readNotificationIds': slicedNotifIds.join(','),
         },
       );
       if (response.statusCode == 200) {
@@ -2351,12 +2367,24 @@ class ApiService {
     }
     await loadLocalReadIds();
     try {
+      // Limit to max 20 IDs in query parameters to avoid HTTP 414 / 400 URL length limits
+      final recentReqIds = localReadRequestIds.toList();
+      const maxSlice = 20;
+      final slicedReqIds = recentReqIds.length > maxSlice
+          ? recentReqIds.sublist(recentReqIds.length - maxSlice)
+          : recentReqIds;
+
+      final recentNotifIds = localReadNotificationIds.toList();
+      final slicedNotifIds = recentNotifIds.length > maxSlice
+          ? recentNotifIds.sublist(recentNotifIds.length - maxSlice)
+          : recentNotifIds;
+
       final response = await get(
         '/api/mobile/user/badge-counts',
         queryParameters: {
           'userId': userId,
-          'readRequestIds': localReadRequestIds.join(','),
-          'readNotificationIds': localReadNotificationIds.join(','),
+          'readRequestIds': slicedReqIds.join(','),
+          'readNotificationIds': slicedNotifIds.join(','),
         },
       );
       if (response.statusCode == 200) {

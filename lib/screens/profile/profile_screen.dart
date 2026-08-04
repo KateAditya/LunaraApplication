@@ -748,6 +748,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 onPressed: () {
                   setState(() => _isLoading = true);
                   _initUser();
+                  _loadAllProfiles();
                 },
                 icon: const Icon(Icons.refresh_rounded),
                 label: const Text('Retry'),
