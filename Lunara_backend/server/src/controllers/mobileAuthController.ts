@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { Op } from 'sequelize';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import { User, UserProfile, UserPreference, EmailVerification, OTPVerification } from '../models';
 import { OTPPurpose } from '../models/OTPVerification';
 import { UserRole } from '../models/User';
@@ -437,17 +438,37 @@ export const mobileResetPassword = async (req: Request, res: Response): Promise<
         const cleanPhone = SMSService.normalizePhone(phone);
         const cleanOtp = String(otp).trim();
 
+        if (newPassword.length < 3) {
+            return res.status(400).json({ success: false, message: 'Password must be at least 3 characters long' });
+        }
+
         // Find user
         const user = await User.findOne({ where: { phone: cleanPhone } });
         if (!user) {
             return res.status(404).json({ success: false, message: 'No account found with this phone number' });
         }
 
-        // Attempt real OTP verification
-        const vResult = await OTPVerification.verifyOTP(cleanPhone, cleanOtp, OTPPurpose.PASSWORD_RESET);
+        // Find OTP record
+        const hashedCode = crypto.createHash('sha256').update(cleanOtp).digest('hex');
+        const otpRecord = await OTPVerification.findOne({
+            where: { phone: cleanPhone, purpose: OTPPurpose.PASSWORD_RESET },
+            order: [['createdAt', 'DESC']],
+        });
 
-        if (!vResult.success) {
-            return res.status(400).json({ success: false, code: 'INVALID_OTP', message: vResult.message });
+        if (!otpRecord) {
+            return res.status(400).json({ success: false, message: 'OTP record not found. Please request a new code.' });
+        }
+
+        if (otpRecord.isExpired()) {
+            return res.status(400).json({ success: false, message: 'OTP has expired. Please request a new one.' });
+        }
+
+        // Check if code matches OR if it was verified recently (within last 15 minutes) during this reset flow
+        const matchesCode = otpRecord.otpCode === hashedCode;
+        const recentlyVerified = otpRecord.verifiedAt && (Date.now() - new Date(otpRecord.verifiedAt).getTime() < 15 * 60 * 1000);
+
+        if (!matchesCode && !recentlyVerified) {
+            return res.status(400).json({ success: false, code: 'INVALID_OTP', message: 'Invalid OTP code.' });
         }
 
         // Hash new password
@@ -457,6 +478,10 @@ export const mobileResetPassword = async (req: Request, res: Response): Promise<
         // Update user
         user.passwordHash = passwordHash;
         await user.save();
+
+        // Mark OTP as verified with current timestamp
+        otpRecord.verifiedAt = new Date();
+        await otpRecord.save();
 
         logger.info(`[MobileResetPassword] Password reset successful for user: ${user.email} / ${user.phone}`);
 

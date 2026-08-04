@@ -1054,13 +1054,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               ),
             ],
           ),
-          IconButton(
-            icon: const Icon(Icons.search_rounded, size: 24),
-            onPressed: () {
-              _loadFeed(showLoader: true);
-            },
-            tooltip: 'Search & Refresh',
-          ),
+          const SizedBox(width: 48),
         ],
       ),
     );

@@ -232,11 +232,15 @@ class AuthService {
     }
   }
 
-  static Future<String?> verifyOtp(String phone, String otp) async {
+  static Future<String?> verifyOtp(String phone, String otp, {String? purpose}) async {
     try {
       final response = await ApiService.post(
         '/api/mobile/auth/verify-otp',
-        body: {'phone': phone, 'otp': otp},
+        body: {
+          'phone': phone,
+          'otp': otp,
+          'purpose':? purpose,
+        },
       );
       final respData = jsonDecode(response.body);
       if (response.statusCode == 200 || response.statusCode == 201) {

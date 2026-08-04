@@ -473,9 +473,6 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                     _buildViewPlansButton(),
                   ],
                   _buildDetailsSection(),
-                  const SizedBox(height: 32),
-                  _buildPhotoGridLabel(),
-                  _buildPhotoGrid(),
                   const SizedBox(height: 100),
                 ],
               ),
@@ -1139,7 +1136,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                     isSuperLiked ? Icons.star : Icons.star_border,
                     color: Colors.white,
                   ),
-                  onPressed: (isActed || superLikeDisabled)
+                  onPressed: (isSuperLiked || superLikeDisabled)
                       ? null
                       : widget.onSuper,
                 ),
@@ -1199,49 +1196,6 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
     );
   }
 
-  Widget _buildPhotoGridLabel() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      child: Row(
-        children: [
-          Container(
-            width: 4,
-            height: 18,
-            decoration: BoxDecoration(
-              gradient: LunaraTheme.primaryGradient,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            'MOMENTS',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-              color: isDark ? Colors.white : Colors.black,
-              letterSpacing: 1,
-              fontFamily: 'AllroundGothic',
-            ),
-          ),
-          const Spacer(),
-          TextButton(
-            onPressed: () {},
-            child: const Text(
-              'VIEW ALL',
-              style: TextStyle(
-                color: LunaraTheme.electricViolet,
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildDetailsSection() {
     final user = _currentUser;
@@ -1497,100 +1451,6 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
     );
   }
 
-  Widget _buildPhotoGrid() {
-    final photos = _currentUser.photos;
-    final int count = photos.isEmpty ? 0 : photos.length;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    if (count == 0) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.03)
-                : Colors.grey[50],
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.05)
-                  : Colors.grey[200]!,
-            ),
-          ),
-          child: const Center(
-            child: Text(
-              'No moments uploaded yet.',
-              style: TextStyle(
-                color: Colors.black38,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return GridView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-        childAspectRatio: 1,
-      ),
-      itemCount: count,
-      itemBuilder: (context, index) {
-        return GestureDetector(
-          onTap: () {
-            final allPhotos = _userPhotos;
-            final targetPhoto = photos[index];
-            final targetIdx = allPhotos.indexOf(targetPhoto);
-            if (targetIdx != -1) {
-              setState(() {
-                _currentPhotoIndex = targetIdx;
-              });
-            }
-          },
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.08)
-                    : Colors.black.withValues(alpha: 0.05),
-                width: 1.5,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Image.network(
-              photos[index],
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => Container(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.03)
-                    : Colors.grey[50],
-                child: const Icon(
-                  Icons.broken_image_outlined,
-                  color: Colors.grey,
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
 
   Widget _buildViewPlansButton() {
     return Padding(

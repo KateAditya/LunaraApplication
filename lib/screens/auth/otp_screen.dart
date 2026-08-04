@@ -187,7 +187,13 @@ class _OtpScreenState extends State<OtpScreen>
                                   }
 
                                   setState(() => _isLoading = true);
-                                  final error = await AuthService.verifyOtp(phone, otp);
+                                  final error = await AuthService.verifyOtp(
+                                    phone,
+                                    otp,
+                                    purpose: widget.isRegistration
+                                        ? 'REGISTRATION'
+                                        : 'PASSWORD_RESET',
+                                  );
 
                                   if (!mounted) return;
                                   setState(() => _isLoading = false);
