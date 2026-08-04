@@ -57,6 +57,11 @@ async function initializeDatabase() {
         updated_at TIMESTAMP DEFAULT NOW()
       );
     `);
+    await sequelize.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS block_count INTEGER DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS is_autoblocked BOOLEAN DEFAULT FALSE;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS autoblocked_reason TEXT;
+    `);
     log('✅ users');
 
     // Venues table

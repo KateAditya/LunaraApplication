@@ -12,19 +12,20 @@ import { Op } from 'sequelize';
  */
 export const getUsers = async (req: Request, res: Response): Promise<void | Response> => {
     try {
-        const page = parseInt(req.query.page as string) || 1;
-        const limit = parseInt(req.query.limit as string) || 50;
+        const page = Math.max(1, parseInt(req.query.page as string) || 1);
+        const limit = Math.min(100, parseInt(req.query.limit as string) || 50);
         const offset = (page - 1) * limit;
 
         const { count, rows } = await User.findAndCountAll({
             attributes: { exclude: ['passwordHash', 'mfaSecret'] },
             include: [
-                { model: UserProfile, as: 'profile' },
-                { model: UserPreference, as: 'preferences' }
+                { model: UserProfile, as: 'profile', required: false },
+                { model: UserPreference, as: 'preferences', required: false }
             ],
             limit,
             offset,
             order: [['createdAt', 'DESC']],
+            distinct: true,
         });
 
         res.status(200).json({
@@ -34,11 +35,11 @@ export const getUsers = async (req: Request, res: Response): Promise<void | Resp
             currentPage: page,
             users: rows,
         });
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error fetching users:', error);
         res.status(500).json({
             success: false,
-            message: 'Server Error fetching users',
+            message: error?.message || 'Server Error fetching users',
         });
     }
 };
@@ -236,20 +237,21 @@ export const deleteUser = async (req: Request, res: Response): Promise<void | Re
  */
 export const getAutoblockedUsers = async (req: Request, res: Response): Promise<void | Response> => {
     try {
-        const page = parseInt(req.query.page as string) || 1;
-        const limit = parseInt(req.query.limit as string) || 50;
+        const page = Math.max(1, parseInt(req.query.page as string) || 1);
+        const limit = Math.min(100, parseInt(req.query.limit as string) || 50);
         const offset = (page - 1) * limit;
 
         const { count, rows } = await User.findAndCountAll({
             where: { isAutoblocked: true },
             attributes: { exclude: ['passwordHash', 'mfaSecret'] },
             include: [
-                { model: UserProfile, as: 'profile' },
-                { model: UserPreference, as: 'preferences' }
+                { model: UserProfile, as: 'profile', required: false },
+                { model: UserPreference, as: 'preferences', required: false }
             ],
             limit,
             offset,
             order: [['createdAt', 'DESC']],
+            distinct: true,
         });
 
         res.status(200).json({
@@ -259,11 +261,11 @@ export const getAutoblockedUsers = async (req: Request, res: Response): Promise<
             currentPage: page,
             users: rows,
         });
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error fetching autoblocked users:', error);
         res.status(500).json({
             success: false,
-            message: 'Server Error fetching autoblocked users',
+            message: error?.message || 'Server Error fetching autoblocked users',
         });
     }
 };
