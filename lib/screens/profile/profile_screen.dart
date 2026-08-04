@@ -223,23 +223,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 );
               } catch (_) {}
             }
-            if (userMap != null) {
-              final fallbackUser = User.fromJson(userMap);
-              ApiService.cachedCurrentUser = fallbackUser;
-              setState(() {
-                _displayUser = fallbackUser;
-                _isMe = true;
-                _isLoading = false;
-              });
-              _updateCurrentProfileIndex();
-            } else if (mounted) {
-              setState(() {
-                _isLoading = false;
-              });
-            }
-          } else if (mounted) {
+            userMap ??= customers.first;
+            final fallbackUser = User.fromJson(userMap);
+            ApiService.cachedCurrentUser = fallbackUser;
             setState(() {
-              _displayUser = null;
+              _displayUser = fallbackUser;
+              _isMe = true;
+              _isLoading = false;
+            });
+            _updateCurrentProfileIndex();
+          } else if (mounted) {
+            final fallback = me ?? ApiService.cachedCurrentUser;
+            setState(() {
+              _displayUser = fallback;
               _isLoading = false;
             });
           }

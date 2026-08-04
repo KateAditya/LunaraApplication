@@ -489,34 +489,42 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
         const search = (req.query.search as string)?.trim();
         const city = (req.query.city as string)?.trim();
 
-        const currentUserId = req.user?.id || (req.query.currentUserId as string) || (req.query.userId as string);
+        const currentUserId = req.user?.id || (req.query.currentUserId as string);
+        const targetUserId = (req.query.userId as string)?.trim();
 
         // Build User-level where clause
         const userWhere: any = { role: UserRole.CUSTOMER, isActive: true };
 
-        const excludeUserIds: string[] = [];
-        if (currentUserId) {
-            excludeUserIds.push(currentUserId);
-            const blocks = await SocialConnection.findAll({
-                where: {
-                    status: ConnectionStatus.BLOCKED,
-                    [Op.or]: [
-                        { requesterId: currentUserId },
-                        { receiverId: currentUserId }
-                    ]
-                }
-            });
-            blocks.forEach(b => {
-                if (b.requesterId === currentUserId) {
-                    excludeUserIds.push(b.receiverId);
-                } else {
-                    excludeUserIds.push(b.requesterId);
-                }
-            });
-        }
+        if (targetUserId && targetUserId !== 'undefined' && targetUserId !== 'null') {
+            userWhere.id = targetUserId;
+        } else {
+            const excludeUserIds: string[] = [];
+            const excludeSelf = req.query.excludeSelf === 'true' || req.query.excludeMe === 'true';
+            if (excludeSelf && currentUserId) {
+                excludeUserIds.push(currentUserId);
+            }
+            if (currentUserId) {
+                const blocks = await SocialConnection.findAll({
+                    where: {
+                        status: ConnectionStatus.BLOCKED,
+                        [Op.or]: [
+                            { requesterId: currentUserId },
+                            { receiverId: currentUserId }
+                        ]
+                    }
+                });
+                blocks.forEach(b => {
+                    if (b.requesterId === currentUserId) {
+                        excludeUserIds.push(b.receiverId);
+                    } else {
+                        excludeUserIds.push(b.requesterId);
+                    }
+                });
+            }
 
-        if (excludeUserIds.length > 0) {
-            userWhere.id = { [Op.notIn]: excludeUserIds };
+            if (excludeUserIds.length > 0) {
+                userWhere.id = { [Op.notIn]: excludeUserIds };
+            }
         }
         if (search) {
             userWhere[Op.or] = [
