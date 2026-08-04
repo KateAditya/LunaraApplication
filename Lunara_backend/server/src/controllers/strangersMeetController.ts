@@ -634,10 +634,11 @@ export const getFeedRequests = async (req: Request, res: Response): Promise<void
         const offset = (pageNum - 1) * limitNum;
 
         const now = new Date();
+        const sixHoursAgo = new Date(now.getTime() - 6 * 60 * 60 * 1000);
         const feedWhere = {
             status: StrangersMeetStatus.APPROVED,
             paymentStatus: StrangersMeetPaymentStatus.PAID,
-            eventDateTime: { [Op.gte]: now },
+            eventDateTime: { [Op.gte]: sixHoursAgo },
         };
 
         let count = await StrangersMeetRequest.count({ where: feedWhere });

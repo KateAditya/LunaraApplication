@@ -363,8 +363,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               final dtStr = (meet['eventDateTime'] ?? meet['event_date_time'])?.toString();
               if (dtStr != null && dtStr.isNotEmpty) {
                 final dt = DateTime.tryParse(dtStr)?.toLocal();
-                if (dt != null && dt.isBefore(now)) {
-                  return false;
+                if (dt != null) {
+                  final eventEndTime = dt.add(const Duration(hours: 6));
+                  if (eventEndTime.isBefore(now)) {
+                    return false;
+                  }
                 }
               }
               return true;
@@ -590,17 +593,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   List<Map<String, dynamic>> get _filteredPartyPlans {
     var plans = _partyPlans;
-    // Hide the current user's own posts
-    final myId = ApiService.currentUserId;
-    if (myId != null) {
-      plans = plans.where((p) {
-        final planUserId =
-            p['userId']?.toString() ??
-            (p['user'] is Map ? p['user']['id']?.toString() : null) ??
-            '';
-        return planUserId != myId;
-      }).toList();
-    }
     if (ApiService.selectedCity != null) {
       plans = plans
           .where(
