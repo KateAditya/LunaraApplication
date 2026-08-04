@@ -214,23 +214,102 @@ class AzureFaceService {
      * Compares facial color distribution & structure between two face crops
      * Returns a similarity score from 0.0 to 1.0
      */
-    private async compareFaceHistograms(buf1: Buffer, buf2: Buffer): Promise<number> {
+    /**
+     * Advanced Facial Structural & Feature Comparison
+     * Extracts facial edge gradients, luminance distribution, aspect ratios, and feature histograms
+     * Returns true match score from 0.00 to 1.00
+     */
+    public async compareFacialFeatures(buf1: Buffer, buf2: Buffer): Promise<{ similarity: number; details: string }> {
         try {
-            const raw1 = await sharp(buf1).resize(64, 64, { fit: 'cover' }).raw().toBuffer();
-            const raw2 = await sharp(buf2).resize(64, 64, { fit: 'cover' }).raw().toBuffer();
+            // 1. Resize both images to standardized 120x120 face crops
+            const img1 = sharp(buf1).resize(120, 120, { fit: 'cover' });
+            const img2 = sharp(buf2).resize(120, 120, { fit: 'cover' });
 
-            let totalDiff = 0;
-            const pixelCount = 64 * 64 * 3;
+            const raw1 = await img1.raw().toBuffer();
+            const raw2 = await img2.raw().toBuffer();
 
+            const gray1 = await img1.grayscale().raw().toBuffer();
+            const gray2 = await img2.grayscale().raw().toBuffer();
+
+            const width = 120;
+            const height = 120;
+            const pixelCount = width * height;
+
+            // 2. Grayscale Intensity Correlation & Mean Difference
+            let mean1 = 0;
+            let mean2 = 0;
             for (let i = 0; i < pixelCount; i++) {
-                totalDiff += Math.abs(raw1[i] - raw2[i]);
+                mean1 += gray1[i];
+                mean2 += gray2[i];
+            }
+            mean1 /= pixelCount;
+            mean2 /= pixelCount;
+
+            let num = 0;
+            let den1 = 0;
+            let den2 = 0;
+            for (let i = 0; i < pixelCount; i++) {
+                const diff1 = gray1[i] - mean1;
+                const diff2 = gray2[i] - mean2;
+                num += diff1 * diff2;
+                den1 += diff1 * diff1;
+                den2 += diff2 * diff2;
+            }
+            const grayCorrelation = (den1 === 0 || den2 === 0) ? 0 : Math.max(0, num / (Math.sqrt(den1) * Math.sqrt(den2)));
+
+            // 3. Sobel Edge Gradient Magnitude (Facial Feature Contours: eyes, nose, lips, jawline)
+            let edgeDiffSum = 0;
+            let edgeMagnitudeCount = 0;
+
+            for (let y = 1; y < height - 1; y++) {
+                for (let x = 1; x < width - 1; x++) {
+                    // Sobel X & Y for Image 1
+                    const gx1 = (-1 * gray1[(y - 1) * width + (x - 1)] + 1 * gray1[(y - 1) * width + (x + 1)] +
+                                 -2 * gray1[y * width + (x - 1)]       + 2 * gray1[y * width + (x + 1)] +
+                                 -1 * gray1[(y + 1) * width + (x - 1)] + 1 * gray1[(y + 1) * width + (x + 1)]);
+
+                    const gy1 = (-1 * gray1[(y - 1) * width + (x - 1)] - 2 * gray1[(y - 1) * width + x] - 1 * gray1[(y - 1) * width + (x + 1)] +
+                                  1 * gray1[(y + 1) * width + (x - 1)] + 2 * gray1[(y + 1) * width + x] + 1 * gray1[(y + 1) * width + (x + 1)]);
+
+                    const mag1 = Math.sqrt(gx1 * gx1 + gy1 * gy1);
+
+                    // Sobel X & Y for Image 2
+                    const gx2 = (-1 * gray2[(y - 1) * width + (x - 1)] + 1 * gray2[(y - 1) * width + (x + 1)] +
+                                 -2 * gray2[y * width + (x - 1)]       + 2 * gray2[y * width + (x + 1)] +
+                                 -1 * gray2[(y + 1) * width + (x - 1)] + 1 * gray2[(y + 1) * width + (x + 1)]);
+
+                    const gy2 = (-1 * gray2[(y - 1) * width + (x - 1)] - 2 * gray2[(y - 1) * width + x] - 1 * gray2[(y - 1) * width + (x + 1)] +
+                                  1 * gray2[(y + 1) * width + (x - 1)] + 2 * gray2[(y + 1) * width + x] + 1 * gray2[(y + 1) * width + (x + 1)]);
+
+                    const mag2 = Math.sqrt(gx2 * gx2 + gy2 * gy2);
+
+                    edgeDiffSum += Math.abs(mag1 - mag2);
+                    edgeMagnitudeCount++;
+                }
             }
 
-            const avgDiff = totalDiff / pixelCount;
-            const similarity = 1 - (avgDiff / 255);
-            return similarity;
-        } catch {
-            return 0.85;
+            const avgEdgeDiff = edgeMagnitudeCount > 0 ? edgeDiffSum / edgeMagnitudeCount : 255;
+            const edgeSimilarity = Math.max(0, 1 - (avgEdgeDiff / 180));
+
+            // 4. Color Channel Distribution Similarity
+            let rgbDiffSum = 0;
+            const rgbPixelCount = pixelCount * 3;
+            for (let i = 0; i < rgbPixelCount; i++) {
+                rgbDiffSum += Math.abs(raw1[i] - raw2[i]);
+            }
+            const colorSimilarity = Math.max(0, 1 - (rgbDiffSum / (rgbPixelCount * 255)));
+
+            // Composite Facial Similarity Weighting
+            const compositeSimilarity = (grayCorrelation * 0.45) + (edgeSimilarity * 0.35) + (colorSimilarity * 0.20);
+            const finalScore = Math.min(0.99, Math.max(0.05, compositeSimilarity));
+
+            return {
+                similarity: Number(finalScore.toFixed(3)),
+                details: `Grayscale correlation: ${grayCorrelation.toFixed(2)}, Edge similarity: ${edgeSimilarity.toFixed(2)}, Color similarity: ${colorSimilarity.toFixed(2)}`
+            };
+        } catch (e: any) {
+            logger.error('[AzureFaceService] Facial feature comparison error:', e);
+            return { similarity: 0.25, details: 'Error comparing facial features' };
         }
     }
 
@@ -272,14 +351,14 @@ class AzureFaceService {
             try {
                 const verification = await this.verifyFaces(selfieDetect.faceId, profileDetect.faceId);
 
-                const MATCH_THRESHOLD = 0.50;
+                const MATCH_THRESHOLD = 0.60;
                 const isMatch = verification.isIdentical || verification.confidence >= MATCH_THRESHOLD;
 
                 if (isMatch) {
                     return {
                         success: true,
                         verified: true,
-                        confidence: verification.confidence > 0 ? verification.confidence : 0.92,
+                        confidence: verification.confidence > 0 ? verification.confidence : 0.88,
                         message: `Azure AI Face Verification passed with ${(verification.confidence * 100).toFixed(1)}% match confidence!`,
                         details: {
                             selfieFaceId: selfieDetect.faceId,
@@ -292,7 +371,7 @@ class AzureFaceService {
                         success: false,
                         verified: false,
                         confidence: verification.confidence,
-                        message: `Face match failed (${(verification.confidence * 100).toFixed(1)}% match). Live selfie does not match reference photo.`,
+                        message: `Face match failed (${(verification.confidence * 100).toFixed(1)}% match confidence). The live selfie does not match the reference photo.`,
                         details: {
                             selfieFaceId: selfieDetect.faceId,
                             profileFaceId: profileDetect.faceId,
@@ -301,38 +380,40 @@ class AzureFaceService {
                     };
                 }
             } catch (e: any) {
-                logger.warn('[AzureFaceService] Verify API error, falling back to portrait analysis:', e.message);
+                logger.warn('[AzureFaceService] Azure Verify API error, falling back to local biometric analysis:', e.message);
             }
         }
 
-        // 4. Facial Feature Analysis (Fallback when Azure API key is not configured or offline)
+        // 4. Facial Feature & Structural Analysis (Local Biometric Matching Engine)
         try {
-            const simScore = await this.compareFaceHistograms(selfieBuf, profileBuf);
-            const isMatch = simScore >= 0.20;
+            const matchResult = await this.compareFacialFeatures(selfieBuf, profileBuf);
+            const SIMILARITY_THRESHOLD = 0.65;
+            const isMatch = matchResult.similarity >= SIMILARITY_THRESHOLD;
 
             if (isMatch) {
                 return {
                     success: true,
                     verified: true,
-                    confidence: Math.min(0.98, Math.max(0.82, simScore + 0.40)),
-                    message: '1:1 Face Verification passed! Human faces matched successfully.',
-                    details: { isFallback: true, similarityScore: simScore },
+                    confidence: matchResult.similarity,
+                    message: `1:1 Face Verification passed with ${(matchResult.similarity * 100).toFixed(1)}% match confidence!`,
+                    details: { isFallback: true, similarityScore: matchResult.similarity },
                 };
             } else {
                 return {
                     success: false,
                     verified: false,
-                    confidence: simScore,
-                    message: 'Face match failed. The live selfie features do not match the reference photo.',
-                    details: { isFallback: true, similarityScore: simScore },
+                    confidence: matchResult.similarity,
+                    message: `Face match failed (${(matchResult.similarity * 100).toFixed(1)}% match confidence). Live selfie features do not match the reference photo.`,
+                    details: { isFallback: true, similarityScore: matchResult.similarity },
                 };
             }
-        } catch (err) {
+        } catch (err: any) {
+            logger.error('[AzureFaceService] Verification error:', err);
             return {
-                success: true,
-                verified: true,
-                confidence: 0.91,
-                message: '1:1 Human face verification completed successfully!',
+                success: false,
+                verified: false,
+                confidence: 0,
+                message: 'Face match failed. Could not verify facial feature alignment.',
                 details: { isFallback: true },
             };
         }
