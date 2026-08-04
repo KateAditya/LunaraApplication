@@ -140,21 +140,12 @@ export const mobileVerifyOTP = async (req: Request, res: Response): Promise<Resp
 
         const cleanOtp = String(otp).trim();
 
-        // Determine target purpose or default to REGISTRATION with PASSWORD_RESET fallback
-        let targetPurpose = OTPPurpose.REGISTRATION;
+        let targetPurpose: OTPPurpose | undefined = undefined;
         if (purpose && Object.values(OTPPurpose).includes(purpose as OTPPurpose)) {
             targetPurpose = purpose as OTPPurpose;
         }
 
-        let result = await OTPVerification.verifyOTP(cleanPhone, cleanOtp, targetPurpose);
-
-        // Fallback check for PASSWORD_RESET if purpose wasn't explicitly passed and REGISTRATION failed
-        if (!result.success && !purpose) {
-            const resetResult = await OTPVerification.verifyOTP(cleanPhone, cleanOtp, OTPPurpose.PASSWORD_RESET);
-            if (resetResult.success) {
-                result = resetResult;
-            }
-        }
+        const result = await OTPVerification.verifyOTP(cleanPhone, cleanOtp, targetPurpose);
 
         if (!result.success) {
             return res.status(400).json({ success: false, message: result.message });

@@ -97,15 +97,24 @@ class OTPVerification
     public static async verifyOTP(
         phone: string,
         rawCode: string,
-        purpose: OTPPurpose
+        purpose?: OTPPurpose
     ): Promise<{ success: boolean; message: string; otp?: OTPVerification }> {
         const cleanPhone = phone.replace(/\D/g, '').slice(-10);
         const hashedCode = crypto.createHash('sha256').update(rawCode).digest('hex');
 
-        const otp = await OTPVerification.findOne({
-            where: { phone: cleanPhone, purpose },
-            order: [['createdAt', 'DESC']],
-        });
+        let otp = purpose
+            ? await OTPVerification.findOne({
+                where: { phone: cleanPhone, purpose },
+                order: [['createdAt', 'DESC']],
+              })
+            : null;
+
+        if (!otp) {
+            otp = await OTPVerification.findOne({
+                where: { phone: cleanPhone },
+                order: [['createdAt', 'DESC']],
+            });
+        }
 
         if (!otp) {
             return { success: false, message: 'OTP not found. Please request a new one.' };
