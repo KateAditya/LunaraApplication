@@ -11,7 +11,10 @@ import { Op } from 'sequelize';
 export const getLargePartyRequests = async (_req: Request, res: Response) => {
     try {
         const requests = await Booking.findAll({
-            where: { isLargePartyRequest: true },
+            where: {
+                isLargePartyRequest: true,
+                numberOfGuests: { [Op.gt]: 20 }
+            },
             include: [
                 { model: User, as: 'customer', attributes: ['id', 'firstName', 'lastName', 'email', 'phone'] },
                 { model: Venue, as: 'venue', attributes: ['id', 'name', 'city'] }
@@ -516,7 +519,10 @@ export const getBookings = async (req: Request, res: Response) => {
         }
 
         if (isGroupRequested) where.isGroupBooking = true;
-        if (isLargeRequested) where.isLargePartyRequest = true;
+        if (isLargeRequested) {
+            where.isLargePartyRequest = true;
+            where.numberOfGuests = { [Op.gt]: 20 };
+        }
         if (isUpcomingRequested) where.isUpcomingNight = true;
 
         if (date === 'today') {

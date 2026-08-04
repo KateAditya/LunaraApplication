@@ -424,6 +424,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 where: {
                     userId: viewerId as string,
                     isLargePartyRequest: true,
+                    numberOfGuests: { [Op.gt]: 20 }
                 },
                 include: [
                     { model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }

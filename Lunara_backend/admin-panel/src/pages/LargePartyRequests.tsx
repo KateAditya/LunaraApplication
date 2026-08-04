@@ -72,6 +72,8 @@ export const LargePartyRequests: React.FC = () => {
     };
 
     const filtered = requests.filter((r) => {
+        const guestCount = r.numberOfGuests || r.guests || 0;
+        if (guestCount <= 20) return false;
         return !search || r.partySubject?.toLowerCase().includes(search.toLowerCase()) || 
                r.customer?.firstName?.toLowerCase().includes(search.toLowerCase()) ||
                r.venue?.name?.toLowerCase().includes(search.toLowerCase());

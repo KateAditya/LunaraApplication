@@ -110,7 +110,7 @@ export class VenueBookingService {
             throw new Error(timingValidation.reason || 'Venue is closed on selected date.');
         }
 
-        const isLargeParty = goingMode === GoingMode.PARTY_REQUEST;
+        const isLargeParty = goingMode === GoingMode.PARTY_REQUEST && numberOfGuests > 20;
 
         if (isLargeParty) {
             const bookingConflictMsg = await checkExistingBookingForDate(userId, bookingDate);
@@ -122,7 +122,7 @@ export class VenueBookingService {
         const pricing = await this.calculateAuthoritativePrice(venueId, packageName, numberOfGuests);
 
         const initialApprovalStatus: AdminApprovalStatus | undefined = isLargeParty
-            ? (numberOfGuests <= 20 ? AdminApprovalStatus.APPROVED : AdminApprovalStatus.PENDING)
+            ? AdminApprovalStatus.PENDING
             : undefined;
 
         const normalizedStart = normalizeStartTime(startTime);
@@ -134,8 +134,8 @@ export class VenueBookingService {
         const planType = isUpcomingNight ? 'upcoming_night' : (isLargeParty ? 'large_group_party' : 'venue_booking');
 
         let razorpayOrder: any = null;
-        // Solo mode or small party (<20) with price > 0 generates Razorpay order immediately
-        if ((goingMode === GoingMode.SOLO || (isLargeParty && numberOfGuests <= 20)) && pricing.totalAmount > 0) {
+        // Solo mode or small party (<= 20) with price > 0 generates Razorpay order immediately
+        if ((goingMode === GoingMode.SOLO || !isLargeParty) && pricing.totalAmount > 0) {
             try {
                 razorpayOrder = await razorpay.orders.create({
                     amount: Math.round(pricing.totalAmount * 100),
