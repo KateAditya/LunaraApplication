@@ -31,7 +31,25 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
   }
 
   Future<void> _loadProfile() async {
-    final user = await ApiService.fetchProfile();
+    User? user = await ApiService.fetchProfile();
+    user ??= ApiService.cachedCurrentUser;
+
+    if (user == null) {
+      final customers = await ApiService.fetchCustomers();
+      if (customers.isNotEmpty) {
+        final currentId = ApiService.currentUserId;
+        Map<String, dynamic>? match;
+        if (currentId != null && currentId.isNotEmpty) {
+          try {
+            match = customers.firstWhere((c) => c['id'] == currentId || c['_id'] == currentId);
+          } catch (_) {}
+        }
+        match ??= customers.first;
+        user = User.fromJson(match);
+        ApiService.cachedCurrentUser = user;
+      }
+    }
+
     if (mounted) {
       setState(() {
         _currentUser = user;

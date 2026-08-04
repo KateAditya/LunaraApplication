@@ -2292,20 +2292,28 @@ class ApiService {
       try {
         final parts = _authToken!.split('.');
         if (parts.length == 3) {
-          final payload = utf8.decode(
-            base64Url.decode(base64Url.normalize(parts[1])),
-          );
+          String normalized = parts[1].replaceAll('-', '+').replaceAll('_', '/');
+          switch (normalized.length % 4) {
+            case 2:
+              normalized += '==';
+              break;
+            case 3:
+              normalized += '=';
+              break;
+          }
+          final payload = utf8.decode(base64.decode(normalized));
           final data = jsonDecode(payload);
           final rawId = data['userId']?.toString() ??
               data['id']?.toString() ??
               data['_id']?.toString() ??
+              data['user_id']?.toString() ??
               data['sub']?.toString();
           if (rawId != null && rawId != 'undefined' && rawId != 'null' && rawId.trim().isNotEmpty) {
             return rawId;
           }
         }
       } catch (e) {
-        debugPrint('Error decoding JWT: $e');
+        debugPrint('Error decoding JWT in currentUserId: $e');
       }
     }
     if (cachedCurrentUser?.id != null && cachedCurrentUser!.id.trim().isNotEmpty) {

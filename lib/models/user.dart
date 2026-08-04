@@ -87,7 +87,12 @@ class User {
     this.pointsCount = 0,
   });
 
-  String get fullName => '$firstName $lastName'.trim().toUpperCase();
+  String get fullName {
+    final String name = '$firstName $lastName'.trim();
+    if (name.isNotEmpty) return name;
+    if (displayName != null && displayName!.trim().isNotEmpty) return displayName!.trim();
+    return '';
+  }
 
   /// Returns true if the user has PRO or ELITE tier subscription
   bool get isPro {
@@ -203,8 +208,8 @@ class User {
 
     return User(
       id: data['id']?.toString() ?? data['_id']?.toString() ?? '',
-      firstName: data['firstName'] ?? data['first_name'] ?? '',
-      lastName: data['lastName'] ?? data['last_name'] ?? '',
+      firstName: data['firstName'] ?? data['first_name'] ?? profile['firstName'] ?? profile['first_name'] ?? profile['displayName'] ?? data['displayName'] ?? data['name'] ?? '',
+      lastName: data['lastName'] ?? data['last_name'] ?? profile['lastName'] ?? profile['last_name'] ?? '',
       email: data['email'] ?? '',
       phone: data['phone'] ?? '',
       profilePhoto:
