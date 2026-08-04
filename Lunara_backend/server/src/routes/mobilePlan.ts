@@ -106,6 +106,42 @@ router.post(
     ctrl.addPlanToWallet
 );
 
+import {
+    createCancellationRequest,
+    getCancellationRequest,
+    respondToCancellationRequest,
+} from '../controllers/cancellationController';
+
+/**
+ * POST /api/mobile/plans/:id/cancellation-request
+ * Initiates a mutual cancellation request for a confirmed Party Plan
+ */
+router.post(
+    '/:id/cancellation-request',
+    [param('id').isUUID(), validate],
+    createCancellationRequest
+);
+
+/**
+ * GET /api/mobile/plans/:id/cancellation-request
+ * Returns cancellation request status for a Party Plan
+ */
+router.get(
+    '/:id/cancellation-request',
+    [param('id').isUUID(), validate],
+    getCancellationRequest
+);
+
+/**
+ * POST /api/mobile/plans/:id/cancellation-request/respond
+ * Recipient approves or rejects a cancellation request
+ */
+router.post(
+    '/:id/cancellation-request/respond',
+    [param('id').isUUID(), validate],
+    respondToCancellationRequest
+);
+
 // ─── Generic plan detail — MUST be last among GET /:id routes ────────────────
 
 /**

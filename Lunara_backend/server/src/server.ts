@@ -196,6 +196,16 @@ app.use('/api/mobile/wallet', mobileWalletRoutes);             // Wallet (Mobile
 app.use('/api/mobile/tickets', mobileTicketRoutes);           // Digital Tickets (Mobile)
 app.use('/api/admin/payments', adminPaymentsRoutes);          // Payments (Admin)
 
+import { getAdminCancellationRequests, checkExpiredOrAutoApprovedRequests } from './controllers/cancellationController';
+
+// Admin — cancellation requests
+app.get('/api/admin/cancellation-requests', getAdminCancellationRequests);
+
+// Run background auto-approval & expiration check for cancellation requests every 15 minutes
+setInterval(() => {
+    checkExpiredOrAutoApprovedRequests().catch(err => logger.error('Cancellation auto-check error:', err));
+}, 15 * 60 * 1000);
+
 // Admin — chat subscription settings
 app.get('/api/admin/settings/chat', getAdminChatSettings);
 app.put('/api/admin/settings/chat', updateAdminChatSettings);

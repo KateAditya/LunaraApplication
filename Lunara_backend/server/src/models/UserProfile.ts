@@ -23,6 +23,7 @@ export interface UserProfileAttributes {
     dailyMatchRequestsCount?: number;
     dailyLikesCount?: number;
     dailyPostsCount?: number;
+    reliabilityScore?: number;
     lastActivityDate?: Date;
 
     createdAt?: Date;
@@ -76,6 +77,7 @@ class UserProfile
     public dailyMatchRequestsCount?: number;
     public dailyLikesCount?: number;
     public dailyPostsCount?: number;
+    public reliabilityScore!: number;
     public lastActivityDate?: Date;
 
     public readonly createdAt!: Date;
@@ -217,6 +219,12 @@ UserProfile.init(
             type: DataTypes.INTEGER,
             allowNull: true,
             defaultValue: 0,
+        },
+        reliabilityScore: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            defaultValue: 100,
+            field: 'reliability_score',
         },
         lastActivityDate: {
             type: DataTypes.DATE,

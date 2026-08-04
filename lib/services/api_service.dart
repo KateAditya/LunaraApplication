@@ -823,7 +823,7 @@ class ApiService {
       return [];
     }
   }
-  // ─── City APIs ──────────────────────────────────────────────────────────────
+  // â”€â”€â”€ City APIs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   static Future<List<String>> fetchCities() async {
     try {
@@ -1143,7 +1143,7 @@ class ApiService {
     return null;
   }
 
-  // ─── Strangers Meet APIs ───────────────────────────────────────────────────
+  // â”€â”€â”€ Strangers Meet APIs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   static Future<bool> submitStrangersMeetRequest({
     required String venueId,
@@ -1528,7 +1528,7 @@ class ApiService {
     return null;
   }
 
-  // ───────────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   static Future<List<HelpArticle>> fetchHelpCenterArticles() async {
     try {
@@ -1854,9 +1854,9 @@ class ApiService {
     return response;
   }
 
-  // ─── Chat Module ───────────────────────────────────────────────────────────
+  // â”€â”€â”€ Chat Module â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  /// Step 2 — GET /api/mobile/chat/conversations?userId=
+  /// Step 2 â€” GET /api/mobile/chat/conversations?userId=
   static Future<List<Map<String, dynamic>>> fetchConversations(
     String userId,
   ) async {
@@ -1878,7 +1878,7 @@ class ApiService {
     return [];
   }
 
-  /// Step 1 — GET /api/mobile/chat/icebreakers
+  /// Step 1 â€” GET /api/mobile/chat/icebreakers
   static Future<List<Map<String, dynamic>>> fetchIcebreakers() async {
     try {
       final response = await get('/api/mobile/chat/icebreakers');
@@ -1895,7 +1895,7 @@ class ApiService {
     return [];
   }
 
-  /// Step 3 — POST /api/mobile/chat/conversations
+  /// Step 3 â€” POST /api/mobile/chat/conversations
   /// Returns conversationId (existing or new).
   static Future<String?> createOrGetConversation({
     required String userId,
@@ -1935,7 +1935,7 @@ class ApiService {
     return null;
   }
 
-  /// Step 4 — GET /api/mobile/chat/conversations/:id/messages
+  /// Step 4 â€” GET /api/mobile/chat/conversations/:id/messages
   static Future<List<Map<String, dynamic>>> fetchMessages(
     String conversationId,
     String userId, {
@@ -1972,7 +1972,7 @@ class ApiService {
     return [];
   }
 
-  /// Step 5A-5E — POST /api/mobile/chat/conversations/:id/messages
+  /// Step 5A-5E â€” POST /api/mobile/chat/conversations/:id/messages
   static Future<Map<String, dynamic>?> sendMessage(
     String conversationId, {
     required String senderId,
@@ -2017,7 +2017,7 @@ class ApiService {
     return null;
   }
 
-  /// Step 6A/6B — PATCH .../messages/:messageId/invitation
+  /// Step 6A/6B â€” PATCH .../messages/:messageId/invitation
   static Future<bool> respondToInvitation(
     String conversationId,
     String messageId, {
@@ -2040,7 +2040,7 @@ class ApiService {
     return false;
   }
 
-  /// Step 7 — PATCH .../conversations/:id/read
+  /// Step 7 â€” PATCH .../conversations/:id/read
   static Future<void> markConversationRead(
     String conversationId,
     String userId,
@@ -2081,7 +2081,7 @@ class ApiService {
     return null;
   }
 
-  /// Step 8 — DELETE .../conversations/:id/messages/:messageId
+  /// Step 8 â€” DELETE .../conversations/:id/messages/:messageId
   static Future<bool> deleteMessage(
     String conversationId,
     String messageId,
@@ -2103,7 +2103,7 @@ class ApiService {
     return false;
   }
 
-  // ─── Push Notification Token ───────────────────────────────────────────────
+  // â”€â”€â”€ Push Notification Token â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /// Sends the FCM device token to the backend for push notification delivery.
   static Future<bool> registerFcmToken(String token) async {
@@ -2280,7 +2280,7 @@ class ApiService {
     return null;
   }
 
-  // ─── Notifications & Local Persistent Read State ────────────────────────────
+  // â”€â”€â”€ Notifications & Local Persistent Read State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   static final Set<String> localReadRequestIds = {};
   static final Set<String> localReadNotificationIds = {};
@@ -2534,7 +2534,7 @@ class ApiService {
     return await http.Response.fromStream(streamedResponse);
   }
 
-  // ── Chat Subscription APIs ──────────────────────────────────────────────────
+  // â”€â”€ Chat Subscription APIs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   static Future<Map<String, dynamic>?> getChatSessionStatus(
     String conversationId,
@@ -2776,7 +2776,7 @@ class ApiService {
     return null;
   }
 
-  // ── Upcoming Night Partner Discovery & Matching ────────────────────────────
+  // â”€â”€ Upcoming Night Partner Discovery & Matching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   static Future<bool> checkNightInterest({
     required String venueId,
@@ -3030,7 +3030,7 @@ class ApiService {
   }
 
 
-  // ── Swipe Status & Subscription Limits ────────────────────────────────────
+  // â”€â”€ Swipe Status & Subscription Limits â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /// Returns the current user's swipe action on [targetUserId] today,
   /// and the plan limits so the UI can enforce them without a server round-trip.
@@ -3186,7 +3186,7 @@ class ApiService {
     return false;
   }
 
-  // ── Subscription API Methods ──────────────────────────────────────────────
+  // â”€â”€ Subscription API Methods â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   static Future<List<dynamic>> fetchSubscriptionPackages() async {
     try {
@@ -3365,7 +3365,7 @@ class ApiService {
     return false;
   }
 
-  // ── Admin helpers ─────────────────────────────────────────────────────────────
+  // â”€â”€ Admin helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /// Admin: Force-expire a user's active subscription immediately
   static Future<bool> adminForceExpireSubscription(
@@ -3507,6 +3507,7 @@ class ApiService {
     }
   }
 
+
   /// Permanently soft-delete the user's account and perform full session cleanup
   static Future<Map<String, dynamic>> deleteAccount({
     required String password,
@@ -3544,7 +3545,7 @@ class ApiService {
     }
   }
 
-  // ── Ticket System Methods & Internal Helpers ───────────────────────
+  // â”€â”€ Ticket System Methods & Internal Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   static Map<String, String> get _authHeaders {
     final headers = {'Content-Type': 'application/json'};
@@ -3599,55 +3600,48 @@ class ApiService {
     return null;
   }
 
-  /// Get secure signed PDF download URL
+  /// Get a secure time-limited download URL for a ticket PDF
   static Future<Map<String, dynamic>> getTicketDownloadUrl(String ticketId) async {
     final userId = currentUserId ?? '';
     try {
-      final response = await _get('/api/mobile/tickets/$ticketId/download?userId=$userId');
-      final data = jsonDecode(response.body);
-      if (response.statusCode == 200 && data['success'] == true) {
-        return {'success': true, 'downloadUrl': data['downloadUrl']};
+      final response = await _get('/api/mobile/tickets/$ticketId/download-url?userId=$userId');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return Map<String, dynamic>.from(data);
+        }
       }
-      return {'success': false, 'message': data['message'] ?? 'Failed to get ticket download link'};
+      return {'success': false, 'message': 'Failed to get download URL'};
     } catch (e) {
-      return {'success': false, 'message': 'Network error getting ticket download link'};
+      debugPrint('getTicketDownloadUrl error: $e');
+      return {'success': false, 'message': 'Network error: $e'};
     }
   }
 
-  /// Create or retrieve secure share token & text
+  /// Create a shareable token for a ticket (returns shareText for WhatsApp/clipboard)
   static Future<Map<String, dynamic>> createTicketShareToken(String ticketId) async {
     final userId = currentUserId ?? '';
     try {
-      final response = await _post('/api/mobile/tickets/$ticketId/share', {'userId': userId});
-      final data = jsonDecode(response.body);
-      if (response.statusCode == 200 && data['success'] == true) {
-        return {
-          'success': true,
-          'shareUrl': data['shareUrl'],
-          'shareText': data['shareText'],
-        };
+      final response = await _post(
+        '/api/mobile/tickets/$ticketId/share-token',
+        {'userId': userId},
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return Map<String, dynamic>.from(data);
+        }
       }
-      return {'success': false, 'message': data['message'] ?? 'Failed to create share link'};
+      return {'success': false, 'message': 'Failed to create share token'};
     } catch (e) {
-      return {'success': false, 'message': 'Network error generating share link'};
+      debugPrint('createTicketShareToken error: $e');
+      return {'success': false, 'message': 'Network error: $e'};
     }
   }
 
-  /// Verify gate scanner QR ticket (Staff verification)
-  static Future<Map<String, dynamic>> verifyGateTicket({String? ticketCode, String? qrToken}) async {
-    try {
-      final response = await _post('/api/mobile/tickets/verify', {
-        'ticketCode': ticketCode,
-        'qrToken': qrToken,
-      });
-      final data = jsonDecode(response.body);
-      return data;
-    } catch (e) {
-      return {'success': false, 'message': 'Network error verifying ticket'};
-    }
-  }
+  // â”€â”€ Safety Check Methods â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  /// Submit Party Plan post-event Safety Check status (SAFE, EXTENDED, NEED_HELP)
+  /// Submit the user's safety check status for a live Party Plan session
   static Future<Map<String, dynamic>> submitSafetyCheckStatus({
     required String checkId,
     required String safetyStatus,
@@ -3656,15 +3650,17 @@ class ApiService {
     double? locationLng,
   }) async {
     try {
-      final response = await _post('/api/mobile/party-plans/safety-checks/respond', {
-        'checkId': checkId,
-        'userId': currentUserId,
+      final body = <String, dynamic>{
         'safetyStatus': safetyStatus,
-        'notes': notes,
-        'locationLat': locationLat,
-        'locationLng': locationLng,
-      });
-      return jsonDecode(response.body);
+        'notes': notes ?? '',
+      };
+      if (locationLat != null) body['locationLat'] = locationLat;
+      if (locationLng != null) body['locationLng'] = locationLng;
+      final response = await _post(
+        '/api/mobile/party-plans/safety-checks/$checkId/respond',
+        body,
+      );
+      return jsonDecode(response.body) as Map<String, dynamic>;
     } catch (e) {
       debugPrint('submitSafetyCheckStatus error: $e');
       return {'success': false, 'message': 'Failed to submit safety check'};
@@ -3679,17 +3675,98 @@ class ApiService {
       final response = await _get('/api/mobile/party-plans/safety-checks/pending?userId=$userId');
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          return data['data'];
+        if (data['success'] == true && data['data'] != null) {
+          return Map<String, dynamic>.from(data['data']);
         }
       }
-      return null;
     } catch (e) {
       debugPrint('fetchPendingSafetyCheck error: $e');
-      return null;
+    }
+    return null;
+  }
+
+  // â”€â”€ Current User Helper (async) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  /// Returns the currently logged-in userId as a Future (nullable String)
+  static Future<String?> getCurrentUserId() async {
+    return currentUserId;
+  }
+
+  // â”€â”€ Party Plan Mutual Cancellation Methods â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  /// Request to cancel a confirmed Party Plan (mutual cancellation flow)
+  static Future<Map<String, dynamic>> requestPartyPlanCancellation({
+    required String planId,
+    required String reason,
+    String? otherReasonText,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) {
+      return {'success': false, 'message': 'Not authenticated'};
+    }
+    try {
+      final body = <String, dynamic>{
+        'userId': userId,
+        'reason': reason,
+      };
+      if (otherReasonText != null && otherReasonText.isNotEmpty) {
+        body['otherReasonText'] = otherReasonText;
+      }
+      final response = await _post(
+        '/api/mobile/party-plans/$planId/cancellation-request',
+        body,
+      );
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('requestPartyPlanCancellation error: $e');
+      return {'success': false, 'message': 'Network error: $e'};
+    }
+  }
+
+  /// Fetch the active cancellation request state for a Party Plan
+  static Future<Map<String, dynamic>?> getPartyPlanCancellationRequest(String planId) async {
+    final userId = currentUserId;
+    if (userId == null) return null;
+    try {
+      final response = await _get('/api/mobile/party-plans/$planId/cancellation-request?userId=$userId');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is Map<String, dynamic>) return data;
+      }
+    } catch (e) {
+      debugPrint('getPartyPlanCancellationRequest error: $e');
+    }
+    return null;
+  }
+
+  /// Approve or reject a received cancellation request
+  static Future<Map<String, dynamic>> respondToPartyPlanCancellationRequest({
+    required String planId,
+    required String requestId,
+    required String action,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) {
+      return {'success': false, 'message': 'Not authenticated'};
+    }
+    try {
+      final response = await _post(
+        '/api/mobile/party-plans/$planId/cancellation-request/respond',
+        {
+          'userId': userId,
+          'requestId': requestId,
+          'action': action,
+        },
+      );
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('respondToPartyPlanCancellationRequest error: $e');
+      return {'success': false, 'message': 'Network error: $e'};
     }
   }
 }
+
+// â”€â”€ Party Plan Request Result â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class PartyPlanRequestResult {
   final bool success;

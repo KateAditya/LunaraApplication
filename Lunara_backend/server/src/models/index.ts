@@ -29,6 +29,7 @@ import GroupParty from './GroupParty';
 import StrangersMeetRequest from './StrangersMeetRequest';
 import StrangersMeetJoiner from './StrangersMeetJoiner';
 import PartyPlanRequest from './PartyPlanRequest';
+import PartyPlanCancellationRequest, { CancellationRequestStatus, CancellationReason } from './PartyPlanCancellationRequest';
 import UserPenalty from './UserPenalty';
 import City from './City';
 import ChatSubscription from './ChatSubscription';
@@ -446,6 +447,13 @@ PartyPlanRequest.belongsTo(PartyPlan, { foreignKey: 'planId', as: 'plan' });
 PartyPlanRequest.belongsTo(User, { foreignKey: 'requesterId', as: 'requester' });
 User.hasMany(PartyPlanRequest, { foreignKey: 'requesterId', as: 'partyPlanRequests' });
 
+PartyPlan.hasMany(PartyPlanCancellationRequest, { foreignKey: 'planId', as: 'cancellationRequests', onDelete: 'CASCADE' });
+PartyPlanCancellationRequest.belongsTo(PartyPlan, { foreignKey: 'planId', as: 'plan' });
+PartyPlanCancellationRequest.belongsTo(User, { foreignKey: 'requestedById', as: 'requester' });
+PartyPlanCancellationRequest.belongsTo(User, { foreignKey: 'recipientUserId', as: 'recipient' });
+User.hasMany(PartyPlanCancellationRequest, { foreignKey: 'requestedById', as: 'sentCancellationRequests' });
+User.hasMany(PartyPlanCancellationRequest, { foreignKey: 'recipientUserId', as: 'receivedCancellationRequests' });
+
 User.hasMany(UserPenalty, { foreignKey: 'userId', as: 'penalties', onDelete: 'CASCADE' });
 UserPenalty.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
@@ -541,6 +549,7 @@ export {
     StrangersMeetRequest,
     StrangersMeetJoiner,
     PartyPlanRequest,
+    PartyPlanCancellationRequest,
     UserPenalty,
     City,
     ChatSubscription,
@@ -586,6 +595,7 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
         await StrangersMeetRequest.sync(options);
         await StrangersMeetJoiner.sync(options);
         await PartyPlanRequest.sync(options);
+        await PartyPlanCancellationRequest.sync(options);
         await UserPenalty.sync(options);
         await City.sync(options);
         await ChatSubscription.sync(options);
@@ -659,5 +669,8 @@ export default {
     TicketStatus,
     StorageCleanupStatus,
     PartySafetyCheck,
+    PartyPlanCancellationRequest,
+    CancellationRequestStatus,
+    CancellationReason,
     syncModels,
 };

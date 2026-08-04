@@ -18,15 +18,462 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   bool _isJoining = false;
   bool _alreadyRequested = false;
   String? _fetchedVenueImageUrl;
+  Map<String, dynamic>? _cancellationRequest;
+  bool _isWindowClosed = false;
+  bool _isLoadingCancellation = false;
+  String? _currentUserId;
 
   @override
   void initState() {
     super.initState();
-    // Check if the user's own plan (no join button needed) and
-    // pre-mark as already requested if provided by feed data.
     _alreadyRequested = widget.plan['hasRequested'] == true;
     _checkRequestStatus();
     _loadVenueDetailsIfNeeded();
+    _fetchCurrentUserAndCancellationState();
+  }
+
+  Future<void> _fetchCurrentUserAndCancellationState() async {
+    try {
+      final uid = await ApiService.getCurrentUserId();
+      final targetPlanId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
+      
+      final rawDateTime = widget.plan['planDateTime'] ?? widget.plan['planDate'];
+      if (rawDateTime != null) {
+        try {
+          final eventTime = DateTime.parse(rawDateTime.toString()).toLocal();
+          final diff = eventTime.difference(DateTime.now());
+          if (diff.inHours < 3) {
+            if (mounted) setState(() => _isWindowClosed = true);
+          }
+        } catch (_) {}
+      }
+
+      if (targetPlanId.isNotEmpty) {
+        final res = await ApiService.getPartyPlanCancellationRequest(targetPlanId);
+        if (mounted && res != null) {
+          setState(() {
+            _currentUserId = uid;
+            if (res['isWindowClosed'] == true) _isWindowClosed = true;
+            _cancellationRequest = res['cancellationRequest'] is Map<String, dynamic>
+                ? res['cancellationRequest']
+                : null;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error fetching cancellation state: $e');
+    }
+  }
+
+  void _showCancellationStep1Dialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 24),
+            SizedBox(width: 10),
+            Text('Request Cancellation?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'This will send a cancellation request to the other participant. The Party Plan will only be cancelled after both participants agree.',
+              style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+            ),
+            SizedBox(height: 14),
+            Text('If approved:', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+            SizedBox(height: 6),
+            Text('• Commitment Deposit (₹499) will be returned to both users\' Lunara Wallets.', style: TextStyle(color: Colors.white60, fontSize: 12)),
+            SizedBox(height: 4),
+            Text('• Chat will become read-only (archived after 24h).', style: TextStyle(color: Colors.white60, fontSize: 12)),
+            SizedBox(height: 4),
+            Text('• Reliability Score may decrease (-5 pts).', style: TextStyle(color: Colors.white60, fontSize: 12)),
+            SizedBox(height: 4),
+            Text('• Both users will receive notifications.', style: TextStyle(color: Colors.white60, fontSize: 12)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Keep Plan', style: TextStyle(color: Colors.white60, fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _showCancellationStep2ReasonModal();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Send Cancellation Request', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCancellationStep2ReasonModal() {
+    String selectedReason = 'my_plans_changed';
+    final TextEditingController otherController = TextEditingController();
+
+    final Map<String, String> reasonOptions = {
+      'my_plans_changed': 'My plans have changed',
+      'not_available': 'I\'m not available anymore',
+      'not_interested': 'Not interested anymore',
+      'found_another_plan': 'Found another plan',
+      'venue_changed': 'Venue changed',
+      'personal_reasons': 'Personal reasons',
+      'other': 'Other',
+    };
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF14141F),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text('Why are you cancelling?', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    const Text('Select a reason for internal record. This is never displayed publicly.', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                    const SizedBox(height: 16),
+                    ...reasonOptions.entries.map((entry) {
+                      final isSelected = selectedReason == entry.key;
+                      return InkWell(
+                        onTap: () => setModalState(() => selectedReason = entry.key),
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: isSelected ? Colors.redAccent.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.04),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: isSelected ? Colors.redAccent : Colors.white10),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+                                color: isSelected ? Colors.redAccent : Colors.white38,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(child: Text(entry.value, style: TextStyle(color: isSelected ? Colors.white : Colors.white70, fontSize: 14, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal))),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                    if (selectedReason == 'other') ...[
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: otherController,
+                        maxLength: 150,
+                        style: const TextStyle(color: Colors.white, fontSize: 13),
+                        decoration: InputDecoration(
+                          hintText: 'Enter reason (max 150 characters)',
+                          hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+                          filled: true,
+                          fillColor: Colors.white.withValues(alpha: 0.06),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: _isLoadingCancellation
+                            ? null
+                            : () async {
+                                Navigator.pop(ctx);
+                                await _submitCancellationRequest(selectedReason, selectedReason == 'other' ? otherController.text.trim() : null);
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.redAccent,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: const Text('SUBMIT CANCELLATION REQUEST', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.8)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _submitCancellationRequest(String reason, String? otherText) async {
+    final planId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
+    if (planId.isEmpty) return;
+
+    setState(() => _isLoadingCancellation = true);
+    final res = await ApiService.requestPartyPlanCancellation(
+      planId: planId,
+      reason: reason,
+      otherReasonText: otherText,
+    );
+    if (!mounted) return;
+    setState(() => _isLoadingCancellation = false);
+
+    if (res['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cancellation request sent. Waiting for the other participant to approve.'), backgroundColor: Colors.orangeAccent),
+      );
+      _fetchCurrentUserAndCancellationState();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(res['message'] ?? 'Failed to send cancellation request'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Future<void> _respondToCancellation(String requestId, String action) async {
+    final planId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
+    if (planId.isEmpty) return;
+
+    setState(() => _isLoadingCancellation = true);
+    final res = await ApiService.respondToPartyPlanCancellationRequest(
+      planId: planId,
+      requestId: requestId,
+      action: action,
+    );
+    if (!mounted) return;
+    setState(() => _isLoadingCancellation = false);
+
+    if (res['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(action == 'approve' ? 'Party Plan cancelled. ₹499 Commitment Deposit credited to your Lunara Wallet!' : 'Cancellation request declined.'),
+          backgroundColor: action == 'approve' ? Colors.green : Colors.grey.shade800,
+        ),
+      );
+      _fetchCurrentUserAndCancellationState();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(res['message'] ?? 'Action failed'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Widget _buildCancellationSection() {
+    final status = widget.plan['status']?.toString();
+    final isCancelled = status == 'cancelled';
+
+    if (isCancelled) {
+      return Container(
+        margin: const EdgeInsets.only(top: 16),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.red.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.cancel_rounded, color: Colors.redAccent, size: 22),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'This Party Plan has been cancelled. Commitment deposits have been credited to Lunara Wallets.',
+                style: TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_isWindowClosed) {
+      return Container(
+        margin: const EdgeInsets.only(top: 16),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.amber.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+        ),
+        child: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.lock_rounded, color: Colors.amber, size: 18),
+                SizedBox(width: 8),
+                Text(
+                  'BOOKING LOCKED',
+                  style: TextStyle(color: Colors.amber, fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 1),
+                ),
+              ],
+            ),
+            SizedBox(height: 6),
+            Text(
+              'This Party Plan can no longer be cancelled because the cancellation window has closed (less than 3 hours before event start time).',
+              style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.4),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_cancellationRequest != null && _cancellationRequest!['status'] == 'pending') {
+      final reqId = _cancellationRequest!['id']?.toString() ?? '';
+      final requestedById = _cancellationRequest!['requestedById']?.toString() ?? '';
+      final isRecipient = _currentUserId != null && requestedById != _currentUserId;
+      final requesterObj = _cancellationRequest!['requester'] as Map<String, dynamic>?;
+      final requesterName = requesterObj?['firstName'] ?? 'The other participant';
+      final reasonKey = _cancellationRequest!['reason']?.toString() ?? '';
+
+      final Map<String, String> reasonLabels = {
+        'my_plans_changed': 'My plans have changed',
+        'not_available': 'I\'m not available anymore',
+        'not_interested': 'Not interested anymore',
+        'found_another_plan': 'Found another plan',
+        'venue_changed': 'Venue changed',
+        'personal_reasons': 'Personal reasons',
+        'other': 'Other reasons',
+      };
+      final reasonText = reasonLabels[reasonKey] ?? reasonKey;
+
+      if (isRecipient) {
+        return Container(
+          margin: const EdgeInsets.only(top: 16),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1F1D2B),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.4), width: 1.2),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent, size: 20),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Cancellation Request Received',
+                      style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '$requesterName wants to cancel this Party Plan.',
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Reason: "$reasonText"',
+                style: const TextStyle(color: Colors.white70, fontSize: 12, fontStyle: FontStyle.italic),
+              ),
+              const SizedBox(height: 12),
+              const Text('If you approve:', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 12)),
+              const SizedBox(height: 4),
+              const Text('• Both Commitment Deposits (₹499) will be credited to each user\'s Lunara Wallet.', style: TextStyle(color: Colors.white54, fontSize: 11)),
+              const Text('• Chat becomes read-only.', style: TextStyle(color: Colors.white54, fontSize: 11)),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _isLoadingCancellation ? null : () => _respondToCancellation(reqId, 'reject'),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.white30),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('Keep Booking', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 12)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _isLoadingCancellation ? null : () => _respondToCancellation(reqId, 'approve'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('Approve Cancellation', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      } else {
+        return Container(
+          margin: const EdgeInsets.only(top: 16),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.orange.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.hourglass_top_rounded, color: Colors.orangeAccent, size: 20),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Cancellation Request Pending — Waiting for the other participant to approve.',
+                  style: TextStyle(color: Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+
+    // Default: Show subtle red outline "Cancel Party Plan" button if participant
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      width: double.infinity,
+      height: 46,
+      child: OutlinedButton.icon(
+        onPressed: _isLoadingCancellation ? null : _showCancellationStep1Dialog,
+        icon: const Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 18),
+        label: const Text(
+          'Cancel Party Plan',
+          style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600, fontSize: 13, letterSpacing: 0.5),
+        ),
+        style: OutlinedButton.styleFrom(
+          side: BorderSide(color: Colors.redAccent.withValues(alpha: 0.5), width: 1.2),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          backgroundColor: Colors.redAccent.withValues(alpha: 0.05),
+        ),
+      ),
+    );
   }
 
   Future<void> _loadVenueDetailsIfNeeded() async {
@@ -558,6 +1005,9 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                     subtitle: venueAddress,
                     iconColor: LunaraTheme.electricViolet,
                   ),
+
+                  // Mutual Cancellation Section
+                  _buildCancellationSection(),
                   const SizedBox(height: 30),
                 ],
               ),

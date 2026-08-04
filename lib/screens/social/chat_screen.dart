@@ -102,6 +102,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
+  bool _isPlanCancelled = false;
+  bool _isCancellationPending = false;
+
   void _initSocketListeners() {
     ApiService.addSocketListener('new_message', _onNewMessageSocket);
     ApiService.addSocketListener('messages_read', _onMessagesReadSocket);
@@ -112,6 +115,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
     ApiService.addSocketListener('typing_started', _onTypingStartedSocket);
     ApiService.addSocketListener('typing_stopped', _onTypingStoppedSocket);
+    ApiService.addSocketListener('party_plan_cancelled', _onPlanCancelledSocket);
+    ApiService.addSocketListener('party_plan_cancellation_requested', _onCancellationRequestedSocket);
   }
 
   void _removeSocketListeners() {
@@ -124,6 +129,24 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
     ApiService.removeSocketListener('typing_started', _onTypingStartedSocket);
     ApiService.removeSocketListener('typing_stopped', _onTypingStoppedSocket);
+    ApiService.removeSocketListener('party_plan_cancelled', _onPlanCancelledSocket);
+    ApiService.removeSocketListener('party_plan_cancellation_requested', _onCancellationRequestedSocket);
+  }
+
+  void _onPlanCancelledSocket(dynamic rawData) {
+    if (!mounted) return;
+    setState(() {
+      _isPlanCancelled = true;
+      _isCancellationPending = false;
+      _canChat = false;
+    });
+  }
+
+  void _onCancellationRequestedSocket(dynamic rawData) {
+    if (!mounted) return;
+    setState(() {
+      _isCancellationPending = true;
+    });
   }
 
   void _onNewMessageSocket(dynamic rawData) {
@@ -2232,6 +2255,64 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildInputArea(BuildContext context) {
+    if (_isPlanCancelled) {
+      return Container(
+        margin: const EdgeInsets.fromLTRB(14, 4, 14, 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.red.shade50,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.red.shade200),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.archive_rounded, color: Colors.red.shade700, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'This Party Plan has been cancelled. This conversation will be archived after 24 hours.',
+                style: TextStyle(color: Colors.red.shade800, fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_isCancellationPending) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.amber.shade50,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.amber.shade300),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.hourglass_top_rounded, color: Colors.amber.shade800, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Cancellation Request Pending — Waiting for the other participant.',
+                    style: TextStyle(color: Colors.amber.shade900, fontSize: 11, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _buildStandardInputArea(context),
+        ],
+      );
+    }
+
+    return _buildStandardInputArea(context);
+  }
+
+  Widget _buildStandardInputArea(BuildContext context) {
     final hasText = _messageController.text.trim().isNotEmpty;
 
     return Container(
