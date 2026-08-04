@@ -2480,26 +2480,26 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                 post['id']?.toString() ??
                                 '';
                             if (planId.isEmpty) return;
-                            final success =
-                                await ApiService.requestToJoinPartyPlan(planId);
+                            final res =
+                                await ApiService.requestToJoinPartyPlanDetailed(planId);
                             if (!mounted || !context.mounted) return;
-                            if (success) {
+                            if (res.alreadyRequested || res.success) {
                               _loadFeed(showLoader: false);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Join request sent! Host will review it.',
+                              if (res.isNewRequest) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Join request sent! Host will review it.',
+                                    ),
+                                    backgroundColor: Colors.green,
+                                    behavior: SnackBarBehavior.floating,
                                   ),
-                                  backgroundColor: Colors.green,
-                                  behavior: SnackBarBehavior.floating,
-                                ),
-                              );
+                                );
+                              }
                             } else {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Request failed. You may have already requested to join.',
-                                  ),
+                                SnackBar(
+                                  content: Text(res.message),
                                   backgroundColor: Colors.red,
                                   behavior: SnackBarBehavior.floating,
                                 ),
@@ -3063,26 +3063,26 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                 plan['id']?.toString() ??
                                 '';
                             if (planId.isEmpty) return;
-                            final success =
-                                await ApiService.requestToJoinPartyPlan(planId);
+                            final res =
+                                await ApiService.requestToJoinPartyPlanDetailed(planId);
                             if (!mounted || !context.mounted) return;
-                            if (success) {
+                            if (res.alreadyRequested || res.success) {
                               _loadFeed(showLoader: false);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Join request sent! Host will review it.',
+                              if (res.isNewRequest) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Join request sent! Host will review it.',
+                                    ),
+                                    backgroundColor: Colors.green,
+                                    behavior: SnackBarBehavior.floating,
                                   ),
-                                  backgroundColor: Colors.green,
-                                  behavior: SnackBarBehavior.floating,
-                                ),
-                              );
+                                );
+                              }
                             } else {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Request failed. You may have already requested to join.',
-                                  ),
+                                SnackBar(
+                                  content: Text(res.message),
                                   backgroundColor: Colors.red,
                                   behavior: SnackBarBehavior.floating,
                                 ),

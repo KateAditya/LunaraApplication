@@ -136,6 +136,8 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   }
 
   Future<void> _sendJoinRequest() async {
+    if (_isJoining || _alreadyRequested) return;
+
     final planId =
         widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
     if (planId.isEmpty) {
@@ -150,54 +152,54 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
 
     setState(() => _isJoining = true);
     try {
-      final success = await ApiService.requestToJoinPartyPlan(planId);
+      final res = await ApiService.requestToJoinPartyPlanDetailed(planId);
       if (!mounted) return;
-      if (success) {
+      if (res.alreadyRequested || res.success) {
         setState(() => _alreadyRequested = true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            behavior: SnackBarBehavior.floating,
-            content: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              decoration: BoxDecoration(
-                gradient: LunaraTheme.purpleGradient,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
-                    blurRadius: 15,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.auto_awesome, color: Colors.white, size: 20),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'JOIN REQUEST SENT! THE HOST WILL REVIEW IT.',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.5,
+        if (res.isNewRequest) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              behavior: SnackBarBehavior.floating,
+              content: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                decoration: BoxDecoration(
+                  gradient: LunaraTheme.purpleGradient,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                      blurRadius: 15,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.auto_awesome, color: Colors.white, size: 20),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'JOIN REQUEST SENT! THE HOST WILL REVIEW IT.',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.5,
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-        );
+          );
+        }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Failed to send request. You may have already requested to join.',
-            ),
+          SnackBar(
+            content: Text(res.message),
             backgroundColor: Colors.red,
           ),
         );
@@ -605,7 +607,9 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                         ),
                       )
                     : GestureDetector(
-                        onTap: _isJoining ? null : _sendJoinRequest,
+                        onTap: (_isJoining || _alreadyRequested)
+                            ? null
+                            : _sendJoinRequest,
                         child: Container(
                           height: 58,
                           decoration: BoxDecoration(

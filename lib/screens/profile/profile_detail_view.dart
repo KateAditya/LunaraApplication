@@ -1730,19 +1730,19 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
   }
 
   Future<void> _sendJoinRequest(String planId) async {
-    if (_joiningPlanIds.contains(planId)) return;
+    if (_joiningPlanIds.contains(planId) || _requestedPlanIds.contains(planId)) return;
 
     setState(() {
       _joiningPlanIds.add(planId);
     });
 
     try {
-      final success = await ApiService.requestToJoinPartyPlan(planId);
-      if (success) {
+      final res = await ApiService.requestToJoinPartyPlanDetailed(planId);
+      if (res.alreadyRequested || res.success) {
         setState(() {
           _requestedPlanIds.add(planId);
         });
-        if (mounted) {
+        if (mounted && res.isNewRequest) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               backgroundColor: Colors.transparent,
@@ -1788,10 +1788,8 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Failed to send request. You may have already requested.',
-              ),
+            SnackBar(
+              content: Text(res.message),
               backgroundColor: Colors.red,
             ),
           );

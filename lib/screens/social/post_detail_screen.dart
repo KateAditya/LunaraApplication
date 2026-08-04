@@ -1904,84 +1904,85 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 ],
                         ),
                         child: ElevatedButton(
-                          onPressed: _isProcessing
+                          onPressed: (_isProcessing || _alreadyRequested)
                               ? null
                               : () async {
+                                  if (_isProcessing || _alreadyRequested) return;
                                   setState(() => _isProcessing = true);
                                   final messenger = ScaffoldMessenger.of(
                                     context,
                                   );
-                                  final success =
-                                      await ApiService.requestToJoinPartyPlan(
+                                  final result =
+                                      await ApiService.requestToJoinPartyPlanDetailed(
                                         widget.post['id'],
                                       );
                                   if (mounted) {
                                     setState(() => _isProcessing = false);
                                   }
-                                  if (success) {
+                                  if (result.alreadyRequested || result.success) {
                                     if (mounted) {
                                       setState(() {
                                         _alreadyRequested = true;
                                       });
                                     }
-                                    messenger.showSnackBar(
-                                      SnackBar(
-                                        backgroundColor: Colors.transparent,
-                                        elevation: 0,
-                                        behavior: SnackBarBehavior.floating,
-                                        content: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 20,
-                                            vertical: 16,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            gradient:
-                                                LunaraTheme.purpleGradient,
-                                            borderRadius: BorderRadius.circular(
-                                              16,
+                                    if (result.isNewRequest) {
+                                      messenger.showSnackBar(
+                                        SnackBar(
+                                          backgroundColor: Colors.transparent,
+                                          elevation: 0,
+                                          behavior: SnackBarBehavior.floating,
+                                          content: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 20,
+                                              vertical: 16,
                                             ),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: LunaraTheme
-                                                    .electricViolet
-                                                    .withValues(alpha: 0.3),
-                                                blurRadius: 15,
-                                                offset: const Offset(0, 8),
+                                            decoration: BoxDecoration(
+                                              gradient:
+                                                  LunaraTheme.purpleGradient,
+                                              borderRadius: BorderRadius.circular(
+                                                16,
                                               ),
-                                            ],
-                                          ),
-                                          child: const Row(
-                                            children: [
-                                              Icon(
-                                                Icons.auto_awesome,
-                                                color: Colors.white,
-                                                size: 20,
-                                              ),
-                                              SizedBox(width: 12),
-                                              Expanded(
-                                                child: Text(
-                                                  'YOUR REQUEST TO JOIN THE VIBE HAS BEEN SENT!',
-                                                  style: TextStyle(
-                                                    fontFamily:
-                                                        'AllroundGothic',
-                                                    color: Colors.white,
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.bold,
-                                                    letterSpacing: 0.5,
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: LunaraTheme
+                                                      .electricViolet
+                                                      .withValues(alpha: 0.3),
+                                                  blurRadius: 15,
+                                                  offset: const Offset(0, 8),
+                                                ),
+                                              ],
+                                            ),
+                                            child: const Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.auto_awesome,
+                                                  color: Colors.white,
+                                                  size: 20,
+                                                ),
+                                                SizedBox(width: 12),
+                                                Expanded(
+                                                  child: Text(
+                                                    'YOUR REQUEST TO JOIN THE VIBE HAS BEEN SENT!',
+                                                    style: TextStyle(
+                                                      fontFamily:
+                                                          'AllroundGothic',
+                                                      color: Colors.white,
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.bold,
+                                                      letterSpacing: 0.5,
+                                                    ),
                                                   ),
                                                 ),
-                                              ),
-                                            ],
+                                              ],
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                    );
+                                      );
+                                    }
                                   } else {
                                     messenger.showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Failed to send request. You may have already requested.',
-                                        ),
+                                      SnackBar(
+                                        content: Text(result.message),
                                         backgroundColor: Colors.red,
                                       ),
                                     );

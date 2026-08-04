@@ -878,23 +878,72 @@ class ApiService {
     }
   }
 
-  // ─── Party Plan Request APIs ────────────────────────────────────────────────
-
-  static Future<bool> requestToJoinPartyPlan(String planId) async {
+  static Future<PartyPlanRequestResult> requestToJoinPartyPlanDetailed(
+    String planId,
+  ) async {
     final userId = currentUserId;
-    if (userId == null) return false;
+    if (userId == null) {
+      return PartyPlanRequestResult(
+        success: false,
+        alreadyRequested: false,
+        isNewRequest: false,
+        message: 'User not logged in.',
+      );
+    }
     try {
       final response = await post(
         '/api/mobile/party-plans/$planId/requests',
         body: {'userId': userId},
       );
       if (response.statusCode == 201) {
-        return true;
+        return PartyPlanRequestResult(
+          success: true,
+          alreadyRequested: true,
+          isNewRequest: true,
+          message: 'Request sent successfully!',
+        );
       }
+
+      String msg = 'Failed to send request.';
+      try {
+        final data = jsonDecode(response.body);
+        if (data is Map && data['message'] != null) {
+          msg = data['message'].toString();
+        }
+      } catch (_) {}
+
+      final msgLower = msg.toLowerCase();
+      if (msgLower.contains('already requested') ||
+          msgLower.contains('already has an accepted') ||
+          msgLower.contains('already pending')) {
+        return PartyPlanRequestResult(
+          success: true,
+          alreadyRequested: true,
+          isNewRequest: false,
+          message: msg,
+        );
+      }
+
+      return PartyPlanRequestResult(
+        success: false,
+        alreadyRequested: false,
+        isNewRequest: false,
+        message: msg,
+      );
     } catch (e) {
       debugPrint('requestToJoinPartyPlan error: $e');
+      return PartyPlanRequestResult(
+        success: false,
+        alreadyRequested: false,
+        isNewRequest: false,
+        message: 'Network error: $e',
+      );
     }
-    return false;
+  }
+
+  static Future<bool> requestToJoinPartyPlan(String planId) async {
+    final res = await requestToJoinPartyPlanDetailed(planId);
+    return res.success;
   }
 
   static Future<List<Map<String, dynamic>>> fetchPartyPlanRequests(
@@ -3642,5 +3691,16 @@ class ApiService {
   }
 }
 
+class PartyPlanRequestResult {
+  final bool success;
+  final bool alreadyRequested;
+  final bool isNewRequest;
+  final String message;
 
-
+  PartyPlanRequestResult({
+    required this.success,
+    required this.alreadyRequested,
+    required this.isNewRequest,
+    required this.message,
+  });
+}
