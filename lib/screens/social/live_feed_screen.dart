@@ -272,11 +272,29 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   Future<void> markAllNotificationsAsRead() async {
+    // 1. Collect all current feed item IDs before clearing
+    final feedItemIds = _feedItems
+        .map((item) => item['id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toList();
+
+    // 2. Mark all server-side notifications as read (clears localReadNotificationIds)
     await ApiService.clearAllNotifications();
+
+    // 3. Mark all feed items (party plan / stranger meet requests) as locally read
+    //    by adding them to localReadRequestIds — this makes totalUnreadCount = 0.
+    for (final id in feedItemIds) {
+      ApiService.localReadRequestIds.add(id);
+    }
+    await ApiService.saveLocalReadRequestIds();
+
     if (mounted) {
       setState(() {
-        _notifications = _notifications.map((n) => {...n, 'read': true, 'isRead': true}).toList();
+        _notifications = _notifications
+            .map((n) => {...n, 'read': true, 'isRead': true})
+            .toList();
       });
+      // Notify dashboard so heart dot + bell badge clear immediately
       widget.onCountChanged?.call();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -857,63 +875,122 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                       letterSpacing: 1.0,
                       color: Colors.black,
                     ),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 4),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Mark all as read button
-              TextButton.icon(
-                onPressed: markAllNotificationsAsRead,
-                icon: const Icon(Icons.done_all_rounded, size: 15, color: LunaraTheme.electricViolet),
-                label: const Text(
-                  'Read All',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: LunaraTheme.electricViolet,
-                  ),
-                ),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              ),
-              const SizedBox(width: 4),
-              // Filter Bottom Sheet Button
-              InkWell(
-                onTap: _showFilterBottomSheet,
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: _selectedCategoryFilter != 'ALL' ? LunaraTheme.electricViolet.withValues(alpha: 0.1) : Colors.grey[100],
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.tune_rounded,
-                    size: 18,
-                    color: _selectedCategoryFilter != 'ALL' ? LunaraTheme.electricViolet : Colors.black87,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
+                    overflow: TextOverflow.ell  // ─────────────────────────────────────────────────────────────────────────────
+  // Build Status Filter Pills with Live Unread Counts
+  // ─────────────────────────────────────────────────────────────────────────────
+  int _countForPill(String pillId, List<UnifiedNotificationItem> allItems) {
+    if (pillId == 'ALL') return allItems.where((i) => !i.isRead).length;
+    return allItems.where((item) {
+      final badge = item.badgeText?.toUpperCase() ?? '';
+      final category = item.category.toLowerCase();
+      final title = item.title.toLowerCase();
+      final rawStatus = (item.rawData['status'] ?? item.rawData['paymentStatus'] ?? '').toString().toLowerCase();
+      bool matches = false;
+      if (pillId == 'REQUESTS') {
+        matches = title.contains('request') || badge.contains('REQUEST') || category.contains('request');
+      } else if (pillId == 'PENDING') {
+        matches = rawStatus.contains('pending') || badge.contains('ACTION REQUIRED') || badge.contains('PENDING');
+      } else if (pillId == 'PAYMENT') {
+        matches = category.contains('pay') || category.contains('wallet') || badge.contains('PAYMENT') || title.contains('payment') || title.contains('paid');
+      } else if (pillId == 'CONFIRMED') {
+        matches = rawStatus.contains('confirmed') || rawStatus.contains('paid') || badge.contains('CONFIRMED') || title.contains('confirmed');
+      } else if (pillId == 'SYSTEM') {
+        matches = category.contains('system') || category.contains('promo') || badge.contains('SYSTEM') || badge.contains('PROMO');
+      }
+      return matches && !item.isRead;
+    }).length;
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Build Status Filter Pills (All, Requests, Pending, Payment, Confirmed, System)
-  // ─────────────────────────────────────────────────────────────────────────────
+  Widget _buildStatusFilterBar() {
+    final allTimelineItems = _buildUnifiedTimeline();
+    final pills = [
+      {'id': 'ALL', 'label': 'All'},
+      {'id': 'REQUESTS', 'label': 'Requests'},
+      {'id': 'PENDING', 'label': 'Pending'},
+      {'id': 'PAYMENT', 'label': 'Payment'},
+      {'id': 'CONFIRMED', 'label': 'Confirmed'},
+      {'id': 'SYSTEM', 'label': 'System'},
+    ];
+
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          children: pills.map((pill) {
+            final id = pill['id']!;
+            final label = pill['label']!;
+            final isSelected = _selectedStatusPill == id;
+            final unreadCount = _countForPill(id, allTimelineItems);
+            final hasUnread = unreadCount > 0;
+
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  ChoiceChip(
+                    label: Text(label),
+                    selected: isSelected,
+                    onSelected: (selected) {
+                      if (selected) setState(() => _selectedStatusPill = id);
+                    },
+                    selectedColor: LunaraTheme.electricViolet,
+                    backgroundColor: hasUnread && !isSelected
+                        ? LunaraTheme.electricViolet.withValues(alpha: 0.06)
+                        : const Color(0xFFF3F4F6),
+                    labelStyle: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: isSelected ? Colors.white : Colors.black87,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      side: BorderSide(
+                        color: isSelected
+                            ? LunaraTheme.electricViolet
+                            : hasUnread
+                                ? LunaraTheme.electricViolet.withValues(alpha: 0.3)
+                                : Colors.transparent,
+                      ),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  // Unread count badge
+                  if (hasUnread)
+                    Positioned(
+                      top: -5,
+                      right: -5,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: isSelected ? Colors.white : Colors.red,
+                          borderRadius: BorderRadius.circular(8),
+                          border: isSelected
+                              ? Border.all(color: LunaraTheme.electricViolet, width: 1)
+                              : null,
+                        ),
+                        child: Text(
+                          unreadCount > 99 ? '99+' : '$unreadCount',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            color: isSelected ? LunaraTheme.electricViolet : Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }�───────────────────────────────────────────────────────────────────
   Widget _buildStatusFilterBar() {
     final pills = [
       {'id': 'ALL', 'label': 'All'},

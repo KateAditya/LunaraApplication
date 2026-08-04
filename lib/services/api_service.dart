@@ -2457,6 +2457,9 @@ class ApiService {
     final userId = currentUserId;
     if (userId == null) return false;
     await loadLocalReadIds();
+    // Only clear notification IDs here.
+    // localReadRequestIds is managed separately by markAllNotificationsAsRead
+    // in live_feed_screen so feed items can be re-added as "read" after this call.
     localReadNotificationIds.clear();
     await saveLocalReadNotificationIds();
     try {
