@@ -449,6 +449,7 @@ User.hasMany(PartyPlanRequest, { foreignKey: 'requesterId', as: 'partyPlanReques
 
 PartyPlan.hasMany(PartyPlanCancellationRequest, { foreignKey: 'planId', as: 'cancellationRequests', onDelete: 'CASCADE' });
 PartyPlanCancellationRequest.belongsTo(PartyPlan, { foreignKey: 'planId', as: 'plan' });
+PartyPlanCancellationRequest.belongsTo(Booking, { foreignKey: 'bookingId', as: 'booking' });
 PartyPlanCancellationRequest.belongsTo(User, { foreignKey: 'requestedById', as: 'requester' });
 PartyPlanCancellationRequest.belongsTo(User, { foreignKey: 'recipientUserId', as: 'recipient' });
 User.hasMany(PartyPlanCancellationRequest, { foreignKey: 'requestedById', as: 'sentCancellationRequests' });

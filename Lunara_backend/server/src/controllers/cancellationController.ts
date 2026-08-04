@@ -675,14 +675,14 @@ export const getAdminCancelledPlans = async (req: Request, res: Response): Promi
                 {
                     model: User,
                     as: 'requester',
-                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'photo'],
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
                     include: [{ model: UserProfile, as: 'profile', attributes: ['reliabilityScore'] }],
                     ...(Object.keys(userWhere).length > 0 ? { where: userWhere, required: false } : {}),
                 },
                 {
                     model: User,
                     as: 'recipient',
-                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'photo'],
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
                     include: [{ model: UserProfile, as: 'profile', attributes: ['reliabilityScore'] }],
                 },
                 {
@@ -729,12 +729,12 @@ export const getAdminCancellationAnalytics = async (_req: Request, res: Response
                 {
                     model: User,
                     as: 'requester',
-                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'photo'],
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
                 },
                 {
                     model: User,
                     as: 'recipient',
-                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'photo'],
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
                 },
                 {
                     model: PartyPlan,
@@ -911,13 +911,13 @@ export const getAdminCancellationDetail = async (req: Request, res: Response): P
                 {
                     model: User,
                     as: 'requester',
-                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'photo', 'dateOfBirth', 'gender'],
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl', 'dateOfBirth', 'gender'],
                     include: [{ model: UserProfile, as: 'profile', attributes: ['reliabilityScore', 'bio'] }],
                 },
                 {
                     model: User,
                     as: 'recipient',
-                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'photo', 'dateOfBirth', 'gender'],
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl', 'dateOfBirth', 'gender'],
                     include: [{ model: UserProfile, as: 'profile', attributes: ['reliabilityScore', 'bio'] }],
                 },
                 {
