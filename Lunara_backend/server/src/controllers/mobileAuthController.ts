@@ -618,7 +618,7 @@ export const mobileDetectFace = async (req: Request, res: Response): Promise<Res
  */
 export const mobileFacebookLogin = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const { facebookId, email, firstName, lastName, avatarUrl } = req.body;
+        const { facebookId, email, firstName, lastName, avatarUrl, phone } = req.body;
 
         if (!facebookId) {
             return res.status(400).json({ success: false, message: 'facebookId is required for Facebook authentication' });
@@ -639,7 +639,29 @@ export const mobileFacebookLogin = async (req: Request, res: Response): Promise<
             }
         }
 
-        // 3. If user exists, log in
+        // 3. If not found by email, try finding by phone (10-digit matching)
+        if (!user) {
+            const rawPhone = phone || (cleanEmail && !cleanEmail.includes('@') ? cleanEmail : null);
+            if (rawPhone) {
+                const phoneDigits = rawPhone.replace(/\D/g, '').slice(-10);
+                if (phoneDigits.length === 10) {
+                    user = await User.findOne({
+                        where: {
+                            [Op.or]: [
+                                { phone: phoneDigits },
+                                { phone: `91${phoneDigits}` },
+                                { phone: `+91${phoneDigits}` }
+                            ]
+                        }
+                    });
+                    if (user) {
+                        await user.update({ facebookId });
+                    }
+                }
+            }
+        }
+
+        // 4. If user exists, log in
         if (user) {
             if (user.isDeleted || !user.isActive) {
                 return res.status(403).json({ success: false, message: 'Your account has been deactivated or suspended.' });
@@ -665,16 +687,33 @@ export const mobileFacebookLogin = async (req: Request, res: Response): Promise<
             });
         }
 
-        // 4. If user does NOT exist, create new user account
+        // 5. If user does NOT exist, create new user account with guaranteed unique phone
         const dummyPassword = await bcrypt.hash(`fb_${facebookId}_${Date.now()}`, 10);
         const fName = firstName || 'Facebook';
         const lName = lastName || 'User';
         const userEmail = cleanEmail || `fb_${facebookId}@lunara.app`;
-        const dummyPhone = `91${Math.floor(1000000000 + Math.random() * 9000000000)}`;
+        
+        let userPhone = phone ? phone.replace(/\D/g, '') : null;
+        if (!userPhone || userPhone.length < 10) {
+            let attempts = 0;
+            while (attempts < 5) {
+                const randSuffix = Math.floor(10000000 + Math.random() * 90000000);
+                const candidatePhone = `9190${randSuffix}`;
+                const existingPhoneUser = await User.findOne({ where: { phone: candidatePhone } });
+                if (!existingPhoneUser) {
+                    userPhone = candidatePhone;
+                    break;
+                }
+                attempts++;
+            }
+            if (!userPhone) {
+                userPhone = `91${Date.now().toString().slice(-10)}`;
+            }
+        }
 
         user = await User.create({
             email: userEmail,
-            phone: dummyPhone,
+            phone: userPhone,
             passwordHash: dummyPassword,
             firstName: fName,
             lastName: lName,

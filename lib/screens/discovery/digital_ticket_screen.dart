@@ -8,6 +8,7 @@ import '../../services/google_places_service.dart';
 import '../../widgets/action_button.dart';
 import '../../widgets/lunara_profile_image.dart';
 import '../../services/api_service.dart';
+import '../home/dashboard.dart';
 
 class DigitalTicketScreen extends StatefulWidget {
   final Map<dynamic, dynamic>? venue;
@@ -147,6 +148,15 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
       debugPrint("Error parsing event datetime: $e");
     }
     return null;
+  }
+
+  bool _isTicketExpired() {
+    final eventDateTime = _getEventDateTime();
+    if (eventDateTime != null) {
+      final expirationTime = eventDateTime.add(const Duration(hours: 3));
+      return DateTime.now().isAfter(expirationTime);
+    }
+    return false;
   }
 
   List<int> _parseTimeStr(String timeStr) {
@@ -349,6 +359,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
         '\nLet\'s vibe together! 💜';
 
     final box = context.findRenderObject() as RenderBox?;
+    // ignore: deprecated_member_use
     Share.share(
       shareText,
       subject: 'My Lunara Ticket',
@@ -412,8 +423,11 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
         children: [
           IconButton(
             icon: Icon(Icons.close, color: color),
-            onPressed: () =>
-                Navigator.of(context).popUntil((route) => route.isFirst),
+            onPressed: () => Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (_) => const Dashboard()),
+              (route) => false,
+            ),
           ),
           Text(
             'DIGITAL TICKET',
@@ -587,6 +601,12 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                       ],
                     ),
                   ),
+                  if (_isTicketExpired())
+                    Positioned(
+                      top: 16,
+                      right: 16,
+                      child: _buildExpiredWatermark(),
+                    ),
                 ],
               ),
             ),
@@ -647,14 +667,20 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Live Countdown Banner
+                // Live Countdown / Expired Status Banner
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   margin: const EdgeInsets.only(bottom: 16),
                   decoration: BoxDecoration(
-                    color: LunaraTheme.electricViolet.withValues(alpha: isDark ? 0.15 : 0.08),
+                    color: _isTicketExpired()
+                        ? Colors.red.withValues(alpha: 0.12)
+                        : LunaraTheme.electricViolet.withValues(alpha: isDark ? 0.15 : 0.08),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: isDark ? 0.4 : 0.25)),
+                    border: Border.all(
+                      color: _isTicketExpired()
+                          ? Colors.red.shade400
+                          : LunaraTheme.electricViolet.withValues(alpha: isDark ? 0.4 : 0.25),
+                    ),
                   ),
                   child: Center(
                     child: Wrap(
@@ -663,20 +689,24 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                       spacing: 8,
                       runSpacing: 4,
                       children: [
-                        const Icon(Icons.timer_outlined, color: LunaraTheme.electricViolet, size: 18),
+                        Icon(
+                          _isTicketExpired() ? Icons.error_outline_rounded : Icons.timer_outlined,
+                          color: _isTicketExpired() ? Colors.red.shade600 : LunaraTheme.electricViolet,
+                          size: 18,
+                        ),
                         Text(
-                          'EXPIRATION COUNTDOWN: ',
+                          _isTicketExpired() ? 'TICKET STATUS: ' : 'EXPIRATION COUNTDOWN: ',
                           style: TextStyle(
-                            color: isDark ? Colors.white70 : Colors.black87,
+                            color: _isTicketExpired() ? Colors.red.shade700 : (isDark ? Colors.white70 : Colors.black87),
                             fontWeight: FontWeight.bold,
                             fontSize: 10,
                             letterSpacing: 1,
                           ),
                         ),
                         Text(
-                          _formatCountdownText(),
-                          style: const TextStyle(
-                            color: LunaraTheme.electricViolet,
+                          _isTicketExpired() ? 'EXPIRED' : _formatCountdownText(),
+                          style: TextStyle(
+                            color: _isTicketExpired() ? Colors.red.shade700 : LunaraTheme.electricViolet,
                             fontWeight: FontWeight.w900,
                             fontSize: 14,
                             letterSpacing: 1.5,
@@ -1061,7 +1091,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                 final pdfUri = Uri.parse(widget.ticketUrl!);
                 if (await canLaunchUrl(pdfUri)) {
                   await launchUrl(pdfUri, mode: LaunchMode.externalApplication);
-                } else {
+                } else if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Could not open the PDF URL.')),
                   );
@@ -1072,10 +1102,48 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
           ],
           LunaraActionButton(
             text: 'GO TO DASHBOARD',
-            onPressed: () =>
-                Navigator.of(context).popUntil((route) => route.isFirst),
+            onPressed: () => Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (_) => const Dashboard()),
+              (route) => false,
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildExpiredWatermark() {
+    return IgnorePointer(
+      child: Transform.rotate(
+        angle: -0.22,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.red.withValues(alpha: 0.22),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: Colors.red.shade600,
+              width: 3.0,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.red.withValues(alpha: 0.3),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Text(
+            'EXPIRED',
+            style: TextStyle(
+              color: Colors.red.shade600,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 4.0,
+            ),
+          ),
+        ),
       ),
     );
   }

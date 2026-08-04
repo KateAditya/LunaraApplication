@@ -878,9 +878,15 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   const SizedBox(height: 12),
 
                   // 1. Ads Carousel
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: _buildAdBanner(),
+                  Builder(
+                    builder: (context) {
+                      final double screenWidth = MediaQuery.of(context).size.width;
+                      final double horizontalPadding = screenWidth >= 600 ? 10.0 : 20.0;
+                      return Padding(
+                        padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+                        child: _buildAdBanner(),
+                      );
+                    },
                   ),
                   const SizedBox(height: 24),
 
@@ -1312,10 +1318,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   }
 
   Widget _buildAdBanner() {
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final bool isTablet = screenWidth >= 600;
+    final double bannerHeight = isTablet ? 230.0 : 180.0;
+
     if (_activeAds.isEmpty) {
       return Container(
         margin: EdgeInsets.zero,
-        height: 180,
+        height: bannerHeight,
         child: Stack(
           clipBehavior: Clip.antiAlias,
           children: [
@@ -1423,14 +1433,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     }
 
     return Container(
-      height: 180,
+      height: bannerHeight,
       margin: EdgeInsets.zero,
       child: Stack(
         children: [
           CarouselSlider.builder(
             itemCount: _activeAds.length,
             options: CarouselOptions(
-              height: 180,
+              height: bannerHeight,
               viewportFraction: 1.0,
               enlargeCenterPage: false,
               autoPlay: _activeAds.length > 1,
@@ -1697,7 +1707,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                           ? Image.asset(
                               night['image']!,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Container(
+                              errorBuilder: (context, error, stackTrace) => Container(
                                 color: Colors.purple.shade900,
                                 child: const Center(
                                   child: Icon(Icons.nightlife, color: Colors.white),
