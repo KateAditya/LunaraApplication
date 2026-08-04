@@ -606,3 +606,601 @@ export const getAdminCancellationRequests = async (_req: Request, res: Response)
         return res.status(500).json({ success: false, message: err.message || 'Failed to fetch admin cancellation requests' });
     }
 };
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ADMIN — FULL CANCELLATION MANAGEMENT MODULE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const REASON_LABELS: Record<string, string> = {
+    my_plans_changed: 'My plans have changed',
+    not_available: "I'm not available anymore",
+    not_interested: 'Not interested anymore',
+    found_another_plan: 'Found another plan',
+    venue_changed: 'Venue changed',
+    personal_reasons: 'Personal reasons',
+    other: 'Other',
+};
+
+/**
+ * GET /api/admin/party-plans/cancellations
+ * Paginated, filtered list of all Party Plan cancellation requests
+ */
+export const getAdminCancelledPlans = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const {
+            page = '1',
+            limit = '20',
+            status,
+            reason,
+            requestedBy,
+            startDate,
+            endDate,
+            search,
+            venueId,
+        } = req.query as Record<string, string>;
+
+        const pageNum = parseInt(String(page || '1'), 10);
+        const limitNum = parseInt(String(limit || '20'), 10);
+        const offset = (pageNum - 1) * limitNum;
+        const where: any = {};
+
+        if (status && status !== 'all') where.status = status;
+        if (reason && reason !== 'all') where.reason = reason;
+        if (requestedBy === 'host' || requestedBy === 'participant') where.requestedBy = requestedBy;
+        if (startDate) where.requestedAt = { ...where.requestedAt, [Op.gte]: new Date(startDate) };
+        if (endDate) where.requestedAt = { ...where.requestedAt, [Op.lte]: new Date(endDate) };
+
+        const userWhere: any = {};
+        if (search) {
+            userWhere[Op.or] = [
+                { firstName: { [Op.iLike]: `%${search}%` } },
+                { lastName: { [Op.iLike]: `%${search}%` } },
+                { email: { [Op.iLike]: `%${search}%` } },
+                { phone: { [Op.iLike]: `%${search}%` } },
+            ];
+        }
+
+        const { count, rows } = await PartyPlanCancellationRequest.findAndCountAll({
+            where,
+            order: [['requestedAt', 'DESC']],
+            limit: limitNum,
+            offset,
+            include: [
+                {
+                    model: PartyPlan,
+                    as: 'plan',
+                    attributes: ['id', 'planTitle', 'planDateTime', 'venueId', 'userId', 'status'],
+                    include: venueId ? [{ model: (require('../models/Venue').default), as: 'venue', where: { id: venueId } }] : [],
+                },
+                {
+                    model: User,
+                    as: 'requester',
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'photo'],
+                    include: [{ model: UserProfile, as: 'profile', attributes: ['reliabilityScore'] }],
+                    ...(Object.keys(userWhere).length > 0 ? { where: userWhere, required: false } : {}),
+                },
+                {
+                    model: User,
+                    as: 'recipient',
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'photo'],
+                    include: [{ model: UserProfile, as: 'profile', attributes: ['reliabilityScore'] }],
+                },
+                {
+                    model: Booking,
+                    as: 'booking',
+                    attributes: ['id', 'status', 'totalAmount', 'paymentStatus'],
+                },
+            ],
+            distinct: true,
+        });
+
+        const totalPages = Math.ceil(count / limitNum);
+
+        return res.status(200).json({
+            success: true,
+            data: rows,
+            pagination: {
+                total: count,
+                page: pageNum,
+                limit: limitNum,
+                totalPages,
+            },
+        });
+    } catch (err: any) {
+        logger.error('[getAdminCancelledPlans] Error:', err);
+        return res.status(500).json({ success: false, message: err.message || 'Failed to fetch cancelled plans' });
+    }
+};
+
+/**
+ * GET /api/admin/party-plans/cancellations/analytics
+ * Analytics dashboard: KPIs, chart data, fraud flags
+ */
+export const getAdminCancellationAnalytics = async (_req: Request, res: Response): Promise<Response> => {
+    try {
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const startOfWeek = new Date(now);
+        startOfWeek.setDate(now.getDate() - now.getDay());
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+        const allRequests = await PartyPlanCancellationRequest.findAll({
+            include: [
+                {
+                    model: User,
+                    as: 'requester',
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'photo'],
+                },
+                {
+                    model: User,
+                    as: 'recipient',
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'photo'],
+                },
+                {
+                    model: PartyPlan,
+                    as: 'plan',
+                    attributes: ['id', 'planTitle', 'planDateTime', 'venueId'],
+                },
+            ],
+            order: [['requestedAt', 'DESC']],
+        });
+
+        const totalCancelled = allRequests.filter(r =>
+            r.status === CancellationRequestStatus.APPROVED || r.status === CancellationRequestStatus.AUTO_APPROVED
+        ).length;
+
+        const today = allRequests.filter(r => new Date(r.requestedAt) >= startOfToday).length;
+        const thisWeek = allRequests.filter(r => new Date(r.requestedAt) >= startOfWeek).length;
+        const thisMonth = allRequests.filter(r => new Date(r.requestedAt) >= startOfMonth).length;
+        const pending = allRequests.filter(r => r.status === CancellationRequestStatus.PENDING).length;
+        const approved = allRequests.filter(r =>
+            r.status === CancellationRequestStatus.APPROVED || r.status === CancellationRequestStatus.AUTO_APPROVED
+        ).length;
+        const rejected = allRequests.filter(r => r.status === CancellationRequestStatus.REJECTED).length;
+        const expired = allRequests.filter(r => r.status === CancellationRequestStatus.EXPIRED).length;
+
+        // Avg approval time (minutes)
+        const approvedWithResponse = allRequests.filter(r =>
+            (r.status === CancellationRequestStatus.APPROVED || r.status === CancellationRequestStatus.AUTO_APPROVED) && r.respondedAt
+        );
+        const avgApprovalTimeMs = approvedWithResponse.length > 0
+            ? approvedWithResponse.reduce((acc, r) =>
+                acc + (new Date(r.respondedAt!).getTime() - new Date(r.requestedAt).getTime()), 0
+            ) / approvedWithResponse.length
+            : 0;
+        const avgApprovalTimeMinutes = Math.round(avgApprovalTimeMs / (1000 * 60));
+
+        // Total wallet credits issued
+        const totalWalletCredits = allRequests
+            .filter(r => r.status === CancellationRequestStatus.APPROVED || r.status === CancellationRequestStatus.AUTO_APPROVED)
+            .reduce((acc, r) => acc + (r.hostDepositAmount || 0) + (r.joinerDepositAmount || 0), 0);
+
+        // Avg reliability deduction
+        const avgReliabilityReduction = allRequests
+            .filter(r => r.status === CancellationRequestStatus.APPROVED || r.status === CancellationRequestStatus.AUTO_APPROVED)
+            .reduce((acc, r) => acc + Math.abs(r.reliabilityImpact || 0), 0) / Math.max(approved, 1);
+
+        // Reason distribution
+        const reasonCounts: Record<string, number> = {};
+        allRequests.forEach(r => {
+            const label = REASON_LABELS[r.reason] || r.reason;
+            reasonCounts[label] = (reasonCounts[label] || 0) + 1;
+        });
+        const reasonDistribution = Object.entries(reasonCounts).map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count);
+
+        // Daily trend (last 30 days)
+        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        const recentRequests = allRequests.filter(r => new Date(r.requestedAt) >= thirtyDaysAgo);
+        const dailyTrend: Record<string, number> = {};
+        recentRequests.forEach(r => {
+            const dateKey = new Date(r.requestedAt).toISOString().split('T')[0];
+            dailyTrend[dateKey] = (dailyTrend[dateKey] || 0) + 1;
+        });
+        const dailyTrendArr = Object.entries(dailyTrend).map(([date, count]) => ({ date, count })).sort((a, b) => a.date.localeCompare(b.date));
+
+        // Monthly trend (last 12 months)
+        const monthlyTrend: Record<string, number> = {};
+        allRequests.forEach(r => {
+            const d = new Date(r.requestedAt);
+            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            monthlyTrend[key] = (monthlyTrend[key] || 0) + 1;
+        });
+        const monthlyTrendArr = Object.entries(monthlyTrend).map(([month, count]) => ({ month, count })).sort((a, b) => a.month.localeCompare(b.month)).slice(-12);
+
+        // Host vs participant ratio
+        const hostRequested = allRequests.filter(r => (r as any).requestedByHost === true).length;
+        const participantRequested = allRequests.length - hostRequested;
+
+        // Avg hours before cancellation (difference between requestedAt and planDateTime)
+        const avgHoursBeforeCancellation = (() => {
+            const withPlan = allRequests.filter(r => (r as any).plan?.planDateTime);
+            if (withPlan.length === 0) return 0;
+            const total = withPlan.reduce((acc, r) => {
+                const planDt = new Date((r as any).plan.planDateTime).getTime();
+                const reqDt = new Date(r.requestedAt).getTime();
+                return acc + Math.max(0, (planDt - reqDt) / (1000 * 60 * 60));
+            }, 0);
+            return Math.round(total / withPlan.length);
+        })();
+
+        // ── Fraud Detection ──────────────────────────────────────────────────
+        // Users with >2 cancellations in last 30 days
+        const requestorCounts: Record<string, { count: number; user: any; lastRequest: Date }> = {};
+        recentRequests.forEach(r => {
+            const uid = r.requestedById;
+            if (!requestorCounts[uid]) {
+                requestorCounts[uid] = { count: 0, user: (r as any).requester, lastRequest: new Date(r.requestedAt) };
+            }
+            requestorCounts[uid].count++;
+            if (new Date(r.requestedAt) > requestorCounts[uid].lastRequest) {
+                requestorCounts[uid].lastRequest = new Date(r.requestedAt);
+            }
+        });
+        const frequentCancellers = Object.entries(requestorCounts)
+            .filter(([, v]) => v.count >= 3)
+            .map(([userId, v]) => ({ userId, cancellations: v.count, user: v.user, lastRequest: v.lastRequest, flagType: 'Frequent Canceller' }));
+
+        // Last-minute cancellations (< 6 hours before event) among recent
+        const lastMinuteCancellers: any[] = [];
+        recentRequests.forEach(r => {
+            const plan = (r as any).plan;
+            if (!plan?.planDateTime) return;
+            const hoursRemaining = (new Date(plan.planDateTime).getTime() - new Date(r.requestedAt).getTime()) / (1000 * 60 * 60);
+            if (hoursRemaining < 6) {
+                lastMinuteCancellers.push({
+                    userId: r.requestedById,
+                    user: (r as any).requester,
+                    requestId: r.id,
+                    hoursRemaining: Math.round(hoursRemaining),
+                    flagType: 'Last-Minute Cancellation',
+                });
+            }
+        });
+
+        const fraudFlags = [...frequentCancellers, ...lastMinuteCancellers].slice(0, 30);
+
+        return res.status(200).json({
+            success: true,
+            kpis: {
+                totalCancelled,
+                today,
+                thisWeek,
+                thisMonth,
+                pending,
+                approved,
+                rejected,
+                expired,
+                avgApprovalTimeMinutes,
+                totalWalletCredits,
+                avgReliabilityReduction: Math.round(avgReliabilityReduction * 10) / 10,
+                avgHoursBeforeCancellation,
+                hostRequested,
+                participantRequested,
+            },
+            charts: {
+                dailyTrend: dailyTrendArr,
+                monthlyTrend: monthlyTrendArr,
+                reasonDistribution,
+            },
+            topReasons: reasonDistribution.slice(0, 7),
+            fraudFlags,
+        });
+    } catch (err: any) {
+        logger.error('[getAdminCancellationAnalytics] Error:', err);
+        return res.status(500).json({ success: false, message: err.message || 'Failed to fetch analytics' });
+    }
+};
+
+/**
+ * GET /api/admin/party-plans/cancellations/:id
+ * Full cancellation detail with complete timeline, wallets, audit, notifications
+ */
+export const getAdminCancellationDetail = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { id } = req.params;
+
+        const cancellation: any = await PartyPlanCancellationRequest.findByPk(id, {
+            include: [
+                {
+                    model: PartyPlan,
+                    as: 'plan',
+                    include: [
+                        { model: (require('../models/Venue').default), as: 'venue', attributes: ['id', 'name', 'address', 'city', 'imageUrl'] },
+                    ],
+                },
+                {
+                    model: User,
+                    as: 'requester',
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'photo', 'dateOfBirth', 'gender'],
+                    include: [{ model: UserProfile, as: 'profile', attributes: ['reliabilityScore', 'bio'] }],
+                },
+                {
+                    model: User,
+                    as: 'recipient',
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'photo', 'dateOfBirth', 'gender'],
+                    include: [{ model: UserProfile, as: 'profile', attributes: ['reliabilityScore', 'bio'] }],
+                },
+                {
+                    model: Booking,
+                    as: 'booking',
+                    include: [
+                        {
+                            model: Payment,
+                            as: 'payments',
+                            required: false,
+                        },
+                    ],
+                },
+            ],
+        });
+
+        if (!cancellation) {
+            return res.status(404).json({ success: false, message: 'Cancellation request not found' });
+        }
+
+        // Fetch Ticket
+        let ticket: any = null;
+        if (cancellation.bookingId) {
+            ticket = await Ticket.findOne({ where: { bookingId: cancellation.bookingId } });
+        }
+
+        // Fetch Chat Subscription
+        let chatSubscription = null;
+        const conv = await Conversation.findOne({
+            where: {
+                [Op.or]: [
+                    { userId1: cancellation.requestedById, userId2: cancellation.recipientUserId },
+                    { userId1: cancellation.recipientUserId, userId2: cancellation.requestedById },
+                ],
+            } as any,
+        });
+        if (conv) {
+            chatSubscription = await ChatSubscription.findOne({ where: { conversationId: conv.id } });
+        }
+
+        // Fetch wallet refund payments
+        const walletTransactions = await Payment.findAll({
+            where: {
+                refundedAt: { [Op.ne]: null as any },
+                paymentMethod: PaymentMethod.WALLET,
+                userId: { [Op.in]: [cancellation.requestedById, cancellation.recipientUserId] },
+            } as any,
+            order: [['refundedAt', 'DESC']],
+            limit: 10,
+        });
+
+        // Build timeline
+        const timeline: { time: Date; event: string; detail?: string; icon: string }[] = [];
+
+        const plan = cancellation.plan;
+        if (plan?.createdAt) timeline.push({ time: new Date(plan.createdAt), event: 'Party Plan Created', icon: 'plan' });
+
+        const booking = cancellation.booking;
+        if (booking?.createdAt) timeline.push({ time: new Date(booking.createdAt), event: 'Booking Created', icon: 'booking' });
+        if (booking?.paymentStatus === 'paid') timeline.push({ time: new Date(booking.updatedAt), event: 'Payment Successful', icon: 'payment' });
+
+        if (plan?.status !== PartyPlanStatus.CANCELLED) {
+            timeline.push({ time: new Date(plan?.updatedAt || cancellation.requestedAt), event: 'Party Plan Confirmed', icon: 'confirmed' });
+        }
+
+        timeline.push({ time: new Date(cancellation.requestedAt), event: `${cancellation.requester?.firstName || 'User'} Requested Cancellation`, detail: REASON_LABELS[cancellation.reason] || cancellation.reason, icon: 'cancel_request' });
+
+        if (cancellation.respondedAt) {
+            const isApproved = cancellation.status === CancellationRequestStatus.APPROVED || cancellation.status === CancellationRequestStatus.AUTO_APPROVED;
+            timeline.push({ time: new Date(cancellation.respondedAt), event: isApproved ? 'Cancellation Approved' : 'Cancellation Rejected', icon: isApproved ? 'approved' : 'rejected' });
+        }
+
+        if (cancellation.status === CancellationRequestStatus.AUTO_APPROVED) {
+            timeline.push({ time: new Date(cancellation.respondedAt || cancellation.expiresAt), event: 'Auto-Approved (24h Rule)', icon: 'auto_approved' });
+        }
+
+        if (booking?.status === BookingStatus.CANCELLED) {
+            timeline.push({ time: new Date(booking.updatedAt), event: 'Booking Cancelled', icon: 'booking_cancelled' });
+        }
+
+        if (ticket?.ticketStatus === TicketStatus.CANCELLED) {
+            timeline.push({ time: new Date(ticket.updatedAt), event: 'Ticket Cancelled & QR Invalidated', icon: 'ticket_cancelled' });
+        }
+
+        walletTransactions.forEach(wt => {
+            timeline.push({ time: new Date(wt.refundedAt!), event: `₹${wt.refundAmount} Commitment Deposit Credited to ${wt.userId === cancellation.requestedById ? cancellation.requester?.firstName : cancellation.recipient?.firstName}'s Wallet`, icon: 'wallet_credit' });
+        });
+
+        if (chatSubscription?.status === ChatSubscriptionStatus.EXPIRED) {
+            timeline.push({ time: new Date(chatSubscription.updatedAt), event: 'Chat Locked (Read-Only)', icon: 'chat_locked' });
+        }
+
+        timeline.sort((a, b) => a.time.getTime() - b.time.getTime());
+
+        return res.status(200).json({
+            success: true,
+            data: {
+                cancellation,
+                ticket,
+                chatSubscription,
+                walletTransactions,
+                timeline,
+                reasonLabel: REASON_LABELS[cancellation.reason] || cancellation.reason,
+                hoursBeforeEvent: plan?.planDateTime
+                    ? Math.round((new Date(plan.planDateTime).getTime() - new Date(cancellation.requestedAt).getTime()) / (1000 * 60 * 60))
+                    : null,
+            },
+        });
+    } catch (err: any) {
+        logger.error('[getAdminCancellationDetail] Error:', err);
+        return res.status(500).json({ success: false, message: err.message || 'Failed to fetch cancellation detail' });
+    }
+};
+
+/**
+ * POST /api/admin/party-plans/cancellations/:id/investigate
+ * Flag a cancellation request for investigation
+ */
+export const adminMarkForInvestigation = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { id } = req.params;
+        const { notes, adminId } = req.body;
+
+        const cancellation = await PartyPlanCancellationRequest.findByPk(id);
+        if (!cancellation) {
+            return res.status(404).json({ success: false, message: 'Cancellation request not found' });
+        }
+
+        // Store investigation flag in otherReasonText as a prefixed audit note
+        const investigationNote = `[ADMIN_INVESTIGATION:${adminId || 'admin'}:${new Date().toISOString()}] ${notes || 'Flagged for investigation'}`;
+        await cancellation.update({
+            otherReasonText: investigationNote,
+        });
+
+        logger.info(`[AdminMarkForInvestigation] Cancellation ${id} flagged by admin ${adminId}: ${notes}`);
+
+        return res.status(200).json({
+            success: true,
+            message: 'Cancellation request flagged for investigation',
+        });
+    } catch (err: any) {
+        logger.error('[adminMarkForInvestigation] Error:', err);
+        return res.status(500).json({ success: false, message: err.message || 'Failed to flag for investigation' });
+    }
+};
+
+/**
+ * POST /api/admin/party-plans/cancellations/:id/restore
+ * Emergency booking restore (Super Admin only)
+ */
+export const adminRestoreBooking = async (req: Request, res: Response): Promise<Response> => {
+    const t: Transaction = await sequelize.transaction();
+    try {
+        const { id } = req.params;
+        const { adminId, reason } = req.body;
+
+        if (!adminId || !reason) {
+            await t.rollback();
+            return res.status(400).json({ success: false, message: 'adminId and reason are required for emergency restore' });
+        }
+
+        const cancellation: any = await PartyPlanCancellationRequest.findByPk(id, {
+            include: [
+                { model: PartyPlan, as: 'plan' },
+                { model: Booking, as: 'booking' },
+            ],
+        });
+
+        if (!cancellation) {
+            await t.rollback();
+            return res.status(404).json({ success: false, message: 'Cancellation request not found' });
+        }
+
+        // Restore booking status
+        if (cancellation.booking) {
+            await Booking.update(
+                { status: BookingStatus.CONFIRMED },
+                { where: { id: cancellation.bookingId! }, transaction: t }
+            );
+        }
+
+        // Restore plan status
+        if (cancellation.plan) {
+            await PartyPlan.update(
+                { status: PartyPlanStatus.ACTIVE },
+                { where: { id: cancellation.planId }, transaction: t }
+            );
+        }
+
+        // Restore ticket
+        await Ticket.update(
+            { ticketStatus: TicketStatus.ACTIVE } as any,
+            { where: { bookingId: cancellation.bookingId! }, transaction: t }
+        );
+
+        // Log emergency restore as audit note
+        const restoreNote = `[EMERGENCY_RESTORE:${adminId}:${new Date().toISOString()}] ${reason}`;
+        await cancellation.update(
+            { otherReasonText: restoreNote },
+            { transaction: t }
+        );
+
+        await t.commit();
+        logger.warn(`[AdminRestoreBooking] Emergency restore of cancellation ${id} by admin ${adminId}: ${reason}`);
+
+        return res.status(200).json({
+            success: true,
+            message: 'Booking restored successfully. Please notify both users manually.',
+        });
+    } catch (err: any) {
+        await t.rollback();
+        logger.error('[adminRestoreBooking] Error:', err);
+        return res.status(500).json({ success: false, message: err.message || 'Failed to restore booking' });
+    }
+};
+
+/**
+ * GET /api/admin/party-plans/cancellations/export
+ * Export cancellation data as JSON (suitable for CSV/Excel conversion client-side)
+ */
+export const exportCancellations = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { startDate, endDate, status } = req.query as Record<string, string>;
+
+        const where: any = {};
+        if (status && status !== 'all') where.status = status;
+        if (startDate) where.requestedAt = { ...where.requestedAt, [Op.gte]: new Date(startDate) };
+        if (endDate) where.requestedAt = { ...where.requestedAt, [Op.lte]: new Date(endDate) };
+
+        const records = await PartyPlanCancellationRequest.findAll({
+            where,
+            order: [['requestedAt', 'DESC']],
+            include: [
+                {
+                    model: PartyPlan,
+                    as: 'plan',
+                    attributes: ['id', 'planTitle', 'planDateTime', 'status'],
+                    include: [{ model: (require('../models/Venue').default), as: 'venue', attributes: ['name', 'city'] }],
+                },
+                { model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'email', 'phone'] },
+                { model: User, as: 'recipient', attributes: ['id', 'firstName', 'lastName', 'email', 'phone'] },
+                { model: Booking, as: 'booking', attributes: ['id', 'status', 'totalAmount', 'paymentStatus'] },
+            ],
+        });
+
+        const exportData = records.map((r: any) => ({
+            cancellationRequestId: r.id,
+            bookingId: r.bookingId || '—',
+            planId: r.planId,
+            planTitle: r.plan?.planTitle || '—',
+            venueName: r.plan?.venue?.name || '—',
+            venueCity: r.plan?.venue?.city || '—',
+            eventDateTime: r.plan?.planDateTime ? new Date(r.plan.planDateTime).toISOString() : '—',
+            hostName: `${r.requester?.firstName || ''} ${r.requester?.lastName || ''}`.trim(),
+            hostEmail: r.requester?.email || '—',
+            hostPhone: r.requester?.phone || '—',
+            participantName: `${r.recipient?.firstName || ''} ${r.recipient?.lastName || ''}`.trim(),
+            participantEmail: r.recipient?.email || '—',
+            participantPhone: r.recipient?.phone || '—',
+            cancellationStatus: r.status,
+            reason: REASON_LABELS[r.reason] || r.reason,
+            requestedAt: new Date(r.requestedAt).toISOString(),
+            respondedAt: r.respondedAt ? new Date(r.respondedAt).toISOString() : '—',
+            autoApprovalEligible: r.autoApprovalEligible ? 'Yes' : 'No',
+            hostDepositRefund: `₹${r.hostDepositAmount}`,
+            participantDepositRefund: `₹${r.joinerDepositAmount}`,
+            totalWalletCredit: `₹${(r.hostDepositAmount || 0) + (r.joinerDepositAmount || 0)}`,
+            reliabilityImpact: `${r.reliabilityImpact} pts`,
+            bookingAmount: r.booking?.totalAmount ? `₹${r.booking.totalAmount}` : '—',
+            bookingStatus: r.booking?.status || '—',
+            hostWalletTxId: r.hostWalletTransactionId || '—',
+            participantWalletTxId: r.joinerWalletTransactionId || '—',
+        }));
+
+        return res.status(200).json({
+            success: true,
+            total: exportData.length,
+            data: exportData,
+            exportedAt: new Date().toISOString(),
+        });
+    } catch (err: any) {
+        logger.error('[exportCancellations] Error:', err);
+        return res.status(500).json({ success: false, message: err.message || 'Export failed' });
+    }
+};
+

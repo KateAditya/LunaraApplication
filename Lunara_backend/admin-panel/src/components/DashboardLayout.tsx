@@ -25,6 +25,8 @@ import {
     BiCrown,
     BiTrashAlt,
     BiCreditCard,
+    BiXCircle,
+    BiFlag,
 } from 'react-icons/bi';
 import { useAuthStore } from '../store/authStore';
 import { useThemeMode } from '../context/ThemeContext';
@@ -64,6 +66,8 @@ const navGroups: NavGroup[] = [
             { text: 'Safety Checks', icon: <BiShieldQuarter />, path: '/safety-checks' },
             { text: 'Chat Settings', icon: <BiChat />, path: '/chat-settings' },
             { text: 'Subscription Manage', icon: <BiCrown />, path: '/subscriptions' },
+            { text: 'Cancelled Plans', icon: <BiXCircle />, path: '/cancelled-plans' },
+            { text: 'Cancellation Analytics', icon: <BiFlag />, path: '/cancellation-analytics' },
         ],
     },
     {

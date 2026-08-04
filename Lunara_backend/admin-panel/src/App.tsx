@@ -26,6 +26,8 @@ import { SubscriptionManagement } from './pages/SubscriptionManagement';
 import { SafetyChecks } from './pages/SafetyChecks';
 import { Payments } from './pages/Payments';
 import { VenueBookingSummary } from './pages/reports/VenueBookingSummary';
+import { CancelledPartyPlans } from './pages/CancelledPartyPlans';
+import { CancellationAnalytics } from './pages/CancellationAnalytics';
 import { ThemeProvider, useThemeMode } from './context/ThemeContext';
 
 // Create React Query client
@@ -100,6 +102,8 @@ function AppContent() {
             <Route path="legal-terms" element={<LegalTerms />} />
             <Route path="chat-settings" element={<ChatSettings />} />
             <Route path="subscriptions" element={<SubscriptionManagement />} />
+            <Route path="cancelled-plans" element={<CancelledPartyPlans />} />
+            <Route path="cancellation-analytics" element={<CancellationAnalytics />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

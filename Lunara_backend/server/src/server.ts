@@ -196,10 +196,27 @@ app.use('/api/mobile/wallet', mobileWalletRoutes);             // Wallet (Mobile
 app.use('/api/mobile/tickets', mobileTicketRoutes);           // Digital Tickets (Mobile)
 app.use('/api/admin/payments', adminPaymentsRoutes);          // Payments (Admin)
 
-import { getAdminCancellationRequests, checkExpiredOrAutoApprovedRequests } from './controllers/cancellationController';
+import {
+    getAdminCancellationRequests,
+    checkExpiredOrAutoApprovedRequests,
+    getAdminCancelledPlans,
+    getAdminCancellationAnalytics,
+    getAdminCancellationDetail,
+    adminMarkForInvestigation,
+    adminRestoreBooking,
+    exportCancellations,
+} from './controllers/cancellationController';
 
-// Admin — cancellation requests
+// Admin — basic cancellation requests (legacy)
 app.get('/api/admin/cancellation-requests', getAdminCancellationRequests);
+
+// Admin — Party Plan Cancellation Management Module
+app.get('/api/admin/party-plans/cancellations/analytics', getAdminCancellationAnalytics);
+app.get('/api/admin/party-plans/cancellations/export', exportCancellations);
+app.get('/api/admin/party-plans/cancellations', getAdminCancelledPlans);
+app.get('/api/admin/party-plans/cancellations/:id', getAdminCancellationDetail);
+app.post('/api/admin/party-plans/cancellations/:id/investigate', adminMarkForInvestigation);
+app.post('/api/admin/party-plans/cancellations/:id/restore', adminRestoreBooking);
 
 // Run background auto-approval & expiration check for cancellation requests every 15 minutes
 setInterval(() => {
