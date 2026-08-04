@@ -158,6 +158,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _initUser() async {
+    if (ApiService.authToken == null) {
+      await ApiService.initAuthToken();
+    }
     final String? myId = ApiService.currentUserId ?? ApiService.cachedCurrentUser?.id;
 
     if (widget.user != null) {
@@ -200,12 +203,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final fetchedMe = await ApiService.fetchProfile();
       if (mounted) {
         final finalUser = fetchedMe ?? me ?? ApiService.cachedCurrentUser;
-        setState(() {
-          _displayUser = finalUser;
-          _isMe = true;
-          _isLoading = false;
-        });
-        _updateCurrentProfileIndex();
+        if (finalUser != null) {
+          setState(() {
+            _displayUser = finalUser;
+            _isMe = true;
+            _isLoading = false;
+          });
+          _updateCurrentProfileIndex();
+        } else {
+          // Robust fallback: fetch customers to resolve user profile if direct fetch is empty
+          final customers = await ApiService.fetchCustomers();
+          if (customers.isNotEmpty && mounted) {
+            final String? currentId = ApiService.currentUserId;
+            final userMap = customers.firstWhere(
+              (c) => c['id'] == currentId || c['_id'] == currentId,
+              orElse: () => customers.first,
+            );
+            final fallbackUser = User.fromJson(userMap);
+            ApiService.cachedCurrentUser = fallbackUser;
+            setState(() {
+              _displayUser = fallbackUser;
+              _isMe = true;
+              _isLoading = false;
+            });
+            _updateCurrentProfileIndex();
+          } else if (mounted) {
+            setState(() {
+              _displayUser = null;
+              _isLoading = false;
+            });
+          }
+        }
       }
     }
   }
@@ -277,14 +305,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final targetId = targetUser.id;
     final currentAction = _swipedActions[targetId];
 
-    // If already liked, clicking "like" again removes it (unlike)
+    // If already liked, clicking "like" again retains the like
     if (currentAction == 'like') {
-      setState(() {
-        _swipedActions.remove(targetId);
-        if (_dailyLikesUsed > 0) _dailyLikesUsed--;
-      });
-      // Fire API (backend will toggle/destroy)
-      ApiService.swipeUser(targetUserId: targetId, action: 'like');
+      _showAlreadyLikedSnack(targetUser.firstName, isSuperLike: false);
       return;
     }
 
@@ -323,15 +346,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final targetId = targetUser.id;
     final currentAction = _swipedActions[targetId];
 
-    // If already superliked, clicking "superlike" again removes it
+    // If already superliked, clicking "superlike" again retains it
     if (currentAction == 'superlike') {
-      setState(() {
-        _swipedActions.remove(targetId);
-        if (_superlikesPerCycle > 0) _superlikesRemaining++;
-        if (_dailyLikesUsed > 0) _dailyLikesUsed--;
-      });
-      // Fire API (backend will toggle/destroy)
-      ApiService.swipeUser(targetUserId: targetId, action: 'superlike');
+      _showAlreadyLikedSnack(targetUser.firstName, isSuperLike: true);
       return;
     }
 
@@ -456,6 +473,64 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   isSuperLike
                       ? 'You Super Liked $firstName! 🌟'
                       : 'You Liked $firstName! ❤️',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showAlreadyLikedSnack(String firstName, {required bool isSuperLike}) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
+      SnackBar(
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 2),
+        content: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          decoration: BoxDecoration(
+            gradient: isSuperLike
+                ? const LinearGradient(
+                    colors: [Color(0xFFFFD700), Color(0xFFFF8C00)],
+                  )
+                : LunaraTheme.purpleGradient,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: isSuperLike
+                    ? const Color(0xFFFFD700).withValues(alpha: 0.4)
+                    : LunaraTheme.electricViolet.withValues(alpha: 0.4),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Icon(
+                isSuperLike ? Icons.star_rounded : Icons.favorite_rounded,
+                color: Colors.white,
+                size: 22,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  isSuperLike
+                      ? 'You already Super Liked $firstName! 🌟'
+                      : 'You already Liked $firstName! ❤️',
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w900,
@@ -745,10 +820,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: 24),
               ElevatedButton.icon(
-                onPressed: () {
+                onPressed: () async {
                   setState(() => _isLoading = true);
-                  _initUser();
-                  _loadAllProfiles();
+                  await ApiService.initAuthToken();
+                  await _initUser();
+                  await _loadAllProfiles();
                 },
                 icon: const Icon(Icons.refresh_rounded),
                 label: const Text('Retry'),

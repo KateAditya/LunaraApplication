@@ -110,6 +110,23 @@ class PushNotificationService {
     }
   }
 
+  /// Call this when the user logs out.
+  /// Unregisters FCM token from backend, deletes local device token, and cancels local notifications.
+  static Future<void> unregisterTokenOnLogout() async {
+    try {
+      final token = await _messaging.getToken();
+      if (token != null) {
+        debugPrint('🔔 Unregistering FCM token from backend on logout');
+        await ApiService.unregisterFcmToken(token);
+      }
+      await _messaging.deleteToken();
+      await _localNotifications.cancelAll();
+      debugPrint('🔔 FCM token deleted and local notifications cleared on logout');
+    } catch (e) {
+      debugPrint('🔔 unregisterTokenOnLogout error: $e');
+    }
+  }
+
   // ── Permission ──────────────────────────────────────────────────────────────
 
   static Future<void> _requestPermission() async {

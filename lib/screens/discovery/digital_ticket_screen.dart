@@ -197,7 +197,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
         _timeRemaining = Duration.zero;
       }
     } else {
-      _timeRemaining = const Duration(hours: 4, minutes: 30, seconds: 0);
+      _timeRemaining = Duration.zero;
     }
 
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -213,11 +213,8 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
               timer.cancel();
             }
           } else {
-            if (_timeRemaining.inSeconds > 0) {
-              _timeRemaining = _timeRemaining - const Duration(seconds: 1);
-            } else {
-              timer.cancel();
-            }
+            _timeRemaining = Duration.zero;
+            timer.cancel();
           }
         });
       }
@@ -281,13 +278,13 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
       return '${ApiService.baseUrl}/${clean.startsWith('/') ? clean.substring(1) : clean}';
     }
 
-    if (venue['coverImageUrl'] != null && venue['coverImageUrl'].toString().isNotEmpty) {
+    if (venue['coverImageUrl'] != null && venue['coverImageUrl'].toString().trim().isNotEmpty) {
       return normalize(venue['coverImageUrl'].toString());
     }
-    if (venue['photoUrl'] != null && venue['photoUrl'].toString().isNotEmpty) {
+    if (venue['photoUrl'] != null && venue['photoUrl'].toString().trim().isNotEmpty) {
       return normalize(venue['photoUrl'].toString());
     }
-    if (venue['filePath'] != null && venue['filePath'].toString().isNotEmpty) {
+    if (venue['filePath'] != null && venue['filePath'].toString().trim().isNotEmpty) {
       return normalize(venue['filePath'].toString());
     }
     if (venue['coverImage'] != null && venue['coverImage'] is Map) {
@@ -306,9 +303,18 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
     
     final images = venue['images'];
     if (images is List && images.isNotEmpty) {
-      final img = images[0];
+      final nonMenuImages = images.where((img) {
+        if (img is Map) {
+          final type = (img['type'] ?? img['category'] ?? '').toString().toLowerCase();
+          return !type.contains('menu');
+        }
+        return true;
+      }).toList();
+
+      final listToUse = nonMenuImages.isNotEmpty ? nonMenuImages : images;
+      final img = listToUse[0];
       if (img is Map) {
-        final path = img['filePath'] ?? img['url'] ?? img['filePath'];
+        final path = img['filePath'] ?? img['url'];
         if (path != null && path.toString().isNotEmpty) {
           return normalize(path.toString());
         }
@@ -319,7 +325,16 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
 
     final gallery = venue['gallery'];
     if (gallery is List && gallery.isNotEmpty) {
-      final img = gallery[0];
+      final nonMenuGallery = gallery.where((img) {
+        if (img is Map) {
+          final type = (img['type'] ?? img['category'] ?? '').toString().toLowerCase();
+          return !type.contains('menu');
+        }
+        return true;
+      }).toList();
+
+      final listToUse = nonMenuGallery.isNotEmpty ? nonMenuGallery : gallery;
+      final img = listToUse[0];
       if (img is Map) {
         final path = img['url'] ?? img['filePath'];
         if (path != null && path.toString().isNotEmpty) {

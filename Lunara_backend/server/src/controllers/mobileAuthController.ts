@@ -500,7 +500,7 @@ export const mobileLogout = async (req: Request, res: Response): Promise<Respons
         const user = await User.findByPk(userId);
         if (user) {
             const now = new Date();
-            await user.update({ isOnline: false, lastActiveAt: now });
+            await (user as any).update({ isOnline: false, fcmToken: null, lastActiveAt: now });
 
             try {
                 const { io } = require('../server');

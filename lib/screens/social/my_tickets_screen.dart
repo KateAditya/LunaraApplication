@@ -254,6 +254,27 @@ class _MyTicketsScreenState extends State<MyTicketsScreen>
                               ),
                             ],
                           ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.timer_outlined,
+                                size: 15,
+                                color: isExpired ? Colors.red.shade400 : LunaraTheme.cyberCyan,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                isExpired
+                                    ? 'Expired: ${_formatDate(ticket['expiresAt'] ?? ticket['eventEndAt'])}'
+                                    : 'Valid Until: ${_formatDate(ticket['expiresAt'] ?? ticket['eventEndAt'])}',
+                                style: TextStyle(
+                                  color: isExpired ? Colors.red.shade300 : LunaraTheme.cyberCyan,
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
                         ],
                       ),
                     ),

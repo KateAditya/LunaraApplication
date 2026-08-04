@@ -41,19 +41,23 @@ export class MobileTicketController {
             const tickets = await Ticket.findAll({
                 where: whereClause,
                 include: [
-                    { model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'city', 'area'] },
+                    { model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'city', 'area', 'images', 'profilePhotoUrl', 'coverImageUrl'] },
                 ],
                 order: [['eventStartAt', 'ASC']],
             });
 
             const formattedTickets = tickets.map(t => {
                 const isExpired = t.ticketStatus === TicketStatus.EXPIRED || new Date(t.expiresAt) < now;
+                const startDate = t.eventStartAt ? new Date(t.eventStartAt) : null;
+                const startTimeStr = startDate ? startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '08:00 PM';
                 return {
                     id: t.id,
                     ticketId: t.ticketId,
                     bookingId: t.bookingId,
                     bookingType: t.bookingType,
                     status: isExpired && t.ticketStatus !== TicketStatus.CANCELLED ? TicketStatus.EXPIRED : t.ticketStatus,
+                    bookingDate: t.eventStartAt,
+                    startTime: startTimeStr,
                     eventStartAt: t.eventStartAt,
                     eventEndAt: t.eventEndAt,
                     issuedAt: t.issuedAt,
@@ -63,6 +67,16 @@ export class MobileTicketController {
                     qrToken: isExpired ? null : t.qrToken,
                     venueName: t.venue?.name || 'Lunara Venue',
                     venueAddress: `${t.venue?.area || t.venue?.addressLine1 || ''}, ${t.venue?.city || ''}`.trim(),
+                    venue: t.venue ? {
+                        id: t.venue.id,
+                        name: t.venue.name,
+                        addressLine1: t.venue.addressLine1,
+                        city: t.venue.city,
+                        area: t.venue.area,
+                        profilePhotoUrl: (t.venue as any).profilePhotoUrl ?? null,
+                        coverImageUrl: (t.venue as any).coverImageUrl ?? null,
+                        images: (t.venue as any).images ?? [],
+                    } : null,
                     isExpired,
                 };
             });
@@ -123,6 +137,16 @@ export class MobileTicketController {
                     qrToken: isExpired ? null : ticket.qrToken,
                     venueName: ticket.venue?.name || 'Lunara Venue',
                     venueAddress: ticket.venue?.addressLine1 || '',
+                    venue: ticket.venue ? {
+                        id: ticket.venue.id,
+                        name: ticket.venue.name,
+                        addressLine1: ticket.venue.addressLine1,
+                        city: ticket.venue.city,
+                        area: ticket.venue.area,
+                        profilePhotoUrl: (ticket.venue as any).profilePhotoUrl ?? null,
+                        coverImageUrl: (ticket.venue as any).coverImageUrl ?? null,
+                        images: (ticket.venue as any).images ?? [],
+                    } : null,
                     guestName: ticket.user ? `${ticket.user.firstName} ${ticket.user.lastName}` : 'Guest',
                     isExpired,
                 },

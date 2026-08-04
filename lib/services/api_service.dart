@@ -16,6 +16,7 @@ import '../models/strangers_meet_request.dart';
 import 'package:intl/intl.dart';
 import 'package:socket_io_client/socket_io_client.dart' as socket_io;
 import 'notification_navigator.dart';
+import 'push_notification_service.dart';
 import '../screens/auth/autoblocked_warning_screen.dart';
 
 class ApiService {
@@ -174,6 +175,11 @@ class ApiService {
         debugPrint('Logout API failed: $e');
       }
     }
+    try {
+      await PushNotificationService.unregisterTokenOnLogout();
+    } catch (e) {
+      debugPrint('Error unregistering FCM token on logout: $e');
+    }
     await clearAuthToken();
   }
 
@@ -183,35 +189,34 @@ class ApiService {
     await prefs.setString('selected_city', city);
   }
 
+  static String? get authToken => _authToken;
+
   static Future<User?> fetchProfile({String? userId}) async {
     try {
+      if (_authToken == null) {
+        await initAuthToken();
+      }
       String? targetUserId = userId;
       if (targetUserId == 'undefined' || targetUserId == 'null' || (targetUserId != null && targetUserId.trim().isEmpty)) {
         targetUserId = null;
       }
       targetUserId ??= currentUserId ?? cachedCurrentUser?.id;
-      if (targetUserId == null || targetUserId == 'undefined' || targetUserId == 'null' || targetUserId.trim().isEmpty) {
-        if (_authToken == null) {
-          await initAuthToken();
-        }
-        targetUserId = currentUserId ?? cachedCurrentUser?.id;
-        if (targetUserId == null || targetUserId == 'undefined' || targetUserId == 'null' || targetUserId.trim().isEmpty) {
-          debugPrint('Error fetching profile: targetUserId is null');
-          return cachedCurrentUser;
-        }
+
+      final Map<String, String> queryParams = {};
+      if (targetUserId != null && targetUserId != 'undefined' && targetUserId != 'null' && targetUserId.trim().isNotEmpty) {
+        queryParams['userId'] = targetUserId;
       }
 
-      // Use query parameter only, as Flutter Web (fetch) does not allow bodies in GET requests
       final response = await get(
         '/api/mobile/user/userprofile',
-        queryParameters: {'userId': targetUserId},
+        queryParameters: queryParams.isNotEmpty ? queryParams : null,
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true) {
+        if (data['success'] == true && data['data'] != null) {
           final user = User.fromJson(data);
-          if (userId == null || userId == currentUserId || (cachedCurrentUser != null && user.id == cachedCurrentUser!.id)) {
+          if (userId == null || userId == currentUserId || (cachedCurrentUser != null && user.id == cachedCurrentUser!.id) || cachedCurrentUser == null) {
             cachedCurrentUser = user;
           }
           return user;
@@ -2133,6 +2138,23 @@ class ApiService {
       debugPrint('FCM token registration failed: ${response.statusCode}');
     } catch (e) {
       debugPrint('registerFcmToken error: $e');
+    }
+    return false;
+  }
+
+  static Future<bool> unregisterFcmToken(String token) async {
+    final userId = currentUserId;
+    try {
+      final response = await post(
+        '/api/mobile/user/unregister-fcm-token',
+        body: {'userId': userId, 'token': token},
+      );
+      if (response.statusCode == 200) {
+        debugPrint('FCM token unregistered successfully');
+        return true;
+      }
+    } catch (e) {
+      debugPrint('unregisterFcmToken error: $e');
     }
     return false;
   }

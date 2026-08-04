@@ -82,6 +82,14 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
       return '${ApiService.baseUrl}/${clean.startsWith('/') ? clean.substring(1) : clean}';
     }
 
+    if (venue['coverImageUrl'] != null && venue['coverImageUrl'].toString().trim().isNotEmpty) {
+      return normalize(venue['coverImageUrl'].toString());
+    }
+
+    if (venue['profilePhotoUrl'] != null && venue['profilePhotoUrl'].toString().trim().isNotEmpty) {
+      return normalize(venue['profilePhotoUrl'].toString());
+    }
+
     if (venue['coverImage'] != null && venue['coverImage'] is Map) {
       final path =
           venue['coverImage']['url'] ?? venue['coverImage']['filePath'];
@@ -99,9 +107,18 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
 
     final images = venue['images'];
     if (images is List && images.isNotEmpty) {
-      final img = images[0];
+      final nonMenuImages = images.where((img) {
+        if (img is Map) {
+          final type = (img['type'] ?? img['category'] ?? '').toString().toLowerCase();
+          return !type.contains('menu');
+        }
+        return true;
+      }).toList();
+
+      final listToUse = nonMenuImages.isNotEmpty ? nonMenuImages : images;
+      final img = listToUse[0];
       if (img is Map) {
-        final path = img['filePath'] ?? img['url'] ?? img['filePath'];
+        final path = img['filePath'] ?? img['url'];
         if (path != null && path.toString().isNotEmpty) {
           return normalize(path.toString());
         }
@@ -112,7 +129,16 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
 
     final gallery = venue['gallery'];
     if (gallery is List && gallery.isNotEmpty) {
-      final img = gallery[0];
+      final nonMenuGallery = gallery.where((img) {
+        if (img is Map) {
+          final type = (img['type'] ?? img['category'] ?? '').toString().toLowerCase();
+          return !type.contains('menu');
+        }
+        return true;
+      }).toList();
+
+      final listToUse = nonMenuGallery.isNotEmpty ? nonMenuGallery : gallery;
+      final img = listToUse[0];
       if (img is Map) {
         final path = img['url'] ?? img['filePath'];
         if (path != null && path.toString().isNotEmpty) {
@@ -174,7 +200,10 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     Map<String, dynamic> booking,
     bool isActive,
   ) {
-    final dateStr = booking['bookingDate']?.toString();
+    final dateStr = booking['expiresAt']?.toString() ??
+        booking['eventEndAt']?.toString() ??
+        booking['eventStartAt']?.toString() ??
+        booking['bookingDate']?.toString();
     final startTimeStr = booking['startTime']?.toString() ?? '20:00';
 
     String timelineText = 'EXPIRED';
@@ -183,42 +212,48 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
 
     try {
       if (dateStr != null && dateStr.isNotEmpty) {
-        final bDate = DateTime.parse(dateStr).toLocal();
-        final parts = startTimeStr.split(':');
-        final h = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 20 : 20;
-        final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+        DateTime? expirationTime;
+        if (booking['expiresAt'] != null) {
+          expirationTime = DateTime.tryParse(booking['expiresAt'].toString())?.toLocal();
+        } else if (booking['eventEndAt'] != null) {
+          expirationTime = DateTime.tryParse(booking['eventEndAt'].toString())?.toLocal();
+        }
 
-        final eventDateTime = DateTime(
-          bDate.year,
-          bDate.month,
-          bDate.day,
-          h,
-          m,
-        );
-        final expirationTime = eventDateTime.add(const Duration(hours: 3));
+        DateTime eventStartDateTime;
+        if (booking['eventStartAt'] != null) {
+          eventStartDateTime = DateTime.tryParse(booking['eventStartAt'].toString())?.toLocal() ?? DateTime.now();
+        } else {
+          final bDate = DateTime.parse(dateStr).toLocal();
+          final parts = startTimeStr.split(':');
+          final h = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 20 : 20;
+          final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+          eventStartDateTime = DateTime(bDate.year, bDate.month, bDate.day, h, m);
+        }
+
+        expirationTime ??= eventStartDateTime.add(const Duration(hours: 4));
         final now = DateTime.now();
 
         if (now.isAfter(expirationTime)) {
           timelineText =
-              'EXPIRED ON ${DateFormat('MMM d, h:mm a').format(expirationTime)}';
+              'EXPIRED ON ${DateFormat('MMM d, yyyy • h:mm a').format(expirationTime)}';
           timelineColor = Colors.red.shade400;
           progressRatio = 1.0;
-        } else if (now.isAfter(eventDateTime)) {
+        } else if (now.isAfter(eventStartDateTime)) {
           final remaining = expirationTime.difference(now);
           final hrs = remaining.inHours;
           final mins = remaining.inMinutes % 60;
-          timelineText = 'EXPIRES IN ${hrs}h ${mins}m (POST-CHECKIN)';
+          timelineText = 'VALID UNTIL ${DateFormat('h:mm a').format(expirationTime)} (${hrs}h ${mins}m LEFT)';
           timelineColor = Colors.amber.shade800;
-          progressRatio = 1.0 - (remaining.inSeconds / (3 * 3600));
+          progressRatio = 1.0 - (remaining.inSeconds / (4 * 3600)).clamp(0.0, 1.0);
         } else {
-          final remaining = eventDateTime.difference(now);
+          final remaining = eventStartDateTime.difference(now);
           if (remaining.inDays > 0) {
             timelineText =
-                'EVENT IN ${remaining.inDays} DAYS (${DateFormat('MMM d').format(eventDateTime)})';
+                'VALID FOR EVENT ON ${DateFormat('EEE, MMM d • h:mm a').format(eventStartDateTime)}';
           } else {
             final hrs = remaining.inHours;
             final mins = remaining.inMinutes % 60;
-            timelineText = 'STARTS IN ${hrs}h ${mins}m';
+            timelineText = 'STARTS IN ${hrs}h ${mins}m • VALID UNTIL ${DateFormat('h:mm a').format(expirationTime)}';
           }
           timelineColor = LunaraTheme.electricViolet;
           progressRatio = 0.35;

@@ -839,6 +839,12 @@ export const registerFcmToken = async (req: Request, res: Response): Promise<Res
             return res.status(404).json({ success: false, message: 'User not found' });
         }
 
+        // Unbind this device FCM token from any other accounts that used it previously
+        await User.update(
+            { fcmToken: null } as any,
+            { where: { fcmToken: token, id: { [Op.ne]: userId } } }
+        );
+
         await (user as any).update({ fcmToken: token });
 
         logger.info(`[FCM] Token registered for user ${userId} (platform: ${platform ?? 'unknown'})`);
@@ -846,6 +852,32 @@ export const registerFcmToken = async (req: Request, res: Response): Promise<Res
     } catch (error: any) {
         logger.error('[MobileUser] Error registering FCM token:', error);
         return res.status(500).json({ success: false, message: 'Failed to register FCM token' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/user/unregister-fcm-token
+// ─────────────────────────────────────────────────────────────────────────────
+export const unregisterFcmToken = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { userId, token } = req.body;
+        if (userId) {
+            const user = await User.findByPk(userId);
+            if (user) {
+                await (user as any).update({ fcmToken: null });
+            }
+        }
+        if (token) {
+            await User.update(
+                { fcmToken: null } as any,
+                { where: { fcmToken: token } }
+            );
+        }
+        logger.info(`[FCM] Token unregistered for user ${userId || 'unknown'}`);
+        return res.status(200).json({ success: true, message: 'FCM token unregistered successfully' });
+    } catch (error: any) {
+        logger.error('[MobileUser] Error unregistering FCM token:', error);
+        return res.status(500).json({ success: false, message: 'Failed to unregister FCM token' });
     }
 };
 
@@ -1128,20 +1160,20 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
         const isLikeRecord = (swipe: any) => swipe && swipe.status !== 'declined' && swipe.matchReason !== 'superlike';
         const isNopeRecord = (swipe: any) => swipe && swipe.status === 'declined';
 
-        // 1. Handle toggle/remove swipe if they click the same button again
+        // 1. If duplicate swipe action on existing record, retain it permanently (do NOT delete)
         if (existingMySwipe) {
-            const isDuplicateLike = (action === 'like' && isLikeRecord(existingMySwipe));
+            const isDuplicateLike = (action === 'like' && (isLikeRecord(existingMySwipe) || isSuperlikeRecord(existingMySwipe)));
             const isDuplicateSuperlike = (action === 'superlike' && isSuperlikeRecord(existingMySwipe));
             const isDuplicateNope = (action === 'nope' && isNopeRecord(existingMySwipe));
 
             if (isDuplicateLike || isDuplicateSuperlike || isDuplicateNope) {
-                // If it was connected, downgrade the opposite swipe back to pending
-                if (existingMySwipe.status === 'connected' && existingOppositeSwipe) {
-                    existingOppositeSwipe.status = 'pending' as any;
-                    await existingOppositeSwipe.save();
-                }
-                await existingMySwipe.destroy();
-                return res.status(200).json({ success: true, message: 'Swipe removed', data: null, matched: false, action: 'removed' });
+                return res.status(200).json({
+                    success: true,
+                    message: `Already ${action}d`,
+                    data: existingMySwipe,
+                    matched: existingMySwipe.status === 'connected',
+                    action: 'retained',
+                });
             }
         }
 
@@ -1494,15 +1526,11 @@ export const getSwipeStatus = async (req: Request, res: Response): Promise<Respo
             return res.status(400).json({ success: false, message: 'userId and targetUserId are required' });
         }
 
-        // Check today's swipe on this specific target
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-
+        // Check all-time swipe on this specific target (persists across days & refreshes)
         const existingSwipe = await UserMatch.findOne({
             where: {
                 user1Id: userId,
                 user2Id: targetUserId,
-                createdAt: { [Op.gte]: todayStart },
             }
         });
 
@@ -1511,6 +1539,9 @@ export const getSwipeStatus = async (req: Request, res: Response): Promise<Respo
         const alreadyNoped = !!existingSwipe && existingSwipe.status === 'declined';
 
         // Get today's total like count for this user
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+
         const todayLikeCount = await UserMatch.count({
             where: {
                 user1Id: userId,
@@ -1802,6 +1833,7 @@ export default {
     getAllCustomers,
     getUserStatus,
     registerFcmToken,
+    unregisterFcmToken,
     blockUser,
     unblockUser,
     reportUser,

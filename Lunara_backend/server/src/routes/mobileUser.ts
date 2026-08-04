@@ -104,6 +104,11 @@ router.post(
     mobileUserController.registerFcmToken
 );
 
+router.post(
+    '/unregister-fcm-token',
+    mobileUserController.unregisterFcmToken
+);
+
 /**
  * POST /api/mobile/user/block
  */
