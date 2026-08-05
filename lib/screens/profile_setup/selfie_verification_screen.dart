@@ -67,9 +67,9 @@ class _SelfieVerificationScreenState extends State<SelfieVerificationScreen>
     try {
       final XFile? photo = await _picker.pickImage(
         source: source,
-        maxWidth: 700,
-        maxHeight: 700,
-        imageQuality: 55,
+        maxWidth: 2400,
+        maxHeight: 2400,
+        imageQuality: 95,
       );
 
       if (photo == null) return;
@@ -147,9 +147,9 @@ class _SelfieVerificationScreenState extends State<SelfieVerificationScreen>
       final XFile? selfie = await _picker.pickImage(
         source: ImageSource.camera,
         preferredCameraDevice: CameraDevice.front,
-        maxWidth: 700,
-        maxHeight: 700,
-        imageQuality: 55,
+        maxWidth: 2400,
+        maxHeight: 2400,
+        imageQuality: 95,
       );
 
       if (selfie == null) return;
@@ -207,7 +207,7 @@ class _SelfieVerificationScreenState extends State<SelfieVerificationScreen>
 
       if (!mounted) return;
 
-      if (res['verified'] == true || res['success'] == true) {
+      if (res['verified'] == true) {
         final double confidencePct = ((res['confidence'] as double? ?? 0.95) * 100);
 
         showDialog(

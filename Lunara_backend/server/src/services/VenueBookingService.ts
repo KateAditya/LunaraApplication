@@ -53,7 +53,7 @@ export class VenueBookingService {
 
         let totalAmount = 0;
         let pkg: BookingTablePackage | null = null;
-        const isStandardOrGroup = packageName === 'Standard Booking' || packageName === 'Group Party Booking' || packageName === 'Confirmation Charges' || !packageName || packageName === 'none';
+        const isStandardOrGroup = packageName === 'Standard Booking' || packageName === 'Group Party Booking' || packageName === 'Confirmation Charges' || packageName === 'Free Booking' || packageName === 'Free Entry Ticket' || !packageName || packageName === 'none';
 
         if (isStandardOrGroup) {
             const rawCharge = Number(venue.tableBookingCharges);

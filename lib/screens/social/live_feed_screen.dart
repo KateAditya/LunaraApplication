@@ -485,7 +485,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Request processed/cancelled.'),
+            content: Text('Request cancelled / declined.'),
             backgroundColor: Colors.grey,
           ),
         );
@@ -501,6 +501,40 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     } catch (e) {
       Navigator.pop(context);
       debugPrint('Error rejecting request: $e');
+    }
+  }
+
+  /// Accept a private invite sent by the host (calls accept-invite endpoint)
+  Future<void> _handleAcceptPartyPlanInvite(String reqId) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+      ),
+    );
+    try {
+      final res = await ApiService.acceptPartyPlanInvite(reqId);
+      Navigator.pop(context);
+      if (res != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Invite accepted! Proceed to pay deposit.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _loadFeed();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to accept invite. Try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      Navigator.pop(context);
+      debugPrint('Error accepting invite: $e');
     }
   }
 
@@ -636,6 +670,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final List<UnifiedNotificationItem> items = [];
     final currentUserId = ApiService.currentUserId;
 
+    // Build set of SM plan IDs already represented in feedItems so that we can
+    // skip redundant server-side push notifications for the same meet.
+    final Set<String> smFeedPlanIds = <String>{};
+    for (final fi in _feedItems) {
+      final rType = fi['requestType']?.toString() ?? '';
+      if (rType == 'stranger_meet_join') {
+        final plan = fi['plan'];
+        final pId = plan is Map ? plan['id']?.toString() : null;
+        if (pId != null && pId.isNotEmpty) smFeedPlanIds.add(pId);
+      }
+    }
+
     // 1. Process System / DB Notifications from `_notifications`
     for (final n in _notifications) {
       final id = n['id']?.toString() ?? '';
@@ -657,6 +703,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         icon = Icons.celebration_rounded;
         badge = 'PARTY PLAN';
       } else if (category.contains('stranger') || category.contains('meet')) {
+        // Skip SM push-notifications that are already shown as live feed items
+        // (avoids duplicate cards for the same Stranger Meet).
+        final notifEntityId = n['entityId']?.toString() ?? '';
+        if (smFeedPlanIds.isNotEmpty && notifEntityId.isNotEmpty &&
+            smFeedPlanIds.contains(notifEntityId)) {
+          continue;
+        }
         accentColor = const Color(0xFF6366F1);
         icon = Icons.people_alt_rounded;
         badge = 'STRANGER MEET';
@@ -954,14 +1007,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
 
       List<NotificationAction>? actionsList;
-      Color accent = requestType == 'stranger_meet' || type == 'stranger_meet'
+      final bool isStranger = requestType.startsWith('stranger') || type.startsWith('stranger');
+      Color accent = isStranger
           ? const Color(0xFF6366F1)
           : const Color(0xFF8B5CF6);
-      String title = requestType == 'stranger_meet' || type == 'stranger_meet'
+      String title = isStranger
           ? '🤝 Stranger Meet Request'
           : '🎉 Party Plan Update';
       String body = '$userName requested to join Stranger Meet at $venueName';
-      String badge = requestType == 'stranger_meet' || type == 'stranger_meet'
+      String badge = isStranger
           ? 'STRANGER MEET'
           : 'PARTY PLAN';
 
@@ -969,7 +1023,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         accent = const Color(0xFF9CA3AF);
         badge = 'EXPIRED';
       } else {
-        if (requestType == 'stranger_meet' || type == 'stranger_meet') {
+        if (isStranger) {
           if (type == 'incoming_request') {
             if (status == 'pending') {
               title = '📥 Join Request Received';
@@ -1046,7 +1100,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   color: Colors.grey[200],
                   onTap: () {
                     try {
-                      final req = StrangersMeetRequest.fromJson(item);
+                      // Use planDetails which carries the actual SM request ID
+                      final smData = item['planDetails'] is Map
+                          ? (item['planDetails'] as Map<String, dynamic>)
+                          : item;
+                      final req = StrangersMeetRequest.fromJson(smData);
                       Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
                     } catch (e) {
                       debugPrint('Error parsing strangers meet ticket: $e');
@@ -1056,68 +1114,226 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               ];
             }
           } else {
-            if (status == 'pending') {
-              title = '🤝 Stranger Meet Request Sent';
-              body = 'You requested to join Stranger Meet at $venueName. Awaiting host approval.';
-            } else if (status == 'accepted' || status == 'payment_pending') {
-              title = '✅ Stranger Meet Accepted!';
-              body = 'Your request at $venueName was accepted. Complete payment to confirm!';
-              badge = 'ACTION REQUIRED';
-              actionsList = [
-                NotificationAction(
-                  label: 'Pay Deposit',
-                  icon: Icons.payment_rounded,
-                  isPrimary: true,
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => StrangersMeetPaymentScreen(
-                        request: StrangersMeetRequest.fromJson(item),
-                        onPaymentSuccess: () => _loadFeed(),
-                        isJoinPayment: status != 'accepted',
+            // My outgoing request or my own created meetup
+            final bool isHostOfMeet = requestType == 'stranger_meet';
+            if (isHostOfMeet) {
+              // HOST'S OWN Created meetup request status
+              if (status == 'pending') {
+                title = '⏳ Stranger Meet Awaiting Approval';
+                body = 'Your meet request "${item['subject'] ?? ''}" at $venueName has been submitted. Awaiting admin approval.';
+                badge = 'PENDING';
+              } else if (status == 'approved') {
+                title = '🎉 Stranger Meet Approved!';
+                body = 'Your meet request "${item['subject'] ?? ''}" at $venueName has been approved. Complete payment to publish it!';
+                badge = 'ACTION REQUIRED';
+                actionsList = [
+                  NotificationAction(
+                    label: 'Pay Deposit',
+                    icon: Icons.payment_rounded,
+                    isPrimary: true,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => StrangersMeetPaymentScreen(
+                          request: StrangersMeetRequest.fromJson(item),
+                          onPaymentSuccess: () => _loadFeed(),
+                          isJoinPayment: false, // Host payment
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ];
-            } else if (status == 'paid' || status == 'confirmed') {
-              title = '🎉 Stranger Meet Confirmed!';
-              body = 'Your seat at $venueName is locked and confirmed!';
-              badge = 'CONFIRMED';
-              actionsList = [
-                NotificationAction(
-                  label: 'Chat',
-                  icon: Icons.chat_bubble_rounded,
-                  isPrimary: true,
-                  onTap: () {
-                    Navigator.push(
+                ];
+              } else if (status == 'paid' || status == 'confirmed') {
+                title = '🎉 Stranger Meet Confirmed!';
+                body = 'Your meet at $venueName is confirmed and live on the feed!';
+                badge = 'CONFIRMED';
+                actionsList = [
+                  NotificationAction(
+                    label: 'View Ticket',
+                    icon: Icons.confirmation_number_rounded,
+                    isPrimary: true,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => StrangersMeetTicketScreen(
+                          request: StrangersMeetRequest.fromJson(item),
+                        ),
+                      ),
+                    ),
+                  ),
+                ];
+              }
+            } else {
+              // ─── JOINER: My request to join someone else's Stranger Meet ─────
+              // For stranger_meet_join items, venue and host-user info live inside
+              // item['plan'] (not at the top level). Extract them here.
+              final smPlan = item['plan'] is Map
+                  ? (item['plan'] as Map<String, dynamic>)
+                  : <String, dynamic>{};
+              final smVenueMap = smPlan['venue'] is Map
+                  ? (smPlan['venue'] as Map<String, dynamic>)
+                  : venue;
+              final smVenueName = smVenueMap['name']?.toString().isNotEmpty == true
+                  ? smVenueMap['name'].toString()
+                  : venueName;
+              final smHost = smPlan['user'] is Map
+                  ? (smPlan['user'] as Map<String, dynamic>)
+                  : user;
+              final smHostPhoto =
+                  smHost['profileImageUrl'] ?? smHost['profilePhotoUrl'] ?? userPhoto;
+
+              // Check actual joiner payment status FIRST.
+              // After payment, backend keeps status='accepted' but paymentStatus='paid'.
+              final joinerPayStatus =
+                  (item['joinerPaymentStatus'] ?? '').toString().toLowerCase();
+
+              if (joinerPayStatus == 'paid') {
+                // ── Payment done – show confirmed state ──────────────────────
+                title = '🎉 You\'re In! Meet Confirmed';
+                body = 'Payment done! Your seat at $smVenueName is locked. Enjoy the meet! 🥂';
+                badge = 'CONFIRMED';
+                accent = const Color(0xFF10B981);
+                actionsList = [
+                  NotificationAction(
+                    label: 'Chat Host',
+                    icon: Icons.chat_bubble_rounded,
+                    isPrimary: false,
+                    color: Colors.grey[200],
+                    onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (_) => ChatScreen(
                           user: {
-                            'id': user['id'] ?? '',
-                            'firstName': user['firstName'] ?? 'Partner',
-                            'lastName': user['lastName'] ?? '',
-                            'profilePhotoUrl': userPhoto,
+                            'id': smHost['id'] ?? '',
+                            'firstName': smHost['firstName'] ?? 'Host',
+                            'lastName': smHost['lastName'] ?? '',
+                            'profilePhotoUrl': smHostPhoto,
                           },
                         ),
                       ),
-                    );
-                  },
-                ),
-                NotificationAction(
-                  label: 'View Ticket',
-                  icon: Icons.confirmation_number_rounded,
-                  isPrimary: false,
-                  color: Colors.grey[200],
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: StrangersMeetRequest.fromJson(item)))),
-                ),
-              ];
+                    ),
+                  ),
+                  NotificationAction(
+                    label: 'View Ticket',
+                    icon: Icons.confirmation_number_rounded,
+                    isPrimary: true,
+                    onTap: () {
+                      try {
+                        final req = StrangersMeetRequest.fromJson(
+                          smPlan.isNotEmpty ? smPlan : item,
+                        );
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => StrangersMeetTicketScreen(request: req),
+                          ),
+                        );
+                      } catch (e) {
+                        debugPrint('Error parsing SM ticket (joiner paid): $e');
+                      }
+                    },
+                  ),
+                ];
+              } else if (status == 'pending') {
+                // ── Pending host approval ────────────────────────────────────
+                title = '🤝 Request Sent';
+                body = 'Awaiting host approval for Stranger Meet at $smVenueName.';
+                badge = 'PENDING';
+                // No action button – nothing to do until host responds
+              } else if (status == 'accepted' || status == 'payment_pending') {
+                // ── Accepted – needs join payment ────────────────────────────
+                title = '✅ Accepted! Pay to Confirm';
+                body = 'Your request to join the meet at $smVenueName was accepted! '
+                    'Pay the deposit to secure your spot.';
+                badge = 'ACTION REQUIRED';
+                accent = const Color(0xFFF59E0B);
+                actionsList = [
+                  NotificationAction(
+                    label: 'Pay Deposit',
+                    icon: Icons.payment_rounded,
+                    isPrimary: true,
+                    onTap: () {
+                      try {
+                        // IMPORTANT: use smPlan (item['plan']) for the correct
+                        // StrangersMeetRequest ID. item['id'] is the joiner-record
+                        // ID, which is NOT the SM request ID the backend expects.
+                        final req = StrangersMeetRequest.fromJson(
+                          smPlan.isNotEmpty ? smPlan : item,
+                        );
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => StrangersMeetPaymentScreen(
+                              request: req,
+                              onPaymentSuccess: () => _loadFeed(),
+                              isJoinPayment: true,
+                            ),
+                          ),
+                        );
+                      } catch (e) {
+                        debugPrint('Error parsing SM payment (joiner): $e');
+                      }
+                    },
+                  ),
+                ];
+              } else if (status == 'rejected') {
+                // ── Rejected by host ─────────────────────────────────────────
+                title = '❌ Request Declined';
+                body = 'Your request to join Stranger Meet at $smVenueName was declined by the host.';
+                badge = 'DECLINED';
+                accent = const Color(0xFF9CA3AF);
+                // No action button
+              } else if (status == 'paid' || status == 'confirmed') {
+                // ── Paid / Confirmed (status-level fallback) ─────────────────
+                title = '🎉 Stranger Meet Confirmed!';
+                body = 'Your seat at $smVenueName is locked and confirmed!';
+                badge = 'CONFIRMED';
+                accent = const Color(0xFF10B981);
+                actionsList = [
+                  NotificationAction(
+                    label: 'View Ticket',
+                    icon: Icons.confirmation_number_rounded,
+                    isPrimary: true,
+                    onTap: () {
+                      try {
+                        final req = StrangersMeetRequest.fromJson(
+                          smPlan.isNotEmpty ? smPlan : item,
+                        );
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => StrangersMeetTicketScreen(request: req),
+                          ),
+                        );
+                      } catch (e) {
+                        debugPrint('Error parsing SM ticket (joiner confirmed): $e');
+                      }
+                    },
+                  ),
+                ];
+              }
             }
           }
         } else {
-          // Party Plan Requests
+          // ─── Party Plan Requests ─────────────────────────────────────────────
+          //
+          // Detect whether this `my_request` is actually a private invitation
+          // sent by the HOST (plan.visibility == 'PRIVATE' &&
+          // plan.selectedUsers contains current user ID) vs a voluntary request.
+          final planMap = item['plan'] is Map ? item['plan'] as Map<String, dynamic> : <String, dynamic>{};
+          final planVis = planMap['visibility']?.toString().toUpperCase() ?? '';
+          final selectedUsers = planMap['selectedUsers'];
+          final bool isPrivateInvite = planVis == 'PRIVATE' &&
+              selectedUsers is List &&
+              selectedUsers.any((u) => u?.toString() == currentUserId);
+
+          // Host user info from plan.creator
+          final hostCreator = planMap['creator'] is Map ? planMap['creator'] as Map<String, dynamic> : <String, dynamic>{};
+          final hostName = '${hostCreator['firstName'] ?? user['firstName'] ?? 'Host'} ${hostCreator['lastName'] ?? user['lastName'] ?? ''}'.trim();
+          final hostPhoto = hostCreator['profileImageUrl'] ?? userPhoto;
+
           if (type == 'incoming_request') {
+            // ─── HOST VIEW: someone requested to join my plan ──────────────
             if (status == 'pending') {
               title = '📥 Party Plan Request';
               body = '$userName requested to join your Party Plan at $venueName';
@@ -1136,109 +1352,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   onTap: () => _handleRejectPartyPlan(id),
                 ),
               ];
-            } else if (status == 'accepted') {
-              title = '⏳ Approved (Awaiting Payment)';
-              body = 'You approved $userName. Awaiting their safety deposit payment.';
-              actionsList = [
-                NotificationAction(
-                  label: 'Revoke',
-                  icon: Icons.cancel_rounded,
-                  isPrimary: false,
-                  color: Colors.grey[200],
-                  onTap: () => _handleRejectPartyPlan(id),
-                ),
-              ];
-            } else if (status == 'paid' || status == 'confirmed') {
-              title = '🎉 Partner Joined';
-              body = '$userName paid the deposit! Your Party Plan at $venueName is confirmed.';
-              badge = 'CONFIRMED';
-              final otherId = (item['hostId'] == currentUserId) ? item['requesterId'] : item['hostId'];
-              actionsList = [
-                NotificationAction(
-                  label: 'Chat',
-                  icon: Icons.chat_bubble_rounded,
-                  isPrimary: true,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ChatScreen(
-                          user: {
-                            'id': otherId ?? user['id'] ?? '',
-                            'firstName': user['firstName'] ?? 'Party Partner',
-                            'lastName': user['lastName'] ?? '',
-                            'profilePhotoUrl': userPhoto,
-                          },
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                NotificationAction(
-                  label: 'View Ticket',
-                  icon: Icons.confirmation_number_rounded,
-                  isPrimary: false,
-                  color: Colors.grey[200],
-                  onTap: () {
-                    final planData = item['plan'] is Map ? item['plan'] as Map<String, dynamic> : item;
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => PartyPlanTicketScreen(
-                          request: item,
-                          plan: planData,
-                          isHost: currentUserId == (planData['userId'] ?? planData['creator']?['id']),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ];
-            }
-          } else {
-            if (status == 'pending') {
-              title = '⏳ Party Plan Request Sent';
-              body = 'You requested to join $userName\'s Party Plan at $venueName.';
-              actionsList = [
-                NotificationAction(
-                  label: 'Cancel',
-                  icon: Icons.cancel_rounded,
-                  isPrimary: false,
-                  color: Colors.grey[200],
-                  onTap: () => _handleRejectPartyPlan(id),
-                ),
-              ];
-            } else if (status == 'accepted') {
-              title = '👤 Request Accepted!';
-              body = 'Your Party Plan request at $venueName was accepted by $userName. Pay safety deposit to unlock chat!';
-              badge = 'ACTION REQUIRED';
-              actionsList = [
-                NotificationAction(
-                  label: 'Pay Deposit',
-                  icon: Icons.payment_rounded,
-                  isPrimary: true,
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => PartyPlanDetailScreen(
-                        plan: item['plan'] is Map ? item['plan'] as Map<String, dynamic> : item,
-                      ),
-                    ),
-                  ),
-                ),
-                NotificationAction(
-                  label: 'Cancel',
-                  icon: Icons.cancel_rounded,
-                  isPrimary: false,
-                  color: Colors.grey[200],
-                  onTap: () => _handleRejectPartyPlan(id),
-                ),
-              ];
-            } else if (status == 'paid' || status == 'confirmed') {
-              title = '🎉 Match Confirmed!';
-              body = 'Party booking at $venueName is confirmed! Chat is unlocked.';
-              badge = 'CONFIRMED';
-              final otherId = (item['hostId'] == currentUserId) ? item['requesterId'] : item['hostId'];
+            } else if (status == 'accepted' || status == 'payment_pending') {
+              title = '⏳ Approved — Awaiting Payment';
+              body = 'You approved $userName. Waiting for safety deposit payment.';
               actionsList = [
                 NotificationAction(
                   label: 'Chat',
@@ -1249,7 +1365,39 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     MaterialPageRoute(
                       builder: (_) => ChatScreen(
                         user: {
-                          'id': otherId ?? user['id'] ?? '',
+                          'id': item['requesterId'] ?? user['id'] ?? '',
+                          'firstName': user['firstName'] ?? 'Partner',
+                          'lastName': user['lastName'] ?? '',
+                          'profilePhotoUrl': userPhoto,
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+                NotificationAction(
+                  label: 'Revoke',
+                  icon: Icons.cancel_rounded,
+                  isPrimary: false,
+                  color: Colors.grey[200],
+                  onTap: () => _handleRejectPartyPlan(id),
+                ),
+              ];
+            } else if (status == 'paid' || status == 'confirmed') {
+              title = '🎉 Partner Joined';
+              body = '$userName paid the deposit! Party Plan at $venueName is confirmed.';
+              badge = 'CONFIRMED';
+              final otherId = item['requesterId'] ?? user['id'] ?? '';
+              actionsList = [
+                NotificationAction(
+                  label: 'Chat',
+                  icon: Icons.chat_bubble_rounded,
+                  isPrimary: true,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ChatScreen(
+                        user: {
+                          'id': otherId,
                           'firstName': user['firstName'] ?? 'Party Partner',
                           'lastName': user['lastName'] ?? '',
                           'profilePhotoUrl': userPhoto,
@@ -1278,6 +1426,194 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   },
                 ),
               ];
+            }
+          } else {
+            // ─── JOINER / INVITEE VIEW ────────────────────────────────────
+            if (isPrivateInvite) {
+              // ─── PRIVATE INVITE from host ─────────────────────────────
+              accent = const Color(0xFF7C3AED);
+              if (status == 'pending') {
+                title = '💌 Private Invite!';
+                badge = 'INVITE';
+                body = '$hostName privately invited you to their Party Plan at $venueName. Accept to proceed!';
+                actionsList = [
+                  NotificationAction(
+                    label: 'Accept',
+                    icon: Icons.check_circle_rounded,
+                    isPrimary: true,
+                    onTap: () => _handleAcceptPartyPlanInvite(id),
+                  ),
+                  NotificationAction(
+                    label: 'Decline',
+                    icon: Icons.cancel_rounded,
+                    isPrimary: false,
+                    color: Colors.grey[200],
+                    onTap: () => _handleRejectPartyPlan(id),
+                  ),
+                ];
+              } else if (status == 'accepted' || status == 'payment_pending') {
+                title = '✅ Invite Accepted!';
+                badge = 'ACTION REQUIRED';
+                body = 'You accepted $hostName\'s invite at $venueName. Pay the safety deposit to lock your spot!';
+                actionsList = [
+                  NotificationAction(
+                    label: 'Pay Deposit',
+                    icon: Icons.payment_rounded,
+                    isPrimary: true,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PartyPlanDetailScreen(
+                          plan: planMap.isNotEmpty ? planMap : item,
+                        ),
+                      ),
+                    ),
+                  ),
+                  NotificationAction(
+                    label: 'Decline',
+                    icon: Icons.cancel_rounded,
+                    isPrimary: false,
+                    color: Colors.grey[200],
+                    onTap: () => _handleRejectPartyPlan(id),
+                  ),
+                ];
+              } else if (status == 'paid' || status == 'confirmed') {
+                title = '🎉 Party Confirmed!';
+                badge = 'CONFIRMED';
+                body = 'Your spot at $venueName is locked! Chat with $hostName.';
+                actionsList = [
+                  NotificationAction(
+                    label: 'Chat',
+                    icon: Icons.chat_bubble_rounded,
+                    isPrimary: true,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ChatScreen(
+                          user: {
+                            'id': hostCreator['id'] ?? planMap['userId'] ?? '',
+                            'firstName': hostCreator['firstName'] ?? 'Host',
+                            'lastName': hostCreator['lastName'] ?? '',
+                            'profilePhotoUrl': hostPhoto,
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                  NotificationAction(
+                    label: 'View Ticket',
+                    icon: Icons.confirmation_number_rounded,
+                    isPrimary: false,
+                    color: Colors.grey[200],
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PartyPlanTicketScreen(
+                            request: item,
+                            plan: planMap.isNotEmpty ? planMap : item,
+                            isHost: false,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ];
+              } else if (status == 'rejected' || status == 'cancelled') {
+                title = '❌ Invite Declined';
+                badge = 'DECLINED';
+                body = 'You declined the invite from $hostName at $venueName.';
+                accent = Colors.grey;
+              }
+            } else {
+              // ─── VOLUNTARY JOIN REQUEST sent by current user ──────────
+              if (status == 'pending') {
+                title = '⏳ Party Plan Request Sent';
+                body = 'You requested to join the Party Plan at $venueName.';
+                actionsList = [
+                  NotificationAction(
+                    label: 'Cancel Request',
+                    icon: Icons.cancel_rounded,
+                    isPrimary: false,
+                    color: Colors.grey[200],
+                    onTap: () => _handleRejectPartyPlan(id),
+                  ),
+                ];
+              } else if (status == 'accepted' || status == 'payment_pending') {
+                title = '👤 Request Accepted!';
+                body = 'Your Party Plan request at $venueName was accepted! Pay safety deposit to unlock chat.';
+                badge = 'ACTION REQUIRED';
+                actionsList = [
+                  NotificationAction(
+                    label: 'Pay Deposit',
+                    icon: Icons.payment_rounded,
+                    isPrimary: true,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PartyPlanDetailScreen(
+                          plan: planMap.isNotEmpty ? planMap : item,
+                        ),
+                      ),
+                    ),
+                  ),
+                  NotificationAction(
+                    label: 'Cancel',
+                    icon: Icons.cancel_rounded,
+                    isPrimary: false,
+                    color: Colors.grey[200],
+                    onTap: () => _handleRejectPartyPlan(id),
+                  ),
+                ];
+              } else if (status == 'paid' || status == 'confirmed') {
+                title = '🎉 Match Confirmed!';
+                body = 'Party booking at $venueName is confirmed! Chat is unlocked.';
+                badge = 'CONFIRMED';
+                final otherId = item['hostId'] ?? planMap['userId'] ?? user['id'] ?? '';
+                actionsList = [
+                  NotificationAction(
+                    label: 'Chat',
+                    icon: Icons.chat_bubble_rounded,
+                    isPrimary: true,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ChatScreen(
+                          user: {
+                            'id': otherId,
+                            'firstName': user['firstName'] ?? 'Party Partner',
+                            'lastName': user['lastName'] ?? '',
+                            'profilePhotoUrl': userPhoto,
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                  NotificationAction(
+                    label: 'View Ticket',
+                    icon: Icons.confirmation_number_rounded,
+                    isPrimary: false,
+                    color: Colors.grey[200],
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PartyPlanTicketScreen(
+                            request: item,
+                            plan: planMap.isNotEmpty ? planMap : item,
+                            isHost: currentUserId == (planMap['userId'] ?? item['hostId']),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ];
+              } else if (status == 'rejected' || status == 'cancelled') {
+                title = '❌ Request Rejected';
+                badge = 'REJECTED';
+                body = 'Your Party Plan request at $venueName was declined.';
+                accent = Colors.grey;
+              }
             }
           }
         }
@@ -1335,7 +1671,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         accent = const Color(0xFF9CA3AF);
         badge = 'EXPIRED';
       } else {
-        if (status == 'approved' || status == 'awaiting_payment') {
+        final adminApproval = (booking['adminApprovalStatus'] ?? '').toString().toLowerCase();
+        if (status == 'approved' || status == 'awaiting_payment' || adminApproval == 'approved') {
           title = '⚡ Group Party Approved!';
           body = 'Admin approved your Group Party at $venueName. Pay to lock!';
           badge = 'ACTION REQUIRED';

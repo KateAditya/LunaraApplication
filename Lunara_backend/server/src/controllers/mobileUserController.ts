@@ -20,9 +20,10 @@ import UserPenalty from '../models/UserPenalty';
 import { azureFaceService } from '../services/azureFaceService';
 
 // ─── Image compression constants ──────────────────────────────────────────────
-const PHOTO_MAX_WIDTH = 1080;   // px
-const PHOTO_MAX_HEIGHT = 1080;   // px
-const PHOTO_QUALITY = 80;     // JPEG quality (0-100)
+// Target HD/2K quality (~3-4 MB max target size, ultra-sharp & unblurred)
+const PHOTO_MAX_WIDTH = 2400;   // px
+const PHOTO_MAX_HEIGHT = 2400;  // px
+const PHOTO_QUALITY = 92;       // High JPEG quality (92/100) to prevent blur & artifacts
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/mobile/user/photos
@@ -62,21 +63,33 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
 
             const fileBuffer = file.buffer || fs.readFileSync(file.path);
 
-            // ── Auto-Compress with sharp ─────────────────────────────────────
+            // ── Auto-Compress with sharp (HD 2K target size ~3-4MB, no blur) ──
             const randomHex = crypto.randomBytes(8).toString('hex');
             const filename = `${Date.now()}_${randomHex}.jpg`;
             const absolutePath = path.join(galleryDir, filename);
 
-            const compressedBuffer = await sharp(fileBuffer)
-                .rotate() // Auto-rotates image based on EXIF orientation data
-                .resize({
-                    width: PHOTO_MAX_WIDTH,
-                    height: PHOTO_MAX_HEIGHT,
-                    fit: 'inside',          // preserve aspect ratio, never upscale beyond box
-                    withoutEnlargement: true,  // skip resize if image is already smaller
-                })
-                .jpeg({ quality: PHOTO_QUALITY, progressive: true })
-                .toBuffer();
+            let compressedBuffer: Buffer;
+            const fileSizeMB = fileBuffer.length / (1024 * 1024);
+
+            if (fileSizeMB <= 3.5) {
+                // If original image is already <= 3.5 MB, preserve full resolution & detail without heavy compression
+                compressedBuffer = await sharp(fileBuffer)
+                    .rotate() // Auto-rotates image based on EXIF orientation data
+                    .jpeg({ quality: 95, progressive: true })
+                    .toBuffer();
+            } else {
+                // If original image is larger than 3.5 MB, compress down to ~3-4 MB with 2400px HD resolution cap
+                compressedBuffer = await sharp(fileBuffer)
+                    .rotate()
+                    .resize({
+                        width: PHOTO_MAX_WIDTH,
+                        height: PHOTO_MAX_HEIGHT,
+                        fit: 'inside',          // preserve aspect ratio, never upscale beyond box
+                        withoutEnlargement: true,  // skip resize if image is already smaller
+                    })
+                    .jpeg({ quality: PHOTO_QUALITY, progressive: true })
+                    .toBuffer();
+            }
 
             // ── Perform Backend Face Verification Scan ────────────────────────
             try {
@@ -385,11 +398,33 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
         });
         const subscriptionTier: string = (activeSub as any)?.package?.tier ?? 'FREE';
 
+        // Check if the requesting user has already liked/superliked target user
+        let isLiked = false;
+        let isSuperLiked = false;
+        let swipeStatus: string | null = null;
+        const requesterUserId = req.user?.id || (req.query.currentUserId as string);
+        if (requesterUserId && requesterUserId !== userId) {
+            const existingSwipe = await UserMatch.findOne({
+                where: {
+                    user1Id: requesterUserId,
+                    user2Id: userId
+                }
+            });
+            if (existingSwipe) {
+                isLiked = ['pending', 'connected'].includes(existingSwipe.status as string);
+                isSuperLiked = isLiked && existingSwipe.matchReason === 'superlike';
+                swipeStatus = existingSwipe.status;
+            }
+        }
+
         return res.status(200).json({
             success: true,
             data: {
                 // ── Core user fields ─────────────────────────────────────────
                 id: user.id,
+                isLiked,
+                isSuperLiked,
+                swipeStatus,
                 superLikesCount,
                 plansCount,
                 subscriptionTier,
@@ -695,7 +730,8 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
             });
         }
 
-        // ── Batch-fetch real subscription tiers ──────────────────────────────
+        // ── Batch-fetch real subscription tiers & current user swipes ─────────────
+        const mySwipesMap: Record<string, { status: string; matchReason: string }> = {};
         if (userIds.length > 0) {
             const now = new Date();
             const activeSubs = await UserSubscription.findAll({
@@ -715,6 +751,22 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                     tierMap[sub.userId] = (sub as any).package?.tier ?? 'FREE';
                     boostsMap[sub.userId] = sub.boostsRemaining ?? 0;
                 }
+            }
+
+            // Batch fetch current user's swipe/like records on all returned users
+            if (currentUserId) {
+                const mySwipes = await UserMatch.findAll({
+                    where: {
+                        user1Id: currentUserId,
+                        user2Id: { [Op.in]: userIds }
+                    }
+                });
+                mySwipes.forEach((s: any) => {
+                    mySwipesMap[s.user2Id] = {
+                        status: s.status,
+                        matchReason: s.matchReason || 'like'
+                    };
+                });
             }
         }
 
@@ -750,6 +802,10 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
             const points = pointsMap[user.id] || 120;
             const rankScore = rankScoreMap[user.id] || 0;
 
+            const mySwipe = mySwipesMap[user.id];
+            const isLiked = !!mySwipe && ['pending', 'connected'].includes(mySwipe.status as string);
+            const isSuperLiked = isLiked && mySwipe.matchReason === 'superlike';
+
             return {
                 id: user.id,
                 firstName: user.firstName,
@@ -779,6 +835,9 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                 rankScore,
                 subscriptionTier: tierMap[user.id] ?? 'FREE',
                 tierRank: tierRankMap[tierMap[user.id] ?? 'FREE'] ?? 0,
+                isLiked,
+                isSuperLiked,
+                swipeStatus: mySwipe?.status ?? null,
             };
         });
 

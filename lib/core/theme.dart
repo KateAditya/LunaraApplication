@@ -150,4 +150,41 @@ class LunaraTheme {
   static const String logoIcon = 'assets/images/logo_icon.png';
   static const String logo = 'assets/images/logo.png';
   static const String defaultAvatar = 'assets/images/default_avatar.png';
+
+  /// Returns verification tick color according to user's purchased subscription plan.
+  /// Returns null if user has no purchased plan (i.e. FREE tier).
+  static Color? getPlanBadgeColor(dynamic user) {
+    if (user == null) return null;
+    String tier = '';
+    if (user is Map) {
+      tier = (user['subscriptionTier'] ??
+              user['tier'] ??
+              user['packageTier'] ??
+              user['planTier'] ??
+              'FREE')
+          .toString()
+          .toUpperCase();
+    } else {
+      try {
+        tier = (user.subscriptionTier ?? '').toString().toUpperCase();
+      } catch (_) {}
+    }
+
+    if (tier.isEmpty || tier == 'FREE') {
+      return null; // No purchased plan -> Do not show tick icon
+    }
+
+    switch (tier) {
+      case 'CORE':
+        return const Color(0xFF00A9FF); // Core Blue
+      case 'PLUS':
+        return const Color(0xFF7F00FF); // Plus Purple
+      case 'PRO':
+        return const Color(0xFFE100FF); // Pro Magenta/Pink
+      case 'ELITE':
+        return const Color(0xFFFFB703); // Elite Gold/Amber
+      default:
+        return const Color(0xFF00A9FF);
+    }
+  }
 }

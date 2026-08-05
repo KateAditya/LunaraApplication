@@ -288,7 +288,7 @@ class _NightPartnerDiscoveryScreenState extends State<NightPartnerDiscoveryScree
                       userData: {'profilePhotoUrl': photoUrl.isNotEmpty ? photoUrl : null},
                       radius: 32,
                     ),
-                    if (isVerified)
+                    if (LunaraTheme.getPlanBadgeColor(partner) != null)
                       Positioned(
                         right: 0,
                         bottom: 0,
@@ -298,9 +298,9 @@ class _NightPartnerDiscoveryScreenState extends State<NightPartnerDiscoveryScree
                             color: Colors.white,
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.verified,
-                            color: LunaraTheme.cyberCyan,
+                            color: LunaraTheme.getPlanBadgeColor(partner),
                             size: 18,
                           ),
                         ),

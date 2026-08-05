@@ -168,25 +168,25 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (isMainProfilePhoto) {
         final XFile? image = await _picker.pickImage(
           source: source,
-          maxWidth: 600,
-          maxHeight: 600,
-          imageQuality: 50,
+          maxWidth: 2400,
+          maxHeight: 2400,
+          imageQuality: 95,
         );
         if (image != null) images.add(image);
       } else {
         if (source == ImageSource.camera) {
           final XFile? image = await _picker.pickImage(
             source: ImageSource.camera,
-            maxWidth: 600,
-            maxHeight: 600,
-            imageQuality: 50,
+            maxWidth: 2400,
+            maxHeight: 2400,
+            imageQuality: 95,
           );
           if (image != null) images.add(image);
         } else {
           images = await _picker.pickMultiImage(
-            maxWidth: 600,
-            maxHeight: 600,
-            imageQuality: 50,
+            maxWidth: 2400,
+            maxHeight: 2400,
+            imageQuality: 95,
           );
         }
       }

@@ -343,15 +343,20 @@ class ApiService {
     }
   }
 
-  static Future<List<Map<String, dynamic>>> fetchCustomers() async {
+  static Future<List<Map<String, dynamic>>> fetchCustomers({String? city}) async {
     try {
       final userId = currentUserId;
+      final Map<String, String> params = {};
+      if (userId != null) params['currentUserId'] = userId;
+      // Pass city to backend so it uses ILIKE (case-insensitive, partial match)
+      final String? cityToFilter = city ?? selectedCity;
+      if (cityToFilter != null && cityToFilter.isNotEmpty) {
+        params['city'] = cityToFilter;
+      }
       final response = await get(
         '/api/mobile/user/customers',
-        queryParameters: userId != null ? {'currentUserId': userId} : null,
+        queryParameters: params.isNotEmpty ? params : null,
       );
-      //debugPrint('Customers Response Status: ${response.statusCode}');
-      //debugPrint('Customers Response Body: ${response.body}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);

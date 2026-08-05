@@ -43,6 +43,8 @@ class User {
   final int bookingsCount;
   final int matchesCount;
   final int pointsCount;
+  final bool isLiked;
+  final bool isSuperLiked;
 
   User({
     required this.id,
@@ -85,6 +87,8 @@ class User {
     this.bookingsCount = 0,
     this.matchesCount = 0,
     this.pointsCount = 0,
+    this.isLiked = false,
+    this.isSuperLiked = false,
   });
 
   String get fullName {
@@ -308,6 +312,8 @@ class User {
           : (data['pointsCount'] != null
               ? int.tryParse(data['pointsCount'].toString()) ?? 0
               : 0),
+      isLiked: json['isLiked'] == true || data['isLiked'] == true,
+      isSuperLiked: json['isSuperLiked'] == true || data['isSuperLiked'] == true,
     );
   }
 

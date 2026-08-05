@@ -247,7 +247,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
           if (!_hasShownAdPopup) {
             _hasShownAdPopup = true;
-            final popupAds = [...dynamicPartyAds, ..._activeAds];
+            final popupAds = [...dynamicPartyAds];
             if (popupAds.isNotEmpty) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted) {
@@ -608,11 +608,15 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   List<Map<String, dynamic>> get _filteredUsers {
     var users = _allUsers;
     if (ApiService.selectedCity != null) {
+      final String targetCity = ApiService.selectedCity!.toLowerCase().trim();
       users = users.where((u) {
-        final String? userCity =
-            u['city'] ?? (u['profile'] is Map ? u['profile']['city'] : null);
-        return (userCity?.toString() ?? '').toLowerCase() ==
-            ApiService.selectedCity!.toLowerCase();
+        final String? rawCity =
+            u['city']?.toString() ??
+            (u['profile'] is Map ? u['profile']['city']?.toString() : null);
+        // Include users with no city set (they may just not have filled it in)
+        if (rawCity == null || rawCity.isEmpty) return true;
+        final String userCity = rawCity.toLowerCase().trim();
+        return userCity.contains(targetCity) || targetCity.contains(userCity);
       }).toList();
     }
     return users;
@@ -2795,16 +2799,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                   ) ??
                                   0)
                         .toInt();
-                final dynamic dRaw =
-                    user['doostCount'] ??
-                    user['doost'] ??
-                    user['plansCount'] ??
-                    user['groupPartiesCount'];
-                final int doost =
-                    (dRaw is num
-                            ? dRaw
-                            : int.tryParse(dRaw?.toString() ?? '0') ?? 0)
-                        .toInt();
+
                 final dynamic bRaw =
                     user['boostCount'] ?? user['boostsRemaining'];
                 final int boosts =
@@ -2841,7 +2836,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     );
                   },
                   child: Container(
-                    width: 235,
+                    width: 175,
                     margin: const EdgeInsets.only(right: 12),
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
@@ -2894,43 +2889,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
-                                      const SizedBox(width: 4),
-                                      const Icon(
-                                        Icons.verified,
-                                        color: LunaraTheme.cyberCyan,
-                                        size: 14,
-                                      ),
-                                      if (isBoosted) ...[
+                                      if (LunaraTheme.getPlanBadgeColor(user) != null) ...[
                                         const SizedBox(width: 4),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 5,
-                                            vertical: 2,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.amber,
-                                            borderRadius: BorderRadius.circular(
-                                              6,
-                                            ),
-                                          ),
-                                          child: const Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(
-                                                Icons.bolt,
-                                                color: Colors.black,
-                                                size: 9,
-                                              ),
-                                              Text(
-                                                'BOOST',
-                                                style: TextStyle(
-                                                  color: Colors.black,
-                                                  fontSize: 8,
-                                                  fontWeight: FontWeight.w900,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
+                                        Icon(
+                                          Icons.verified,
+                                          color: LunaraTheme.getPlanBadgeColor(user),
+                                          size: 14,
                                         ),
                                       ],
                                     ],
@@ -2952,24 +2916,20 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                             ),
                           ],
                         ),
-                        // Row of Metrics: Superlikes, Likes, Doost
+                        // Row of Metrics: Superlikes, Likes
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          mainAxisAlignment: MainAxisAlignment.start,
                           children: [
                             _buildProfileMetricChip(
                               Icons.star_rounded,
                               '$superLikes Super',
                               const Color(0xFF9333EA),
                             ),
+                            const SizedBox(width: 8),
                             _buildProfileMetricChip(
                               Icons.favorite_rounded,
                               '$likes Likes',
                               const Color(0xFFEC4899),
-                            ),
-                            _buildProfileMetricChip(
-                              Icons.groups_rounded,
-                              '$doost Doost',
-                              const Color(0xFF10B981),
                             ),
                           ],
                         ),

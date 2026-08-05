@@ -348,7 +348,7 @@ class _NightInvitePartnerScreenState extends State<NightInvitePartnerScreen> {
                       userData: {'profilePhotoUrl': photoUrl.isNotEmpty ? photoUrl : null},
                       radius: 28,
                     ),
-                    if (isVerified)
+                    if (LunaraTheme.getPlanBadgeColor(user) != null)
                       Positioned(
                         right: 0,
                         bottom: 0,
@@ -358,9 +358,9 @@ class _NightInvitePartnerScreenState extends State<NightInvitePartnerScreen> {
                             color: Colors.white,
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.verified,
-                            color: LunaraTheme.cyberCyan,
+                            color: LunaraTheme.getPlanBadgeColor(user),
                             size: 16,
                           ),
                         ),

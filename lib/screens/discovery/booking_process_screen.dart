@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../widgets/action_button.dart';
 import 'payment_confirmation_screen.dart';
+import 'digital_ticket_screen.dart';
 import '../../services/api_service.dart';
 import '../../models/venue.dart';
 import '../../widgets/venue_timing_error_dialog.dart';
@@ -916,7 +917,7 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
               final isSelected =
                   _selectedDate.day == date.day &&
                   _selectedDate.month == date.month;
-              const isOpen = true;
+              final isOpen = _isVenueOpenOnDate(date);
 
               return GestureDetector(
                 onTap: () {
@@ -1748,7 +1749,9 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                             LunaraActionButton(
                               text: isLargeParty
                                   ? 'SUBMIT REQUEST'
-                                  : 'PROCEED TO PAYMENT',
+                                  : (isFreeBooking
+                                      ? 'BOOK NOW — IT\'S FREE!'
+                                      : 'PROCEED TO PAYMENT'),
                               onPressed: () async {
                                 if (isLargeParty) {
                                   if (_partySubjectController.text
@@ -1914,6 +1917,30 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                 }
 
                                 if (!outerContext.mounted) return;
+
+                                // Free booking direct digital ticket redirection
+                                if (isFreeBooking) {
+                                  Navigator.push(
+                                    outerContext,
+                                    MaterialPageRoute(
+                                      builder: (_) => DigitalTicketScreen(
+                                        venue: widget.venue,
+                                        date:
+                                            '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
+                                        package: 'Free Entry Ticket',
+                                        time: _formatTimeOfBooking(_selectedTime),
+                                        table: 'Standard Table',
+                                        guests: isSolo
+                                            ? '1 Guest'
+                                            : '$guests Guests',
+                                        totalPrice: 'FREE (₹0)',
+                                        ticketId: createdBookingId ?? 'FREE_TICKET',
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+
                                 Navigator.push(
                                   outerContext,
                                   MaterialPageRoute(
@@ -1930,15 +1957,9 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                           : '$guests Guests',
                                       totalPrice: '₹$chargesStr',
                                       showSplitBill: false,
-                                      razorpayOrderId: bookingRes != null && bookingRes['razorpayOrderId'] != null && bookingRes['razorpayOrderId'].toString().isNotEmpty
-                                          ? bookingRes['razorpayOrderId'].toString()
-                                          : null,
-                                      razorpayKeyId: bookingRes != null && bookingRes['razorpayKeyId'] != null && bookingRes['razorpayKeyId'].toString().isNotEmpty
-                                          ? bookingRes['razorpayKeyId'].toString()
-                                          : null,
-                                      razorpayAmount: bookingRes != null && bookingRes['amount'] != null
-                                          ? (bookingRes['amount'] as num).toInt()
-                                          : null,
+                                      razorpayOrderId: bookingRes?['razorpayOrderId']?.toString(),
+                                      razorpayKeyId: bookingRes?['razorpayKeyId']?.toString(),
+                                      razorpayAmount: (bookingRes?['amount'] as num?)?.toInt(),
                                     ),
                                   ),
                                 );

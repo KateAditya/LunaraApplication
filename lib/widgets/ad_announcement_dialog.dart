@@ -15,12 +15,16 @@ class AdAnnouncementDialog extends StatefulWidget {
   }
 
   static Future<void> showList(BuildContext context, List<Map<String, dynamic>> adsList) async {
-    if (adsList.isEmpty) return;
+    final partyOnly = adsList.where((ad) {
+      final adType = (ad['type'] ?? 'Party').toString();
+      return adType == 'Party' || adType != 'Ads';
+    }).toList();
+    if (partyOnly.isEmpty) return;
     return showDialog(
       context: context,
       barrierDismissible: true,
       barrierColor: Colors.black.withValues(alpha: 0.75),
-      builder: (ctx) => AdAnnouncementDialog(ads: adsList),
+      builder: (ctx) => AdAnnouncementDialog(ads: partyOnly),
     );
   }
 

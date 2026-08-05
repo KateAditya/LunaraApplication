@@ -39,12 +39,12 @@ class _ProfilePhotosScreenState extends State<ProfilePhotosScreen> {
 
   Future<void> _pickImage(int index, ImageSource source) async {
     try {
-      // Auto-compress photo to ~150 KB with 700x700 resolution and 55% quality
+      // Pick high quality HD photo (up to 2400x2400 resolution & 95% quality ~3-4 MB target)
       final XFile? image = await _picker.pickImage(
         source: source,
-        maxWidth: 700,
-        maxHeight: 700,
-        imageQuality: 55,
+        maxWidth: 2400,
+        maxHeight: 2400,
+        imageQuality: 95,
       );
       if (image == null) return;
 

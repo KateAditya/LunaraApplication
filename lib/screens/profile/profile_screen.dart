@@ -167,8 +167,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() {
         _displayUser = widget.user;
         _isMe = isSelf;
+        if (widget.user!.isSuperLiked) {
+          _swipedActions[widget.user!.id] = 'superlike';
+        } else if (widget.user!.isLiked) {
+          _swipedActions[widget.user!.id] = 'like';
+        }
       });
       _updateCurrentProfileIndex();
+
+      if (!isSelf && widget.user!.id.isNotEmpty) {
+        _checkExistingSwipe(widget.user!.id);
+      }
 
       final String fetchId = widget.user!.id.isNotEmpty ? widget.user!.id : (myId ?? '');
       final fullUser = await ApiService.fetchProfile(userId: fetchId.isNotEmpty ? fetchId : null);
@@ -177,6 +186,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _displayUser = fullUser;
           if (isSelf || (myId != null && fullUser.id == myId)) {
             _isMe = true;
+          }
+          if (fullUser.isSuperLiked) {
+            _swipedActions[fullUser.id] = 'superlike';
+          } else if (fullUser.isLiked) {
+            _swipedActions[fullUser.id] = 'like';
           }
         });
         _updateCurrentProfileIndex();

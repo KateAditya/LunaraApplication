@@ -192,11 +192,11 @@ class MatchedProfilesScreen extends StatelessWidget {
                           fontSize: 16,
                         ),
                       ),
-                      if (profile['verified'] == true) ...[
+                      if (LunaraTheme.getPlanBadgeColor(profile) != null) ...[
                         const SizedBox(width: 6),
-                        const Icon(
+                        Icon(
                           Icons.verified,
-                          color: LunaraTheme.accentVivid,
+                          color: LunaraTheme.getPlanBadgeColor(profile),
                           size: 16,
                         ),
                       ],
@@ -385,11 +385,11 @@ class _MatchedProfileDetailScreen extends StatelessWidget {
                         '${profile['name']}, ${profile['age']}',
                         style: LunaraTheme.headingStyle.copyWith(fontSize: 32),
                       ),
-                      if (profile['verified'] == true) ...[
+                      if (LunaraTheme.getPlanBadgeColor(profile) != null) ...[
                         const SizedBox(width: 10),
-                        const Icon(
+                        Icon(
                           Icons.verified,
-                          color: LunaraTheme.accentVivid,
+                          color: LunaraTheme.getPlanBadgeColor(profile),
                           size: 28,
                         ),
                       ],
