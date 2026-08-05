@@ -10,6 +10,7 @@ import { toast } from 'react-hot-toast';
 import { ImageCropModal } from './ImageCropModal';
 import { fileToDataUrl, validateImageFile } from '../utils/cropUtils';
 import { compressImageIfNeeded, processImageFiles, processVideoFiles } from '../utils/mediaValidation';
+import areasApi from '../api/areas';
 
 interface VenueFormProps {
     venue?: Venue | null;
@@ -343,6 +344,66 @@ export const VenueForm: React.FC<VenueFormProps> = ({ venue, onClose, onSave }) 
     const [showCropModal, setShowCropModal] = useState(false);
     const [cropImage, setCropImage] = useState<string>('');
     const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+    const [areasList, setAreasList] = useState<string[]>([
+        'Wakad', 'Hinjewadi', 'Baner', 'Aundh', 'Koregaon park',
+        'Kalyani Nagar', 'Camp', 'Shivaji nagar', 'Viman Nagar',
+        'Balewadi', 'Pune station', 'Pune'
+    ]);
+    const [showAddAreaModal, setShowAddAreaModal] = useState(false);
+    const [newAreaName, setNewAreaName] = useState('');
+    const [isAddingArea, setIsAddingArea] = useState(false);
+
+    // Fetch areas from backend API
+    useEffect(() => {
+        const fetchAreas = async () => {
+            try {
+                const res = await areasApi.getAreas();
+                if (res.success && Array.isArray(res.data)) {
+                    setAreasList(prev => {
+                        const merged = new Set([...prev, ...res.data]);
+                        if (venue?.location?.area) merged.add(venue.location.area);
+                        return Array.from(merged);
+                    });
+                }
+            } catch (err) {
+                console.error('Error loading areas:', err);
+            }
+        };
+        fetchAreas();
+    }, [venue]);
+
+    const handleAddNewArea = async () => {
+        const trimmed = newAreaName.trim();
+        if (!trimmed) {
+            toast.error('Please enter an area name');
+            return;
+        }
+        setIsAddingArea(true);
+        try {
+            const res = await areasApi.createArea(trimmed, form.city || 'Pune');
+            if (res.success) {
+                const areaName = res.data?.name || trimmed;
+                setAreasList(prev => Array.from(new Set([...prev, areaName])));
+                set('area', areaName);
+                if (formErrors.area) setFormErrors(p => ({ ...p, area: '' }));
+                setShowAddAreaModal(false);
+                setNewAreaName('');
+                toast.success(`Area "${areaName}" added successfully!`);
+            } else {
+                toast.error(res.message || 'Failed to add area');
+            }
+        } catch (err: any) {
+            console.error('Error adding area:', err);
+            setAreasList(prev => Array.from(new Set([...prev, trimmed])));
+            set('area', trimmed);
+            if (formErrors.area) setFormErrors(p => ({ ...p, area: '' }));
+            setShowAddAreaModal(false);
+            setNewAreaName('');
+            toast.success(`Area "${trimmed}" added!`);
+        } finally {
+            setIsAddingArea(false);
+        }
+    };
 
     // Update form when venue prop changes
     useEffect(() => {
@@ -877,26 +938,48 @@ export const VenueForm: React.FC<VenueFormProps> = ({ venue, onClose, onSave }) 
             </div>
             <div style={gridThree}>
                 <div style={field}>
-                    <label style={labelStyle}>Area *</label>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                        <label style={labelStyle}>Area *</label>
+                        <button
+                            type="button"
+                            onClick={() => setShowAddAreaModal(true)}
+                            style={{
+                                background: 'none',
+                                border: 'none',
+                                color: '#6366f1',
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '2px',
+                                padding: '0 4px',
+                            }}
+                            title="Add New Area"
+                        >
+                            <BiPlus size={14} /> Add New
+                        </button>
+                    </div>
                     <select
                         className="vz-form-control"
                         value={form.area}
-                        onChange={e => { set('area', e.target.value); if (formErrors.area) setFormErrors(p => ({...p, area: ''})); }}
+                        onChange={e => {
+                            if (e.target.value === '__ADD_NEW__') {
+                                setShowAddAreaModal(true);
+                            } else {
+                                set('area', e.target.value);
+                                if (formErrors.area) setFormErrors(p => ({ ...p, area: '' }));
+                            }
+                        }}
                         style={formErrors.area ? { borderColor: '#ef4444' } : {}}
                     >
                         <option value="">Select Area</option>
-                        <option value="Wakad">Wakad</option>
-                        <option value="Hinjewadi">Hinjewadi</option>
-                        <option value="Baner">Baner</option>
-                        <option value="Aundh">Aundh</option>
-                        <option value="Koregaon park">Koregaon park</option>
-                        <option value="Kalyani Nagar">Kalyani Nagar</option>
-                        <option value="Camp">Camp</option>
-                        <option value="Shivaji nagar">Shivaji nagar</option>
-                        <option value="Viman Nagar">Viman Nagar</option>
-                        <option value="Balewadi">Balewadi</option>
-                        <option value="Pune station">Pune station</option>
-                        <option value="Pune">Pune</option>
+                        <option value="__ADD_NEW__" style={{ fontWeight: 600, color: '#6366f1' }}>
+                            + Add New Area...
+                        </option>
+                        {areasList.map(a => (
+                            <option key={a} value={a}>{a}</option>
+                        ))}
                     </select>
                     {errMsg('area')}
                 </div>
@@ -1778,6 +1861,85 @@ export const VenueForm: React.FC<VenueFormProps> = ({ venue, onClose, onSave }) 
                                 onClick={() => { setShowCloseConfirm(false); onClose(); }}
                             >
                                 Discard & Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Add New Area Modal */}
+            {showAddAreaModal && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        background: 'rgba(0,0,0,0.6)',
+                        backdropFilter: 'blur(4px)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 4100,
+                    }}
+                    onClick={e => e.stopPropagation()}
+                >
+                    <div
+                        style={{
+                            background: 'var(--vz-card-bg, #ffffff)',
+                            borderRadius: '16px',
+                            padding: '1.5rem',
+                            maxWidth: '420px',
+                            width: '90%',
+                            boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
+                        }}
+                    >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                            <h6 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--vz-text-primary)' }}>
+                                ➕ Add New Area
+                            </h6>
+                            <button
+                                type="button"
+                                onClick={() => { setShowAddAreaModal(false); setNewAreaName(''); }}
+                                style={{ background: 'none', border: 'none', fontSize: '1.25rem', cursor: 'pointer', color: 'var(--vz-text-muted)' }}
+                            >
+                                <BiX />
+                            </button>
+                        </div>
+                        <p style={{ fontSize: '0.8125rem', color: 'var(--vz-text-muted)', marginBottom: '1rem' }}>
+                            Enter the area name to add it to the database and select it for this venue.
+                        </p>
+                        <div style={{ marginBottom: '1.25rem' }}>
+                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--vz-text-secondary)', marginBottom: '0.25rem', textTransform: 'uppercase' }}>
+                                Area Name *
+                            </label>
+                            <input
+                                type="text"
+                                className="vz-form-control"
+                                placeholder="e.g. Kharadi, Magarpatta, Hadapsar..."
+                                value={newAreaName}
+                                onChange={e => setNewAreaName(e.target.value)}
+                                onKeyDown={e => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        handleAddNewArea();
+                                    }
+                                }}
+                                autoFocus
+                            />
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                            <button
+                                type="button"
+                                className="vz-btn vz-btn-outline vz-btn-sm"
+                                onClick={() => { setShowAddAreaModal(false); setNewAreaName(''); }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                className="vz-btn vz-btn-primary vz-btn-sm"
+                                onClick={handleAddNewArea}
+                                disabled={isAddingArea || !newAreaName.trim()}
+                            >
+                                {isAddingArea ? 'Adding...' : 'Add & Select Area'}
                             </button>
                         </div>
                     </div>

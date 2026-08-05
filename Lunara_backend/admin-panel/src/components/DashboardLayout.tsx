@@ -27,10 +27,13 @@ import {
     BiCreditCard,
     BiXCircle,
     BiFlag,
+    BiRefresh,
+    BiTimeFive,
 } from 'react-icons/bi';
 import { useAuthStore } from '../store/authStore';
 import { useThemeMode } from '../context/ThemeContext';
 import { ThemeSwitcher } from './ThemeSwitcher';
+import adminNotificationsApi, { type NotificationCounts, type ActivityItem } from '../api/adminNotifications';
 
 interface NavItem {
     text: string;
@@ -97,9 +100,13 @@ export const DashboardLayout: React.FC = () => {
     const { navLayout } = settings;
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
-    // ThemeSwitcher is rendered at the bottom of the layout
     const [profileOpen, setProfileOpen] = useState(false);
     const profileRef = useRef<HTMLDivElement>(null);
+
+    const handleLogout = () => {
+        clearAuth();
+        navigate('/login');
+    };
 
     const isActive = (path: string) => {
         if (path === '/') return location.pathname === '/';
@@ -111,21 +118,93 @@ export const DashboardLayout: React.FC = () => {
         setMobileOpen(false);
     };
 
-    const handleLogout = () => {
-        clearAuth();
-        navigate('/login');
+    const [notifCounts, setNotifCounts] = useState<NotificationCounts>({
+        bookings: 0,
+        partyRequests: 0,
+        groupParties: 0,
+        strangersMeet: 0,
+        totalPending: 0,
+    });
+    const [activityList, setActivityList] = useState<ActivityItem[]>([]);
+    const [notifOpen, setNotifOpen] = useState(false);
+    const notifRef = useRef<HTMLDivElement>(null);
+
+    const fetchNotifications = async () => {
+        try {
+            const [sumRes, actRes] = await Promise.all([
+                adminNotificationsApi.getSummary().catch(() => ({ success: false, data: null })),
+                adminNotificationsApi.getActivity().catch(() => ({ success: false, data: [] })),
+            ]);
+            if (sumRes.success && sumRes.data) {
+                setNotifCounts(sumRes.data);
+            }
+            if (actRes.success && Array.isArray(actRes.data)) {
+                setActivityList(actRes.data);
+            }
+        } catch (err) {
+            console.error('Error fetching admin notifications:', err);
+        }
     };
 
-    // Close profile dropdown on outside click
+    useEffect(() => {
+        fetchNotifications();
+        const interval = setInterval(fetchNotifications, 10000);
+        return () => clearInterval(interval);
+    }, [location.pathname]);
+
+    // Close profile & notification dropdowns on outside click
     useEffect(() => {
         const handleClick = (e: MouseEvent) => {
             if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
                 setProfileOpen(false);
             }
+            if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+                setNotifOpen(false);
+            }
         };
         document.addEventListener('mousedown', handleClick);
         return () => document.removeEventListener('mousedown', handleClick);
     }, []);
+
+    const getItemBadge = (path: string) => {
+        let count = 0;
+        if (path === '/bookings') count = notifCounts.bookings;
+        else if (path === '/party-requests') count = notifCounts.partyRequests;
+        else if (path === '/group-parties') count = notifCounts.groupParties;
+        else if (path === '/strangers-meet') count = notifCounts.strangersMeet;
+
+        if (count <= 0) return null;
+
+        return (
+            <span
+                style={{
+                    marginLeft: 'auto',
+                    backgroundColor: '#ef4444',
+                    color: '#ffffff',
+                    fontSize: '0.6875rem',
+                    fontWeight: 700,
+                    borderRadius: '10px',
+                    padding: '2px 7px',
+                    lineHeight: '1.2',
+                    boxShadow: '0 2px 4px rgba(239,68,68,0.4)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                }}
+            >
+                {count}
+            </span>
+        );
+    };
+
+    const formatTimeAgo = (dateStr: string) => {
+        if (!dateStr) return '';
+        const diff = Math.floor((new Date().getTime() - new Date(dateStr).getTime()) / 1000);
+        if (diff < 60) return 'Just now';
+        if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+        if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+        return `${Math.floor(diff / 86400)}d ago`;
+    };
 
     // Get page title from current path
     const getPageTitle = () => {
@@ -199,7 +278,10 @@ export const DashboardLayout: React.FC = () => {
                                                 onClick={() => handleNavClick(item.path)}
                                             >
                                                 <span className="nav-icon">{item.icon}</span>
-                                                <span>{item.text}</span>
+                                                <span style={{ display: 'flex', alignItems: 'center', width: '100%', justifyContent: 'space-between' }}>
+                                                    <span>{item.text}</span>
+                                                    {getItemBadge(item.path)}
+                                                </span>
                                             </button>
                                         </li>
                                     ))}
@@ -250,11 +332,130 @@ export const DashboardLayout: React.FC = () => {
                         {mode === 'dark' ? <BiSun /> : <BiMoon />}
                     </button>
 
-                    {/* Notifications */}
-                    <button className="header-btn">
-                        <BiBell />
-                        <span className="badge-dot"></span>
-                    </button>
+                    {/* Notifications Dropdown */}
+                    <div className="vz-dropdown" ref={notifRef} style={{ position: 'relative' }}>
+                        <button
+                            className="header-btn"
+                            onClick={() => setNotifOpen(!notifOpen)}
+                            title="Notifications"
+                            style={{ position: 'relative' }}
+                        >
+                            <BiBell size={20} />
+                            {notifCounts.totalPending > 0 && (
+                                <span
+                                    style={{
+                                        position: 'absolute',
+                                        top: '2px',
+                                        right: '2px',
+                                        backgroundColor: '#ef4444',
+                                        color: '#ffffff',
+                                        fontSize: '0.625rem',
+                                        fontWeight: 700,
+                                        borderRadius: '10px',
+                                        minWidth: '16px',
+                                        height: '16px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        padding: '0 4px',
+                                        boxShadow: '0 0 0 2px var(--vz-header-bg, #fff)',
+                                    }}
+                                >
+                                    {notifCounts.totalPending}
+                                </span>
+                            )}
+                        </button>
+
+                        <div
+                            className={`vz-dropdown-menu ${notifOpen ? 'show' : ''}`}
+                            style={{
+                                width: '360px',
+                                maxHeight: '480px',
+                                right: 0,
+                                left: 'auto',
+                                padding: 0,
+                                overflow: 'hidden',
+                                boxShadow: '0 12px 32px rgba(0,0,0,0.2)',
+                                borderRadius: '12px',
+                            }}
+                        >
+                            <div style={{ padding: '0.875rem 1rem', background: 'var(--vz-card-bg)', borderBottom: '1px solid var(--vz-border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ fontWeight: 700, fontSize: '0.9375rem', color: 'var(--vz-text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <BiBell size={18} color="var(--vz-primary)" /> Notifications
+                                    {notifCounts.totalPending > 0 && (
+                                        <span style={{ backgroundColor: 'rgba(239,68,68,0.12)', color: '#ef4444', fontSize: '0.75rem', fontWeight: 600, padding: '2px 8px', borderRadius: '12px' }}>
+                                            {notifCounts.totalPending} Pending
+                                        </span>
+                                    )}
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={fetchNotifications}
+                                    style={{ background: 'none', border: 'none', color: 'var(--vz-text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', fontSize: '1.1rem' }}
+                                    title="Refresh"
+                                >
+                                    <BiRefresh />
+                                </button>
+                            </div>
+                            <div style={{ maxHeight: '380px', overflowY: 'auto' }}>
+                                {activityList.length === 0 ? (
+                                    <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--vz-text-muted)', fontSize: '0.875rem' }}>
+                                        No recent activity or notifications
+                                    </div>
+                                ) : (
+                                    activityList.map((item) => (
+                                        <div
+                                            key={item.id}
+                                            onClick={() => {
+                                                setNotifOpen(false);
+                                                navigate(item.path);
+                                            }}
+                                            style={{
+                                                padding: '0.75rem 1rem',
+                                                borderBottom: '1px solid var(--vz-border-color)',
+                                                cursor: 'pointer',
+                                                transition: 'background 0.15s ease',
+                                                display: 'flex',
+                                                gap: '0.75rem',
+                                                alignItems: 'flex-start',
+                                                backgroundColor: item.isPending ? 'rgba(99,102,241,0.04)' : 'transparent',
+                                            }}
+                                        >
+                                            <div style={{
+                                                width: 32, height: 32, borderRadius: '50%',
+                                                backgroundColor: item.type === 'booking' ? 'rgba(59,130,246,0.12)' :
+                                                    item.type === 'party_request' ? 'rgba(245,158,11,0.12)' :
+                                                    item.type === 'group_party' ? 'rgba(16,185,129,0.12)' : 'rgba(139,92,246,0.12)',
+                                                color: item.type === 'booking' ? '#2563eb' :
+                                                    item.type === 'party_request' ? '#d97706' :
+                                                    item.type === 'group_party' ? '#059669' : '#7c3aed',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                flexShrink: 0, fontSize: '1rem'
+                                            }}>
+                                                {item.type === 'booking' ? <BiCalendarEvent /> :
+                                                 item.type === 'party_request' ? <BiGroup /> :
+                                                 item.type === 'group_party' ? <BiGroup /> : <BiUserPin />}
+                                            </div>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--vz-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                    {item.title}
+                                                </div>
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--vz-text-muted)', margin: '2px 0 4px', lineHeight: 1.3 }}>
+                                                    {item.subtitle}
+                                                </div>
+                                                <div style={{ fontSize: '0.6875rem', color: 'var(--vz-text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                    <BiTimeFive size={12} /> {formatTimeAgo(item.createdAt)}
+                                                </div>
+                                            </div>
+                                            {item.isPending && (
+                                                <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#ef4444', flexShrink: 0, marginTop: 4 }} />
+                                            )}
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    </div>
 
                     {/* Profile Dropdown */}
                     <div className="vz-dropdown" ref={profileRef}>

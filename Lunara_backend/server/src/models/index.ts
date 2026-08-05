@@ -32,6 +32,7 @@ import PartyPlanRequest from './PartyPlanRequest';
 import PartyPlanCancellationRequest, { CancellationRequestStatus, CancellationReason } from './PartyPlanCancellationRequest';
 import UserPenalty from './UserPenalty';
 import City from './City';
+import Area from './Area';
 import ChatSubscription from './ChatSubscription';
 import SubscriptionPackage from './SubscriptionPackage';
 import UserSubscription from './UserSubscription';
@@ -609,6 +610,7 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
         await PartyPlanCancellationRequest.sync(options);
         await UserPenalty.sync(options);
         await City.sync(options);
+        await Area.sync(options);
         await ChatSubscription.sync(options);
         await SubscriptionPackage.sync(options);
         await UserSubscription.sync(options);
@@ -664,6 +666,7 @@ export default {
     PartyPlanRequest,
     UserPenalty,
     City,
+    Area,
     ChatSubscription,
     SubscriptionPackage,
     UserSubscription,
