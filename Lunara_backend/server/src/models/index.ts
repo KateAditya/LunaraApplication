@@ -51,6 +51,8 @@ import PartySafetyCheck from './PartySafetyCheck';
 import AuditLog from './AuditLog';
 import WalletTransaction from './WalletTransaction';
 import PartyReview from './PartyReview';
+import ReliabilityHistory from './ReliabilityHistory';
+import RewardPointLedger from './RewardPointLedger';
 
 // ============================================================================
 // Notification Associations
@@ -566,6 +568,8 @@ export {
     AuditLog,
     WalletTransaction,
     PartyReview,
+    ReliabilityHistory,
+    RewardPointLedger,
 };
 
 // Export sync function
