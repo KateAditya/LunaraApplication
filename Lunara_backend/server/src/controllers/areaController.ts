@@ -21,7 +21,7 @@ const DEFAULT_AREAS = [
 /**
  * Get all areas (combining seeded areas, dynamic Area model DB entries, and venue areas)
  */
-export const getAreas = async (req: Request, res: Response): Promise<Response> => {
+export const getAreas = async (_req: Request, res: Response): Promise<Response> => {
     try {
         // Fetch saved areas from Area table
         const dbAreas = await Area.findAll({
@@ -37,7 +37,7 @@ export const getAreas = async (req: Request, res: Response): Promise<Response> =
             where: {
                 area: {
                     [Op.and]: [
-                        { [Op.ne]: null },
+                        { [Op.ne]: null as any },
                         { [Op.ne]: '' }
                     ]
                 }
