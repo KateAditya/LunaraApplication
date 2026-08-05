@@ -104,6 +104,7 @@ router.post('/login', loginValidation, authController.login);
  * @access  Public
  */
 router.post('/admin-login', loginValidation, authController.adminLogin);
+router.post('/admin/login', loginValidation, authController.adminLogin);
 
 /**
  * @route   POST /api/auth/bootstrap-admin

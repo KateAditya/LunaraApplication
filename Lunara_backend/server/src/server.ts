@@ -198,11 +198,18 @@ app.use('/api/admin/payments', adminPaymentsRoutes);          // Payments (Admin
 
 import adminMonitoringRoutes from './routes/adminMonitoringRoutes';
 import { idempotencyGuard } from './middleware/idempotencyMiddleware';
+import { adminLogin } from './controllers/authController';
+
+// Admin Login Route Aliases
+app.post('/api/auth/admin-login', adminLogin);
+app.post('/api/admin/login', adminLogin);
+app.post('/api/admin-login', adminLogin);
+app.post('/admin-login', adminLogin);
+app.post('/admin/login', adminLogin);
 
 app.use(idempotencyGuard);
 app.use('/api/admin/monitoring', adminMonitoringRoutes);
 app.use('/api/admin/reports', adminMonitoringRoutes);
-app.use('/api/admin', adminMonitoringRoutes);
 
 import {
     getAdminCancellationRequests,
