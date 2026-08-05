@@ -3894,6 +3894,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     if (response.statusCode == 200 ||
                                         response.statusCode == 201) {
                                       if (!mounted) return;
+                                      ApiService.planPostedNotifier.value++;
                                       Navigator.pop(
                                         context,
                                       ); // Close bottom sheet
@@ -5559,6 +5560,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
 
                               if (success) {
                                 if (context.mounted) {
+                                  ApiService.planPostedNotifier.value++;
                                   Navigator.pop(context); // Close bottom sheet
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(

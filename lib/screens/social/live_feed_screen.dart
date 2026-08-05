@@ -12,10 +12,28 @@ import 'chat_screen.dart';
 import 'large_party_ticket_screen.dart';
 import '../../widgets/top_notification_banner.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
+import 'party_plan_ticket_screen.dart';
+import 'strangers_meet_requests_screen.dart';
 
 /// ─────────────────────────────────────────────────────────────────────────────
 /// Unified Notification Item Schema
 /// ─────────────────────────────────────────────────────────────────────────────
+class NotificationAction {
+  final String label;
+  final VoidCallback onTap;
+  final bool isPrimary;
+  final IconData? icon;
+  final Color? color;
+
+  NotificationAction({
+    required this.label,
+    required this.onTap,
+    this.isPrimary = true,
+    this.icon,
+    this.color,
+  });
+}
+
 class UnifiedNotificationItem {
   final String id;
   final String category; // 'booking', 'party_plan', 'stranger_meet', 'payment', 'wallet', 'chat', 'system', 'promotion', 'cancellation', 'reminder'
@@ -31,6 +49,7 @@ class UnifiedNotificationItem {
   final String? avatarUrl;
   final String? actionButtonText;
   final VoidCallback? onActionTap;
+  final List<NotificationAction>? actions;
   final Map<String, dynamic> rawData;
 
   UnifiedNotificationItem({
@@ -48,6 +67,7 @@ class UnifiedNotificationItem {
     this.avatarUrl,
     this.actionButtonText,
     this.onActionTap,
+    this.actions,
     required this.rawData,
   });
 }
@@ -101,6 +121,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   Set<String> get _readRequestIds => ApiService.localReadRequestIds;
   Set<String> get _localReadNotificationIds => ApiService.localReadNotificationIds;
 
+  void _onPlanPostedNotify() {
+    if (mounted) {
+      _loadFeed(showLoader: false);
+      _loadGroupPartyBookings();
+    }
+  }
+
+  void _onProfileUpdateNotify() {
+    if (mounted) {
+      _loadFeed(showLoader: false);
+      _loadGroupPartyBookings();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -124,10 +158,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       _loadFeed(showLoader: false);
       _loadGroupPartyBookings();
     });
+
+    ApiService.planPostedNotifier.addListener(_onPlanPostedNotify);
+    ApiService.profileUpdateNotifier.addListener(_onProfileUpdateNotify);
   }
 
   @override
   void dispose() {
+    ApiService.planPostedNotifier.removeListener(_onPlanPostedNotify);
+    ApiService.profileUpdateNotifier.removeListener(_onProfileUpdateNotify);
     _disposeSocketListeners();
     _pollingTimer?.cancel();
     _pulseController.dispose();
@@ -399,6 +438,171 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
   }
 
+  Future<void> _handleAcceptPartyPlan(String reqId) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+      ),
+    );
+    try {
+      final res = await ApiService.acceptPartyPlanRequest(reqId);
+      Navigator.pop(context);
+      if (res != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Request accepted successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _loadFeed();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to accept request.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      Navigator.pop(context);
+      debugPrint('Error accepting request: $e');
+    }
+  }
+
+  Future<void> _handleRejectPartyPlan(String reqId) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+      ),
+    );
+    try {
+      final success = await ApiService.rejectPartyPlanRequest(reqId);
+      Navigator.pop(context);
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Request processed/cancelled.'),
+            backgroundColor: Colors.grey,
+          ),
+        );
+        _loadFeed();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to update request.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      Navigator.pop(context);
+      debugPrint('Error rejecting request: $e');
+    }
+  }
+
+  Future<void> _handleStrangersMeetJoinAction(String meetId, String joinerId, String action) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+      ),
+    );
+    try {
+      final success = await ApiService.handleStrangersMeetJoinRequest(meetId, joinerId, action);
+      Navigator.pop(context);
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(action == 'accept' ? 'Join request accepted!' : 'Join request declined.'),
+            backgroundColor: action == 'accept' ? Colors.green : Colors.grey,
+          ),
+        );
+        _loadFeed();
+      }
+    } catch (e) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceAll('Exception: ', '')),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _onCardTap(UnifiedNotificationItem item) {
+    final status = (item.rawData['status'] ?? item.rawData['paymentStatus'] ?? '').toString().toLowerCase();
+    final category = item.category.toLowerCase();
+
+    if (category.contains('party') || category.contains('plan')) {
+      final planData = item.rawData['plan'] is Map ? item.rawData['plan'] : item.rawData;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PartyPlanDetailScreen(
+            plan: Map<String, dynamic>.from(planData),
+          ),
+        ),
+      );
+    } else if (category.contains('stranger') || category.contains('meet')) {
+      try {
+        final req = StrangersMeetRequest.fromJson(item.rawData['plan'] ?? item.rawData);
+        if (status == 'accepted' || status == 'payment_pending') {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => StrangersMeetPaymentScreen(
+                request: req,
+                onPaymentSuccess: () => _loadFeed(),
+                isJoinPayment: status != 'accepted',
+              ),
+            ),
+          );
+        } else if (status == 'paid' || status == 'confirmed') {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => StrangersMeetTicketScreen(request: req),
+            ),
+          );
+        } else {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const StrangersMeetRequestsScreen(),
+            ),
+          );
+        }
+      } catch (e) {
+        debugPrint('Error parsing strangers meet on tap: $e');
+      }
+    } else if (category.contains('booking') || category.contains('group')) {
+      final bookingData = item.rawData['booking'] ?? item.rawData;
+      final venueMap = (bookingData['venue'] is Map) ? bookingData['venue'] as Map<dynamic, dynamic> : {'name': bookingData['venueName'] ?? 'Venue'};
+      if (status == 'confirmed' || status == 'paid') {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => LargePartyTicketScreen(
+              booking: bookingData,
+              venue: venueMap,
+            ),
+          ),
+        );
+      }
+    } else if (category.contains('pay') || category.contains('wallet')) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const LunaraWalletScreen()),
+      );
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Helper: Format Time Ago
   // ─────────────────────────────────────────────────────────────────────────────
@@ -486,6 +690,220 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         badge = 'PROMO';
       }
 
+      bool isExpired = false;
+      final planData = n['plan'] is Map ? n['plan'] : n;
+      final rawDateTime = planData['planDateTime'] ?? planData['eventDateTime'] ?? planData['planDate'] ?? planData['partyDate'] ?? planData['bookingDate'] ?? n['entityDetails']?['planDateTime'] ?? n['entityDetails']?['eventDateTime'];
+      if (rawDateTime != null) {
+        try {
+          final planTime = DateTime.parse(rawDateTime.toString()).toLocal();
+          if (planTime.isBefore(DateTime.now())) {
+            isExpired = true;
+          }
+        } catch (_) {}
+      }
+
+      List<NotificationAction>? actionsList;
+
+      if (isExpired) {
+        accentColor = const Color(0xFF9CA3AF);
+        badge = 'EXPIRED';
+      } else {
+        final titleLower = title.toLowerCase();
+        final bodyLower = body.toLowerCase();
+        final entityId = n['entityId']?.toString() ?? '';
+
+        if (entityId.isNotEmpty) {
+          if (category.contains('party') || category.contains('plan')) {
+            if (titleLower.contains('request') || bodyLower.contains('request')) {
+              actionsList = [
+                NotificationAction(
+                  label: 'Accept',
+                  icon: Icons.check_circle_rounded,
+                  isPrimary: true,
+                  onTap: () => _handleAcceptPartyPlan(entityId),
+                ),
+                NotificationAction(
+                  label: 'Decline',
+                  icon: Icons.cancel_rounded,
+                  isPrimary: false,
+                  color: Colors.grey[200],
+                  onTap: () => _handleRejectPartyPlan(entityId),
+                ),
+              ];
+            } else if (titleLower.contains('accepted') || bodyLower.contains('accepted')) {
+              actionsList = [
+                NotificationAction(
+                  label: 'Pay Deposit',
+                  icon: Icons.payment_rounded,
+                  isPrimary: true,
+                  onTap: () {
+                    final planData = n['plan'] is Map ? n['plan'] : n;
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PartyPlanDetailScreen(
+                          plan: Map<String, dynamic>.from(planData),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ];
+            } else if (titleLower.contains('confirmed') || bodyLower.contains('confirmed')) {
+              final otherId = n['actor']?['id']?.toString() ?? n['actorId']?.toString();
+              actionsList = [
+                NotificationAction(
+                  label: 'Chat',
+                  icon: Icons.chat_bubble_rounded,
+                  isPrimary: true,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ChatScreen(
+                          user: {
+                            'id': otherId ?? '',
+                            'firstName': n['actor']?['firstName'] ?? 'Partner',
+                            'lastName': n['actor']?['lastName'] ?? '',
+                            'profilePhotoUrl': n['imageUrl']?.toString() ?? n['actor']?['profilePhotoUrl']?.toString(),
+                          },
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                NotificationAction(
+                  label: 'View Ticket',
+                  icon: Icons.confirmation_number_rounded,
+                  isPrimary: false,
+                  color: Colors.grey[200],
+                  onTap: () {
+                    final planData = n['plan'] is Map ? n['plan'] : n;
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PartyPlanTicketScreen(
+                          request: n,
+                          plan: Map<String, dynamic>.from(planData),
+                          isHost: currentUserId == (planData['userId'] ?? planData['creator']?['id']),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ];
+            }
+          } else if (category.contains('stranger') || category.contains('meet')) {
+            if (titleLower.contains('request') || bodyLower.contains('request')) {
+              final match = _feedItems.firstWhere(
+                (item) => item['type'] == 'incoming_request' && 
+                          item['requestType'] == 'stranger_meet' &&
+                          item['planId']?.toString() == entityId &&
+                          item['status']?.toString().toLowerCase() == 'pending',
+                orElse: () => {},
+              );
+              if (match.isNotEmpty) {
+                final joinerId = match['id'].toString();
+                actionsList = [
+                  NotificationAction(
+                    label: 'Accept',
+                    icon: Icons.check_circle_rounded,
+                    isPrimary: true,
+                    onTap: () => _handleStrangersMeetJoinAction(entityId, joinerId, 'accept'),
+                  ),
+                  NotificationAction(
+                    label: 'Decline',
+                    icon: Icons.cancel_rounded,
+                    isPrimary: false,
+                    color: Colors.grey[200],
+                    onTap: () => _handleStrangersMeetJoinAction(entityId, joinerId, 'reject'),
+                  ),
+                ];
+              }
+            } else if (titleLower.contains('accepted') || bodyLower.contains('accepted')) {
+              actionsList = [
+                NotificationAction(
+                  label: 'Pay Deposit',
+                  icon: Icons.payment_rounded,
+                  isPrimary: true,
+                  onTap: () {
+                    try {
+                      final req = StrangersMeetRequest.fromJson(n['plan'] ?? n);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => StrangersMeetPaymentScreen(
+                            request: req,
+                            onPaymentSuccess: () => _loadFeed(),
+                            isJoinPayment: true,
+                          ),
+                        ),
+                      );
+                    } catch (e) {
+                      debugPrint('Error parsing strangers meet payment: $e');
+                    }
+                  },
+                ),
+              ];
+            } else if (titleLower.contains('confirmed') || bodyLower.contains('confirmed')) {
+              actionsList = [
+                NotificationAction(
+                  label: 'View Ticket',
+                  icon: Icons.confirmation_number_rounded,
+                  isPrimary: true,
+                  onTap: () {
+                    try {
+                      final req = StrangersMeetRequest.fromJson(n['plan'] ?? n);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => StrangersMeetTicketScreen(request: req),
+                        ),
+                      );
+                    } catch (e) {
+                      debugPrint('Error parsing strangers meet ticket: $e');
+                    }
+                  },
+                ),
+                NotificationAction(
+                  label: 'Chat',
+                  icon: Icons.chat_bubble_rounded,
+                  isPrimary: false,
+                  color: Colors.grey[200],
+                  onTap: () {
+                    final host = n['actor'] ?? {};
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ChatScreen(
+                          user: {
+                            'id': host['id'] ?? '',
+                            'firstName': host['firstName'] ?? 'Host',
+                            'lastName': host['lastName'] ?? '',
+                            'profilePhotoUrl': host['profilePhotoUrl'] ?? host['photoUrl'] ?? host['image'],
+                          },
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ];
+            }
+          }
+        }
+
+        if (actionsList == null && actionText != null && actionTap != null) {
+          actionsList = [
+            NotificationAction(
+              label: actionText,
+              onTap: actionTap,
+              isPrimary: true,
+              icon: Icons.arrow_forward_rounded,
+            ),
+          ];
+        }
+      }
+
       items.add(UnifiedNotificationItem(
         id: id,
         category: category,
@@ -500,6 +918,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         avatarUrl: n['imageUrl']?.toString() ?? n['actor']?['profilePhotoUrl']?.toString(),
         actionButtonText: actionText,
         onActionTap: actionTap,
+        actions: actionsList,
         rawData: n,
       ));
     }
@@ -522,113 +941,365 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final userName = '${user['firstName'] ?? 'User'} ${user['lastName'] ?? ''}'.trim();
       final userPhoto = user['profilePhotoUrl'] ?? user['photoUrl'] ?? user['image'];
 
-      if (requestType == 'stranger_meet' || type == 'stranger_meet') {
-        Color accent = const Color(0xFF6366F1);
-        String title = '🤝 Stranger Meet Request';
-        String body = '$userName requested to join Stranger Meet at $venueName';
-        String? actionText;
-        VoidCallback? actionTap;
-        String badge = 'STRANGER MEET';
-
-        if (status == 'accepted' || status == 'payment_pending') {
-          title = '✅ Stranger Meet Accepted!';
-          body = 'Your request at $venueName was accepted. Complete payment to confirm!';
-          badge = 'ACTION REQUIRED';
-          actionText = 'Pay Deposit';
-          actionTap = () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => StrangersMeetPaymentScreen(
-                request: StrangersMeetRequest.fromJson(item),
-                onPaymentSuccess: () => _loadFeed(),
-                isJoinPayment: status != 'accepted',
-              ),
-            ),
-          );
-        } else if (status == 'paid' || status == 'confirmed') {
-          title = '🎉 Stranger Meet Confirmed!';
-          body = 'Your seat at $venueName is locked and confirmed!';
-          badge = 'CONFIRMED';
-          actionText = 'View Ticket';
-          actionTap = () => Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: StrangersMeetRequest.fromJson(item))));
-        }
-
-        items.add(UnifiedNotificationItem(
-          id: 'sm_$id',
-          category: 'stranger_meet',
-          title: title,
-          body: body,
-          createdAt: createdAt,
-          timeAgo: timeAgo,
-          isRead: isRead,
-          badgeText: badge,
-          accentColor: accent,
-          categoryIcon: Icons.people_alt_rounded,
-          avatarUrl: userPhoto,
-          actionButtonText: actionText,
-          onActionTap: actionTap,
-          rawData: item,
-        ));
-      } else {
-        // Party Plan Requests
-        Color accent = const Color(0xFF8B5CF6);
-        String title = '🎉 Party Plan Update';
-        String body = '$userName requested to join Party Plan at $venueName';
-        String? actionText;
-        VoidCallback? actionTap;
-        String badge = 'PARTY PLAN';
-
-        if (status == 'accepted') {
-          title = '👤 Request Accepted!';
-          body = 'Your Party Plan request at $venueName was accepted by $userName.';
-          badge = 'ACTION REQUIRED';
-          actionText = 'Pay Deposit';
-          actionTap = () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => PartyPlanDetailScreen(
-                plan: item['plan'] is Map ? item['plan'] as Map<String, dynamic> : item,
-              ),
-            ),
-          );
-        } else if (status == 'paid' || status == 'confirmed') {
-          title = '🎉 Match Confirmed!';
-          body = 'Party booking at $venueName is confirmed! Chat is unlocked.';
-          badge = 'CONFIRMED';
-          actionText = 'Open Chat';
-          final otherId = (item['hostId'] == currentUserId) ? item['requesterId'] : item['hostId'];
-          actionTap = () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ChatScreen(
-                user: {
-                  'id': otherId ?? user['id'] ?? '',
-                  'firstName': user['firstName'] ?? 'Party Partner',
-                  'lastName': user['lastName'] ?? '',
-                  'profilePhotoUrl': userPhoto,
-                },
-              ),
-            ),
-          );
-        }
-
-        items.add(UnifiedNotificationItem(
-          id: 'pp_$id',
-          category: 'party_plan',
-          title: title,
-          body: body,
-          createdAt: createdAt,
-          timeAgo: timeAgo,
-          isRead: isRead,
-          badgeText: badge,
-          accentColor: accent,
-          categoryIcon: Icons.celebration_rounded,
-          avatarUrl: userPhoto,
-          actionButtonText: actionText,
-          onActionTap: actionTap,
-          rawData: item,
-        ));
+      bool isExpired = false;
+      final planData = item['plan'] is Map ? item['plan'] : item;
+      final rawDateTime = planData['planDateTime'] ?? planData['eventDateTime'] ?? planData['planDate'] ?? planData['partyDate'] ?? planData['bookingDate'];
+      if (rawDateTime != null) {
+        try {
+          final planTime = DateTime.parse(rawDateTime.toString()).toLocal();
+          if (planTime.isBefore(DateTime.now())) {
+            isExpired = true;
+          }
+        } catch (_) {}
       }
+
+      List<NotificationAction>? actionsList;
+      Color accent = requestType == 'stranger_meet' || type == 'stranger_meet'
+          ? const Color(0xFF6366F1)
+          : const Color(0xFF8B5CF6);
+      String title = requestType == 'stranger_meet' || type == 'stranger_meet'
+          ? '🤝 Stranger Meet Request'
+          : '🎉 Party Plan Update';
+      String body = '$userName requested to join Stranger Meet at $venueName';
+      String badge = requestType == 'stranger_meet' || type == 'stranger_meet'
+          ? 'STRANGER MEET'
+          : 'PARTY PLAN';
+
+      if (isExpired) {
+        accent = const Color(0xFF9CA3AF);
+        badge = 'EXPIRED';
+      } else {
+        if (requestType == 'stranger_meet' || type == 'stranger_meet') {
+          if (type == 'incoming_request') {
+            if (status == 'pending') {
+              title = '📥 Join Request Received';
+              body = '$userName requested to join your Stranger Meet at $venueName';
+              actionsList = [
+                NotificationAction(
+                  label: 'Accept',
+                  icon: Icons.check_circle_rounded,
+                  isPrimary: true,
+                  onTap: () => _handleStrangersMeetJoinAction(item['planId'].toString(), item['id'].toString(), 'accept'),
+                ),
+                NotificationAction(
+                  label: 'Decline',
+                  icon: Icons.cancel_rounded,
+                  isPrimary: false,
+                  color: Colors.grey[200],
+                  onTap: () => _handleStrangersMeetJoinAction(item['planId'].toString(), item['id'].toString(), 'reject'),
+                ),
+              ];
+            } else if (status == 'accepted' || status == 'payment_pending') {
+              title = '⏳ Approved (Awaiting Payment)';
+              body = 'You approved $userName to join Stranger Meet at $venueName. Awaiting payment.';
+              actionsList = [
+                NotificationAction(
+                  label: 'Chat',
+                  icon: Icons.chat_bubble_rounded,
+                  isPrimary: true,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ChatScreen(
+                          user: {
+                            'id': user['id'] ?? '',
+                            'firstName': user['firstName'] ?? 'Partner',
+                            'lastName': user['lastName'] ?? '',
+                            'profilePhotoUrl': userPhoto,
+                          },
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ];
+            } else if (status == 'paid' || status == 'confirmed') {
+              title = '🎉 Seat Confirmed';
+              body = '$userName\'s safety deposit is paid! Seat is confirmed.';
+              badge = 'CONFIRMED';
+              actionsList = [
+                NotificationAction(
+                  label: 'Chat',
+                  icon: Icons.chat_bubble_rounded,
+                  isPrimary: true,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ChatScreen(
+                          user: {
+                            'id': user['id'] ?? '',
+                            'firstName': user['firstName'] ?? 'Partner',
+                            'lastName': user['lastName'] ?? '',
+                            'profilePhotoUrl': userPhoto,
+                          },
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                NotificationAction(
+                  label: 'View Ticket',
+                  icon: Icons.confirmation_number_rounded,
+                  isPrimary: false,
+                  color: Colors.grey[200],
+                  onTap: () {
+                    try {
+                      final req = StrangersMeetRequest.fromJson(item);
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
+                    } catch (e) {
+                      debugPrint('Error parsing strangers meet ticket: $e');
+                    }
+                  },
+                ),
+              ];
+            }
+          } else {
+            if (status == 'pending') {
+              title = '🤝 Stranger Meet Request Sent';
+              body = 'You requested to join Stranger Meet at $venueName. Awaiting host approval.';
+            } else if (status == 'accepted' || status == 'payment_pending') {
+              title = '✅ Stranger Meet Accepted!';
+              body = 'Your request at $venueName was accepted. Complete payment to confirm!';
+              badge = 'ACTION REQUIRED';
+              actionsList = [
+                NotificationAction(
+                  label: 'Pay Deposit',
+                  icon: Icons.payment_rounded,
+                  isPrimary: true,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => StrangersMeetPaymentScreen(
+                        request: StrangersMeetRequest.fromJson(item),
+                        onPaymentSuccess: () => _loadFeed(),
+                        isJoinPayment: status != 'accepted',
+                      ),
+                    ),
+                  ),
+                ),
+              ];
+            } else if (status == 'paid' || status == 'confirmed') {
+              title = '🎉 Stranger Meet Confirmed!';
+              body = 'Your seat at $venueName is locked and confirmed!';
+              badge = 'CONFIRMED';
+              actionsList = [
+                NotificationAction(
+                  label: 'Chat',
+                  icon: Icons.chat_bubble_rounded,
+                  isPrimary: true,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ChatScreen(
+                          user: {
+                            'id': user['id'] ?? '',
+                            'firstName': user['firstName'] ?? 'Partner',
+                            'lastName': user['lastName'] ?? '',
+                            'profilePhotoUrl': userPhoto,
+                          },
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                NotificationAction(
+                  label: 'View Ticket',
+                  icon: Icons.confirmation_number_rounded,
+                  isPrimary: false,
+                  color: Colors.grey[200],
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: StrangersMeetRequest.fromJson(item)))),
+                ),
+              ];
+            }
+          }
+        } else {
+          // Party Plan Requests
+          if (type == 'incoming_request') {
+            if (status == 'pending') {
+              title = '📥 Party Plan Request';
+              body = '$userName requested to join your Party Plan at $venueName';
+              actionsList = [
+                NotificationAction(
+                  label: 'Accept',
+                  icon: Icons.check_circle_rounded,
+                  isPrimary: true,
+                  onTap: () => _handleAcceptPartyPlan(id),
+                ),
+                NotificationAction(
+                  label: 'Decline',
+                  icon: Icons.cancel_rounded,
+                  isPrimary: false,
+                  color: Colors.grey[200],
+                  onTap: () => _handleRejectPartyPlan(id),
+                ),
+              ];
+            } else if (status == 'accepted') {
+              title = '⏳ Approved (Awaiting Payment)';
+              body = 'You approved $userName. Awaiting their safety deposit payment.';
+              actionsList = [
+                NotificationAction(
+                  label: 'Revoke',
+                  icon: Icons.cancel_rounded,
+                  isPrimary: false,
+                  color: Colors.grey[200],
+                  onTap: () => _handleRejectPartyPlan(id),
+                ),
+              ];
+            } else if (status == 'paid' || status == 'confirmed') {
+              title = '🎉 Partner Joined';
+              body = '$userName paid the deposit! Your Party Plan at $venueName is confirmed.';
+              badge = 'CONFIRMED';
+              final otherId = (item['hostId'] == currentUserId) ? item['requesterId'] : item['hostId'];
+              actionsList = [
+                NotificationAction(
+                  label: 'Chat',
+                  icon: Icons.chat_bubble_rounded,
+                  isPrimary: true,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ChatScreen(
+                          user: {
+                            'id': otherId ?? user['id'] ?? '',
+                            'firstName': user['firstName'] ?? 'Party Partner',
+                            'lastName': user['lastName'] ?? '',
+                            'profilePhotoUrl': userPhoto,
+                          },
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                NotificationAction(
+                  label: 'View Ticket',
+                  icon: Icons.confirmation_number_rounded,
+                  isPrimary: false,
+                  color: Colors.grey[200],
+                  onTap: () {
+                    final planData = item['plan'] is Map ? item['plan'] as Map<String, dynamic> : item;
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PartyPlanTicketScreen(
+                          request: item,
+                          plan: planData,
+                          isHost: currentUserId == (planData['userId'] ?? planData['creator']?['id']),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ];
+            }
+          } else {
+            if (status == 'pending') {
+              title = '⏳ Party Plan Request Sent';
+              body = 'You requested to join $userName\'s Party Plan at $venueName.';
+              actionsList = [
+                NotificationAction(
+                  label: 'Cancel',
+                  icon: Icons.cancel_rounded,
+                  isPrimary: false,
+                  color: Colors.grey[200],
+                  onTap: () => _handleRejectPartyPlan(id),
+                ),
+              ];
+            } else if (status == 'accepted') {
+              title = '👤 Request Accepted!';
+              body = 'Your Party Plan request at $venueName was accepted by $userName. Pay safety deposit to unlock chat!';
+              badge = 'ACTION REQUIRED';
+              actionsList = [
+                NotificationAction(
+                  label: 'Pay Deposit',
+                  icon: Icons.payment_rounded,
+                  isPrimary: true,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PartyPlanDetailScreen(
+                        plan: item['plan'] is Map ? item['plan'] as Map<String, dynamic> : item,
+                      ),
+                    ),
+                  ),
+                ),
+                NotificationAction(
+                  label: 'Cancel',
+                  icon: Icons.cancel_rounded,
+                  isPrimary: false,
+                  color: Colors.grey[200],
+                  onTap: () => _handleRejectPartyPlan(id),
+                ),
+              ];
+            } else if (status == 'paid' || status == 'confirmed') {
+              title = '🎉 Match Confirmed!';
+              body = 'Party booking at $venueName is confirmed! Chat is unlocked.';
+              badge = 'CONFIRMED';
+              final otherId = (item['hostId'] == currentUserId) ? item['requesterId'] : item['hostId'];
+              actionsList = [
+                NotificationAction(
+                  label: 'Chat',
+                  icon: Icons.chat_bubble_rounded,
+                  isPrimary: true,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ChatScreen(
+                        user: {
+                          'id': otherId ?? user['id'] ?? '',
+                          'firstName': user['firstName'] ?? 'Party Partner',
+                          'lastName': user['lastName'] ?? '',
+                          'profilePhotoUrl': userPhoto,
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+                NotificationAction(
+                  label: 'View Ticket',
+                  icon: Icons.confirmation_number_rounded,
+                  isPrimary: false,
+                  color: Colors.grey[200],
+                  onTap: () {
+                    final planData = item['plan'] is Map ? item['plan'] as Map<String, dynamic> : item;
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PartyPlanTicketScreen(
+                          request: item,
+                          plan: planData,
+                          isHost: currentUserId == (planData['userId'] ?? planData['creator']?['id']),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ];
+            }
+          }
+        }
+      }
+
+      items.add(UnifiedNotificationItem(
+        id: requestType == 'stranger_meet' || type == 'stranger_meet' ? 'sm_$id' : 'pp_$id',
+        category: requestType == 'stranger_meet' || type == 'stranger_meet' ? 'stranger_meet' : 'party_plan',
+        title: title,
+        body: body,
+        createdAt: createdAt,
+        timeAgo: timeAgo,
+        isRead: isRead,
+        badgeText: badge,
+        accentColor: accent,
+        categoryIcon: requestType == 'stranger_meet' || type == 'stranger_meet'
+            ? Icons.people_alt_rounded
+            : Icons.celebration_rounded,
+        avatarUrl: userPhoto,
+        actions: actionsList,
+        rawData: item,
+      ));
     }
 
     // 3. Process Large Party / Group Party Bookings from `_largePartyBookings`
@@ -649,33 +1320,61 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       String? actionText;
       VoidCallback? actionTap;
 
-      if (status == 'approved' || status == 'awaiting_payment') {
-        title = '⚡ Group Party Approved!';
-        body = 'Admin approved your Group Party at $venueName. Pay to lock!';
-        badge = 'ACTION REQUIRED';
-        actionText = 'Pay Now';
-        actionTap = () => _initiateLargePartyPayment(booking);
-      } else if (status == 'confirmed' || status == 'paid') {
-        title = '🎉 Group Party Confirmed!';
-        body = 'Booking confirmed for $guests guests at $venueName.';
-        badge = 'CONFIRMED';
-        actionText = 'View Ticket';
-        final venueMap = (booking['venue'] is Map) ? booking['venue'] as Map<dynamic, dynamic> : {'name': venueName};
-        actionTap = () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => LargePartyTicketScreen(
-              booking: booking,
-              venue: venueMap,
+      bool isExpired = false;
+      final rawDateTime = booking['partyDate'] ?? booking['bookingDate'] ?? booking['createdAt'];
+      if (rawDateTime != null) {
+        try {
+          final planTime = DateTime.parse(rawDateTime.toString()).toLocal();
+          if (planTime.isBefore(DateTime.now())) {
+            isExpired = true;
+          }
+        } catch (_) {}
+      }
+
+      if (isExpired) {
+        accent = const Color(0xFF9CA3AF);
+        badge = 'EXPIRED';
+      } else {
+        if (status == 'approved' || status == 'awaiting_payment') {
+          title = '⚡ Group Party Approved!';
+          body = 'Admin approved your Group Party at $venueName. Pay to lock!';
+          badge = 'ACTION REQUIRED';
+          actionText = 'Pay Now';
+          actionTap = () => _initiateLargePartyPayment(booking);
+        } else if (status == 'confirmed' || status == 'paid') {
+          title = '🎉 Group Party Confirmed!';
+          body = 'Booking confirmed for $guests guests at $venueName.';
+          badge = 'CONFIRMED';
+          actionText = 'View Ticket';
+          final venueMap = (booking['venue'] is Map) ? booking['venue'] as Map<dynamic, dynamic> : {'name': venueName};
+          actionTap = () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => LargePartyTicketScreen(
+                booking: booking,
+                venue: venueMap,
+              ),
             ),
-          ),
-        );
-      } else if (status == 'cancelled' || status == 'rejected') {
-        title = '❌ Group Party Cancelled';
-        body = 'Group Party booking at $venueName was cancelled.';
-        accent = const Color(0xFFEF4444);
-        badge = 'CANCELLED';
-        actionText = 'View Details';
+          );
+        } else if (status == 'cancelled' || status == 'rejected') {
+          title = '❌ Group Party Cancelled';
+          body = 'Group Party booking at $venueName was cancelled.';
+          accent = const Color(0xFFEF4444);
+          badge = 'CANCELLED';
+          actionText = 'View Details';
+        }
+      }
+
+      List<NotificationAction>? actionsList;
+      if (!isExpired && actionText != null && actionTap != null) {
+        actionsList = [
+          NotificationAction(
+            label: actionText,
+            onTap: actionTap,
+            isPrimary: true,
+            icon: actionText == 'Pay Now' ? Icons.payment_rounded : Icons.confirmation_number_rounded,
+          )
+        ];
       }
 
       items.add(UnifiedNotificationItem(
@@ -691,6 +1390,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         categoryIcon: Icons.groups_rounded,
         actionButtonText: actionText,
         onActionTap: actionTap,
+        actions: actionsList,
         rawData: booking,
       ));
     }
@@ -1099,7 +1799,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         return rawStatus.contains('pending') || badge.contains('ACTION REQUIRED') || badge.contains('PENDING');
       }
       if (_selectedStatusPill == 'PAYMENT') {
-        return category.contains('pay') || category.contains('wallet') || rawStatus.contains('pay') || badge.contains('PAYMENT') || title.contains('payment') || title.contains('paid');
+        final hasPayAction = item.actions?.any((act) => act.label.toLowerCase().contains('pay')) ?? false;
+        return category.contains('pay') ||
+            category.contains('wallet') ||
+            category.contains('deposit') ||
+            rawStatus.contains('pay') ||
+            rawStatus.contains('deposit') ||
+            rawStatus.contains('awaiting_payment') ||
+            badge.contains('PAYMENT') ||
+            badge.contains('ACTION REQUIRED') ||
+            title.contains('payment') ||
+            title.contains('paid') ||
+            title.contains('pay') ||
+            title.contains('deposit') ||
+            body.contains('payment') ||
+            body.contains('pay') ||
+            body.contains('deposit') ||
+            hasPayAction;
       }
       if (_selectedStatusPill == 'CONFIRMED') {
         return rawStatus.contains('confirmed') || rawStatus.contains('paid') || badge.contains('CONFIRMED') || title.contains('confirmed');
@@ -1244,131 +1960,182 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ),
         ],
       ),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Left Accent Bar
-            Container(
-              width: 5,
-              decoration: BoxDecoration(
-                color: item.accentColor,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(16),
-                  bottomLeft: Radius.circular(16),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: () => _onCardTap(item),
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Left Accent Bar
+                Container(
+                  width: 5,
+                  decoration: BoxDecoration(
+                    color: item.accentColor,
+                  ),
                 ),
-              ),
-            ),
-            // Card Content Body
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Top Row: Avatar/Icon + Badge + Timestamp
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
+                // Card Content Body
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Avatar or Category Icon
-                        if (item.avatarUrl != null && item.avatarUrl!.isNotEmpty)
-                          CircleAvatar(
-                            radius: 18,
-                            backgroundImage: NetworkImage(item.avatarUrl!),
-                            backgroundColor: item.accentColor.withValues(alpha: 0.2),
-                          )
-                        else
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: item.accentColor.withValues(alpha: 0.12),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(item.categoryIcon, size: 18, color: item.accentColor),
-                          ),
-                        const SizedBox(width: 10),
+                        // Top Row: Avatar/Icon + Badge + Timestamp
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            // Avatar or Category Icon
+                            if (item.avatarUrl != null && item.avatarUrl!.isNotEmpty)
+                              CircleAvatar(
+                                radius: 18,
+                                backgroundImage: NetworkImage(item.avatarUrl!),
+                                backgroundColor: item.accentColor.withValues(alpha: 0.2),
+                              )
+                            else
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: item.accentColor.withValues(alpha: 0.12),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(item.categoryIcon, size: 18, color: item.accentColor),
+                              ),
+                            const SizedBox(width: 10),
 
-                        // Badge Tag
-                        if (item.badgeText != null)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: item.accentColor.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              item.badgeText!,
+                            // Badge Tag
+                            if (item.badgeText != null)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: item.badgeText == 'EXPIRED'
+                                      ? Colors.grey[300]!
+                                      : item.accentColor.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  item.badgeText!,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: item.badgeText == 'EXPIRED'
+                                        ? Colors.grey[600]!
+                                        : item.accentColor,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ),
+                            const Spacer(),
+
+                            // Timestamp
+                            Text(
+                              item.timeAgo,
                               style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: item.accentColor,
-                                letterSpacing: 0.5,
+                                fontSize: 11,
+                                color: Colors.grey[500],
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
-                          ),
-                        const Spacer(),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
 
-                        // Timestamp
+                        // Title
                         Text(
-                          item.timeAgo,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey[500],
-                            fontWeight: FontWeight.w500,
+                          item.title,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
                           ),
                         ),
+                        const SizedBox(height: 4),
+
+                        // Body Description
+                        Text(
+                          item.body,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey[700],
+                            height: 1.3,
+                          ),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+
+                        // Expired notice
+                        if (item.badgeText == 'EXPIRED') ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            children: const [
+                              Icon(Icons.info_outline_rounded, size: 14, color: Colors.grey),
+                              SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  'This event has expired. No further actions can be taken.',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+
+                        // Action Buttons Row (Accept/Decline/Pay/View Ticket/Chat)
+                        if (item.actions != null && item.actions!.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: item.actions!.map((action) {
+                              final isPrimary = action.isPrimary;
+                              final btnColor = action.color ?? (isPrimary ? item.accentColor : Colors.grey[200]!);
+                              final textColor = isPrimary ? Colors.white : Colors.black87;
+
+                              return Padding(
+                                padding: const EdgeInsets.only(left: 8),
+                                child: ElevatedButton.icon(
+                                  onPressed: action.onTap,
+                                  icon: action.icon != null
+                                      ? Icon(action.icon, size: 15, color: textColor)
+                                      : const SizedBox.shrink(),
+                                  label: Text(
+                                    action.label,
+                                    style: TextStyle(
+                                      color: textColor,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: btnColor,
+                                    foregroundColor: textColor,
+                                    elevation: 0,
+                                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                                    minimumSize: const Size(90, 42),
+                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                      side: !isPrimary
+                                          ? BorderSide(color: Colors.grey[300]!, width: 0.8)
+                                          : BorderSide.none,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ],
                       ],
                     ),
-                    const SizedBox(height: 10),
-
-                    // Title
-                    Text(
-                      item.title,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-
-                    // Body Description
-                    Text(
-                      item.body,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey[700],
-                        height: 1.3,
-                      ),
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-
-                    // Primary Action Button (Single contextual action)
-                    if (item.actionButtonText != null && item.onActionTap != null) ...[
-                      const SizedBox(height: 12),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: ElevatedButton.icon(
-                          onPressed: item.onActionTap,
-                          icon: const Icon(Icons.arrow_forward_rounded, size: 14),
-                          label: Text(item.actionButtonText!),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: item.accentColor,
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                            textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

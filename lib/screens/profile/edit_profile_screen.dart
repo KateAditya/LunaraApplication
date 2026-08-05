@@ -260,6 +260,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
          _currentProfilePhotoUrl = updatedUser.profilePhoto;
          _localProfilePhotoBytes = null;
        });
+       ApiService.profileUpdateNotifier.value++;
     }
   }
 
@@ -452,6 +453,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     if (success) {
+      ApiService.profileUpdateNotifier.value++;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Profile updated successfully!'), backgroundColor: Colors.green),
       );

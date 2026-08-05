@@ -38,6 +38,9 @@ class ApiService {
   static String? selectedCity;
   static User? cachedCurrentUser;
 
+  static final ValueNotifier<int> profileUpdateNotifier = ValueNotifier<int>(0);
+  static final ValueNotifier<int> planPostedNotifier = ValueNotifier<int>(0);
+
   /// Normalize any raw image path to a full URL, or return null if empty/invalid.
   static String? formatImageUrl(dynamic rawUrl) {
     if (rawUrl == null) return null;
@@ -345,7 +348,7 @@ class ApiService {
       final userId = currentUserId;
       final response = await get(
         '/api/mobile/user/customers',
-        queryParameters: userId != null ? {'userId': userId} : null,
+        queryParameters: userId != null ? {'currentUserId': userId} : null,
       );
       //debugPrint('Customers Response Status: ${response.statusCode}');
       //debugPrint('Customers Response Body: ${response.body}');

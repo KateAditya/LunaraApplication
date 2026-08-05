@@ -772,6 +772,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               setModalState(() => isUpdating = false);
 
                               if (res['success'] == true) {
+                                ApiService.profileUpdateNotifier.value++;
                                 Navigator.pop(ctx);
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
