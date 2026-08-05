@@ -196,6 +196,14 @@ app.use('/api/mobile/wallet', mobileWalletRoutes);             // Wallet (Mobile
 app.use('/api/mobile/tickets', mobileTicketRoutes);           // Digital Tickets (Mobile)
 app.use('/api/admin/payments', adminPaymentsRoutes);          // Payments (Admin)
 
+import adminMonitoringRoutes from './routes/adminMonitoringRoutes';
+import { idempotencyGuard } from './middleware/idempotencyMiddleware';
+
+app.use(idempotencyGuard);
+app.use('/api/admin/monitoring', adminMonitoringRoutes);
+app.use('/api/admin/reports', adminMonitoringRoutes);
+app.use('/api/admin', adminMonitoringRoutes);
+
 import {
     getAdminCancellationRequests,
     checkExpiredOrAutoApprovedRequests,

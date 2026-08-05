@@ -2712,82 +2712,6 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                 ),
                               ],
                             ),
-                            const Divider(height: 12),
-                            // Secret Date & Time Toggle
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      const Row(
-                                        children: [
-                                          Icon(Icons.event_available_rounded, size: 13, color: LunaraTheme.electricViolet),
-                                          SizedBox(width: 5),
-                                          Text(
-                                            'Flexible / Secret Date',
-                                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        'Hide exact date & timing from public feed.',
-                                        style: TextStyle(fontSize: 9.5, color: Colors.grey[600]),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Switch.adaptive(
-                                  value: !showDateDetails,
-                                  activeColor: LunaraTheme.electricViolet,
-                                  onChanged: (val) {
-                                    setSheetState(() {
-                                      showDateDetails = !val;
-                                    });
-                                  },
-                                ),
-                              ],
-                            ),
-                            const Divider(height: 12),
-                            // Secret Host Toggle
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      const Row(
-                                        children: [
-                                          Icon(Icons.person_off_rounded, size: 13, color: LunaraTheme.electricViolet),
-                                          SizedBox(width: 5),
-                                          Text(
-                                            'Secret Host Profile',
-                                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        'Obfuscate host name & photo on public feed.',
-                                        style: TextStyle(fontSize: 9.5, color: Colors.grey[600]),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Switch.adaptive(
-                                  value: !showHostProfile,
-                                  activeColor: LunaraTheme.electricViolet,
-                                  onChanged: (val) {
-                                    setSheetState(() {
-                                      showHostProfile = !val;
-                                    });
-                                  },
-                                ),
-                              ],
-                            ),
                           ],
                         ),
                       ),
@@ -2811,8 +2735,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               alignment: Alignment.centerRight,
                               child: Text(
                                 selectedPaymentType == 'self_pay'
-                                    ? 'Host pays 2x Deposit: ₹198 (Refundable)'
-                                    : 'Split Deposit: ₹99 per head (Refundable)',
+                                    ? 'Host pays Commitment Deposit: ₹198 (Refundable)'
+                                    : 'Split Commitment Deposit: ₹99 per head (Refundable)',
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w600,

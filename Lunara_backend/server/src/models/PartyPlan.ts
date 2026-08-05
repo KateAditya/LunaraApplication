@@ -50,6 +50,12 @@ export interface PartyPlanAttributes {
     showHostName?: boolean;
     showVenueDetails?: boolean;
     showDateDetails?: boolean;
+    hostArrivalConfirmed?: boolean;
+    hostArrivalTime?: Date | null;
+    reminder24hSent?: boolean;
+    reminder3hSent?: boolean;
+    reminder1hSent?: boolean;
+    reminder30mSent?: boolean;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -88,6 +94,12 @@ class PartyPlan
     public showHostName!: boolean;
     public showVenueDetails!: boolean;
     public showDateDetails!: boolean;
+    public hostArrivalConfirmed!: boolean;
+    public hostArrivalTime?: Date | null;
+    public reminder24hSent!: boolean;
+    public reminder3hSent!: boolean;
+    public reminder1hSent!: boolean;
+    public reminder30mSent!: boolean;
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 }
@@ -233,6 +245,36 @@ PartyPlan.init(
             type: DataTypes.BOOLEAN,
             defaultValue: true,
             field: 'show_date_details',
+        },
+        hostArrivalConfirmed: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            field: 'host_arrival_confirmed',
+        },
+        hostArrivalTime: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'host_arrival_time',
+        },
+        reminder24hSent: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            field: 'reminder_24h_sent',
+        },
+        reminder3hSent: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            field: 'reminder_3h_sent',
+        },
+        reminder1hSent: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            field: 'reminder_1h_sent',
+        },
+        reminder30mSent: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            field: 'reminder_30m_sent',
         },
     },
     {

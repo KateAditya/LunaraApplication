@@ -20,6 +20,8 @@ import {
     confirmSelfPaidJoin,
     acceptPartyPlanInvite,
     getPartyPlanTicket,
+    confirmArrival,
+    submitPartyReview,
 } from '../controllers/partyPlanController';
 
 const router = Router();
@@ -345,5 +347,9 @@ import { respondToSafetyCheck, getPendingSafetyCheck } from '../controllers/mobi
 
 router.post('/safety-checks/respond', respondToSafetyCheck);
 router.get('/safety-checks/pending', getPendingSafetyCheck);
+
+// Phase 2 Routes
+router.post('/:id/confirm-arrival', confirmArrival);
+router.post('/:id/review', submitPartyReview);
 
 export default router;

@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import { Op } from 'sequelize';
-import PartyPlanRequest, { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
-import PartyPlan, { PartyPlanStatus } from '../models/PartyPlan';
+import PartyPlanRequest, { PartyPlanRequestStatus, PartyPlanJoinerPaymentStatus } from '../models/PartyPlanRequest';
+import PartyPlan, { PartyPlanStatus, PartyPlanPaymentStatus } from '../models/PartyPlan';
 import User from '../models/User';
 import Venue from '../models/Venue';
 import UserProfile from '../models/UserProfile';
@@ -90,73 +90,354 @@ export const startPartyPlanCron = () => {
                 }
             }
 
-            // 2. Process Completed Plans (3 hours after planDateTime)
-            // Refund successful matches and penalize no-shows
-            const threeHoursAgo = new Date(now.getTime() - 3 * 60 * 60 * 1000);
-            
-            const completedPlans = await PartyPlan.findAll({
+            // ── 2. Event Countdown Engine (24h, 3h, 1h, 30m Reminders) ─────────
+            const next25h = new Date(now.getTime() + 25 * 60 * 60 * 1000);
+            const next23h = new Date(now.getTime() + 23 * 60 * 60 * 1000);
+            const upcoming24hPlans = await PartyPlan.findAll({
                 where: {
-                    status: PartyPlanStatus.ACTIVE,
-                    planDateTime: {
-                        [Op.lt]: threeHoursAgo
+                    status: { [Op.in]: ['active', 'inactive'] },
+                    reminder24hSent: false,
+                    planDateTime: { [Op.between]: [next23h, next25h] },
+                },
+                include: [{ model: User, as: 'user' }]
+            });
+
+            for (const plan of upcoming24hPlans) {
+                await plan.update({ reminder24hSent: true });
+                const acceptedReq = await PartyPlanRequest.findOne({
+                    where: { planId: plan.id, status: PartyPlanRequestStatus.ACCEPTED }
+                });
+                if (acceptedReq) {
+                    const host = await User.findByPk(plan.userId);
+                    const joiner = await User.findByPk(acceptedReq.requesterId);
+                    const { sendMulticastPushNotification } = require('../services/fcmService');
+                    const NotificationService = (await import('../services/NotificationService')).NotificationService;
+
+                    if (host?.fcmToken) {
+                        await sendMulticastPushNotification([host.fcmToken], {
+                            title: '📅 Event Reminder (24 Hours)',
+                            body: `Your Party Plan with ${joiner?.firstName || 'your partner'} is tomorrow!`,
+                            data: { type: 'reminder_24h', partyPlanId: plan.id }
+                        });
                     }
+                    if (joiner?.fcmToken) {
+                        await sendMulticastPushNotification([joiner.fcmToken], {
+                            title: '📅 Event Reminder (24 Hours)',
+                            body: `Your Party Plan with ${host?.firstName || 'the host'} is tomorrow!`,
+                            data: { type: 'reminder_24h', partyPlanId: plan.id }
+                        });
+                    }
+
+                    await NotificationService.dispatch({
+                        recipientUserId: plan.userId,
+                        actorUserId: acceptedReq.requesterId,
+                        eventType: 'reminder_24h',
+                        category: 'events',
+                        entityType: 'party_plan',
+                        entityId: plan.id,
+                        title: '📅 Event Tomorrow',
+                        body: `Your Party Plan with ${joiner?.firstName || 'your partner'} is tomorrow!`,
+                    });
+                }
+            }
+
+            // 3-Hour Reminder
+            const next3hHalf = new Date(now.getTime() + 3.5 * 60 * 60 * 1000);
+            const next2hHalf = new Date(now.getTime() + 2.5 * 60 * 60 * 1000);
+            const upcoming3hPlans = await PartyPlan.findAll({
+                where: {
+                    status: { [Op.in]: ['active', 'inactive'] },
+                    reminder3hSent: false,
+                    planDateTime: { [Op.between]: [next2hHalf, next3hHalf] },
                 }
             });
 
+            for (const plan of upcoming3hPlans) {
+                await plan.update({ reminder3hSent: true });
+                const acceptedReq = await PartyPlanRequest.findOne({
+                    where: { planId: plan.id, status: PartyPlanRequestStatus.ACCEPTED }
+                });
+                if (acceptedReq) {
+                    const host = await User.findByPk(plan.userId);
+                    const joiner = await User.findByPk(acceptedReq.requesterId);
+                    const { sendMulticastPushNotification } = require('../services/fcmService');
+                    if (host?.fcmToken) {
+                        await sendMulticastPushNotification([host.fcmToken], {
+                            title: '⏳ Event Reminder (3 Hours)',
+                            body: `Your Party Plan starts in 3 hours!`,
+                            data: { type: 'reminder_3h', partyPlanId: plan.id }
+                        });
+                    }
+                    if (joiner?.fcmToken) {
+                        await sendMulticastPushNotification([joiner.fcmToken], {
+                            title: '⏳ Event Reminder (3 Hours)',
+                            body: `Your Party Plan starts in 3 hours!`,
+                            data: { type: 'reminder_3h', partyPlanId: plan.id }
+                        });
+                    }
+                }
+            }
+
+            // 1-Hour Reminder
+            const next75m = new Date(now.getTime() + 75 * 60 * 1000);
+            const next45m = new Date(now.getTime() + 45 * 60 * 1000);
+            const upcoming1hPlans = await PartyPlan.findAll({
+                where: {
+                    status: { [Op.in]: ['active', 'inactive'] },
+                    reminder1hSent: false,
+                    planDateTime: { [Op.between]: [next45m, next75m] },
+                }
+            });
+
+            for (const plan of upcoming1hPlans) {
+                await plan.update({ reminder1hSent: true });
+                const acceptedReq = await PartyPlanRequest.findOne({
+                    where: { planId: plan.id, status: PartyPlanRequestStatus.ACCEPTED }
+                });
+                if (acceptedReq) {
+                    const host = await User.findByPk(plan.userId);
+                    const joiner = await User.findByPk(acceptedReq.requesterId);
+                    const { sendMulticastPushNotification } = require('../services/fcmService');
+                    const msg = `Hurry! Your Party Plan starts in 1 hour. Please try to reach the venue on time.`;
+                    if (host?.fcmToken) {
+                        await sendMulticastPushNotification([host.fcmToken], {
+                            title: '🚀 1 Hour Remaining!',
+                            body: msg,
+                            data: { type: 'reminder_1h', partyPlanId: plan.id }
+                        });
+                    }
+                    if (joiner?.fcmToken) {
+                        await sendMulticastPushNotification([joiner.fcmToken], {
+                            title: '🚀 1 Hour Remaining!',
+                            body: msg,
+                            data: { type: 'reminder_1h', partyPlanId: plan.id }
+                        });
+                    }
+                }
+            }
+
+            // 30-Minute Arrival Confirmation Prompt
+            const next40m = new Date(now.getTime() + 40 * 60 * 1000);
+            const next15m = new Date(now.getTime() + 15 * 60 * 1000);
+            const upcoming30mPlans = await PartyPlan.findAll({
+                where: {
+                    status: { [Op.in]: ['active', 'inactive'] },
+                    reminder30mSent: false,
+                    planDateTime: { [Op.between]: [next15m, next40m] },
+                }
+            });
+
+            for (const plan of upcoming30mPlans) {
+                await plan.update({ reminder30mSent: true });
+                const acceptedReq = await PartyPlanRequest.findOne({
+                    where: { planId: plan.id, status: PartyPlanRequestStatus.ACCEPTED }
+                });
+                if (acceptedReq) {
+                    const host = await User.findByPk(plan.userId);
+                    const joiner = await User.findByPk(acceptedReq.requesterId);
+                    const { sendMulticastPushNotification } = require('../services/fcmService');
+                    const promptMsg = `Have you reached the venue? Please confirm your arrival.`;
+                    if (host?.fcmToken) {
+                        await sendMulticastPushNotification([host.fcmToken], {
+                            title: '📍 Arrival Check',
+                            body: promptMsg,
+                            data: { type: 'arrival_prompt', partyPlanId: plan.id }
+                        });
+                    }
+                    if (joiner?.fcmToken) {
+                        await sendMulticastPushNotification([joiner.fcmToken], {
+                            title: '📍 Arrival Check',
+                            body: promptMsg,
+                            data: { type: 'arrival_prompt', partyPlanId: plan.id }
+                        });
+                    }
+                }
+            }
+
+            // ── 3. Process Completed Plans & Execute 4-Case Refund Engine ─────
+            const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+            
+            const completedPlans = await PartyPlan.findAll({
+                where: {
+                    status: { [Op.in]: ['active', 'inactive'] },
+                    hostPaymentStatus: PartyPlanPaymentStatus.PAID,
+                    planDateTime: { [Op.lt]: twoHoursAgo }
+                }
+            });
+
+            const { ReliabilityService, ReliabilityAction } = await import('../services/reliabilityService');
+            const WalletTransaction = (await import('../models/WalletTransaction')).default;
+            const WalletTransactionType = (await import('../models/WalletTransaction')).WalletTransactionType;
+
             for (const plan of completedPlans) {
-                // Find paid join requests
-                const paidRequests = await PartyPlanRequest.findAll({
+                const acceptedReq = await PartyPlanRequest.findOne({
                     where: {
                         planId: plan.id,
-                        joinerPaymentStatus: 'paid'
+                        status: PartyPlanRequestStatus.ACCEPTED,
+                        joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
                     }
                 });
 
-                if (paidRequests.length > 0) {
-                    // We only have 1 accepted joiner for 1-on-1 party plan
-                    const joinerReq = paidRequests[0];
-                    const hostCheckedIn = plan.hostLatLangCheckIn;
-                    const joinerCheckedIn = joinerReq.latLangCheckIn;
-
-                    if (hostCheckedIn && joinerCheckedIn) {
-                        // MATCH SUCCESS -> Refund both
-                        logger.info(`Match Success! Refunding deposit for plan ${plan.id}`);
-                        
-                        // In reality, call Razorpay refund API here. For now mock:
-                        await plan.update({ hostPaymentStatus: 'refunded' as any });
-                        await joinerReq.update({ joinerPaymentStatus: 'refunded' as any });
-                    } else {
-                        // NO SHOW LOGIC
-                        if (!hostCheckedIn) {
-                            logger.info(`Host NO SHOW for plan ${plan.id}`);
-                            const hostUser = await User.findByPk(plan.userId);
-                            if (hostUser) {
-                                const newCount = (hostUser.noShowCount || 0) + 1;
-                                await hostUser.update({ noShowCount: newCount });
-                                if (newCount >= 2) {
-                                    logger.warn(`Restricting User profile for Host ${hostUser.id} due to 2 No-Shows`);
-                                    await hostUser.update({ isActive: false });
-                                }
-                            }
-                        }
-
-                        if (!joinerCheckedIn) {
-                            logger.info(`Joiner NO SHOW for request ${joinerReq.id}`);
-                            const joinerUser = await User.findByPk(joinerReq.requesterId);
-                            if (joinerUser) {
-                                const newCount = (joinerUser.noShowCount || 0) + 1;
-                                await joinerUser.update({ noShowCount: newCount });
-                                if (newCount >= 2) {
-                                    logger.warn(`Restricting User profile for Joiner ${joinerUser.id} due to 2 No-Shows`);
-                                    await joinerUser.update({ isActive: false });
-                                }
-                            }
-                        }
-                    }
+                if (!acceptedReq) {
+                    await plan.update({ status: PartyPlanStatus.INACTIVE });
+                    continue;
                 }
 
-                // Mark plan as completed/inactive so we don't process it again
-                await plan.update({ status: PartyPlanStatus.INACTIVE });
+                const hostYes = Boolean(plan.hostArrivalConfirmed || plan.hostLatLangCheckIn);
+                const guestYes = Boolean(acceptedReq.guestArrivalConfirmed || acceptedReq.latLangCheckIn);
+
+                const hostUser = await User.findByPk(plan.userId);
+                const guestUser = await User.findByPk(acceptedReq.requesterId);
+
+                const hostDeposit = Number(plan.depositAmount || 99.00);
+                const guestDeposit = plan.paymentType === 'self_pay' ? 0.00 : 99.00;
+
+                // ── CASE 1: Host YES, Guest YES ────────────────────────────────
+                if (hostYes && guestYes) {
+                    logger.info(`[RefundEngine Case 1] Both Host and Guest confirmed arrival for plan ${plan.id}`);
+
+                    if (hostUser) {
+                        const hOld = Number(hostUser.walletBalance || 0);
+                        const hNew = hOld + hostDeposit;
+                        await hostUser.update({ walletBalance: hNew });
+                        await plan.update({ hostPaymentStatus: PartyPlanPaymentStatus.REFUNDED });
+                        await WalletTransaction.logTransaction({
+                            userId: hostUser.id,
+                            partyPlanId: plan.id,
+                            amount: hostDeposit,
+                            openingBalance: hOld,
+                            closingBalance: hNew,
+                            transactionType: WalletTransactionType.REFUND,
+                            reference: `REFUND_HOST_${plan.id}`,
+                        });
+                        await ReliabilityService.updateScore({
+                            userId: hostUser.id,
+                            action: ReliabilityAction.SUCCESSFUL_ATTENDANCE,
+                            partyPlanId: plan.id,
+                        });
+                    }
+
+                    if (guestUser && guestDeposit > 0) {
+                        const gOld = Number(guestUser.walletBalance || 0);
+                        const gNew = gOld + guestDeposit;
+                        await guestUser.update({ walletBalance: gNew });
+                        await acceptedReq.update({ joinerPaymentStatus: PartyPlanJoinerPaymentStatus.REFUNDED });
+                        await WalletTransaction.logTransaction({
+                            userId: guestUser.id,
+                            partyPlanId: plan.id,
+                            amount: guestDeposit,
+                            openingBalance: gOld,
+                            closingBalance: gNew,
+                            transactionType: WalletTransactionType.REFUND,
+                            reference: `REFUND_GUEST_${acceptedReq.id}`,
+                        });
+                    }
+
+                    if (guestUser) {
+                        await ReliabilityService.updateScore({
+                            userId: guestUser.id,
+                            action: ReliabilityAction.SUCCESSFUL_ATTENDANCE,
+                            partyPlanId: plan.id,
+                        });
+                    }
+
+                    await plan.update({ status: PartyPlanStatus.INACTIVE, paymentStatus: 'Completed (Both Refunded)' });
+                }
+                // ── CASE 2: Host YES, Guest NO ─────────────────────────────────
+                else if (hostYes && !guestYes) {
+                    logger.info(`[RefundEngine Case 2] Host YES, Guest NO for plan ${plan.id}`);
+
+                    if (hostUser) {
+                        const hOld = Number(hostUser.walletBalance || 0);
+                        const hNew = hOld + hostDeposit;
+                        await hostUser.update({ walletBalance: hNew });
+                        await plan.update({ hostPaymentStatus: PartyPlanPaymentStatus.REFUNDED });
+                        await WalletTransaction.logTransaction({
+                            userId: hostUser.id,
+                            partyPlanId: plan.id,
+                            amount: hostDeposit,
+                            openingBalance: hOld,
+                            closingBalance: hNew,
+                            transactionType: WalletTransactionType.REFUND,
+                            reference: `REFUND_HOST_${plan.id}`,
+                        });
+                        await ReliabilityService.updateScore({
+                            userId: hostUser.id,
+                            action: ReliabilityAction.SUCCESSFUL_ATTENDANCE,
+                            partyPlanId: plan.id,
+                        });
+                    }
+
+                    if (guestUser) {
+                        await ReliabilityService.updateScore({
+                            userId: guestUser.id,
+                            action: ReliabilityAction.NO_SHOW,
+                            partyPlanId: plan.id,
+                        });
+                    }
+
+                    await plan.update({ status: PartyPlanStatus.INACTIVE, paymentStatus: 'Completed (Host Refunded, Guest No-Show)' });
+                }
+                // ── CASE 3: Host NO, Guest YES ─────────────────────────────────
+                else if (!hostYes && guestYes) {
+                    logger.info(`[RefundEngine Case 3] Host NO, Guest YES for plan ${plan.id}`);
+
+                    if (guestUser && guestDeposit > 0) {
+                        const gOld = Number(guestUser.walletBalance || 0);
+                        const gNew = gOld + guestDeposit;
+                        await guestUser.update({ walletBalance: gNew });
+                        await acceptedReq.update({ joinerPaymentStatus: PartyPlanJoinerPaymentStatus.REFUNDED });
+                        await WalletTransaction.logTransaction({
+                            userId: guestUser.id,
+                            partyPlanId: plan.id,
+                            amount: guestDeposit,
+                            openingBalance: gOld,
+                            closingBalance: gNew,
+                            transactionType: WalletTransactionType.REFUND,
+                            reference: `REFUND_GUEST_${acceptedReq.id}`,
+                        });
+                    }
+
+                    if (guestUser) {
+                        await ReliabilityService.updateScore({
+                            userId: guestUser.id,
+                            action: ReliabilityAction.SUCCESSFUL_ATTENDANCE,
+                            partyPlanId: plan.id,
+                        });
+                    }
+
+                    if (hostUser) {
+                        await ReliabilityService.updateScore({
+                            userId: hostUser.id,
+                            action: ReliabilityAction.NO_SHOW,
+                            partyPlanId: plan.id,
+                        });
+                    }
+
+                    await plan.update({ status: PartyPlanStatus.INACTIVE, paymentStatus: 'Completed (Guest Refunded, Host No-Show)' });
+                }
+                // ── CASE 4: Host NO, Guest NO ──────────────────────────────────
+                else {
+                    logger.info(`[RefundEngine Case 4] Host NO, Guest NO for plan ${plan.id}`);
+
+                    if (hostUser) {
+                        await ReliabilityService.updateScore({
+                            userId: hostUser.id,
+                            action: ReliabilityAction.NO_SHOW,
+                            partyPlanId: plan.id,
+                        });
+                    }
+
+                    if (guestUser) {
+                        await ReliabilityService.updateScore({
+                            userId: guestUser.id,
+                            action: ReliabilityAction.NO_SHOW,
+                            partyPlanId: plan.id,
+                        });
+                    }
+
+                    await plan.update({ status: PartyPlanStatus.INACTIVE, paymentStatus: 'Closed (Both No-Show)' });
+                }
             }
 
             // 3. Check for recently expired chat subscriptions

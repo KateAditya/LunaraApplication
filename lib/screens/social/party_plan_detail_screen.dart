@@ -476,6 +476,88 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     );
   }
 
+  Widget _buildArrivalConfirmationCard() {
+    final isConfirmed = widget.plan['hasConfirmedBooking'] == true;
+    if (!isConfirmed) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1F1B2E),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.pin_drop_rounded, color: LunaraTheme.electricViolet, size: 20),
+              SizedBox(width: 8),
+              Text(
+                'ARRIVAL CONFIRMATION',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Have you reached the venue? Confirming arrival guarantees your Commitment Deposit refund.',
+            style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.4),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () async {
+                    final planId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
+                    final uid = await ApiService.getCurrentUserId();
+                    if (planId.isNotEmpty && uid != null && uid.isNotEmpty) {
+                      await ApiService.confirmArrival(planId: planId, userId: uid, hasArrived: true);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('✅ Arrival confirmed (YES)!'), backgroundColor: Colors.green),
+                        );
+                      }
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('YES — I\'M HERE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () async {
+                    final planId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
+                    final uid = await ApiService.getCurrentUserId();
+                    if (planId.isNotEmpty && uid != null && uid.isNotEmpty) {
+                      await ApiService.confirmArrival(planId: planId, userId: uid, hasArrived: false);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Recorded: NOT YET'), backgroundColor: Colors.orange),
+                        );
+                      }
+                    }
+                  },
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.white30),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('NOT YET', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 12)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _loadVenueDetailsIfNeeded() async {
     final initialUrl = _getVenueImageUrl();
     if (initialUrl != null && initialUrl.isNotEmpty) return;
@@ -997,14 +1079,26 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                   ),
                   const SizedBox(height: 12),
 
-                  // Venue Card
+                  // Venue Card with Privacy Masking (Step 3)
                   _infoCard(
-                    icon: Icons.location_on_rounded,
+                    icon: (plan['showVenueDetails'] == false && !isMyPost && plan['hasConfirmedBooking'] != true)
+                        ? Icons.visibility_off_rounded
+                        : Icons.location_on_rounded,
                     title: 'VENUE',
-                    value: venueName,
-                    subtitle: venueAddress,
-                    iconColor: LunaraTheme.electricViolet,
+                    value: (plan['showVenueDetails'] == false && !isMyPost && plan['hasConfirmedBooking'] != true)
+                        ? '${venue['area'] ?? venue['city'] ?? 'Near Area'} (Exact venue hidden until booking)'
+                        : venueName,
+                    subtitle: (plan['showVenueDetails'] == false && !isMyPost && plan['hasConfirmedBooking'] != true)
+                        ? 'Locality: ${venue['area'] ?? venue['city'] ?? 'Local Area'}'
+                        : venueAddress,
+                    iconColor: (plan['showVenueDetails'] == false && !isMyPost && plan['hasConfirmedBooking'] != true)
+                        ? Colors.amber
+                        : LunaraTheme.electricViolet,
                   ),
+
+                  // Arrival Confirmation Card (30m Window)
+                  _buildArrivalConfirmationCard(),
+                  const SizedBox(height: 12),
 
                   // Mutual Cancellation Section
                   _buildCancellationSection(),

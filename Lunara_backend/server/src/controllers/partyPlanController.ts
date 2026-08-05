@@ -2943,3 +2943,117 @@ export const initiateJoinerPayment = async (req: Request, res: Response): Promis
         res.status(500).json({ success: false, message: 'Failed to initiate joiner payment', error: err.message });
     }
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/party-plans/:id/confirm-arrival
+// Allows host or guest to confirm arrival independently (YES / NOT YET)
+// ─────────────────────────────────────────────────────────────────────────────
+export const confirmArrival = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { userId, hasArrived } = req.body;
+
+        if (!userId || hasArrived === undefined) {
+            res.status(400).json({ success: false, message: 'userId and hasArrived boolean are required' });
+            return;
+        }
+
+        const plan = await PartyPlan.findByPk(id);
+        if (!plan) {
+            res.status(404).json({ success: false, message: 'Party plan not found' });
+            return;
+        }
+
+        const isHost = plan.userId === userId;
+
+        if (isHost) {
+            await plan.update({
+                hostArrivalConfirmed: Boolean(hasArrived),
+                hostArrivalTime: hasArrived ? new Date() : null,
+            });
+        } else {
+            const acceptedReq = await PartyPlanRequest.findOne({
+                where: { planId: id, requesterId: userId }
+            });
+            if (!acceptedReq) {
+                res.status(403).json({ success: false, message: 'You are not an active participant in this plan' });
+                return;
+            }
+            await acceptedReq.update({
+                guestArrivalConfirmed: Boolean(hasArrived),
+                guestArrivalTime: hasArrived ? new Date() : null,
+            });
+        }
+
+        const AuditLog = (await import('../models/AuditLog')).default;
+        await AuditLog.logAction({
+            userId,
+            partyPlanId: id,
+            action: 'Arrival Confirmed',
+            metadata: { isHost, hasArrived: Boolean(hasArrived) }
+        });
+
+        res.json({
+            success: true,
+            message: `Arrival confirmation (${hasArrived ? 'YES' : 'NOT YET'}) recorded.`,
+            data: { planId: id, isHost, hasArrived: Boolean(hasArrived) }
+        });
+    } catch (err: any) {
+        logger.error('confirmArrival error:', err);
+        res.status(500).json({ success: false, message: 'Failed to confirm arrival', error: err.message });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/party-plans/:id/review
+// Submit post-event review (1-5 stars & feedback)
+// ─────────────────────────────────────────────────────────────────────────────
+export const submitPartyReview = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { reviewerId, rating, comment, isReported, reportReason } = req.body;
+
+        if (!reviewerId || !rating) {
+            res.status(400).json({ success: false, message: 'reviewerId and rating (1-5) are required' });
+            return;
+        }
+
+        const plan = await PartyPlan.findByPk(id);
+        if (!plan) {
+            res.status(404).json({ success: false, message: 'Party plan not found' });
+            return;
+        }
+
+        const acceptedReq = await PartyPlanRequest.findOne({
+            where: { planId: id, status: PartyPlanRequestStatus.ACCEPTED }
+        });
+
+        const isHost = plan.userId === reviewerId;
+        const revieweeId = isHost ? acceptedReq?.requesterId : plan.userId;
+
+        if (!revieweeId) {
+            res.status(400).json({ success: false, message: 'Invalid participant for review' });
+            return;
+        }
+
+        const PartyReview = (await import('../models/PartyReview')).default;
+        const review = await PartyReview.create({
+            planId: id,
+            reviewerId,
+            revieweeId,
+            rating: Number(rating),
+            comment,
+            isReported: Boolean(isReported),
+            reportReason,
+        });
+
+        res.json({
+            success: true,
+            message: 'Thank you for your feedback!',
+            data: review,
+        });
+    } catch (err: any) {
+        logger.error('submitPartyReview error:', err);
+        res.status(500).json({ success: false, message: 'Failed to submit review', error: err.message });
+    }
+};

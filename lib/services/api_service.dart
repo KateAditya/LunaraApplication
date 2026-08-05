@@ -3835,6 +3835,49 @@ class ApiService {
       return {'success': false, 'message': 'Network error: $e'};
     }
   }
+
+  static Future<Map<String, dynamic>> confirmArrival({
+    required String planId,
+    required String userId,
+    required bool hasArrived,
+  }) async {
+    try {
+      final response = await _post(
+        '/api/mobile/party-plans/$planId/confirm-arrival',
+        {'userId': userId, 'hasArrived': hasArrived},
+      );
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('confirmArrival error: $e');
+      return {'success': false, 'message': '$e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> submitPartyReview({
+    required String planId,
+    required String reviewerId,
+    required int rating,
+    String? comment,
+    bool isReported = false,
+    String? reportReason,
+  }) async {
+    try {
+      final response = await _post(
+        '/api/mobile/party-plans/$planId/review',
+        {
+          'reviewerId': reviewerId,
+          'rating': rating,
+          'comment': comment,
+          'isReported': isReported,
+          'reportReason': reportReason,
+        },
+      );
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('submitPartyReview error: $e');
+      return {'success': false, 'message': '$e'};
+    }
+  }
 }
 
 // â”€â”€ Party Plan Request Result â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

@@ -41,11 +41,13 @@ export interface UserAttributes {
     isDeleted: boolean;
     deletedAt?: Date | null;
     deletionReason?: string | null;
+    walletBalance?: number;
+    reliabilityScore?: number;
 }
 
 // Creation attributes (optional fields)
 export interface UserCreationAttributes
-    extends Optional<UserAttributes, 'id' | 'isVerified' | 'isActive' | 'isOnline' | 'mfaEnabled' | 'mfaSecret' | 'profileImageUrl' | 'createdAt' | 'updatedAt' | 'lastLoginAt' | 'lastActiveAt' | 'noShowCount' | 'fcmToken' | 'clearedNotificationsAt' | 'blockCount' | 'isAutoblocked' | 'autoblockedReason' | 'facebookId' | 'googleId' | 'isDeleted' | 'deletedAt' | 'deletionReason'> { }
+    extends Optional<UserAttributes, 'id' | 'isVerified' | 'isActive' | 'isOnline' | 'mfaEnabled' | 'mfaSecret' | 'profileImageUrl' | 'createdAt' | 'updatedAt' | 'lastLoginAt' | 'lastActiveAt' | 'noShowCount' | 'fcmToken' | 'clearedNotificationsAt' | 'blockCount' | 'isAutoblocked' | 'autoblockedReason' | 'facebookId' | 'googleId' | 'isDeleted' | 'deletedAt' | 'deletionReason' | 'walletBalance' | 'reliabilityScore'> { }
 
 // User model class
 class User extends Model<UserAttributes, UserCreationAttributes> implements UserAttributes {
@@ -78,6 +80,8 @@ class User extends Model<UserAttributes, UserCreationAttributes> implements User
     public isDeleted!: boolean;
     public deletedAt?: Date | null;
     public deletionReason?: string | null;
+    public walletBalance!: number;
+    public reliabilityScore!: number;
 
     // Instance methods
     public async comparePassword(password: string): Promise<boolean> {
@@ -278,6 +282,22 @@ User.init(
             type: DataTypes.TEXT,
             allowNull: true,
             field: 'deletion_reason',
+        },
+        walletBalance: {
+            type: DataTypes.DECIMAL(10, 2),
+            allowNull: false,
+            defaultValue: 0.00,
+            field: 'wallet_balance',
+            get() {
+                const val = this.getDataValue('walletBalance');
+                return val === null || val === undefined ? 0.00 : parseFloat(val.toString());
+            },
+        },
+        reliabilityScore: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            defaultValue: 100,
+            field: 'reliability_score',
         },
     },
     {

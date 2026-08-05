@@ -26,6 +26,8 @@ export interface PartyPlanRequestAttributes {
     joinerRazorpayPaymentId?: string;
     paymentTimeoutAt?: Date;
     latLangCheckIn: boolean;
+    guestArrivalConfirmed?: boolean;
+    guestArrivalTime?: Date | null;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -33,7 +35,7 @@ export interface PartyPlanRequestAttributes {
 export interface PartyPlanRequestCreationAttributes
     extends Optional<
         PartyPlanRequestAttributes,
-        'id' | 'status' | 'joinerPaymentStatus' | 'latLangCheckIn' | 'createdAt' | 'updatedAt'
+        'id' | 'status' | 'joinerPaymentStatus' | 'latLangCheckIn' | 'createdAt' | 'updatedAt' | 'guestArrivalConfirmed' | 'guestArrivalTime'
     > {}
 
 class PartyPlanRequest
@@ -48,6 +50,8 @@ class PartyPlanRequest
     public joinerRazorpayPaymentId?: string;
     public paymentTimeoutAt?: Date;
     public latLangCheckIn!: boolean;
+    public guestArrivalConfirmed!: boolean;
+    public guestArrivalTime?: Date | null;
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 }
@@ -104,6 +108,16 @@ PartyPlanRequest.init(
             allowNull: false,
             defaultValue: false,
             field: 'lat_lang_check_in',
+        },
+        guestArrivalConfirmed: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            field: 'guest_arrival_confirmed',
+        },
+        guestArrivalTime: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'guest_arrival_time',
         },
     },
     {

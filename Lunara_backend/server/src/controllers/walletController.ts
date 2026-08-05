@@ -34,6 +34,8 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
             return;
         }
 
+        const userRecord = await User.findByPk(userId);
+
         // ── 1. Incomplete Events ─────────────────────────────────────────────
         //
         // Case A – User is the HOST and has already paid the deposit,
@@ -788,6 +790,7 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
         res.json({
             success: true,
             data: {
+                walletBalance: userRecord?.walletBalance ? Number(userRecord.walletBalance) : 0.00,
                 incompleteEvents,
                 transactions: allTransactions,
                 subscriptionTransactions: subscriptionTxns,
@@ -805,5 +808,284 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
     } catch (err: any) {
         logger.error('getWalletData error:', err);
         res.status(500).json({ success: false, message: 'Failed to fetch wallet data', error: err.message });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/wallet/pay-with-wallet
+// Pays commitment deposit or booking fees using user wallet balance
+// ─────────────────────────────────────────────────────────────────────────────
+export const payWithWallet = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { userId, amount, planId, requestId, paymentType = 'host_deposit' } = req.body;
+
+        if (!userId || !amount) {
+            res.status(400).json({ success: false, message: 'userId and amount are required' });
+            return;
+        }
+
+        const requiredAmount = Number(amount);
+        if (isNaN(requiredAmount) || requiredAmount <= 0) {
+            res.status(400).json({ success: false, message: 'Invalid payment amount' });
+            return;
+        }
+
+        const user = await User.findByPk(userId);
+        if (!user) {
+            res.status(404).json({ success: false, message: 'User not found' });
+            return;
+        }
+
+        const currentBalance = Number(user.walletBalance || 0);
+
+        if (currentBalance < requiredAmount) {
+            const requiredRecharge = Math.ceil(requiredAmount - currentBalance);
+            res.status(402).json({
+                success: false,
+                insufficientBalance: true,
+                requiredRecharge,
+                currentBalance,
+                requiredAmount,
+                message: `Recharge ₹${requiredRecharge} to complete this payment.`,
+            });
+            return;
+        }
+
+        // Deduct from wallet atomically
+        const newBalance = Math.max(0, currentBalance - requiredAmount);
+        await user.update({ walletBalance: newBalance });
+
+        // Record WalletTransaction Ledger
+        const WalletTransaction = (await import('../models/WalletTransaction')).default;
+        const WalletTransactionType = (await import('../models/WalletTransaction')).WalletTransactionType;
+        await WalletTransaction.logTransaction({
+            userId,
+            partyPlanId: planId,
+            amount: requiredAmount,
+            openingBalance: currentBalance,
+            closingBalance: newBalance,
+            transactionType: WalletTransactionType.COMMITMENT_DEPOSIT,
+            reference: `PLAN_${planId || 'DIRECT'}`,
+            metadata: { paymentType, requestId }
+        });
+
+        // Record Audit Log
+        const AuditLog = (await import('../models/AuditLog')).default;
+        await AuditLog.logAction({
+            userId,
+            partyPlanId: planId,
+            action: 'Wallet Payment Completed',
+            metadata: { amount: requiredAmount, paymentType, requestId, remainingBalance: newBalance }
+        });
+
+        res.json({
+            success: true,
+            message: 'Wallet payment successful',
+            data: {
+                userId,
+                amountPaid: requiredAmount,
+                remainingBalance: newBalance,
+                transactionId: `WAL_TXN_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+            }
+        });
+    } catch (err: any) {
+        logger.error('payWithWallet error:', err);
+        res.status(500).json({ success: false, message: 'Wallet payment failed', error: err.message });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/wallet/recharge
+// Recharges user wallet balance
+// ─────────────────────────────────────────────────────────────────────────────
+export const rechargeWallet = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { userId, amount, paymentId, paymentGateway = 'razorpay' } = req.body;
+
+        if (!userId || !amount) {
+            res.status(400).json({ success: false, message: 'userId and amount are required' });
+            return;
+        }
+
+        const rechargeAmount = Number(amount);
+        if (isNaN(rechargeAmount) || rechargeAmount <= 0) {
+            res.status(400).json({ success: false, message: 'Invalid recharge amount' });
+            return;
+        }
+
+        const user = await User.findByPk(userId);
+        if (!user) {
+            res.status(404).json({ success: false, message: 'User not found' });
+            return;
+        }
+
+        const currentBalance = Number(user.walletBalance || 0);
+        const newBalance = currentBalance + rechargeAmount;
+        await user.update({ walletBalance: newBalance });
+
+        const WalletTransaction = (await import('../models/WalletTransaction')).default;
+        const WalletTransactionType = (await import('../models/WalletTransaction')).WalletTransactionType;
+        const txn = await WalletTransaction.logTransaction({
+            userId,
+            amount: rechargeAmount,
+            openingBalance: currentBalance,
+            closingBalance: newBalance,
+            transactionType: WalletTransactionType.RECHARGE,
+            reference: paymentId || `RECHARGE_${Date.now()}`,
+            metadata: { paymentGateway, paymentId }
+        });
+
+        const AuditLog = (await import('../models/AuditLog')).default;
+        await AuditLog.logAction({
+            userId,
+            action: 'Wallet Recharged',
+            metadata: { amount: rechargeAmount, newBalance, paymentId }
+        });
+
+        res.json({
+            success: true,
+            message: `Successfully recharged ₹${rechargeAmount} to your wallet!`,
+            data: {
+                userId,
+                rechargedAmount: rechargeAmount,
+                walletBalance: newBalance,
+                transactionId: txn.id,
+            }
+        });
+    } catch (err: any) {
+        logger.error('rechargeWallet error:', err);
+        res.status(500).json({ success: false, message: 'Wallet recharge failed', error: err.message });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/wallet/pay-vip
+// Purchases VIP membership using wallet balance
+// ─────────────────────────────────────────────────────────────────────────────
+export const payVipWithWallet = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { userId, packageId, tier = 'GOLD', price = 199 } = req.body;
+
+        if (!userId) {
+            res.status(400).json({ success: false, message: 'userId is required' });
+            return;
+        }
+
+        const user = await User.findByPk(userId);
+        if (!user) {
+            res.status(404).json({ success: false, message: 'User not found' });
+            return;
+        }
+
+        const requiredPrice = Number(price);
+        const currentBalance = Number(user.walletBalance || 0);
+
+        if (currentBalance < requiredPrice) {
+            const requiredRecharge = Math.ceil(requiredPrice - currentBalance);
+            res.status(402).json({
+                success: false,
+                insufficientBalance: true,
+                requiredRecharge,
+                currentBalance,
+                requiredPrice,
+                message: `Recharge ₹${requiredRecharge} to complete VIP Purchase.`,
+            });
+            return;
+        }
+
+        const newBalance = Math.max(0, currentBalance - requiredPrice);
+        await user.update({ walletBalance: newBalance });
+
+        // Activate UserSubscription
+        const UserSubscriptionModel = (await import('../models/UserSubscription')).default;
+        const SubscriptionStatusEnum = (await import('../models/UserSubscription')).SubscriptionStatus;
+        
+        const validUntil = new Date();
+        validUntil.setMonth(validUntil.getMonth() + 1);
+
+        let sub = await UserSubscriptionModel.findOne({ where: { userId } });
+        if (sub) {
+            await sub.update({
+                packageId: packageId || sub.packageId,
+                status: SubscriptionStatusEnum.ACTIVE,
+                startDate: new Date(),
+                endDate: validUntil,
+                autoRenew: false,
+            });
+        } else {
+            sub = await UserSubscriptionModel.create({
+                userId,
+                packageId: packageId || 'DEFAULT_GOLD_PKG',
+                status: SubscriptionStatusEnum.ACTIVE,
+                startDate: new Date(),
+                endDate: validUntil,
+                autoRenew: false,
+            });
+        }
+
+        // Ledger & Audit
+        const WalletTransaction = (await import('../models/WalletTransaction')).default;
+        const WalletTransactionType = (await import('../models/WalletTransaction')).WalletTransactionType;
+        await WalletTransaction.logTransaction({
+            userId,
+            amount: requiredPrice,
+            openingBalance: currentBalance,
+            closingBalance: newBalance,
+            transactionType: WalletTransactionType.VIP_PURCHASE,
+            reference: `VIP_${tier}`,
+            metadata: { tier, packageId, validUntil: validUntil.toISOString() }
+        });
+
+        const AuditLog = (await import('../models/AuditLog')).default;
+        await AuditLog.logAction({
+            userId,
+            action: 'VIP Membership Purchased via Wallet',
+            metadata: { tier, price: requiredPrice, validUntil: validUntil.toISOString() }
+        });
+
+        res.json({
+            success: true,
+            message: `🎉 Congratulations! VIP Membership (${tier}) is now active.`,
+            data: {
+                userId,
+                tier,
+                pricePaid: requiredPrice,
+                walletBalance: newBalance,
+                subscriptionId: sub.id,
+                validUntil: validUntil.toISOString(),
+            }
+        });
+    } catch (err: any) {
+        logger.error('payVipWithWallet error:', err);
+        res.status(500).json({ success: false, message: 'VIP wallet purchase failed', error: err.message });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/mobile/wallet/transactions
+// Fetches full audit history of wallet transactions
+// ─────────────────────────────────────────────────────────────────────────────
+export const getWalletTransactions = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const userId = (req.query.userId || req.body.userId) as string;
+        if (!userId) {
+            res.status(400).json({ success: false, message: 'userId is required' });
+            return;
+        }
+
+        const WalletTransaction = (await import('../models/WalletTransaction')).default;
+        const transactions = await WalletTransaction.findAll({
+            where: { userId },
+            order: [['createdAt', 'DESC']],
+            limit: 100,
+        });
+
+        res.json({
+            success: true,
+            data: transactions,
+        });
+    } catch (err: any) {
+        logger.error('getWalletTransactions error:', err);
+        res.status(500).json({ success: false, message: 'Failed to fetch wallet transactions', error: err.message });
     }
 };

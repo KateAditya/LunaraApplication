@@ -47,6 +47,9 @@ import NightPartnerMatch from './NightPartnerMatch';
 import Notification from './Notification';
 import Ticket, { TicketStatus, StorageCleanupStatus } from './Ticket';
 import PartySafetyCheck from './PartySafetyCheck';
+import AuditLog from './AuditLog';
+import WalletTransaction from './WalletTransaction';
+import PartyReview from './PartyReview';
 
 // ============================================================================
 // Notification Associations
@@ -559,6 +562,9 @@ export {
     SafetyCheck,
     DeletedAccount,
     PartySafetyCheck,
+    AuditLog,
+    WalletTransaction,
+    PartyReview,
 };
 
 // Export sync function
