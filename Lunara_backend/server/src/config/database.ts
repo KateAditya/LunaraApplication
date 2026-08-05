@@ -96,6 +96,41 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
             await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS no_show_count INTEGER NOT NULL DEFAULT 0;`);
             await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS facebook_id VARCHAR(100);`);
             await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(100);`);
+            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS reliability_score INTEGER DEFAULT 70;`);
+            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS reward_points INTEGER DEFAULT 0;`);
+            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS login_streak_days INTEGER DEFAULT 0;`);
+            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_streak_date TIMESTAMP WITH TIME ZONE;`);
+
+            await sequelize.query(`
+                CREATE TABLE IF NOT EXISTS reliability_history (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    old_score INTEGER NOT NULL,
+                    new_score INTEGER NOT NULL,
+                    change INTEGER NOT NULL,
+                    reason VARCHAR(255) NOT NULL,
+                    action VARCHAR(255) NOT NULL,
+                    booking_id UUID,
+                    party_plan_id UUID,
+                    metadata JSONB,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                );
+            `);
+
+            await sequelize.query(`
+                CREATE TABLE IF NOT EXISTS reward_point_ledgers (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    points INTEGER NOT NULL,
+                    type VARCHAR(50) NOT NULL,
+                    balance_after INTEGER NOT NULL,
+                    reason VARCHAR(255) NOT NULL,
+                    reference VARCHAR(255),
+                    metadata JSONB,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                );
+            `);
+
             await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS ticket_url VARCHAR(500);`);
             await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS is_upcoming_night BOOLEAN DEFAULT FALSE;`);
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS ticket_url VARCHAR(500);`);
