@@ -880,27 +880,10 @@ class _PlanHubScreenState extends State<PlanHubScreen>
   }
 
   Widget _buildFeaturedSection() {
-    List<Map<String, dynamic>> filteredList = _customerList;
-    if (_currentUser?.gender != null) {
-      final myGender = _currentUser!.gender!.toLowerCase();
-      filteredList = _customerList.where((u) {
-        final isNotMe = u['id']?.toString() != _currentUser?.id;
-        final uGender =
-            (u['gender'] ??
-                    (u['profile'] is Map ? u['profile']['gender'] : null) ??
-                    u['vibe'] ??
-                    '')
-                .toString()
-                .toLowerCase();
-
-        if (myGender == 'male' || myGender == 'm') {
-          if (uGender == 'male' || uGender == 'm') return false;
-        } else if (myGender == 'female' || myGender == 'f') {
-          if (uGender == 'female' || uGender == 'f') return false;
-        }
-        return isNotMe;
-      }).toList();
-    }
+    List<Map<String, dynamic>> filteredList = _customerList.where((u) {
+      final isNotMe = u['id']?.toString() != _currentUser?.id;
+      return isNotMe;
+    }).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1053,27 +1036,10 @@ class _PlanHubScreenState extends State<PlanHubScreen>
   }
 
   Widget _buildTopTenProfilesSection() {
-    List<Map<String, dynamic>> filteredList = _customerList;
-    if (_currentUser?.gender != null) {
-      final myGender = _currentUser!.gender!.toLowerCase();
-      filteredList = _customerList.where((u) {
-        final isNotMe = u['id']?.toString() != _currentUser?.id;
-        final uGender =
-            (u['gender'] ??
-                    (u['profile'] is Map ? u['profile']['gender'] : null) ??
-                    u['vibe'] ??
-                    '')
-                .toString()
-                .toLowerCase();
-
-        if (myGender == 'male' || myGender == 'm') {
-          if (uGender == 'male' || uGender == 'm') return false;
-        } else if (myGender == 'female' || myGender == 'f') {
-          if (uGender == 'female' || uGender == 'f') return false;
-        }
-        return isNotMe;
-      }).toList();
-    }
+    List<Map<String, dynamic>> filteredList = _customerList.where((u) {
+      final isNotMe = u['id']?.toString() != _currentUser?.id;
+      return isNotMe;
+    }).toList();
 
     // Rank dynamically by active hosted plans (primary weight) and budget preferences/super likes
     final scoredList = filteredList.map((u) {

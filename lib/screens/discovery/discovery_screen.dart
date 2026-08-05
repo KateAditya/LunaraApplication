@@ -2689,22 +2689,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     // Robust null check and filter out the current user + apply gender filter
     final List<dynamic> users = _filteredUsers.where((u) {
       final isNotMe = u['id']?.toString() != _currentUser?.id;
-      if (_currentUser?.gender == null) return isNotMe;
-
-      final myGender = _currentUser!.gender!.toLowerCase();
-      final uGender =
-          (u['gender'] ??
-                  (u['profile'] is Map ? u['profile']['gender'] : null) ??
-                  '')
-              .toString()
-              .toLowerCase();
-
-      if (myGender == 'male' || myGender == 'm') {
-        if (uGender == 'male' || uGender == 'm') return false;
-      } else if (myGender == 'female' || myGender == 'f') {
-        if (uGender == 'female' || uGender == 'f') return false;
-      }
-
       return isNotMe;
     }).toList();
 

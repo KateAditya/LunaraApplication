@@ -92,15 +92,6 @@ class _MatchScreenState extends State<MatchScreen>
             }
           }
 
-          // Filter by opposite gender
-          if (myGender != null && myGender.isNotEmpty) {
-            final uGender = (u.gender ?? '').toLowerCase();
-            if (myGender == 'male' || myGender == 'm') {
-              if (uGender == 'male' || uGender == 'm') continue;
-            } else if (myGender == 'female' || myGender == 'f') {
-              if (uGender == 'female' || uGender == 'f') continue;
-            }
-          }
 
           // Calculate match percentage dynamically
           final matchPct = ApiService.calculateMatchPercentage(u);

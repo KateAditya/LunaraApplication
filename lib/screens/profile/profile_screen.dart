@@ -123,10 +123,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         try {
           final u = User.fromJson(c);
           if (myId != null && u.id == myId) continue;
-          if (myGender != null && myGender.isNotEmpty) {
-            final uGender = u.gender?.toLowerCase();
-            if (uGender == null || uGender == myGender) continue;
-          }
           resolvedUsers.add(u);
         } catch (_) {}
       }

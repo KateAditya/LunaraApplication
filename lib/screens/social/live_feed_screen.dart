@@ -875,7 +875,61 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                       letterSpacing: 1.0,
                       color: Colors.black,
                     ),
-                    overflow: TextOverflow.ell  // ─────────────────────────────────────────────────────────────────────────────
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 4),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Mark all as read button
+              TextButton.icon(
+                onPressed: markAllNotificationsAsRead,
+                icon: const Icon(Icons.done_all_rounded, size: 15, color: LunaraTheme.electricViolet),
+                label: const Text(
+                  'Read All',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: LunaraTheme.electricViolet,
+                  ),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+              const SizedBox(width: 4),
+              // Filter Bottom Sheet Button
+              InkWell(
+                onTap: _showFilterBottomSheet,
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: _selectedCategoryFilter != 'ALL' ? LunaraTheme.electricViolet.withValues(alpha: 0.1) : Colors.grey[100],
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.tune_rounded,
+                    size: 18,
+                    color: _selectedCategoryFilter != 'ALL' ? LunaraTheme.electricViolet : Colors.black87,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // Build Status Filter Pills with Live Unread Counts
   // ─────────────────────────────────────────────────────────────────────────────
   int _countForPill(String pillId, List<UnifiedNotificationItem> allItems) {
@@ -984,62 +1038,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                       ),
                     ),
                 ],
-              ),
-            );
-          }).toList(),
-        ),
-      ),
-    );
-  }�───────────────────────────────────────────────────────────────────
-  Widget _buildStatusFilterBar() {
-    final pills = [
-      {'id': 'ALL', 'label': 'All'},
-      {'id': 'REQUESTS', 'label': 'Requests'},
-      {'id': 'PENDING', 'label': 'Pending'},
-      {'id': 'PAYMENT', 'label': 'Payment'},
-      {'id': 'CONFIRMED', 'label': 'Confirmed'},
-      {'id': 'SYSTEM', 'label': 'System'},
-    ];
-
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Row(
-          children: pills.map((pill) {
-            final id = pill['id']!;
-            final label = pill['label']!;
-            final isSelected = _selectedStatusPill == id;
-
-            return Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: ChoiceChip(
-                label: Text(label),
-                selected: isSelected,
-                onSelected: (selected) {
-                  if (selected) {
-                    setState(() {
-                      _selectedStatusPill = id;
-                    });
-                  }
-                },
-                selectedColor: LunaraTheme.electricViolet,
-                backgroundColor: const Color(0xFFF3F4F6),
-                labelStyle: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: isSelected ? Colors.white : Colors.black87,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  side: BorderSide(
-                    color: isSelected ? LunaraTheme.electricViolet : Colors.transparent,
-                  ),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                visualDensity: VisualDensity.compact,
               ),
             );
           }).toList(),
