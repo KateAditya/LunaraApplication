@@ -211,6 +211,15 @@ app.use(idempotencyGuard);
 app.use('/api/admin/monitoring', adminMonitoringRoutes);
 app.use('/api/admin/reports', adminMonitoringRoutes);
 
+import { getReliabilitySummary, getReliabilityLeaderboard } from './controllers/reliabilityController';
+import { getRewardBalance, claimDailyReward, redeemRewardPoints } from './controllers/rewardPointsController';
+
+app.get('/api/mobile/user/reliability-summary', getReliabilitySummary);
+app.get('/api/mobile/rewards/balance', getRewardBalance);
+app.post('/api/mobile/rewards/claim-daily', claimDailyReward);
+app.post('/api/mobile/rewards/redeem', redeemRewardPoints);
+app.get('/api/admin/reliability/leaderboard', getReliabilityLeaderboard);
+
 import {
     getAdminCancellationRequests,
     checkExpiredOrAutoApprovedRequests,
