@@ -137,12 +137,14 @@ import profileRoutes from './routes/profile';
 import mobileStrangersMeetRoutes from './routes/mobileStrangersMeet';
 import adminStrangersMeetRoutes from './routes/adminStrangersMeet';
 import mobileCityRoutes from './routes/mobileCity';
+import areaRoutes from './routes/areaRoutes';
 import adminBookingsRoutes from './routes/adminBookings';
 import adminSubscriptionRoutes from './routes/adminSubscription';
 import mobileSubscriptionRoutes from './routes/mobileSubscription';
 import mobileWalletRoutes from './routes/mobileWallet';
 import mobileTicketRoutes from './routes/mobileTicket';
 import adminPaymentsRoutes from './routes/adminPayments';
+import adminNotificationRoutes from './routes/adminNotificationRoutes';
 import { ExpiredTicketCleanupWorker } from './services/ExpiredTicketCleanupWorker';
 import { getAdminChatSettings, updateAdminChatSettings } from './controllers/chatSubscriptionController';
 import { getAdminTimeLockSettings, updateAdminTimeLockSettings } from './controllers/mobilePlanController';
@@ -189,12 +191,14 @@ app.use('/api/mobile/strangers-meet', mobileStrangersMeetRoutes); // Strangers M
 app.use('/api/admin/strangers-meet', adminStrangersMeetRoutes);
 app.use('/api/admin/bookings', adminBookingsRoutes);   // Strangers Meet (Admin)
 app.use('/api/mobile/cities', mobileCityRoutes);                   // Cities (Mobile App)
+app.use('/api/areas', areaRoutes);                                 // Areas API (Admin & App)
 app.use('/api/admin/subscriptions', adminSubscriptionRoutes); // Subscriptions (Admin)
 app.use('/api/admin/safety-checks', adminSafetyChecksRoutes); // Safety Checks (Admin)
 app.use('/api/mobile/subscriptions', mobileSubscriptionRoutes); // Subscriptions (Mobile)
 app.use('/api/mobile/wallet', mobileWalletRoutes);             // Wallet (Mobile)
 app.use('/api/mobile/tickets', mobileTicketRoutes);           // Digital Tickets (Mobile)
 app.use('/api/admin/payments', adminPaymentsRoutes);          // Payments (Admin)
+app.use('/api/admin/notifications', adminNotificationRoutes);   // Admin Notifications (Admin)
 
 import adminMonitoringRoutes from './routes/adminMonitoringRoutes';
 import { idempotencyGuard } from './middleware/idempotencyMiddleware';
