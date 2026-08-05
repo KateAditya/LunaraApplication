@@ -43,11 +43,14 @@ export interface UserAttributes {
     deletionReason?: string | null;
     walletBalance?: number;
     reliabilityScore?: number;
+    rewardPoints?: number;
+    loginStreakDays?: number;
+    lastLoginStreakDate?: Date | null;
 }
 
 // Creation attributes (optional fields)
 export interface UserCreationAttributes
-    extends Optional<UserAttributes, 'id' | 'isVerified' | 'isActive' | 'isOnline' | 'mfaEnabled' | 'mfaSecret' | 'profileImageUrl' | 'createdAt' | 'updatedAt' | 'lastLoginAt' | 'lastActiveAt' | 'noShowCount' | 'fcmToken' | 'clearedNotificationsAt' | 'blockCount' | 'isAutoblocked' | 'autoblockedReason' | 'facebookId' | 'googleId' | 'isDeleted' | 'deletedAt' | 'deletionReason' | 'walletBalance' | 'reliabilityScore'> { }
+    extends Optional<UserAttributes, 'id' | 'isVerified' | 'isActive' | 'isOnline' | 'mfaEnabled' | 'mfaSecret' | 'profileImageUrl' | 'createdAt' | 'updatedAt' | 'lastLoginAt' | 'lastActiveAt' | 'noShowCount' | 'fcmToken' | 'clearedNotificationsAt' | 'blockCount' | 'isAutoblocked' | 'autoblockedReason' | 'facebookId' | 'googleId' | 'isDeleted' | 'deletedAt' | 'deletionReason' | 'walletBalance' | 'reliabilityScore' | 'rewardPoints' | 'loginStreakDays' | 'lastLoginStreakDate'> { }
 
 // User model class
 class User extends Model<UserAttributes, UserCreationAttributes> implements UserAttributes {
@@ -82,6 +85,9 @@ class User extends Model<UserAttributes, UserCreationAttributes> implements User
     public deletionReason?: string | null;
     public walletBalance!: number;
     public reliabilityScore!: number;
+    public rewardPoints!: number;
+    public loginStreakDays!: number;
+    public lastLoginStreakDate?: Date | null;
 
     // Instance methods
     public async comparePassword(password: string): Promise<boolean> {
@@ -296,8 +302,25 @@ User.init(
         reliabilityScore: {
             type: DataTypes.INTEGER,
             allowNull: false,
-            defaultValue: 100,
+            defaultValue: 70,
             field: 'reliability_score',
+        },
+        rewardPoints: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            defaultValue: 0,
+            field: 'reward_points',
+        },
+        loginStreakDays: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            defaultValue: 0,
+            field: 'login_streak_days',
+        },
+        lastLoginStreakDate: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'last_login_streak_date',
         },
     },
     {

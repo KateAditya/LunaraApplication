@@ -202,11 +202,27 @@ app.use('/api/admin/notifications', adminNotificationRoutes);   // Admin Notific
 
 import adminMonitoringRoutes from './routes/adminMonitoringRoutes';
 import { idempotencyGuard } from './middleware/idempotencyMiddleware';
+import { adminLogin } from './controllers/authController';
+
+// Admin Login Route Aliases
+app.post('/api/auth/admin-login', adminLogin);
+app.post('/api/admin/login', adminLogin);
+app.post('/api/admin-login', adminLogin);
+app.post('/admin-login', adminLogin);
+app.post('/admin/login', adminLogin);
 
 app.use(idempotencyGuard);
 app.use('/api/admin/monitoring', adminMonitoringRoutes);
 app.use('/api/admin/reports', adminMonitoringRoutes);
-app.use('/api/admin', adminMonitoringRoutes);
+
+import { getReliabilitySummary, getReliabilityLeaderboard } from './controllers/reliabilityController';
+import { getRewardBalance, claimDailyReward, redeemRewardPoints } from './controllers/rewardPointsController';
+
+app.get('/api/mobile/user/reliability-summary', getReliabilitySummary);
+app.get('/api/mobile/rewards/balance', getRewardBalance);
+app.post('/api/mobile/rewards/claim-daily', claimDailyReward);
+app.post('/api/mobile/rewards/redeem', redeemRewardPoints);
+app.get('/api/admin/reliability/leaderboard', getReliabilityLeaderboard);
 
 import {
     getAdminCancellationRequests,
