@@ -332,6 +332,7 @@ export const unblockUserByAdmin = async (req: Request, res: Response): Promise<v
         user.isAutoblocked = false;
         user.autoblockedReason = null;
         user.blockCount = 0;
+        user.noShowCount = 0;
         user.isActive = true;
         await user.save();
 

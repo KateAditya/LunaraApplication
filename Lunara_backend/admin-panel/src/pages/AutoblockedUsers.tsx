@@ -177,13 +177,13 @@ export const AutoblockedUsers: React.FC = () => {
                                             <td>
                                                 <span style={{
                                                     fontWeight: 700,
-                                                    color: '#e6533c',
+                                                    color: user.blockCount ? '#e6533c' : '#f59e0b',
                                                     fontSize: '0.875rem',
-                                                    background: 'rgba(230, 83, 60, 0.1)',
+                                                    background: user.blockCount ? 'rgba(230, 83, 60, 0.1)' : 'rgba(245, 158, 11, 0.1)',
                                                     padding: '0.125rem 0.5rem',
                                                     borderRadius: '4px'
                                                 }}>
-                                                    {user.blockCount ?? 10} blocks
+                                                    {user.blockCount ? `${user.blockCount} blocks` : (user as any).noShowCount ? `${(user as any).noShowCount} no-shows` : '0 blocks'}
                                                 </span>
                                             </td>
                                             <td>
