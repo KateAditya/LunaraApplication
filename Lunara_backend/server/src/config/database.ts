@@ -511,6 +511,35 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
             logger.warn('Failed to verify/seed Time Lock schema: ' + dbErr.message);
         }
 
+        // ── Party Plans & Party Plan Requests Column Migrations ────────────────
+        try {
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_arrival_confirmed BOOLEAN DEFAULT FALSE;`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_arrival_time TIMESTAMP WITH TIME ZONE;`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_24h_sent BOOLEAN DEFAULT FALSE;`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_3h_sent BOOLEAN DEFAULT FALSE;`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS show_profile_photo BOOLEAN DEFAULT TRUE;`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS show_host_name BOOLEAN DEFAULT TRUE;`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS show_venue_details BOOLEAN DEFAULT TRUE;`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS show_date_details BOOLEAN DEFAULT TRUE;`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS mobile_number VARCHAR(50);`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS optional_mobile_number VARCHAR(50);`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS food_preference VARCHAR(100);`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS drink_preference VARCHAR(100);`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_lat_lang_check_in BOOLEAN DEFAULT FALSE;`);
+
+            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_arrival_confirmed BOOLEAN DEFAULT FALSE;`);
+            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_arrival_time TIMESTAMP WITH TIME ZONE;`);
+            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS lat_lang_check_in BOOLEAN DEFAULT FALSE;`);
+            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS payment_timeout_at TIMESTAMP WITH TIME ZONE;`);
+            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS joiner_payment_status VARCHAR(50) DEFAULT 'unpaid';`);
+            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS joiner_razorpay_order_id VARCHAR(255);`);
+            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS joiner_razorpay_payment_id VARCHAR(255);`);
+        } catch (planErr: any) {
+            logger.warn('Failed to migrate party_plans / party_plan_requests columns: ' + planErr.message);
+        }
+
         // ── Smart Credit Wallet Tables & Migration ─────────────────────────────
         try {
             await sequelize.query(`
