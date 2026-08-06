@@ -12,30 +12,31 @@ class LunaraWalletScreen extends StatefulWidget {
 
 class _LunaraWalletScreenState extends State<LunaraWalletScreen>
     with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+  late TabController _filterTabController;
   bool _isLoading = true;
-  List<dynamic> _incompleteEvents = [];
+  bool _isRecharging = false;
+
+  Map<String, dynamic> _walletData = {};
   List<dynamic> _transactions = [];
-  List<dynamic> _subscriptionTransactions = [];
-  Map<String, dynamic> _summary = {
-    'totalIncompleteEvents': 0,
-    'totalTransactions': 0,
-    'totalSpent': 0.0,
-    'totalRefunded': 0.0,
-    'totalSubscriptionSpent': 0.0,
-    'totalSubscriptionPayments': 0,
-  };
+  Map<String, dynamic> _summary = {};
+
+  final TextEditingController _customRechargeController = TextEditingController();
+  double _selectedRechargeAmount = 500.0;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _filterTabController = TabController(length: 5, vsync: this);
+    _filterTabController.addListener(() {
+      if (mounted) setState(() {});
+    });
     _loadWalletData();
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _filterTabController.dispose();
+    _customRechargeController.dispose();
     super.dispose();
   }
 
@@ -45,25 +46,43 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
     if (mounted) {
       if (data != null) {
         setState(() {
-          _incompleteEvents = data['incompleteEvents'] ?? [];
-          // All transactions (plan payments) minus subscription ones
-          final allTxns = (data['transactions'] as List? ?? []);
-          _subscriptionTransactions =
-              data['subscriptionTransactions'] as List? ?? [];
-          // Filter out subscription from main list (they appear in their own tab)
-          _transactions = allTxns
-              .where((t) => t['type'] != 'subscription')
-              .toList();
-          _summary = data['summary'] ?? _summary;
+          _walletData = data['wallet'] ?? {};
+          _summary = data['summary'] ?? {};
+          
+          // Combine all transaction types for modern filter tabs
+          final txns = (data['transactions'] as List? ?? []);
+          final subTxns = (data['subscriptionTransactions'] as List? ?? []);
+          final smartTxns = (data['smartTransactions'] as List? ?? []);
+
+          final combined = <Map<String, dynamic>>[];
+
+          for (final t in smartTxns) {
+            combined.add(Map<String, dynamic>.from(t));
+          }
+          for (final t in txns) {
+            combined.add(Map<String, dynamic>.from(t));
+          }
+          for (final t in subTxns) {
+            final map = Map<String, dynamic>.from(t);
+            map['type'] = 'subscription';
+            combined.add(map);
+          }
+
+          // Sort by createdAt descending
+          combined.sort((a, b) {
+            final dateA = DateTime.tryParse(a['createdAt']?.toString() ?? '') ?? DateTime(1970);
+            final dateB = DateTime.tryParse(b['createdAt']?.toString() ?? '') ?? DateTime(1970);
+            return dateB.compareTo(dateA);
+          });
+
+          _transactions = combined;
           _isLoading = false;
         });
       } else {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text(
-              'Failed to load wallet data. Please check connection.',
-            ),
+            content: Text('Failed to load wallet data. Please check connection.'),
             backgroundColor: Colors.redAccent,
           ),
         );
@@ -71,53 +90,310 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
     }
   }
 
-  String _normalizeUrl(String? path) {
-    if (path == null || path.isEmpty) return '';
-    if (path.startsWith('http://') || path.startsWith('https://')) {
-      return path;
+  void _openRechargeSheet([double? defaultAmount]) {
+    if (defaultAmount != null) {
+      _selectedRechargeAmount = defaultAmount;
+      _customRechargeController.text = defaultAmount.toStringAsFixed(0);
+    } else {
+      _selectedRechargeAmount = 500.0;
+      _customRechargeController.text = '500';
     }
-    final cleanPath = path.replaceAll('\\', '/');
-    if (cleanPath.startsWith('/')) {
-      return '${ApiService.baseUrl}$cleanPath';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              padding: EdgeInsets.only(
+                top: 24,
+                left: 24,
+                right: 24,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+              ),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.add_card_rounded,
+                          color: LunaraTheme.electricViolet,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: const [
+                          Text(
+                            'Recharge Wallet',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.black,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Instant digital credit for VIP, Boosts & Likes',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.black54,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'SELECT AMOUNT',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.5,
+                      color: Colors.grey,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [100, 250, 500, 1000, 2000].map((amt) {
+                      final isSelected = _selectedRechargeAmount == amt.toDouble();
+                      return ChoiceChip(
+                        label: Text(
+                          '₹$amt',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 13,
+                            color: isSelected ? Colors.white : Colors.black,
+                          ),
+                        ),
+                        selected: isSelected,
+                        selectedColor: LunaraTheme.electricViolet,
+                        backgroundColor: Colors.grey[100],
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(
+                            color: isSelected ? LunaraTheme.electricViolet : Colors.transparent,
+                          ),
+                        ),
+                        onSelected: (selected) {
+                          if (selected) {
+                            setModalState(() {
+                              _selectedRechargeAmount = amt.toDouble();
+                              _customRechargeController.text = amt.toString();
+                            });
+                          }
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: _customRechargeController,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.black,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Custom Amount (₹)',
+                      labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                      prefixText: '₹ ',
+                      prefixStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        color: LunaraTheme.electricViolet,
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(color: Colors.grey[200]!),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(color: LunaraTheme.electricViolet, width: 2),
+                      ),
+                    ),
+                    onChanged: (val) {
+                      final parsed = double.tryParse(val);
+                      if (parsed != null) {
+                        setModalState(() {
+                          _selectedRechargeAmount = parsed;
+                        });
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: _isRecharging
+                          ? null
+                          : () async {
+                              final amt = double.tryParse(_customRechargeController.text) ?? _selectedRechargeAmount;
+                              if (amt < 100) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Minimum recharge amount is ₹100')),
+                                );
+                                return;
+                              }
+                              Navigator.pop(context);
+                              await _executeRecharge(amt);
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: LunaraTheme.electricViolet,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: _isRecharging
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            )
+                          : Text(
+                              'PROCEED TO PAY ₹${_selectedRechargeAmount.toStringAsFixed(0)}',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1.0,
+                                color: Colors.white,
+                              ),
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _executeRecharge(double amount) async {
+    setState(() => _isRecharging = true);
+
+    try {
+      final orderData = await ApiService.createWalletRechargeOrder(amount);
+      final simPaymentId = 'pay_sim_${DateTime.now().millisecondsSinceEpoch}';
+      final success = await ApiService.verifyWalletRecharge(
+        amount: amount,
+        razorpayPaymentId: orderData?['id'] ?? simPaymentId,
+        razorpayOrderId: orderData?['id'],
+      );
+
+      if (success) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Successfully recharged ₹${amount.toStringAsFixed(0)}! 💳'),
+              backgroundColor: const Color(0xFF10B981),
+            ),
+          );
+        }
+        await _loadWalletData();
+      } else {
+        throw Exception('Payment verification failed');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Recharge failed: ${e.toString()}'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isRecharging = false);
     }
-    return '${ApiService.baseUrl}/$cleanPath';
   }
 
   @override
   Widget build(BuildContext context) {
+    final double availableBalance = double.tryParse(
+          (_walletData['availableBalance'] ?? _walletData['balance'] ?? 0.0).toString(),
+        ) ??
+        0.0;
+    final bool isFrozen = _walletData['isFrozen'] == true;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _loadWalletData,
           color: LunaraTheme.electricViolet,
           child: Column(
             children: [
-              _buildHeader(context),
+              _buildCleanHeader(context),
               if (_isLoading)
                 const Expanded(
                   child: Center(
-                    child: CircularProgressIndicator(
-                      color: LunaraTheme.electricViolet,
-                    ),
+                    child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
                   ),
                 )
-              else ...[
-                _buildWalletCard(),
-                const SizedBox(height: 20),
-                _buildTabBar(),
-                const SizedBox(height: 12),
+              else
                 Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: [
-                      _buildIncompleteEventsList(),
-                      _buildTransactionsList(),
-                      _buildSubscriptionTransactionsList(),
-                    ],
+                  child: SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (availableBalance < 100) _buildLowBalanceBanner(),
+                        _buildMasterBalanceCard(availableBalance, isFrozen),
+                        const SizedBox(height: 20),
+                        _buildQuickActionsGrid(),
+                        const SizedBox(height: 16),
+                        _buildActiveMembershipCard(),
+                        const SizedBox(height: 16),
+                        _buildUseWalletForBar(),
+                        const SizedBox(height: 20),
+                        _buildTransactionsSectionHeader(),
+                        const SizedBox(height: 12),
+                        _buildFilterTabs(),
+                        const SizedBox(height: 12),
+                        _buildFilteredTransactionsList(),
+                        const SizedBox(height: 30),
+                      ],
+                    ),
                   ),
                 ),
-              ],
             ],
           ),
         ),
@@ -125,35 +401,27 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildCleanHeader(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           IconButton(
-            icon: const Icon(
-              Icons.arrow_back_ios_new_rounded,
-              color: Colors.black,
-            ),
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black, size: 20),
             onPressed: () => Navigator.pop(context),
           ),
-          const Expanded(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                'LUNARA WALLET',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 4,
-                  color: Colors.black,
-                ),
-              ),
+          const Text(
+            'My Wallet',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              color: Colors.black,
+              letterSpacing: 0.3,
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.refresh_rounded, color: Colors.black),
+            icon: const Icon(Icons.refresh_rounded, color: Colors.black, size: 22),
             onPressed: _loadWalletData,
           ),
         ],
@@ -161,1190 +429,646 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
     );
   }
 
-  Widget _buildWalletCard() {
-    final double totalSpent =
-        double.tryParse(_summary['totalSpent'].toString()) ?? 0.0;
-    final double totalRefunded =
-        double.tryParse(_summary['totalRefunded'].toString()) ?? 0.0;
+  Widget _buildLowBalanceBanner() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFCD34D)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Text(
+                  'Wallet Balance Low',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF92400E),
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Recharge now to continue using VIP & premium features.',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFB45309),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => _openRechargeSheet(500),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFD97706),
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text(
+              'Recharge',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMasterBalanceCard(double availableBalance, bool isFrozen) {
+    final double lifetimeRecharged = double.tryParse(
+          (_walletData['lifetimeRecharged'] ?? 0.0).toString(),
+        ) ??
+        0.0;
+    final double lifetimeSpent = double.tryParse(
+          (_walletData['lifetimeSpent'] ?? _summary['totalSpent'] ?? 0.0).toString(),
+        ) ??
+        0.0;
+    final double rewardCredits = double.tryParse(
+          (_walletData['rewardBalance'] ?? _walletData['lifetimeRewards'] ?? 0.0).toString(),
+        ) ??
+        0.0;
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 24),
-      padding: const EdgeInsets.all(24),
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF2A1B3D), Color(0xFF1E122A)],
+          colors: [Color(0xFF1E1035), Color(0xFF2E1B4E), Color(0xFF150A26)],
         ),
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF2A1B3D).withValues(alpha: 0.35),
-            blurRadius: 25,
-            offset: const Offset(0, 12),
+            color: const Color(0xFF1E1035).withValues(alpha: 0.35),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Wallet Status & Header Row
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'TOTAL SPENT',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.5),
-                      fontSize: 10,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '₹${totalSpent.toStringAsFixed(2)}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 28,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ],
+              Text(
+                'AVAILABLE BALANCE',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.6),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.5,
+                ),
               ),
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.08),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.account_balance_wallet_rounded,
-                  color: LunaraTheme.electricViolet,
-                  size: 26,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _walletStatItem(
-                'TOTAL REFUNDED',
-                '₹${totalRefunded.toStringAsFixed(2)}',
-                const Color(0xFF10B981),
-              ),
-              Container(
-                height: 30,
-                width: 1,
-                color: Colors.white.withValues(alpha: 0.1),
-              ),
-              _walletStatItem(
-                'INCOMPLETE EVENTS',
-                '${_incompleteEvents.length}',
-                Colors.amber,
-              ),
-              Container(
-                height: 30,
-                width: 1,
-                color: Colors.white.withValues(alpha: 0.1),
-              ),
-              _walletStatItem(
-                'VIP SPENDING',
-                '₹${double.tryParse(_summary['totalSubscriptionSpent']?.toString() ?? '0')?.toStringAsFixed(0) ?? '0'}',
-                const Color(0xFFE100FF),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _walletStatItem(String label, String value, Color highlightColor) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              label,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.4),
-                fontSize: 8,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.5,
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              value,
-              style: TextStyle(
-                color: highlightColor,
-                fontSize: 15,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTabBar() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 24),
-      decoration: BoxDecoration(
-        color: Colors.grey[100],
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: TabBar(
-        controller: _tabController,
-        indicator: BoxDecoration(
-          gradient: LunaraTheme.cardGradient,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        indicatorSize: TabBarIndicatorSize.tab,
-        indicatorPadding: const EdgeInsets.all(4),
-        labelColor: Colors.black,
-        unselectedLabelColor: Colors.grey[500],
-        labelStyle: const TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 1.0,
-        ),
-        dividerHeight: 0,
-        tabs: [
-          const Tab(text: 'EVENTS'),
-          const Tab(text: 'PAYMENTS'),
-          Tab(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Text(
-                  'VIP',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.0,
+                  color: isFrozen ? Colors.red.withValues(alpha: 0.2) : const Color(0xFF10B981).withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isFrozen ? Colors.redAccent : const Color(0xFF10B981),
+                    width: 1,
                   ),
                 ),
-                if (_subscriptionTransactions.isNotEmpty) ...[
-                  const SizedBox(width: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 5,
-                      vertical: 1,
-                    ),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFFE100FF), Color(0xFF7F00FF)],
-                      ),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      '${_subscriptionTransactions.length}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 8,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildIncompleteEventsList() {
-    if (_incompleteEvents.isEmpty) {
-      return _buildEmptyState(
-        Icons.event_busy_rounded,
-        'No Incomplete Events',
-        'All your deposit plans and bookings are completed or inactive.',
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-      itemCount: _incompleteEvents.length,
-      itemBuilder: (context, index) {
-        final event = _incompleteEvents[index];
-        return _buildIncompleteEventCard(event);
-      },
-    );
-  }
-
-  Widget _buildIncompleteEventCard(Map<String, dynamic> event) {
-    final venue = event['venue'] ?? {};
-    final String venueName = venue['name'] ?? 'Premium Club';
-    final String venueArea = venue['area'] ?? venue['city'] ?? 'City Center';
-    final double deposit =
-        double.tryParse(event['depositAmount']?.toString() ?? '99.00') ?? 99.00;
-    final String role = (event['role'] ?? 'host').toString().toUpperCase();
-    final String waitingFor = event['waitingFor'] ?? 'Participant Payment';
-    final String rawCoverImage =
-        venue['coverImage'] ?? 'https://picsum.photos/seed/lunara/600/400';
-    final String coverImage = _normalizeUrl(rawCoverImage);
-
-    final isHost = role == 'HOST';
-
-    // Format DateTime
-    String dateStr = 'TBD';
-    if (event['planDateTime'] != null) {
-      try {
-        final dt = DateTime.parse(event['planDateTime']).toLocal();
-        dateStr = DateFormat('EEE, MMM d • h:mm a').format(dt).toUpperCase();
-      } catch (_) {}
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.grey.withValues(alpha: 0.12)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Venue Image Header
-            Container(
-              height: 120,
-              decoration: BoxDecoration(
-                image: DecorationImage(
-                  image: NetworkImage(coverImage),
-                  fit: BoxFit.cover,
-                ),
-              ),
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.85),
-                    ],
-                  ),
-                ),
-                padding: const EdgeInsets.all(16),
-                alignment: Alignment.bottomLeft,
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            venueName.toUpperCase(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            venueArea.toUpperCase(),
-                            style: const TextStyle(
-                              color: LunaraTheme.electricViolet,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ],
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: isFrozen ? Colors.redAccent : const Color(0xFF10B981),
+                        shape: BoxShape.circle,
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isHost
-                            ? LunaraTheme.electricViolet
-                            : Colors.teal,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        role,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1,
-                        ),
+                    const SizedBox(width: 6),
+                    Text(
+                      isFrozen ? 'Suspended' : 'Wallet Active',
+                      style: TextStyle(
+                        color: isFrozen ? Colors.redAccent : const Color(0xFF10B981),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
                   ],
                 ),
               ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // Large Balance Display
+          Text(
+            '₹${availableBalance.toStringAsFixed(2)}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 32,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.5,
             ),
-
-            // Card Body Info
-            Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.calendar_today_rounded,
-                        size: 14,
-                        color: Colors.grey,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          dateStr,
-                          style: const TextStyle(
-                            color: Colors.black,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'SAFETY DEPOSIT PAID',
-                            style: TextStyle(
-                              color: Colors.grey[500],
-                              fontSize: 8,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '₹${deposit.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              color: Colors.black,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ],
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.amber.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 6,
-                              height: 6,
-                              decoration: const BoxDecoration(
-                                color: Colors.amber,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              waitingFor.toUpperCase(),
-                              style: const TextStyle(
-                                color: Color(0xFF8A6D00),
-                                fontSize: 9,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Divider(color: Colors.grey[100]),
-                  const SizedBox(height: 6),
-
-                  // Interactive info about other party
-                  _buildIncompletePartyDetail(event),
-                ],
+          ),
+          const SizedBox(height: 16),
+          // Recharge Wallet CTA Button
+          SizedBox(
+            width: double.infinity,
+            height: 46,
+            child: ElevatedButton.icon(
+              onPressed: () => _openRechargeSheet(),
+              icon: const Icon(Icons.add_circle_outline_rounded, color: Colors.white, size: 20),
+              label: const Text(
+                'RECHARGE WALLET',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.2,
+                  color: Colors.white,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: LunaraTheme.electricViolet,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
               ),
             ),
-          ],
+          ),
+          const SizedBox(height: 20),
+          Divider(color: Colors.white.withValues(alpha: 0.1)),
+          const SizedBox(height: 12),
+          // Lifetime Stats Grid
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _balanceStatItem('LIFETIME RECHARGE', '₹${lifetimeRecharged.toStringAsFixed(0)}', const Color(0xFF10B981)),
+              Container(height: 26, width: 1, color: Colors.white.withValues(alpha: 0.1)),
+              _balanceStatItem('SPENT', '₹${lifetimeSpent.toStringAsFixed(0)}', const Color(0xFFF43F5E)),
+              Container(height: 26, width: 1, color: Colors.white.withValues(alpha: 0.1)),
+              _balanceStatItem('REWARDS', '₹${rewardCredits.toStringAsFixed(0)}', const Color(0xFFF59E0B)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _balanceStatItem(String label, String value, Color color) {
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.45),
+                fontSize: 8,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1,
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              color: color,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickActionsGrid() {
+    final actions = [
+      {'icon': Icons.account_balance_wallet_rounded, 'label': 'Recharge', 'color': LunaraTheme.electricViolet, 'onTap': () => _openRechargeSheet()},
+      {'icon': Icons.workspace_premium_rounded, 'label': 'Membership', 'color': const Color(0xFFE100FF), 'onTap': () => Navigator.pushNamed(context, '/subscriptions')},
+      {'icon': Icons.star_rounded, 'label': 'Super Likes', 'color': const Color(0xFFF59E0B), 'onTap': () => _showQuickFeatureModal('Super Likes')},
+      {'icon': Icons.bolt_rounded, 'label': 'Boost', 'color': const Color(0xFF3B82F6), 'onTap': () => _showQuickFeatureModal('Profile Boost')},
+      {'icon': Icons.history_rounded, 'label': 'History', 'color': const Color(0xFF10B981), 'onTap': () => _filterTabController.animateTo(0)},
+    ];
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.1)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: actions.map((act) {
+          final color = act['color'] as Color;
+          return InkWell(
+            onTap: act['onTap'] as void Function()?,
+            borderRadius: BorderRadius.circular(16),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(act['icon'] as IconData, color: color, size: 22),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  act['label'] as String,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.black87,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildActiveMembershipCard() {
+    final Map<String, dynamic> sub = _walletData['currentMembership'] ?? {};
+    final String tier = (sub['tier'] ?? 'FREE').toString().toUpperCase();
+    final String name = sub['packageName'] ?? 'Free Plan';
+    final bool isActive = sub['status'] == 'active' || tier != 'FREE';
+
+    if (!isActive) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF833AB4), Color(0xFFFD1D1D), Color(0xFFFCB045)],
+        ),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: const BoxDecoration(color: Colors.white24, shape: BoxShape.circle),
+            child: const Icon(Icons.workspace_premium_rounded, color: Colors.white, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'VIP $tier MEMBERSHIP',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  name,
+                  style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pushNamed(context, '/subscriptions'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text(
+              'Manage',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUseWalletForBar() {
+    final features = ['✓ VIP Membership', '✓ Super Likes', '✓ Profile Boost', '✓ Premium Features'];
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      height: 36,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: features.length,
+        separatorBuilder: (_, index) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.purple.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.purple.withValues(alpha: 0.12)),
+            ),
+            child: Text(
+              features[index],
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                color: LunaraTheme.electricViolet,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildTransactionsSectionHeader() {
+    return const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 20),
+      child: Text(
+        'TRANSACTIONS',
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 1.5,
+          color: Colors.black,
         ),
       ),
     );
   }
 
-  Widget _buildIncompletePartyDetail(Map<String, dynamic> event) {
-    final String role = (event['role'] ?? 'host').toString().toLowerCase();
-    final isHost = role == 'host';
-    final type = event['type'] ?? 'party_plan';
-
-    if (type == 'strangers_meet') {
-      if (isHost) {
-        return Row(
-          children: [
-            const Icon(
-              Icons.people_outline_rounded,
-              size: 14,
-              color: Colors.grey,
-            ),
-            const SizedBox(width: 8),
-            const Expanded(
-              child: Text(
-                'Strangers Meet Host. Waiting for participants to join and pay.',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black54,
-                ),
-              ),
-            ),
-          ],
-        );
-      } else {
-        final host = event['host'];
-        final String hostName = host != null
-            ? (host['name'] ?? 'Host')
-            : 'Host';
-        final String? avatar = host?['profileImageUrl'];
-        return Row(
-          children: [
-            CircleAvatar(
-              radius: 12,
-              backgroundColor: Colors.grey[200],
-              backgroundImage: avatar != null && avatar.isNotEmpty
-                  ? NetworkImage(_normalizeUrl(avatar))
-                  : null,
-              child: avatar == null || avatar.isEmpty
-                  ? const Icon(Icons.person, size: 12, color: Colors.grey)
-                  : null,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Joined Strangers Meet. Awaiting host $hostName to complete/settle the event.',
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black54,
-                ),
-              ),
-            ),
-          ],
-        );
-      }
-    }
-
-    if (isHost) {
-      final joiner = event['joiner'];
-      if (joiner != null) {
-        final String name = joiner['name'] ?? 'Joiner';
-        final String? avatar = joiner['profileImageUrl'];
-        return Row(
-          children: [
-            CircleAvatar(
-              radius: 12,
-              backgroundColor: Colors.grey[200],
-              backgroundImage: avatar != null && avatar.isNotEmpty
-                  ? NetworkImage(_normalizeUrl(avatar))
-                  : null,
-              child: avatar == null || avatar.isEmpty
-                  ? const Icon(Icons.person, size: 12, color: Colors.grey)
-                  : null,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Waiting for joiner $name to pay.',
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black54,
-                ),
-              ),
-            ),
-          ],
-        );
-      } else {
-        final int count = event['pendingRequestCount'] ?? 0;
-        return Row(
-          children: [
-            const Icon(
-              Icons.people_outline_rounded,
-              size: 14,
-              color: Colors.grey,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                count > 0
-                    ? '$count joiner requests waiting for your acceptance.'
-                    : 'Awaiting participants to apply to your party plan.',
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black54,
-                ),
-              ),
-            ),
-          ],
-        );
-      }
-    } else {
-      final host = event['host'];
-      final String hostName = host != null ? (host['name'] ?? 'Host') : 'Host';
-      final String? avatar = host?['profileImageUrl'];
-      return Row(
-        children: [
-          CircleAvatar(
-            radius: 12,
-            backgroundColor: Colors.grey[200],
-            backgroundImage: avatar != null && avatar.isNotEmpty
-                ? NetworkImage(_normalizeUrl(avatar))
-                : null,
-            child: avatar == null || avatar.isEmpty
-                ? const Icon(Icons.person, size: 12, color: Colors.grey)
-                : null,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'Awaiting confirmation from host $hostName.',
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: Colors.black54,
-              ),
-            ),
-          ),
+  Widget _buildFilterTabs() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      height: 36,
+      child: TabBar(
+        controller: _filterTabController,
+        isScrollable: true,
+        indicator: BoxDecoration(
+          color: LunaraTheme.electricViolet,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        indicatorSize: TabBarIndicatorSize.tab,
+        labelColor: Colors.white,
+        unselectedLabelColor: Colors.grey[600],
+        labelStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
+        tabs: const [
+          Tab(text: 'All'),
+          Tab(text: 'Recharge'),
+          Tab(text: 'Membership'),
+          Tab(text: 'Rewards'),
+          Tab(text: 'Purchases'),
         ],
-      );
-    }
+      ),
+    );
   }
 
-  Widget _buildTransactionsList() {
-    if (_transactions.isEmpty) {
-      return _buildEmptyState(
-        Icons.receipt_long_rounded,
-        'No Transactions Yet',
-        'Your transaction history is currently empty.',
+  Widget _buildFilteredTransactionsList() {
+    final filterIndex = _filterTabController.index;
+    final filtered = _transactions.where((txn) {
+      final type = (txn['transactionType'] ?? txn['type'] ?? '').toString().toLowerCase();
+      if (filterIndex == 1) return type.contains('recharge');
+      if (filterIndex == 2) return type.contains('vip') || type.contains('subscription') || type.contains('membership');
+      if (filterIndex == 3) return type.contains('reward') || type.contains('cashback') || type.contains('promo');
+      if (filterIndex == 4) return type.contains('purchase') || type.contains('booking') || type.contains('deposit');
+      return true;
+    }).toList();
+
+    if (filtered.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+        child: Center(
+          child: Column(
+            children: [
+              Icon(Icons.receipt_long_rounded, size: 48, color: Colors.grey[300]),
+              const SizedBox(height: 12),
+              const Text(
+                'No Transactions Found',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Colors.black),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Transactions matching this filter will appear here.',
+                style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+              ),
+            ],
+          ),
+        ),
       );
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-      itemCount: _transactions.length,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      itemCount: filtered.length,
       itemBuilder: (context, index) {
-        final txn = _transactions[index];
-        return _buildTransactionItem(txn);
+        return _buildCompactTransactionCard(filtered[index]);
       },
     );
   }
 
-  Widget _buildTransactionItem(Map<String, dynamic> txn) {
-    final double amount =
-        double.tryParse(txn['amount']?.toString() ?? '0.0') ?? 0.0;
-    final String status = (txn['status'] ?? 'successful')
-        .toString()
-        .toLowerCase();
-    final String type = txn['type'] ?? 'payment';
+  Widget _buildCompactTransactionCard(Map<String, dynamic> txn) {
+    final double amount = double.tryParse(txn['amount']?.toString() ?? '0.0') ?? 0.0;
+    final String rawStatus = (txn['status'] ?? 'success').toString().toLowerCase();
+    final String type = (txn['transactionType'] ?? txn['type'] ?? 'payment').toString().toLowerCase();
     final contextData = txn['context'] ?? {};
-    final String venueName = contextData['venueName'] ?? 'Lunara Booking';
 
-    // Format Date
-    String dateStr = 'TBD';
-    if (txn['createdAt'] != null) {
-      try {
-        final dt = DateTime.parse(txn['createdAt']).toLocal();
-        dateStr = DateFormat('MMM d, yyyy • h:mm a').format(dt);
-      } catch (_) {}
-    }
+    String title = 'TRANSACTION';
+    IconData icon = Icons.receipt_rounded;
+    Color iconBg = Colors.grey[100]!;
+    Color iconColor = Colors.grey[800]!;
 
-    IconData icon;
-    Color iconBg;
-    Color iconColor;
-    String displayTitle;
+    bool isCredit = type.contains('recharge') || type.contains('credit') || type.contains('cashback') || type.contains('reward');
 
-    if (type == 'party_plan_deposit') {
-      icon = Icons.security_rounded;
-      iconBg = Colors.amber.withValues(alpha: 0.1);
-      iconColor = Colors.amber[800]!;
-      displayTitle = contextData['label'] ?? 'Safety Deposit';
-    } else if (type == 'strangers_meet_deposit') {
-      icon = Icons.security_rounded;
-      iconBg = Colors.purple.withValues(alpha: 0.1);
-      iconColor = Colors.purple[800]!;
-      displayTitle = contextData['label'] ?? 'Host Safety Deposit';
-    } else if (type == 'strangers_meet_join') {
-      icon = Icons.group_add_rounded;
-      iconBg = Colors.teal.withValues(alpha: 0.1);
-      iconColor = Colors.teal[800]!;
-      displayTitle = contextData['label'] ?? 'Joiner Fee';
-    } else if (type == 'subscription') {
+    if (type.contains('recharge')) {
+      title = 'RECHARGE';
+      icon = Icons.add_card_rounded;
+      iconBg = Colors.blue.withValues(alpha: 0.1);
+      iconColor = Colors.blue[700]!;
+    } else if (type.contains('vip') || type.contains('subscription')) {
+      title = (contextData['planName'] ?? 'VIP MEMBERSHIP').toString().toUpperCase();
       icon = Icons.workspace_premium_rounded;
       iconBg = const Color(0xFFE100FF).withValues(alpha: 0.1);
       iconColor = const Color(0xFFE100FF);
-      displayTitle = contextData['label'] ?? 'VIP Subscription';
+    } else if (type.contains('super_like')) {
+      title = 'SUPER LIKES';
+      icon = Icons.star_rounded;
+      iconBg = Colors.amber.withValues(alpha: 0.1);
+      iconColor = Colors.amber[800]!;
+    } else if (type.contains('boost')) {
+      title = 'PROFILE BOOST';
+      icon = Icons.bolt_rounded;
+      iconBg = Colors.blueAccent.withValues(alpha: 0.1);
+      iconColor = Colors.blueAccent;
+    } else if (type.contains('reward') || type.contains('cashback')) {
+      title = 'REWARD CREDIT';
+      icon = Icons.card_giftcard_rounded;
+      iconBg = const Color(0xFF10B981).withValues(alpha: 0.1);
+      iconColor = const Color(0xFF10B981);
     } else {
+      title = (contextData['venueName'] ?? 'TABLE BOOKING').toString().toUpperCase();
       icon = Icons.local_activity_rounded;
       iconBg = LunaraTheme.electricViolet.withValues(alpha: 0.1);
       iconColor = LunaraTheme.electricViolet;
-      displayTitle = 'Table Booking';
     }
 
-    Color statusColor;
-    if (status == 'successful' || status == 'success') {
-      statusColor = const Color(0xFF10B981);
-    } else if (status == 'refunded') {
-      statusColor = Colors.blueAccent;
-    } else {
+    String dateStr = 'Today';
+    if (txn['createdAt'] != null) {
+      try {
+        final dt = DateTime.parse(txn['createdAt']).toLocal();
+        dateStr = DateFormat('d MMM • h:mm a').format(dt);
+      } catch (_) {}
+    }
+
+    Color statusColor = const Color(0xFF10B981);
+    String statusLabel = 'SUCCESS';
+
+    if (rawStatus == 'pending' || rawStatus == 'processing') {
+      statusColor = Colors.orange;
+      statusLabel = 'PENDING';
+    } else if (rawStatus == 'failed' || rawStatus == 'cancelled') {
       statusColor = Colors.redAccent;
+      statusLabel = 'FAILED';
+    } else if (rawStatus == 'locked') {
+      statusColor = Colors.amber;
+      statusLabel = 'LOCKED';
     }
 
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Colors.grey.withValues(alpha: 0.1)),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.1)),
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        onTap: () => _showTransactionDetailsBottomSheet(txn),
-        leading: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
-          child: Icon(icon, color: iconColor, size: 20),
-        ),
-        title: Text(
-          displayTitle.toUpperCase(),
-          style: const TextStyle(
-            fontWeight: FontWeight.w900,
-            fontSize: 12,
-            letterSpacing: 0.5,
-            color: Colors.black,
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
+            child: Icon(icon, color: iconColor, size: 18),
           ),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 2),
-            Text(
-              venueName,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: Colors.black54,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12,
+                    color: Colors.black,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  dateStr,
+                  style: TextStyle(fontSize: 10, color: Colors.grey[500], fontWeight: FontWeight.w600),
+                ),
+              ],
             ),
-            const SizedBox(height: 4),
-            Text(
-              dateStr,
-              style: const TextStyle(
-                fontSize: 9,
-                fontWeight: FontWeight.w500,
-                color: Colors.grey,
-              ),
-            ),
-          ],
-        ),
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              '₹${amount.toStringAsFixed(2)}',
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-                color: Colors.black,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: statusColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                status.toUpperCase(),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '${isCredit ? "+" : "-"}₹${amount.toStringAsFixed(0)}',
                 style: TextStyle(
-                  color: statusColor,
-                  fontSize: 7,
+                  fontSize: 14,
                   fontWeight: FontWeight.w900,
-                  letterSpacing: 0.5,
+                  color: isCredit ? const Color(0xFF10B981) : Colors.black,
                 ),
               ),
-            ),
-          ],
-        ),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  statusLabel,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 7,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
 
-  void _showTransactionDetailsBottomSheet(Map<String, dynamic> txn) {
-    final double amount =
-        double.tryParse(txn['amount']?.toString() ?? '0.0') ?? 0.0;
-    final double refundAmount =
-        double.tryParse(txn['refundAmount']?.toString() ?? '0.0') ?? 0.0;
-    final String status = (txn['status'] ?? 'successful')
-        .toString()
-        .toUpperCase();
-    final String method = (txn['paymentMethod'] ?? 'razorpay')
-        .toString()
-        .toUpperCase();
-    final String txnId = txn['txnId'] ?? 'N/A';
-    final String type = txn['type'] ?? 'booking';
-    final contextData = txn['context'] ?? {};
-
-    // Customize text fields based on transaction type
-    final isSubscription = type == 'subscription';
-    final String venueName = isSubscription
-        ? (contextData['planName'] ?? 'VIP Subscription')
-        : (contextData['venueName'] ?? 'Lunara Partner Venue');
-    final String venueCity = isSubscription
-        ? ''
-        : (contextData['venueCity'] ?? '');
-
-    String dateStr = 'N/A';
-    if (txn['createdAt'] != null) {
-      try {
-        final dt = DateTime.parse(txn['createdAt']).toLocal();
-        dateStr = DateFormat('MMMM d, yyyy • h:mm a').format(dt);
-      } catch (_) {}
-    }
-
+  void _showQuickFeatureModal(String featureName) {
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (context) {
         return Padding(
           padding: const EdgeInsets.all(24.0),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Align(
-                alignment: Alignment.center,
-                child: Container(
-                  width: 48,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[200],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
+              Text(
+                featureName.toUpperCase(),
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: 1),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Use your Smart Credit Wallet balance to instantly purchase $featureName.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 12, color: Colors.black54),
               ),
               const SizedBox(height: 24),
-              const Text(
-                'TRANSACTION DETAILS',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 2,
-                  color: Colors.black,
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _openRechargeSheet();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: LunaraTheme.electricViolet,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: const Text('Recharge Wallet Balance', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
                 ),
-              ),
-              const SizedBox(height: 20),
-              Center(
-                child: Column(
-                  children: [
-                    Text(
-                      '₹${amount.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.black,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      status,
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1,
-                        color: status == 'SUCCESSFUL' || status == 'SUCCESS'
-                            ? const Color(0xFF10B981)
-                            : status == 'REFUNDED'
-                            ? Colors.blueAccent
-                            : Colors.redAccent,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 32),
-              _detailRow(
-                isSubscription ? 'PACKAGE / ITEM' : 'VENUE',
-                venueName,
-              ),
-              if (venueCity.isNotEmpty) _detailRow('LOCATION', venueCity),
-              _detailRow('TRANSACTION ID', txnId),
-              _detailRow('DATE & TIME', dateStr),
-              _detailRow('PAYMENT METHOD', method),
-              _detailRow(
-                'TYPE',
-                isSubscription
-                    ? (contextData['label'] ?? 'VIP Subscription')
-                    : (type == 'party_plan_deposit' ||
-                              type == 'strangers_meet_deposit'
-                          ? 'Safety Deposit'
-                          : type == 'strangers_meet_join'
-                          ? 'Joiner Payment'
-                          : 'Booking Payment'),
-              ),
-              if (refundAmount > 0)
-                _detailRow(
-                  'REFUND AMOUNT',
-                  '₹${refundAmount.toStringAsFixed(2)}',
-                ),
-              const SizedBox(height: 20),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _detailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              color: Colors.grey[500],
-              fontSize: 9,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Text(
-              value,
-              textAlign: TextAlign.right,
-              style: const TextStyle(
-                color: Colors.black,
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSubscriptionTransactionsList() {
-    if (_subscriptionTransactions.isEmpty) {
-      return _buildEmptyState(
-        Icons.workspace_premium_rounded,
-        'NO VIP TRANSACTIONS',
-        'You have not subscribed to any Lunara VIP plan yet.',
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-      itemCount: _subscriptionTransactions.length,
-      itemBuilder: (context, index) {
-        final txn = _subscriptionTransactions[index];
-        final double amount =
-            double.tryParse(txn['amount']?.toString() ?? '0.0') ?? 0.0;
-        final String status = (txn['status'] ?? 'success')
-            .toString()
-            .toLowerCase();
-        final contextData = txn['context'] ?? {};
-        final String planName = contextData['planName'] ?? 'VIP Package';
-        final String label = contextData['label'] ?? 'Subscription';
-        final String planTier = (contextData['planTier'] ?? 'CORE')
-            .toString()
-            .toUpperCase();
-
-        // Color configurations based on Tier for a beautiful VIP feel
-        Color tierColor = const Color(0xFF7F00FF);
-        Color accentColor = const Color(0xFFE100FF);
-        bool isElite = planTier == 'ELITE';
-        bool isPro = planTier == 'PRO';
-
-        if (isElite) {
-          tierColor = const Color(0xFFFFD700);
-          accentColor = const Color(0xFFFFA500);
-        } else if (isPro) {
-          tierColor = const Color(0xFF8A2BE2);
-          accentColor = const Color(0xFFFF007F);
-        }
-
-        // Format Date
-        String dateStr = 'TBD';
-        if (txn['createdAt'] != null) {
-          try {
-            final dt = DateTime.parse(txn['createdAt']).toLocal();
-            dateStr = DateFormat('MMM d, yyyy • h:mm a').format(dt);
-          } catch (_) {}
-        }
-
-        Color statusColor;
-        if (status == 'successful' || status == 'success') {
-          statusColor = const Color(0xFF10B981);
-        } else if (status == 'refunded') {
-          statusColor = Colors.blueAccent;
-        } else {
-          statusColor = Colors.redAccent;
-        }
-
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: isElite || isPro
-                  ? tierColor.withValues(alpha: 0.3)
-                  : Colors.grey.withValues(alpha: 0.12),
-              width: isElite || isPro ? 1.5 : 1.0,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: isElite || isPro
-                    ? tierColor.withValues(alpha: 0.06)
-                    : Colors.black.withValues(alpha: 0.01),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
               ),
             ],
-          ),
-          child: InkWell(
-            onTap: () => _showTransactionDetailsBottomSheet(txn),
-            borderRadius: BorderRadius.circular(20),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  // VIP Gradient Badge
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [tierColor, accentColor],
-                      ),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      isElite
-                          ? Icons.star_rounded
-                          : Icons.workspace_premium_rounded,
-                      color: Colors.white,
-                      size: 22,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  // Plan & date details
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Text(
-                              planName.toUpperCase(),
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 13,
-                                color: Colors.black,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 5,
-                                vertical: 1.5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: tierColor.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                planTier,
-                                style: TextStyle(
-                                  color: tierColor,
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 8,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          label,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          dateStr,
-                          style: const TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // Price and status
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        '₹${amount.toStringAsFixed(0)}',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.black,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2.5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: statusColor.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          status.toUpperCase(),
-                          style: TextStyle(
-                            color: statusColor,
-                            fontSize: 7,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildEmptyState(IconData icon, String title, String subtitle) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: Container(
-            height: constraints.maxHeight,
-            padding: const EdgeInsets.all(24.0),
-            alignment: Alignment.center,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[50],
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(icon, size: 48, color: Colors.grey[350]),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  title.toUpperCase(),
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 2,
-                    color: Colors.black,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  subtitle,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
           ),
         );
       },

@@ -1166,6 +1166,53 @@ class ApiService {
     return null;
   }
 
+  static Future<Map<String, dynamic>?> createWalletRechargeOrder(double amount) async {
+    final userId = currentUserId;
+    if (userId == null) return null;
+    try {
+      final response = await post(
+        '/api/mobile/wallet/recharge-order',
+        body: {'userId': userId, 'amount': amount},
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) return data['data'];
+      }
+    } catch (e) {
+      debugPrint('createWalletRechargeOrder error: $e');
+    }
+    return null;
+  }
+
+  static Future<bool> verifyWalletRecharge({
+    required double amount,
+    required String razorpayPaymentId,
+    String? razorpayOrderId,
+    String? razorpaySignature,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) return false;
+    try {
+      final response = await post(
+        '/api/mobile/wallet/verify-recharge',
+        body: {
+          'userId': userId,
+          'amount': amount,
+          'razorpayPaymentId': razorpayPaymentId,
+          'razorpayOrderId': razorpayOrderId,
+          'razorpaySignature': razorpaySignature,
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      debugPrint('verifyWalletRecharge error: $e');
+    }
+    return false;
+  }
+
   // â”€â”€â”€ Strangers Meet APIs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   static Future<bool> submitStrangersMeetRequest({
