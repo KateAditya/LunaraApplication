@@ -29,6 +29,7 @@ import { VenueBookingSummary } from './pages/reports/VenueBookingSummary';
 import { CancelledPartyPlans } from './pages/CancelledPartyPlans';
 import { CancellationAnalytics } from './pages/CancellationAnalytics';
 import { WalletManagement } from './pages/WalletManagement';
+import { ThemeProvider, useThemeMode } from './context/ThemeContext';
 
 // Create React Query client
 const queryClient = new QueryClient({
