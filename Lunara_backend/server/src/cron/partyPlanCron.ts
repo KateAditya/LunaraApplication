@@ -178,6 +178,43 @@ export const startPartyPlanCron = () => {
                 }
             }
 
+            // 2-Hour Reminder
+            const next2h15m = new Date(now.getTime() + 2.25 * 60 * 60 * 1000);
+            const next1h45m = new Date(now.getTime() + 1.75 * 60 * 60 * 1000);
+            const upcoming2hPlans = await PartyPlan.findAll({
+                where: {
+                    status: { [Op.in]: ['active', 'inactive'] },
+                    reminder2hSent: false,
+                    planDateTime: { [Op.between]: [next1h45m, next2h15m] },
+                }
+            });
+
+            for (const plan of upcoming2hPlans) {
+                await plan.update({ reminder2hSent: true });
+                const acceptedReq = await PartyPlanRequest.findOne({
+                    where: { planId: plan.id, status: PartyPlanRequestStatus.ACCEPTED }
+                });
+                if (acceptedReq) {
+                    const host = await User.findByPk(plan.userId);
+                    const joiner = await User.findByPk(acceptedReq.requesterId);
+                    const { sendMulticastPushNotification } = require('../services/fcmService');
+                    if (host?.fcmToken) {
+                        await sendMulticastPushNotification([host.fcmToken], {
+                            title: '⏳ Event Reminder (2 Hours)',
+                            body: `Your Party Plan starts in 2 hours!`,
+                            data: { type: 'reminder_2h', partyPlanId: plan.id }
+                        });
+                    }
+                    if (joiner?.fcmToken) {
+                        await sendMulticastPushNotification([joiner.fcmToken], {
+                            title: '⏳ Event Reminder (2 Hours)',
+                            body: `Your Party Plan starts in 2 hours!`,
+                            data: { type: 'reminder_2h', partyPlanId: plan.id }
+                        });
+                    }
+                }
+            }
+
             // 1-Hour Reminder
             const next75m = new Date(now.getTime() + 75 * 60 * 1000);
             const next45m = new Date(now.getTime() + 45 * 60 * 1000);
@@ -216,7 +253,7 @@ export const startPartyPlanCron = () => {
                 }
             }
 
-            // 30-Minute Arrival Confirmation Prompt
+            // 30-Minute Reminder
             const next40m = new Date(now.getTime() + 40 * 60 * 1000);
             const next15m = new Date(now.getTime() + 15 * 60 * 1000);
             const upcoming30mPlans = await PartyPlan.findAll({
@@ -236,17 +273,55 @@ export const startPartyPlanCron = () => {
                     const host = await User.findByPk(plan.userId);
                     const joiner = await User.findByPk(acceptedReq.requesterId);
                     const { sendMulticastPushNotification } = require('../services/fcmService');
+                    const msg = `Almost there! Your Party Plan starts in 30 minutes.`;
+                    if (host?.fcmToken) {
+                        await sendMulticastPushNotification([host.fcmToken], {
+                            title: '🕒 30 Minutes Remaining',
+                            body: msg,
+                            data: { type: 'reminder_30m', partyPlanId: plan.id }
+                        });
+                    }
+                    if (joiner?.fcmToken) {
+                        await sendMulticastPushNotification([joiner.fcmToken], {
+                            title: '🕒 30 Minutes Remaining',
+                            body: msg,
+                            data: { type: 'reminder_30m', partyPlanId: plan.id }
+                        });
+                    }
+                }
+            }
+
+            // 10-Minute Arrival Confirmation Prompt
+            const next15m10m = new Date(now.getTime() + 15 * 60 * 1000);
+            const next5m = new Date(now.getTime() + 5 * 60 * 1000);
+            const upcoming10mPlans = await PartyPlan.findAll({
+                where: {
+                    status: { [Op.in]: ['active', 'inactive'] },
+                    reminder10mSent: false,
+                    planDateTime: { [Op.between]: [next5m, next15m10m] },
+                }
+            });
+
+            for (const plan of upcoming10mPlans) {
+                await plan.update({ reminder10mSent: true });
+                const acceptedReq = await PartyPlanRequest.findOne({
+                    where: { planId: plan.id, status: PartyPlanRequestStatus.ACCEPTED }
+                });
+                if (acceptedReq) {
+                    const host = await User.findByPk(plan.userId);
+                    const joiner = await User.findByPk(acceptedReq.requesterId);
+                    const { sendMulticastPushNotification } = require('../services/fcmService');
                     const promptMsg = `Have you reached the venue? Please confirm your arrival.`;
                     if (host?.fcmToken) {
                         await sendMulticastPushNotification([host.fcmToken], {
-                            title: '📍 Arrival Check',
+                            title: '📍 Arrival Check (10 Mins)',
                             body: promptMsg,
                             data: { type: 'arrival_prompt', partyPlanId: plan.id }
                         });
                     }
                     if (joiner?.fcmToken) {
                         await sendMulticastPushNotification([joiner.fcmToken], {
-                            title: '📍 Arrival Check',
+                            title: '📍 Arrival Check (10 Mins)',
                             body: promptMsg,
                             data: { type: 'arrival_prompt', partyPlanId: plan.id }
                         });

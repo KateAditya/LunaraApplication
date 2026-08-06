@@ -2367,19 +2367,39 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/mobile/party-plans/:id/cancel
-// Cancel a party plan (by host)
-// ─────────────────────────────────────────────────────────────────────────────
 async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction) {
+    const WalletTransaction = (await import('../models/WalletTransaction')).default;
+    const { WalletTransactionType } = await import('../models/WalletTransaction');
+
+    const wasHostPaid = plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID;
+    
     // 1. Update plan status
     await plan.update({
         status: PartyPlanStatus.CANCELLED,
         isLive: false,
         paymentStatus: plan.paymentStatus === 'Confirmed' ? 'Refunded' : plan.paymentStatus,
-        hostPaymentStatus: plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID
-            ? PartyPlanPaymentStatus.REFUNDED
-            : plan.hostPaymentStatus,
+        hostPaymentStatus: wasHostPaid ? PartyPlanPaymentStatus.REFUNDED : plan.hostPaymentStatus,
     }, { transaction });
+
+    // 1.5 Refund Host if paid
+    if (wasHostPaid) {
+        const hostUser = await User.findByPk(plan.userId, { transaction });
+        if (hostUser) {
+            const hOld = Number(hostUser.walletBalance || 0);
+            const hDeposit = plan.paymentType === 'self_pay' ? 198.00 : 99.00;
+            const hNew = hOld + hDeposit;
+            await hostUser.update({ walletBalance: hNew }, { transaction });
+            await WalletTransaction.logTransaction({
+                userId: hostUser.id,
+                partyPlanId: plan.id,
+                amount: hDeposit,
+                openingBalance: hOld,
+                closingBalance: hNew,
+                transactionType: WalletTransactionType.REFUND,
+                reference: `REFUND_HOST_CANCEL_${plan.id}`,
+            }, transaction);
+        }
+    }
 
     // 2. Release lock in Time Lock Engine
     await PlanEligibilityService.releaseLock(plan.id, { transaction });
@@ -2394,12 +2414,34 @@ async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction
     });
 
     for (const req of requests) {
+        const wasJoinerPaid = req.joinerPaymentStatus === PartyPlanJoinerPaymentStatus.PAID;
+
         await req.update({
             status: PartyPlanRequestStatus.CANCELLED,
-            joinerPaymentStatus: req.joinerPaymentStatus === PartyPlanJoinerPaymentStatus.PAID
-                ? PartyPlanJoinerPaymentStatus.REFUNDED
-                : req.joinerPaymentStatus
+            joinerPaymentStatus: wasJoinerPaid ? PartyPlanJoinerPaymentStatus.REFUNDED : req.joinerPaymentStatus
         }, { transaction });
+
+        // Refund Joiner if paid
+        if (wasJoinerPaid) {
+            const joinerUser = await User.findByPk(req.requesterId, { transaction });
+            if (joinerUser) {
+                const jOld = Number(joinerUser.walletBalance || 0);
+                const jDeposit = plan.paymentType === 'self_pay' ? 0.00 : 99.00;
+                if (jDeposit > 0) {
+                    const jNew = jOld + jDeposit;
+                    await joinerUser.update({ walletBalance: jNew }, { transaction });
+                    await WalletTransaction.logTransaction({
+                        userId: joinerUser.id,
+                        partyPlanId: plan.id,
+                        amount: jDeposit,
+                        openingBalance: jOld,
+                        closingBalance: jNew,
+                        transactionType: WalletTransactionType.REFUND,
+                        reference: `REFUND_JOINER_CANCEL_${req.id}`,
+                    }, transaction);
+                }
+            }
+        }
 
         // Notify joiners
         try {

@@ -56,6 +56,8 @@ export interface PartyPlanAttributes {
     reminder3hSent?: boolean;
     reminder1hSent?: boolean;
     reminder30mSent?: boolean;
+    reminder2hSent?: boolean;
+    reminder10mSent?: boolean;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -100,6 +102,8 @@ class PartyPlan
     public reminder3hSent!: boolean;
     public reminder1hSent!: boolean;
     public reminder30mSent!: boolean;
+    public reminder2hSent!: boolean;
+    public reminder10mSent!: boolean;
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 }
@@ -275,6 +279,16 @@ PartyPlan.init(
             type: DataTypes.BOOLEAN,
             defaultValue: false,
             field: 'reminder_30m_sent',
+        },
+        reminder2hSent: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            field: 'reminder_2h_sent',
+        },
+        reminder10mSent: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            field: 'reminder_10m_sent',
         },
     },
     {

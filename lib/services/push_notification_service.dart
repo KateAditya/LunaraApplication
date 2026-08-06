@@ -401,6 +401,13 @@ class PushNotificationService {
       case 'cooldown_expiring_soon':
       case 'payment_window_expiring':
       case 'lock_expired':
+      case 'reminder_24h':
+      case 'reminder_3h':
+      case 'reminder_2h':
+      case 'reminder_1h':
+      case 'reminder_30m':
+      case 'reminder_10m':
+      case 'arrival_prompt':
         navigator.push(
           MaterialPageRoute(
             builder: (_) => const LiveFeedScreen(initialTabIndex: 1), // Tab 1 = Party Plan
