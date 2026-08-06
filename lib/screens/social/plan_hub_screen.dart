@@ -86,11 +86,6 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     return '$y-$m-${d}T$h:$min:00.000+05:30';
   }
 
-  DateTime _parseToKolkata(String isoStr) {
-    final dt = DateTime.parse(isoStr).toUtc();
-    return dt.add(const Duration(hours: 5, minutes: 30));
-  }
-
   String _formatTimeOfBooking(String? timeStr) {
     if (timeStr == null || timeStr.isEmpty) return '';
     try {
@@ -1659,7 +1654,6 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     final dateCtrl = TextEditingController();
     final subjectCtrl = TextEditingController();
     final taglineCtrl = TextEditingController();
-    final chargesCtrl = TextEditingController(text: '0'); // default to 0
     final mobileCtrl = TextEditingController();
     final altMobileCtrl = TextEditingController();
     // Payment details controllers
@@ -3881,7 +3875,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                                 'razorpay_signature': 'mock_signature',
                                               });
                                               if (confirmRes.statusCode == 200 && mounted) {
-                                                hostDepositPaid = true;
+                                                // hostDepositPaid = true;
                                                 ScaffoldMessenger.of(context).showSnackBar(
                                                   const SnackBar(content: Text('🎉 Deposit Paid! Your plan is now LIVE!'), backgroundColor: Colors.green),
                                                 );
@@ -3970,7 +3964,6 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     final dateCtrl = TextEditingController();
     final mobileCtrl = TextEditingController();
     final altMobileCtrl = TextEditingController();
-    final chargesCtrl = TextEditingController(text: '0');
     // Bank / UPI fields
     final upiCtrl = TextEditingController();
     final upiNumberCtrl = TextEditingController();
