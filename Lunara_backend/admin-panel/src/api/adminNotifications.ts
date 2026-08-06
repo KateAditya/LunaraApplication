@@ -20,8 +20,8 @@ export interface ActivityItem {
 }
 
 export const adminNotificationsApi = {
-    getSummary: (): Promise<{ success: boolean; data: NotificationCounts }> =>
-        apiClient.get('/api/admin/notifications/summary'),
+    getSummary: (params?: Record<string, string>): Promise<{ success: boolean; data: NotificationCounts }> =>
+        apiClient.get('/api/admin/notifications/summary', { params }),
 
     getActivity: (): Promise<{ success: boolean; data: ActivityItem[] }> =>
         apiClient.get('/api/admin/notifications/activity'),

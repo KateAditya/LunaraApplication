@@ -1331,6 +1331,19 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
                         },
                     });
                 }
+
+                // Also notify admin room via Socket.IO
+                const { io } = require('../server');
+                if (io) {
+                    io.to('admin_notifications').to('admin').emit('admin_notification_created', {
+                        type: 'party_request',
+                        title: '🎉 New Party Plan Request Posted!',
+                        body: `${requester?.firstName || 'User'} requested to join party plan at ${(plan as any)?.venue?.name || 'Venue'}`,
+                        path: '/party-requests',
+                        entityId: newReq.id,
+                        createdAt: new Date().toISOString(),
+                    });
+                }
             } catch (notifErr: any) {
                 logger.warn('Failed to dispatch party plan request notifications:', notifErr.message);
             }
