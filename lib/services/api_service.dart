@@ -1213,6 +1213,62 @@ class ApiService {
     return false;
   }
 
+  static Future<Map<String, dynamic>?> payVipWithWallet({
+    required String packageId,
+    required String tier,
+    required double price,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) return null;
+    try {
+      final response = await post(
+        '/api/mobile/wallet/pay-vip',
+        body: {
+          'userId': userId,
+          'packageId': packageId,
+          'tier': tier,
+          'price': price,
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) return data;
+      }
+    } catch (e) {
+      debugPrint('payVipWithWallet error: $e');
+    }
+    return null;
+  }
+
+  static Future<Map<String, dynamic>?> payWithWallet({
+    required double amount,
+    String? planId,
+    String? bookingId,
+    String paymentType = 'booking_payment',
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) return null;
+    try {
+      final response = await post(
+        '/api/mobile/wallet/pay-with-wallet',
+        body: {
+          'userId': userId,
+          'amount': amount,
+          'planId': planId,
+          'bookingId': bookingId,
+          'paymentType': paymentType,
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) return data;
+      }
+    } catch (e) {
+      debugPrint('payWithWallet error: $e');
+    }
+    return null;
+  }
+
   // â”€â”€â”€ Strangers Meet APIs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   static Future<bool> submitStrangersMeetRequest({

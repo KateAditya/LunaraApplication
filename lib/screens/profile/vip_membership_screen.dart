@@ -3,6 +3,7 @@ import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../../services/subscription_provider.dart';
+import '../../widgets/smart_checkout_sheet.dart';
 
 class VIPMembershipScreen extends StatefulWidget {
   const VIPMembershipScreen({super.key});
@@ -254,35 +255,60 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     dynamic pkg,
     double price,
   ) async {
-    final confirmed = await showDialog<bool>(
+    SmartCheckoutSheet.show(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(
-          'Confirm $actionText',
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        content: Text(
-          'You are currently on the ${_activePackageTier ?? "FREE"} plan. Are you sure you want to ${actionText.toLowerCase()} to the ${pkg['tier']} plan for ₹${price.toStringAsFixed(0)}?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: LunaraTheme.electricViolet,
-            ),
-            child: const Text('Proceed', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
+      title: 'Lunara VIP - ${pkg['name'] ?? pkg['tier']}',
+      subtitle: '$actionText to ${pkg['tier']} Tier',
+      itemPrice: price,
+      onWalletPayment: () async {
+        final res = await ApiService.payVipWithWallet(
+          packageId: pkg['id'] ?? '',
+          tier: pkg['tier'] ?? 'PRO',
+          price: price,
+        );
+        if (res != null && res['success'] == true) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Successfully upgraded to ${pkg['name'] ?? pkg['tier']}! 🎉'),
+                backgroundColor: const Color(0xFF10B981),
+              ),
+            );
+          }
+          await _loadData();
+          return true;
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(res?['message'] ?? 'Wallet payment failed'),
+                backgroundColor: Colors.redAccent,
+              ),
+            );
+          }
+          return false;
+        }
+      },
+      onDirectPayment: () async {
+        await _initiatePurchase();
+      },
+      onHybridPayment: (shortfallAmount) async {
+        final orderData = await ApiService.createWalletRechargeOrder(shortfallAmount);
+        if (orderData != null) {
+          final String orderId = orderData['orderId'] ?? orderData['id'] ?? '';
+          final options = {
+            'key': orderData['keyId'] ?? 'rzp_test_key',
+            'amount': (shortfallAmount * 100).toInt(),
+            'name': 'Lunara VIP Shortfall',
+            'description': 'Recharge ₹${shortfallAmount.toStringAsFixed(0)} for ${pkg['name'] ?? pkg['tier']}',
+            'order_id': orderId,
+            'theme': {'color': '#7F00FF'},
+          };
 
-    if (confirmed == true) {
-      _initiatePurchase();
-    }
+          _razorpay.open(options);
+        }
+      },
+    );
   }
 
   Future<void> _initiateBoostPurchase() async {

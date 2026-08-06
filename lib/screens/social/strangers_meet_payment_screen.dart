@@ -4,6 +4,7 @@ import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../../models/strangers_meet_request.dart';
+import '../../widgets/smart_checkout_sheet.dart';
 import 'strangers_meet_ticket_screen.dart';
 
 class StrangersMeetPaymentScreen extends StatefulWidget {
@@ -70,6 +71,81 @@ class _StrangersMeetPaymentScreenState
   }
 
   Future<void> _handlePayment() async {
+    final double amount = widget.isJoinPayment
+        ? widget.request.chargesPerHead
+        : (widget.request.paymentAmount ?? 99.0);
+
+    SmartCheckoutSheet.show(
+      context: context,
+      title: 'Strangers Meet - ${widget.request.subject}',
+      subtitle: widget.isJoinPayment
+          ? 'Joiner Fee Payment'
+          : 'Host Platform Deposit',
+      itemPrice: amount,
+      onWalletPayment: () async {
+        final res = await ApiService.payWithWallet(
+          amount: amount,
+          planId: widget.request.id,
+          paymentType: widget.isJoinPayment
+              ? 'strangers_meet_join'
+              : 'strangers_meet_deposit',
+        );
+        if (res != null && res['success'] == true) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Payment Successful via Smart Wallet! 🎫'),
+                backgroundColor: Color(0xFF10B981),
+              ),
+            );
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) => StrangersMeetTicketScreen(
+                  request: widget.request,
+                ),
+              ),
+            );
+          }
+          return true;
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(res?['message'] ?? 'Wallet payment failed'),
+                backgroundColor: Colors.redAccent,
+              ),
+            );
+          }
+          return false;
+        }
+      },
+      onDirectPayment: () async {
+        await _executeDirectRazorpay();
+      },
+      onHybridPayment: (shortfallAmount) async {
+        final orderData = await ApiService.createWalletRechargeOrder(
+          shortfallAmount,
+        );
+        if (orderData != null) {
+          final String orderId = orderData['orderId'] ?? orderData['id'] ?? '';
+          final options = {
+            'key': orderData['keyId'] ?? 'rzp_test_key',
+            'amount': (shortfallAmount * 100).toInt(),
+            'name': 'Lunara Shortfall',
+            'description':
+                'Recharge ₹${shortfallAmount.toStringAsFixed(0)} for Strangers Meet',
+            'order_id': orderId,
+            'theme': {'color': '#7F00FF'},
+          };
+
+          _razorpay.open(options);
+        }
+      },
+    );
+  }
+
+  Future<void> _executeDirectRazorpay() async {
     setState(() => _isProcessing = true);
 
     Map<String, dynamic>? checkoutData;
@@ -82,10 +158,7 @@ class _StrangersMeetPaymentScreenState
       setState(() => _isProcessing = false);
       final errorStr = e.toString().replaceAll('Exception: ', '');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(errorStr),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text(errorStr), backgroundColor: Colors.red),
       );
       return;
     }
@@ -128,7 +201,6 @@ class _StrangersMeetPaymentScreenState
     }
 
     if (!razorpayOpened) {
-      // Fallback simulated payment
       Future.delayed(const Duration(seconds: 2), () {
         _confirmPayment(orderId, 'mock_payment', 'mock_signature');
       });
@@ -163,10 +235,7 @@ class _StrangersMeetPaymentScreenState
       setState(() => _isProcessing = false);
       final errorStr = e.toString().replaceAll('Exception: ', '');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(errorStr),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text(errorStr), backgroundColor: Colors.red),
       );
       return;
     }
@@ -271,7 +340,8 @@ class _StrangersMeetPaymentScreenState
                       Builder(
                         builder: (ctx) {
                           final totalSeats = widget.request.numberOfPersons;
-                          final platformTotal = widget.request.paymentAmount ?? 0;
+                          final platformTotal =
+                              widget.request.paymentAmount ?? 0;
                           final platformPerSeat =
                               widget.request.platformChargePerSeat ??
                               (platformTotal / totalSeats);
@@ -454,13 +524,17 @@ class _StrangersMeetPaymentScreenState
                               chargesController.text = val.toStringAsFixed(0);
                             });
                           }),
-                          _buildQuickChip('₹199', 199.0, selectedCharges, (val) {
+                          _buildQuickChip('₹199', 199.0, selectedCharges, (
+                            val,
+                          ) {
                             setModalState(() {
                               selectedCharges = val;
                               chargesController.text = val.toStringAsFixed(0);
                             });
                           }),
-                          _buildQuickChip('₹499', 499.0, selectedCharges, (val) {
+                          _buildQuickChip('₹499', 499.0, selectedCharges, (
+                            val,
+                          ) {
                             setModalState(() {
                               selectedCharges = val;
                               chargesController.text = val.toStringAsFixed(0);
@@ -499,20 +573,24 @@ class _StrangersMeetPaymentScreenState
                                       );
 
                                   if (success) {
-                                    Navigator.pop(context); // Close bottom sheet
+                                    Navigator.pop(
+                                      context,
+                                    ); // Close bottom sheet
 
                                     // Update the local request
                                     final updatedReq = StrangersMeetRequest(
                                       id: widget.request.id,
                                       subject: widget.request.subject,
                                       tagline: widget.request.tagline,
-                                      eventDateTime: widget.request.eventDateTime,
+                                      eventDateTime:
+                                          widget.request.eventDateTime,
                                       numberOfPersons:
                                           widget.request.numberOfPersons,
                                       chargesPerHead: selectedCharges,
                                       slotsFilled: widget.request.slotsFilled,
                                       status: widget.request.status,
-                                      paymentAmount: widget.request.paymentAmount,
+                                      paymentAmount:
+                                          widget.request.paymentAmount,
                                       paymentStatus: 'paid',
                                       adminNotes: widget.request.adminNotes,
                                       ticketId: result['ticketId'],
@@ -521,7 +599,8 @@ class _StrangersMeetPaymentScreenState
                                       alternateMobileNumber:
                                           widget.request.alternateMobileNumber,
                                       bankName: widget.request.bankName,
-                                      accountNumber: widget.request.accountNumber,
+                                      accountNumber:
+                                          widget.request.accountNumber,
                                       accountHolderName:
                                           widget.request.accountHolderName,
                                       ifscCode: widget.request.ifscCode,
@@ -531,8 +610,9 @@ class _StrangersMeetPaymentScreenState
                                       settlementStatus:
                                           widget.request.settlementStatus,
                                       bankDetails: widget.request.bankDetails,
-                                      settlementTransactionId:
-                                          widget.request.settlementTransactionId,
+                                      settlementTransactionId: widget
+                                          .request
+                                          .settlementTransactionId,
                                       settlementAmount:
                                           widget.request.settlementAmount,
                                       settlementDate:
