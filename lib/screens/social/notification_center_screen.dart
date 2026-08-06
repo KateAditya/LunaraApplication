@@ -345,8 +345,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   List<dynamic> get _filteredNotifications {
     var rawList = _notifications;
 
-    // Deduplicate Party Plan Request notifications so ONLY 1 card per request is shown
-    final Map<String, dynamic> partyPlanMap = {};
+    // Universal Entity Deduplication: Only 1 consolidated card per plan/booking/event showing latest status
+    final Map<String, dynamic> entityMap = {};
     final List<dynamic> deduplicatedList = [];
 
     for (final item in rawList) {
@@ -355,17 +355,23 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         continue;
       }
       final data = item['data'] is Map ? item['data'] : (item['metadata'] is Map ? item['metadata'] : {});
-      final entityType = (item['entityType'] ?? data['type'] ?? item['eventType'] ?? '').toString();
-      final title = (item['title'] ?? '').toString().toLowerCase();
-      final body = (item['body'] ?? '').toString().toLowerCase();
 
-      final requestId = data['requestId']?.toString() ?? data['partyPlanId']?.toString() ?? item['entityId']?.toString();
-      final isPartyPlan = entityType.contains('party_plan') || title.contains('party plan') || body.contains('party plan');
+      // Extract specific identifiers for grouping
+      final partyPlanId = data['partyPlanId']?.toString() ?? (item['entityType'] == 'party_plan' ? item['entityId']?.toString() : null);
+      final groupPartyId = data['groupPartyId']?.toString() ?? data['groupId']?.toString() ?? (item['entityType'] == 'group_party' ? item['entityId']?.toString() : null);
+      final meetId = data['meetId']?.toString() ?? data['strangersMeetId']?.toString() ?? (item['entityType'] == 'strangers_meet' ? item['entityId']?.toString() : null);
+      final bookingId = data['bookingId']?.toString() ?? (item['entityType'] == 'booking' ? item['entityId']?.toString() : null);
+      final requestId = data['requestId']?.toString() ?? item['entityId']?.toString();
 
-      if (isPartyPlan && requestId != null && requestId.isNotEmpty) {
-        final key = 'party_plan_$requestId';
-        if (!partyPlanMap.containsKey(key)) {
-          partyPlanMap[key] = item;
+      final groupKey = groupPartyId != null && groupPartyId.isNotEmpty ? 'group_$groupPartyId'
+          : (partyPlanId != null && partyPlanId.isNotEmpty ? 'party_$partyPlanId'
+          : (meetId != null && meetId.isNotEmpty ? 'meet_$meetId'
+          : (bookingId != null && bookingId.isNotEmpty ? 'booking_$bookingId'
+          : (requestId != null && requestId.isNotEmpty ? 'req_$requestId' : null))));
+
+      if (groupKey != null) {
+        if (!entityMap.containsKey(groupKey)) {
+          entityMap[groupKey] = item;
           deduplicatedList.add(item);
         }
       } else {
