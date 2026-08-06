@@ -82,26 +82,30 @@ class WalletTransaction
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 
-    public static async logTransaction(params: {
-        walletId?: string | null;
-        userId: string;
-        bookingId?: string | null;
-        partyPlanId?: string | null;
-        amount: number;
-        openingBalance: number;
-        closingBalance: number;
-        transactionType: WalletTransactionType;
-        status?: WalletTransactionStatus;
-        reference?: string | null;
-        source?: string | null;
-        destination?: string | null;
-        createdBy?: string | null;
-        metadata?: object | null;
-    }): Promise<WalletTransaction> {
-        return await WalletTransaction.create({
+    public static async logTransaction(
+        params: {
+            walletId?: string | null;
+            userId: string;
+            bookingId?: string | null;
+            partyPlanId?: string | null;
+            amount: number;
+            openingBalance: number;
+            closingBalance: number;
+            transactionType: WalletTransactionType;
+            status?: WalletTransactionStatus;
+            reference?: string | null;
+            source?: string | null;
+            destination?: string | null;
+            createdBy?: string | null;
+            metadata?: object | null;
+        },
+        options?: any
+    ): Promise<WalletTransaction> {
+        const createOptions = options ? (options.transaction ? options : { transaction: options }) : undefined;
+        return (await WalletTransaction.create({
             ...params,
             status: params.status || WalletTransactionStatus.SUCCESS,
-        });
+        }, createOptions)) as WalletTransaction;
     }
 }
 
