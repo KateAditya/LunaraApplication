@@ -99,7 +99,7 @@ export const startPartyPlanCron = () => {
                     reminder24hSent: false,
                     planDateTime: { [Op.between]: [next23h, next25h] },
                 },
-                include: [{ model: User, as: 'user' }]
+                include: [{ model: User, as: 'creator' }]
             });
 
             for (const plan of upcoming24hPlans) {

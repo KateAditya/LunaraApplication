@@ -453,6 +453,7 @@ Plan.belongsTo(Venue, { foreignKey: 'venueId', as: 'venue' });
 
 User.hasMany(PartyPlan, { foreignKey: 'userId', as: 'partyPlans' });
 PartyPlan.belongsTo(User, { foreignKey: 'userId', as: 'creator' });
+PartyPlan.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
 Venue.hasMany(PartyPlan, { foreignKey: 'venueId', as: 'partyPlans', onDelete: 'CASCADE' });
 PartyPlan.belongsTo(Venue, { foreignKey: 'venueId', as: 'venue' });
