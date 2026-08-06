@@ -91,23 +91,50 @@ class _StrangersMeetPaymentScreenState
               : 'strangers_meet_deposit',
         );
         if (res != null && res['success'] == true) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Payment Successful via Smart Wallet! 🎫'),
-                backgroundColor: Color(0xFF10B981),
-              ),
-            );
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (_) => StrangersMeetTicketScreen(
-                  request: widget.request,
+          final transactionId = res['data']?['transactionId']?.toString() ?? 'wallet';
+          final confirmRes = widget.isJoinPayment
+              ? await ApiService.payStrangersMeetJoin(
+                  widget.request.id,
+                  'order_mock_wallet',
+                  'wallet_$transactionId',
+                  'mock_signature',
+                )
+              : await ApiService.payStrangersMeetRequest(
+                  widget.request.id,
+                  'order_mock_wallet',
+                  'wallet_$transactionId',
+                  'mock_signature',
+                );
+
+          if (confirmRes != null && confirmRes['success'] == true) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Payment Successful via Smart Wallet! 🎫'),
+                  backgroundColor: Color(0xFF10B981),
                 ),
-              ),
-            );
+              );
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => StrangersMeetTicketScreen(
+                    request: widget.request,
+                  ),
+                ),
+              );
+            }
+            return true;
+          } else {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(confirmRes?['message'] ?? 'Wallet confirmation failed'),
+                  backgroundColor: Colors.redAccent,
+                ),
+              );
+            }
+            return false;
           }
-          return true;
         } else {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -189,6 +216,11 @@ class _StrangersMeetPaymentScreenState
       'order_id': orderId,
       'prefill': {'contact': '8888888888', 'email': 'test@razorpay.com'},
     };
+
+    if (orderId.startsWith('order_mock_')) {
+      _confirmPayment(orderId, 'mock_payment', 'mock_signature');
+      return;
+    }
 
     bool razorpayOpened = false;
     try {

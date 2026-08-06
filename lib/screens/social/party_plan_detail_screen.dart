@@ -681,18 +681,32 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       subtitle: 'Safety commitment deposit for Party Plan at $venueName',
       itemPrice: 499.0,
       onWalletPayment: () async {
-        final res = await ApiService.post('/api/mobile/party-plans/requests/$reqId/confirm-self-paid', body: {});
-        if (res.statusCode == 200 && mounted) {
-          setState(() {
-            _requestStatus = 'confirmed';
-          });
+        final res = await ApiService.payWithWallet(
+          amount: 499.0,
+          planId: widget.plan['id']?.toString(),
+          paymentType: 'commitment_deposit',
+        );
+        if (res != null && res['success'] == true) {
+          final confirmRes = await ApiService.post('/api/mobile/party-plans/requests/$reqId/confirm-self-paid', body: {});
+          if (confirmRes.statusCode == 200 && mounted) {
+            setState(() {
+              _requestStatus = 'confirmed';
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
+                backgroundColor: Colors.green,
+              ),
+            );
+            return true;
+          }
+        } else if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
-              backgroundColor: Colors.green,
+            SnackBar(
+              content: Text(res?['message'] ?? 'Wallet payment failed'),
+              backgroundColor: Colors.redAccent,
             ),
           );
-          return true;
         }
         return false;
       },
