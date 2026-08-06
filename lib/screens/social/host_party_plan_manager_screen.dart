@@ -458,7 +458,10 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                     style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey[600], letterSpacing: 1),
                   ),
                   const SizedBox(height: 12),
-                  ...requests.map((req) {
+                  ...requests.map<Widget>((req) {
+                    final hasActiveReservation = requests.any((r) =>
+                      r['status']?.toString().toLowerCase() == 'payment_pending' ||
+                      r['status']?.toString().toLowerCase() == 'accepted');
                     final reqUser = req['requester'] ?? {};
                     final name = '${reqUser['firstName'] ?? ''} ${reqUser['lastName'] ?? ''}'.trim();
                     final status = req['status'] ?? 'pending';
@@ -579,18 +582,18 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                           ),
                           if (status.toString().toLowerCase() == 'pending' && req['isInvite'] != true)
                             ElevatedButton(
-                              onPressed: _isProcessing ? null : () => _onAcceptRequest(req['id'], plan),
+                              onPressed: (_isProcessing || hasActiveReservation) ? null : () => _onAcceptRequest(req['id'], plan),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: LunaraTheme.electricViolet,
+                                backgroundColor: hasActiveReservation ? Colors.grey : LunaraTheme.electricViolet,
                                 foregroundColor: Colors.white,
-                                disabledBackgroundColor: LunaraTheme.electricViolet.withValues(alpha: 0.4),
+                                disabledBackgroundColor: Colors.grey.withValues(alpha: 0.3),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                 minimumSize: const Size(0, 36),
                               ),
                               child: _isProcessing
                                   ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                  : const Text('ACCEPT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                  : Text(hasActiveReservation ? 'LOCKED (30M)' : 'ACCEPT', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                             ),
                           if ((status.toString().toLowerCase() == 'payment_pending' || status.toString().toLowerCase() == 'accepted') && !hostPaid)
                             ElevatedButton(

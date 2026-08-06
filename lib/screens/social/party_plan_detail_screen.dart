@@ -5,6 +5,8 @@ import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../../widgets/lunara_profile_image.dart';
 import '../../widgets/smart_checkout_sheet.dart';
+import 'chat_screen.dart';
+import 'party_plan_ticket_screen.dart';
 
 class PartyPlanDetailScreen extends StatefulWidget {
   final Map<String, dynamic> plan;
@@ -687,7 +689,12 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
           paymentType: 'commitment_deposit',
         );
         if (res != null && res['success'] == true) {
-          final confirmRes = await ApiService.post('/api/mobile/party-plans/requests/$reqId/confirm-self-paid', body: {});
+          final transactionId = res['data']?['transactionId']?.toString() ?? 'wallet';
+          final confirmRes = await ApiService.post('/api/mobile/party-plans/requests/$reqId/joiner-pay', body: {
+            'razorpay_order_id': 'order_mock_wallet',
+            'razorpay_payment_id': 'wallet_$transactionId',
+            'razorpay_signature': 'mock_signature',
+          });
           if (confirmRes.statusCode == 200 && mounted) {
             setState(() {
               _requestStatus = 'confirmed';
@@ -712,8 +719,8 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       },
       onDirectPayment: () async {
         final res = await ApiService.post('/api/mobile/party-plans/requests/$reqId/joiner-pay', body: {
-          'razorpay_order_id': 'mock_order_$reqId',
-          'razorpay_payment_id': 'pay_direct_$reqId',
+          'razorpay_order_id': 'order_mock_direct',
+          'razorpay_payment_id': 'pay_direct_${DateTime.now().millisecondsSinceEpoch}',
           'razorpay_signature': 'mock_signature',
         });
         if (res.statusCode == 200 && mounted) {
@@ -729,7 +736,11 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         }
       },
       onHybridPayment: (shortfall) async {
-        final res = await ApiService.post('/api/mobile/party-plans/requests/$reqId/confirm-self-paid', body: {});
+        final res = await ApiService.post('/api/mobile/party-plans/requests/$reqId/joiner-pay', body: {
+          'razorpay_order_id': 'order_mock_hybrid',
+          'razorpay_payment_id': 'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
+          'razorpay_signature': 'mock_signature',
+        });
         if (res.statusCode == 200 && mounted) {
           setState(() {
             _requestStatus = 'confirmed';
@@ -1290,27 +1301,91 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                         ),
                       )
                     : (_alreadyRequested && (_requestStatus == 'confirmed' || _requestStatus == 'paid'))
-                        ? Container(
-                            height: 58,
-                            decoration: BoxDecoration(
-                              gradient: LunaraTheme.purpleGradient,
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                            child: const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 22),
-                                SizedBox(width: 10),
-                                Text(
-                                  'BOOKING CONFIRMED — OPEN CHAT 🎉',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
+                        ? Row(
+                            children: [
+                              Expanded(
+                                child: GestureDetector(
+                                  onTap: () {
+                                    final host = _extractHost(widget.plan);
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => ChatScreen(user: {
+                                          ...host,
+                                          'contextType': 'party_plan',
+                                          'planId': widget.plan['id']?.toString(),
+                                        }),
+                                      ),
+                                    );
+                                  },
+                                  child: Container(
+                                    height: 54,
+                                    decoration: BoxDecoration(
+                                      gradient: LunaraTheme.purpleGradient,
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    child: const Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 18),
+                                        SizedBox(width: 6),
+                                        Text(
+                                          'OPEN CHAT',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
-                              ],
-                            ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: GestureDetector(
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => PartyPlanTicketScreen(
+                                          request: {
+                                            'id': _activeRequestId,
+                                            'planId': widget.plan['id'],
+                                            'plan': widget.plan,
+                                          },
+                                          plan: widget.plan,
+                                          isHost: false,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  child: Container(
+                                    height: 54,
+                                    decoration: BoxDecoration(
+                                      color: LunaraTheme.electricViolet,
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    child: const Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.qr_code_rounded, color: Colors.white, size: 18),
+                                        SizedBox(width: 6),
+                                        Text(
+                                          'VIEW TICKET',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           )
                         : _alreadyRequested
                             ? Container(
