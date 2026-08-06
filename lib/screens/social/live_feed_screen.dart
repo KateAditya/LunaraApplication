@@ -14,6 +14,7 @@ import '../../widgets/top_notification_banner.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'party_plan_ticket_screen.dart';
 import 'strangers_meet_requests_screen.dart';
+import '../../widgets/smart_checkout_sheet.dart';
 
 /// ─────────────────────────────────────────────────────────────────────────────
 /// Unified Notification Item Schema
@@ -396,40 +397,66 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   Future<void> _initiateLargePartyPayment(Map<String, dynamic> booking) async {
     final bookingId = booking['id']?.toString() ?? booking['bookingId']?.toString();
-    if (bookingId == null) return;
+    if (bookingId == null || bookingId.isEmpty) return;
 
-    try {
-      final result = await ApiService.initiateLargePartyPayment(bookingId);
-      if (result == null || result['success'] != true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to initiate payment. Please try again.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
+    final venueName = booking['venue']?['name'] ?? booking['venueName'] ?? 'Venue';
+    final rawAmount = booking['totalAmount'] ?? booking['amount'] ?? booking['price'] ?? 1999.0;
+    final double amount = (rawAmount is num) ? rawAmount.toDouble() : (double.tryParse(rawAmount.toString()) ?? 1999.0);
 
-      final orderData = result['order'] ?? result['data'] ?? result;
-      final razorpayKey = result['razorpayKeyId']?.toString() ?? orderData['key']?.toString() ?? '';
-      _pendingLargePartyBookingId = bookingId;
-
-      try {
-        _razorpay?.open({
-          'key': razorpayKey,
-          'order_id': orderData['razorpayOrderId']?.toString() ?? orderData['id']?.toString(),
-          'amount': orderData['amount'],
-          'name': 'Lunara – Group Party',
-          'description': 'Group Party at ${booking['venue']?['name'] ?? booking['venueName'] ?? 'venue'}',
-          'prefill': {'contact': booking['mobileNumber']?.toString() ?? ''},
-          'theme': {'color': '#7C3AED'},
-        });
-      } catch (e) {
-        debugPrint('Error opening Razorpay: $e');
-      }
-    } catch (e) {
-      debugPrint('_initiateLargePartyPayment error: $e');
-    }
+    SmartCheckoutSheet.show(
+      context: context,
+      title: 'Group Party Booking',
+      subtitle: 'Deposit payment for Group Party at $venueName',
+      itemPrice: amount,
+      onWalletPayment: () async {
+        final res = await ApiService.post('/api/mobile/large-parties/$bookingId/pay-wallet', body: {});
+        if (res.statusCode == 200 && mounted) {
+          await _loadGroupPartyBookings();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🎉 Group Party Paid via Smart Credit Wallet!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          return true;
+        }
+        return false;
+      },
+      onDirectPayment: () async {
+        _pendingLargePartyBookingId = bookingId;
+        final result = await ApiService.initiateLargePartyPayment(bookingId);
+        if (result != null && result['success'] == true) {
+          final orderData = result['order'] ?? result['data'] ?? result;
+          final razorpayKey = result['razorpayKeyId']?.toString() ?? orderData['key']?.toString() ?? '';
+          _razorpay?.open({
+            'key': razorpayKey,
+            'order_id': orderData['razorpayOrderId']?.toString() ?? orderData['id']?.toString(),
+            'amount': orderData['amount'],
+            'name': 'Lunara – Group Party',
+            'description': 'Group Party at $venueName',
+            'prefill': {'contact': booking['mobileNumber']?.toString() ?? ''},
+            'theme': {'color': '#7C3AED'},
+          });
+        }
+      },
+      onHybridPayment: (shortfall) async {
+        _pendingLargePartyBookingId = bookingId;
+        final result = await ApiService.initiateLargePartyPayment(bookingId);
+        if (result != null && result['success'] == true) {
+          final orderData = result['order'] ?? result['data'] ?? result;
+          final razorpayKey = result['razorpayKeyId']?.toString() ?? orderData['key']?.toString() ?? '';
+          _razorpay?.open({
+            'key': razorpayKey,
+            'order_id': orderData['razorpayOrderId']?.toString() ?? orderData['id']?.toString(),
+            'amount': (shortfall * 100).toInt(),
+            'name': 'Lunara – Group Party Shortfall',
+            'description': 'Group Party Shortfall at $venueName',
+            'prefill': {'contact': booking['mobileNumber']?.toString() ?? ''},
+            'theme': {'color': '#7C3AED'},
+          });
+        }
+      },
+    );
   }
 
   Future<void> _handleAcceptPartyPlan(String reqId) async {
