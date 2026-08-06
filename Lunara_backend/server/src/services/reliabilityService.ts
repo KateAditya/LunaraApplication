@@ -46,25 +46,16 @@ export class ReliabilityService {
             // Clamp score between 0 and 100
             const newScore = Math.max(0, Math.min(100, oldScore + change));
 
-            // If action is NO_SHOW, increment noShowCount and auto-restrict if >= 3
-            let isAutoblocked = user.isAutoblocked;
-            let autoblockedReason = user.autoblockedReason;
             let noShowCount = user.noShowCount || 0;
 
             if (action === ReliabilityAction.NO_SHOW) {
                 noShowCount += 1;
-                if (noShowCount >= 3) {
-                    isAutoblocked = true;
-                    autoblockedReason = `Restricted due to repeated no-shows (${noShowCount} no-shows)`;
-                    logger.warn(`[ReliabilityService] User ${userId} auto-restricted due to ${noShowCount} No-Shows.`);
-                }
+                logger.info(`[ReliabilityService] User ${userId} no-show recorded (score: ${oldScore} -> ${newScore}). Total no-shows: ${noShowCount}`);
             }
 
             await user.update({
                 reliabilityScore: newScore,
                 noShowCount,
-                isAutoblocked,
-                autoblockedReason,
             });
 
             // Log action in AuditLog

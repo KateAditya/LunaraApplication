@@ -175,6 +175,10 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
             await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_arrival_confirmed BOOLEAN DEFAULT FALSE;`);
             await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_arrival_time TIMESTAMP WITH TIME ZONE;`);
             await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS lat_lang_check_in VARCHAR(255);`);
+
+            // Automatically unblock any users previously autoblocked due to no-shows (only 10+ user blocks should trigger autoblock)
+            await sequelize.query(`UPDATE users SET is_autoblocked = false, autoblocked_reason = NULL, is_active = true WHERE is_autoblocked = true AND (block_count IS NULL OR block_count < 10);`);
+
             logger.info('users, messages, and party_plans table columns verified/migrated successfully.');
 
 
