@@ -1127,24 +1127,29 @@ router.get('/badge-counts', async (req, res) => {
                 .filter(r => !activeReadRequestIds.has(r.id)).length
             : 0;
 
-        // 4. Outgoing accepted requests (waiting for user payment)
-        const unreadPartyRequestsCount = await PartyPlanRequest.count({
-            where: {
-                requesterId: uId,
-                status: { [Op.in]: ['accepted', 'payment_pending'] },
-                joinerPaymentStatus: 'unpaid',
-                id: { [Op.notIn]: Array.from(activeReadRequestIds) }
-            }
-        });
+        const isUUID = (str: string) => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(str);
+        const validReadRequestUUIDs = Array.from(activeReadRequestIds).filter(isUUID);
 
-        const unreadPlanRequestsCount = await PlanJoinRequest.count({
-            where: {
-                requesterId: uId,
-                status: 'accepted',
-                paymentStatus: 'pending',
-                id: { [Op.notIn]: Array.from(activeReadRequestIds) }
-            }
-        });
+        // 4. Outgoing accepted requests (waiting for user payment)
+        const partyReqWhere: any = {
+            requesterId: uId,
+            status: { [Op.in]: ['accepted', 'payment_pending'] },
+            joinerPaymentStatus: 'unpaid',
+        };
+        if (validReadRequestUUIDs.length > 0) {
+            partyReqWhere.id = { [Op.notIn]: validReadRequestUUIDs };
+        }
+        const unreadPartyRequestsCount = await PartyPlanRequest.count({ where: partyReqWhere });
+
+        const planReqWhere: any = {
+            requesterId: uId,
+            status: 'accepted',
+            paymentStatus: 'pending',
+        };
+        if (validReadRequestUUIDs.length > 0) {
+            planReqWhere.id = { [Op.notIn]: validReadRequestUUIDs };
+        }
+        const unreadPlanRequestsCount = await PlanJoinRequest.count({ where: planReqWhere });
 
         const liveFeedCount = unreadNotificationsCount + 
                               unreadIncomingTableRequestsCount + 
