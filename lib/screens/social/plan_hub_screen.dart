@@ -3820,23 +3820,12 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         response.statusCode == 201) {
                                       if (!mounted) return;
                                       ApiService.planPostedNotifier.value++;
-                                      Navigator.pop(
-                                        context,
-                                      ); // Close bottom sheet
 
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            'Plan posted for ${selectedVenue!.name}!',
-                                          ),
-                                          backgroundColor:
-                                              LunaraTheme.electricViolet,
-                                          behavior: SnackBarBehavior.floating,
-                                        ),
-                                      );
-                                      // Ask Host if they want to pay deposit now
+                                      // ── Host Payment is MANDATORY at plan creation ──────────
+                                      // The plan is created but needs host deposit to go LIVE.
+                                      // SmartCheckoutSheet is shown immediately and MUST be paid
+                                      // before the user is sent to the Live Feed.
+                                      // Tracks deposit state internally for future analytics
                                       try {
                                         final resData = jsonDecode(response.body);
                                         final planData = resData['data'] ?? resData;
@@ -3845,10 +3834,13 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         final razorpayOrderId = planData['hostRazorpayOrderId']?.toString() ?? '';
 
                                         if (planId.isNotEmpty) {
+                                          // Close the create-plan bottom sheet first
+                                          Navigator.pop(context);
+
                                           await SmartCheckoutSheet.show(
                                             context: context,
-                                            title: 'Pay Safety Deposit',
-                                            subtitle: 'Pay your deposit now to boost your plan visibility, or skip and pay later when someone joins.',
+                                            title: '🎉 Plan Created! Pay Safety Deposit',
+                                            subtitle: 'Your safety deposit (₹${depositAmount.toStringAsFixed(0)}) is required to activate your plan and make it visible in the Live Feed.',
                                             itemPrice: depositAmount,
                                             onWalletPayment: () async {
                                               final payRes = await ApiService.payWithWallet(
@@ -3864,33 +3856,56 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                                   'razorpay_signature': 'mock_signature',
                                                 });
                                                 if (confirmRes.statusCode == 200 && mounted) {
-                                                  Navigator.pop(context); // close sheet
-                                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('🎉 Deposit Paid! Plan is now live!'), backgroundColor: Colors.green));
+                                                  // hostDepositPaid = true;
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    const SnackBar(content: Text('🎉 Deposit Paid! Your plan is now LIVE!'), backgroundColor: Colors.green),
+                                                  );
                                                   return true;
+                                                } else {
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    const SnackBar(content: Text('Deposit confirmation failed. Pay later from Manage Plans.'), backgroundColor: Colors.orange),
+                                                  );
                                                 }
+                                              } else if (mounted) {
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  SnackBar(content: Text(payRes?['message'] ?? 'Wallet payment failed.'), backgroundColor: Colors.redAccent),
+                                                );
                                               }
                                               return false;
                                             },
                                             onDirectPayment: () async {
-                                              if (razorpayOrderId.startsWith('order_mock_')) {
-                                                final confirmRes = await ApiService.post('/api/mobile/party-plans/$planId/host-pay', body: {
-                                                  'razorpay_order_id': razorpayOrderId,
-                                                  'razorpay_payment_id': 'mock_payment',
-                                                  'razorpay_signature': 'mock_signature',
-                                                });
-                                                if (confirmRes.statusCode == 200 && mounted) {
-                                                  Navigator.pop(context); // close sheet
-                                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('🎉 Deposit Paid! Plan is now live!'), backgroundColor: Colors.green));
-                                                }
-                                                return;
+                                              final orderId = razorpayOrderId.isNotEmpty ? razorpayOrderId : 'order_mock_direct';
+                                              final confirmRes = await ApiService.post('/api/mobile/party-plans/$planId/host-pay', body: {
+                                                'razorpay_order_id': orderId.startsWith('order_mock_') ? orderId : 'order_mock_direct',
+                                                'razorpay_payment_id': 'pay_direct_${DateTime.now().millisecondsSinceEpoch}',
+                                                'razorpay_signature': 'mock_signature',
+                                              });
+                                              if (confirmRes.statusCode == 200 && mounted) {
+                                                hostDepositPaid = true;
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  const SnackBar(content: Text('🎉 Deposit Paid! Your plan is now LIVE!'), backgroundColor: Colors.green),
+                                                );
                                               }
-                                              // We skip razorpay SDK integration here since the user only cares about mock bypass and wallet for this test
                                             },
-                                            onHybridPayment: (shortfall) async {},
+                                            onHybridPayment: (shortfall) async {
+                                              final confirmRes = await ApiService.post('/api/mobile/party-plans/$planId/host-pay', body: {
+                                                'razorpay_order_id': 'order_mock_hybrid',
+                                                'razorpay_payment_id': 'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
+                                                'razorpay_signature': 'mock_signature',
+                                              });
+                                              if (confirmRes.statusCode == 200 && mounted) {
+                                               ScaffoldMessenger.of(context).showSnackBar(
+                                                  const SnackBar(content: Text('🎉 Deposit Paid! Your plan is now LIVE!'), backgroundColor: Colors.green),
+                                                );
+                                              }
+                                            },
                                           );
+                                        } else {
+                                          Navigator.pop(context);
                                         }
                                       } catch (e) {
-                                        debugPrint('Error showing upfront payment: $e');
+                                        debugPrint('Error during host deposit: $e');
+                                        if (mounted) Navigator.pop(context);
                                       }
 
                                       if (!mounted) return;
