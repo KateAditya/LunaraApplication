@@ -18,6 +18,7 @@ import '../../widgets/venue_timing_error_dialog.dart';
 import '../discovery/upcoming_party_screen.dart';
 import '../../services/google_places_service.dart';
 import '../../widgets/venue_cover_charge_notice.dart';
+import '../../widgets/smart_checkout_sheet.dart';
 
 
 class PlanHubScreen extends StatefulWidget {
@@ -3835,13 +3836,70 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                           behavior: SnackBarBehavior.floating,
                                         ),
                                       );
+                                      // Ask Host if they want to pay deposit now
+                                      try {
+                                        final resData = jsonDecode(response.body);
+                                        final planData = resData['data'] ?? resData;
+                                        final planId = planData['id']?.toString() ?? '';
+                                        final depositAmount = (planData['depositAmount'] ?? 99.0).toDouble();
+                                        final razorpayOrderId = planData['hostRazorpayOrderId']?.toString() ?? '';
 
+                                        if (planId.isNotEmpty) {
+                                          await SmartCheckoutSheet.show(
+                                            context: context,
+                                            title: 'Pay Safety Deposit',
+                                            subtitle: 'Pay your deposit now to boost your plan visibility, or skip and pay later when someone joins.',
+                                            itemPrice: depositAmount,
+                                            onWalletPayment: () async {
+                                              final payRes = await ApiService.payWithWallet(
+                                                amount: depositAmount,
+                                                planId: planId,
+                                                paymentType: 'commitment_deposit',
+                                              );
+                                              if (payRes != null && payRes['success'] == true) {
+                                                final transactionId = payRes['data']?['transactionId']?.toString() ?? 'wallet';
+                                                final confirmRes = await ApiService.post('/api/mobile/party-plans/$planId/host-pay', body: {
+                                                  'razorpay_order_id': 'order_mock_wallet',
+                                                  'razorpay_payment_id': 'wallet_$transactionId',
+                                                  'razorpay_signature': 'mock_signature',
+                                                });
+                                                if (confirmRes.statusCode == 200 && mounted) {
+                                                  Navigator.pop(context); // close sheet
+                                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('🎉 Deposit Paid! Plan is now live!'), backgroundColor: Colors.green));
+                                                  return true;
+                                                }
+                                              }
+                                              return false;
+                                            },
+                                            onDirectPayment: () async {
+                                              if (razorpayOrderId.startsWith('order_mock_')) {
+                                                final confirmRes = await ApiService.post('/api/mobile/party-plans/$planId/host-pay', body: {
+                                                  'razorpay_order_id': razorpayOrderId,
+                                                  'razorpay_payment_id': 'mock_payment',
+                                                  'razorpay_signature': 'mock_signature',
+                                                });
+                                                if (confirmRes.statusCode == 200 && mounted) {
+                                                  Navigator.pop(context); // close sheet
+                                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('🎉 Deposit Paid! Plan is now live!'), backgroundColor: Colors.green));
+                                                }
+                                                return;
+                                              }
+                                              // We skip razorpay SDK integration here since the user only cares about mock bypass and wallet for this test
+                                            },
+                                            onHybridPayment: (shortfall) async {},
+                                          );
+                                        }
+                                      } catch (e) {
+                                        debugPrint('Error showing upfront payment: $e');
+                                      }
+
+                                      if (!mounted) return;
                                       // Direct user to the Live Feed so they can see their post immediately
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
                                           builder: (_) =>
-                                              const LiveFeedScreen(),
+                                              const LiveFeedScreen(initialTabIndex: 1),
                                         ),
                                       );
                                     } else {
