@@ -83,9 +83,17 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
             // ── UserSubscriptions: expiration alert tracking ──────────────────
             await sequelize.query(`ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS expiration_alert_sent BOOLEAN NOT NULL DEFAULT FALSE;`);
 
-            // ── Users table: soft-delete & moderation columns ──────────────
+            // ── Users table: soft-delete, wallet & moderation columns ──────────────
             // These are referenced by the Sequelize User model but may be missing
             // on older production databases. ADD COLUMN IF NOT EXISTS is idempotent.
+            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);
+            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_secret VARCHAR(255);`);
+            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image_url VARCHAR(500);`);
+            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP WITH TIME ZONE;`);
+            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_online BOOLEAN NOT NULL DEFAULT FALSE;`);
+            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMP WITH TIME ZONE;`);
+            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS fcm_token VARCHAR(500);`);
+            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00;`);
             await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE;`);
             await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE;`);
             await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS deletion_reason TEXT;`);
