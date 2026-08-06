@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
 
@@ -13,6 +14,10 @@ class LunaraWalletScreen extends StatefulWidget {
 class _LunaraWalletScreenState extends State<LunaraWalletScreen>
     with SingleTickerProviderStateMixin {
   late TabController _filterTabController;
+  late Razorpay _razorpay;
+  String? _pendingOrderId;
+  double _pendingRechargeAmount = 0.0;
+
   bool _isLoading = true;
   bool _isRecharging = false;
 
@@ -30,6 +35,12 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
     _filterTabController.addListener(() {
       if (mounted) setState(() {});
     });
+
+    _razorpay = Razorpay();
+    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handleRazorpaySuccess);
+    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handleRazorpayError);
+    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
+
     _loadWalletData();
   }
 
@@ -37,6 +48,7 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
   void dispose() {
     _filterTabController.dispose();
     _customRechargeController.dispose();
+    _razorpay.clear();
     super.dispose();
   }
 
@@ -306,42 +318,102 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
     );
   }
 
-  Future<void> _executeRecharge(double amount) async {
+  void _handleRazorpaySuccess(PaymentSuccessResponse response) async {
     setState(() => _isRecharging = true);
-
     try {
-      final orderData = await ApiService.createWalletRechargeOrder(amount);
-      final simPaymentId = 'pay_sim_${DateTime.now().millisecondsSinceEpoch}';
       final success = await ApiService.verifyWalletRecharge(
-        amount: amount,
-        razorpayPaymentId: orderData?['id'] ?? simPaymentId,
-        razorpayOrderId: orderData?['id'],
+        amount: _pendingRechargeAmount,
+        razorpayPaymentId: response.paymentId ?? '',
+        razorpayOrderId: response.orderId ?? _pendingOrderId,
+        razorpaySignature: response.signature,
       );
 
       if (success) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Successfully recharged ₹${amount.toStringAsFixed(0)}! 💳'),
+              content: Text('Payment Verified! Recharged ₹${_pendingRechargeAmount.toStringAsFixed(0)} 💳'),
               backgroundColor: const Color(0xFF10B981),
             ),
           );
         }
         await _loadWalletData();
       } else {
-        throw Exception('Payment verification failed');
+        throw Exception('Payment verification failed on backend');
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Recharge failed: ${e.toString()}'),
+            content: Text('Verification Error: ${e.toString()}'),
             backgroundColor: Colors.redAccent,
           ),
         );
       }
     } finally {
       if (mounted) setState(() => _isRecharging = false);
+    }
+  }
+
+  void _handleRazorpayError(PaymentFailureResponse response) {
+    if (mounted) {
+      setState(() => _isRecharging = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Payment Cancelled / Failed: ${response.message ?? "User cancelled payment"}'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
+  }
+
+  void _handleExternalWallet(ExternalWalletResponse response) {
+    if (mounted) {
+      setState(() => _isRecharging = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('External Wallet selected: ${response.walletName}')),
+      );
+    }
+  }
+
+  Future<void> _executeRecharge(double amount) async {
+    setState(() => _isRecharging = true);
+    _pendingRechargeAmount = amount;
+
+    try {
+      final orderData = await ApiService.createWalletRechargeOrder(amount);
+      if (orderData == null) {
+        throw Exception('Failed to generate secure Razorpay order from server.');
+      }
+
+      final String orderId = orderData['orderId'] ?? orderData['id'] ?? '';
+      _pendingOrderId = orderId;
+
+      final options = {
+        'key': orderData['keyId'] ?? 'rzp_test_key',
+        'amount': (amount * 100).toInt(),
+        'name': 'Lunara Wallet',
+        'description': 'Smart Credit Wallet Recharge',
+        'order_id': orderId,
+        'prefill': {
+          'contact': orderData['userMobile'] ?? '',
+          'email': orderData['userEmail'] ?? '',
+        },
+        'theme': {'color': '#7F00FF'},
+      };
+
+      _razorpay.open(options);
+    } catch (e) {
+      debugPrint('Error launching Razorpay Gateway: $e');
+      if (mounted) {
+        setState(() => _isRecharging = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Recharge Gateway Error: ${e.toString()}'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
     }
   }
 
@@ -487,14 +559,14 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
   }
 
   Widget _buildMasterBalanceCard(double availableBalance, bool isFrozen) {
-    final double lifetimeRecharged = double.tryParse(
-          (_walletData['lifetimeRecharged'] ?? 0.0).toString(),
-        ) ??
-        0.0;
-    final double lifetimeSpent = double.tryParse(
-          (_walletData['lifetimeSpent'] ?? _summary['totalSpent'] ?? 0.0).toString(),
-        ) ??
-        0.0;
+    final double rawRecharged = double.tryParse((_walletData['lifetimeRecharged'] ?? 0.0).toString()) ?? 0.0;
+    final double summaryRecharged = double.tryParse((_summary['totalRecharged'] ?? 0.0).toString()) ?? 0.0;
+    final double lifetimeRecharged = rawRecharged > 0 ? rawRecharged : summaryRecharged;
+
+    final double rawSpent = double.tryParse((_walletData['lifetimeSpent'] ?? 0.0).toString()) ?? 0.0;
+    final double summarySpent = double.tryParse((_summary['totalSpent'] ?? 0.0).toString()) ?? 0.0;
+    final double lifetimeSpent = rawSpent > 0 ? rawSpent : summarySpent;
+
     final double rewardCredits = double.tryParse(
           (_walletData['rewardBalance'] ?? _walletData['lifetimeRewards'] ?? 0.0).toString(),
         ) ??

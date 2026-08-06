@@ -793,6 +793,15 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
             limit: 50,
         });
 
+        const { WalletTransactionType, WalletTransactionStatus } = await import('../models/WalletTransaction');
+        const totalRechargedFromTxns = smartTransactions
+            .filter(t => t.transactionType === WalletTransactionType.RECHARGE && t.status === WalletTransactionStatus.SUCCESS)
+            .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+
+        const calculatedLifetimeRecharged = Math.max(Number(smartWallet.lifetimeRecharged || 0), totalRechargedFromTxns);
+        const calculatedLifetimeSpent = Math.max(Number(smartWallet.lifetimeSpent || 0), totalSpent);
+        const calculatedLifetimeRefunds = Math.max(Number(smartWallet.lifetimeRefunds || 0), totalRefunded);
+
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
         res.json({
             success: true,
@@ -800,19 +809,19 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
                 wallet: {
                     id: smartWallet.id,
                     userId: smartWallet.userId,
-                    availableBalance: smartWallet.totalAvailableBalance,
-                    balance: smartWallet.balance,
-                    lockedBalance: smartWallet.lockedBalance,
-                    pendingBalance: smartWallet.pendingBalance,
-                    promotionalBalance: smartWallet.promotionalBalance,
-                    cashbackBalance: smartWallet.cashbackBalance,
-                    rewardBalance: smartWallet.rewardBalance,
-                    lifetimeRecharged: smartWallet.lifetimeRecharged,
-                    lifetimeSpent: smartWallet.lifetimeSpent,
-                    lifetimePromotional: smartWallet.lifetimePromotional,
-                    lifetimeCashback: smartWallet.lifetimeCashback,
-                    lifetimeRewards: smartWallet.lifetimeRewards,
-                    lifetimeRefunds: smartWallet.lifetimeRefunds,
+                    availableBalance: Number(smartWallet.totalAvailableBalance || smartWallet.balance || 0),
+                    balance: Number(smartWallet.balance || 0),
+                    lockedBalance: Number(smartWallet.lockedBalance || 0),
+                    pendingBalance: Number(smartWallet.pendingBalance || 0),
+                    promotionalBalance: Number(smartWallet.promotionalBalance || 0),
+                    cashbackBalance: Number(smartWallet.cashbackBalance || 0),
+                    rewardBalance: Number(smartWallet.rewardBalance || 0),
+                    lifetimeRecharged: Math.round(calculatedLifetimeRecharged * 100) / 100,
+                    lifetimeSpent: Math.round(calculatedLifetimeSpent * 100) / 100,
+                    lifetimePromotional: Number(smartWallet.lifetimePromotional || 0),
+                    lifetimeCashback: Number(smartWallet.lifetimeCashback || 0),
+                    lifetimeRewards: Number(smartWallet.lifetimeRewards || 0),
+                    lifetimeRefunds: Math.round(calculatedLifetimeRefunds * 100) / 100,
                     isFrozen: smartWallet.isFrozen,
                     frozenReason: smartWallet.frozenReason,
                 },
@@ -827,9 +836,10 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
                 smartTransactions,
                 summary: {
                     totalIncompleteEvents: incompleteEvents.length,
-                    totalTransactions: allTransactions.length,
-                    totalSpent: Math.round(totalSpent * 100) / 100,
-                    totalRefunded: Math.round(totalRefunded * 100) / 100,
+                    totalTransactions: allTransactions.length + smartTransactions.length,
+                    totalRecharged: Math.round(calculatedLifetimeRecharged * 100) / 100,
+                    totalSpent: Math.round(calculatedLifetimeSpent * 100) / 100,
+                    totalRefunded: Math.round(calculatedLifetimeRefunds * 100) / 100,
                     totalSubscriptionSpent: Math.round(totalSubscriptionSpent * 100) / 100,
                 },
             },

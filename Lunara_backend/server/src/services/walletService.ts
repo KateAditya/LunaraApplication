@@ -205,6 +205,25 @@ export class WalletService {
                 throw new Error(`Cannot recharge. Wallet is frozen: ${wallet.frozenReason || 'Suspended'}`);
             }
 
+            // Cumulative daily recharge limit validation
+            const startOfDay = new Date();
+            startOfDay.setHours(0, 0, 0, 0);
+
+            const Op = (await import('sequelize')).Op;
+            const dailyRecharges = (await WalletTransaction.sum('amount', {
+                where: {
+                    userId,
+                    transactionType: WalletTransactionType.RECHARGE,
+                    status: WalletTransactionStatus.SUCCESS,
+                    createdAt: { [Op.gte]: startOfDay },
+                },
+                transaction: t,
+            })) || 0;
+
+            if (Number(dailyRecharges) + amount > Number(config.dailyRechargeLimit)) {
+                throw new Error(`Daily wallet recharge limit of ₹${config.dailyRechargeLimit} exceeded. Current today: ₹${dailyRecharges}`);
+            }
+
             const openingBal = wallet.totalAvailableBalance;
             const newMainBal = Number(wallet.balance) + amount;
             const newLifetimeRecharged = Number(wallet.lifetimeRecharged) + amount;
