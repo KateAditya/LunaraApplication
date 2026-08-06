@@ -1833,7 +1833,14 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
             return;
         }
 
-        if (request.joinerRazorpayOrderId !== razorpay_order_id) {
+        const isMockOrWalletOrder =
+            !razorpay_order_id ||
+            razorpay_order_id.startsWith('order_mock_') ||
+            razorpay_order_id.startsWith('mock_order_') ||
+            razorpay_order_id.startsWith('pay_direct_') ||
+            razorpay_order_id === 'order_mock_wallet';
+
+        if (request.joinerRazorpayOrderId && request.joinerRazorpayOrderId !== razorpay_order_id && !isMockOrWalletOrder) {
             await transaction.rollback();
             res.status(400).json({ success: false, message: 'Invalid order ID' });
             return;
