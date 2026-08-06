@@ -50,25 +50,59 @@ export class NotificationService {
                 resolvedImageUrl = actorUser?.profileImageUrl || undefined;
             }
 
-            // 3. Persist Notification in Database
-            const notification = await Notification.create({
-                recipientUserId,
-                actorUserId,
-                eventType: String(eventType),
-                category,
-                entityType,
-                entityId,
-                title,
-                body,
-                imageUrl: resolvedImageUrl,
-                actionType,
-                deepLink,
-                priority,
-                idempotencyKey,
-                metadata,
-                expiresAt,
-                isRead: false,
-            });
+            // 3. Persist / In-Place Upsert Notification in Database
+            let notification: Notification | null = null;
+
+            const isPartyPlanRequest = entityType === 'party_plan_request' || entityType === 'PartyPlanRequest' || (metadata && (metadata.partyPlanId || metadata.requestId));
+            const targetEntityId = entityId || (metadata ? (metadata.requestId || metadata.partyPlanId) : undefined);
+
+            if (isPartyPlanRequest && targetEntityId) {
+                const existing = await Notification.findOne({
+                    where: {
+                        recipientUserId,
+                        entityId: String(targetEntityId),
+                    },
+                });
+
+                if (existing) {
+                    await existing.update({
+                        actorUserId: actorUserId || existing.actorUserId,
+                        eventType: String(eventType),
+                        category: category || existing.category,
+                        title,
+                        body,
+                        imageUrl: resolvedImageUrl || existing.imageUrl,
+                        actionType: actionType || existing.actionType,
+                        deepLink: deepLink || existing.deepLink,
+                        priority: priority || existing.priority,
+                        metadata: { ...(existing.metadata || {}), ...metadata },
+                        isRead: false,
+                        updatedAt: new Date(),
+                    });
+                    notification = existing;
+                }
+            }
+
+            if (!notification) {
+                notification = await Notification.create({
+                    recipientUserId,
+                    actorUserId,
+                    eventType: String(eventType),
+                    category,
+                    entityType,
+                    entityId,
+                    title,
+                    body,
+                    imageUrl: resolvedImageUrl,
+                    actionType,
+                    deepLink,
+                    priority,
+                    idempotencyKey,
+                    metadata,
+                    expiresAt,
+                    isRead: false,
+                });
+            }
 
             // 4. Dispatch Asynchronous Socket.io Event (Non-blocking)
             setImmediate(async () => {

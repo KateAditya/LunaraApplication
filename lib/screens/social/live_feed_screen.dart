@@ -311,21 +311,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   Future<void> markAllNotificationsAsRead() async {
-    // 1. Collect all current feed item IDs before clearing
-    final feedItemIds = _feedItems
-        .map((item) => item['id']?.toString() ?? '')
-        .where((id) => id.isNotEmpty)
-        .toList();
-
-    // 2. Mark all server-side notifications as read (clears localReadNotificationIds)
-    await ApiService.clearAllNotifications();
-
-    // 3. Mark all feed items (party plan / stranger meet requests) as locally read
-    //    by adding them to localReadRequestIds — this makes totalUnreadCount = 0.
-    for (final id in feedItemIds) {
-      ApiService.localReadRequestIds.add(id);
+    final allItems = _buildUnifiedTimeline();
+    for (final item in allItems) {
+      final rawId = item.rawData['id']?.toString() ?? item.id.replaceAll(RegExp(r'^(gp_|pp_|sm_)'), '');
+      if (rawId.isNotEmpty) {
+        ApiService.localReadRequestIds.add(rawId);
+        ApiService.localReadRequestIds.add(item.id);
+      }
     }
     await ApiService.saveLocalReadRequestIds();
+    await ApiService.clearAllNotifications();
 
     if (mounted) {
       setState(() {
@@ -333,7 +328,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             .map((n) => {...n, 'read': true, 'isRead': true})
             .toList();
       });
-      // Notify dashboard so heart dot + bell badge clear immediately
       widget.onCountChanged?.call();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -569,7 +563,25 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
   }
 
+  void _markItemAsRead(UnifiedNotificationItem item) {
+    final rawId = item.rawData['id']?.toString() ?? item.id.replaceAll(RegExp(r'^(gp_|pp_|sm_)'), '');
+    if (rawId.isNotEmpty) {
+      ApiService.localReadRequestIds.add(rawId);
+      ApiService.localReadRequestIds.add(item.id);
+      ApiService.saveLocalReadRequestIds();
+    }
+    final notifId = item.rawData['id']?.toString();
+    if (notifId != null && notifId.isNotEmpty) {
+      ApiService.patch('/api/mobile/user/notifications/$notifId/read', body: {});
+    }
+    if (mounted) {
+      setState(() {});
+      widget.onCountChanged?.call();
+    }
+  }
+
   void _onCardTap(UnifiedNotificationItem item) {
+    _markItemAsRead(item);
     final status = (item.rawData['status'] ?? item.rawData['paymentStatus'] ?? '').toString().toLowerCase();
     final category = item.category.toLowerCase();
 

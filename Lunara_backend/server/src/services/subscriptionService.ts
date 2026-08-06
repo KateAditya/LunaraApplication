@@ -133,7 +133,7 @@ export class SubscriptionService {
             }
         } else {
             // Seed programmatical defaults for free/unsubscribed users
-            features.set('daily_likes', { enabled: true, value: 7 });
+            features.set('daily_likes', { enabled: true, value: 3 });
             features.set('daily_match_requests', { enabled: true, value: 3 });
             features.set('daily_posts', { enabled: true, value: 5 });
             features.set('daily_backtracks', { enabled: true, value: 3 });

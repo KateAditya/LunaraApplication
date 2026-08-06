@@ -343,7 +343,37 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
   // ── Tab & Category Filter Logic ──────────────────────────────────────────────
   List<dynamic> get _filteredNotifications {
-    var list = _notifications;
+    var rawList = _notifications;
+
+    // Deduplicate Party Plan Request notifications so ONLY 1 card per request is shown
+    final Map<String, dynamic> partyPlanMap = {};
+    final List<dynamic> deduplicatedList = [];
+
+    for (final item in rawList) {
+      if (item is! Map) {
+        deduplicatedList.add(item);
+        continue;
+      }
+      final data = item['data'] is Map ? item['data'] : (item['metadata'] is Map ? item['metadata'] : {});
+      final entityType = (item['entityType'] ?? data['type'] ?? item['eventType'] ?? '').toString();
+      final title = (item['title'] ?? '').toString().toLowerCase();
+      final body = (item['body'] ?? '').toString().toLowerCase();
+
+      final requestId = data['requestId']?.toString() ?? data['partyPlanId']?.toString() ?? item['entityId']?.toString();
+      final isPartyPlan = entityType.contains('party_plan') || title.contains('party plan') || body.contains('party plan');
+
+      if (isPartyPlan && requestId != null && requestId.isNotEmpty) {
+        final key = 'party_plan_$requestId';
+        if (!partyPlanMap.containsKey(key)) {
+          partyPlanMap[key] = item;
+          deduplicatedList.add(item);
+        }
+      } else {
+        deduplicatedList.add(item);
+      }
+    }
+
+    var list = deduplicatedList;
 
     // 1. Primary Navigation Tab Filter
     if (_selectedPrimaryTab == 1) {

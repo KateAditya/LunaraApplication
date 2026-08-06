@@ -1618,7 +1618,7 @@ export const getSwipeStatus = async (req: Request, res: Response): Promise<Respo
         });
 
         // Get subscription limits
-        let dailyLikesLimit = 7;
+        let dailyLikesLimit = 3;
         let superlikesRemaining = 0;
         let superlikesPerCycle = 0;
 
@@ -1639,7 +1639,7 @@ export const getSwipeStatus = async (req: Request, res: Response): Promise<Respo
             if (activeSub) {
                 const pkg = (activeSub as any).package;
                 if (pkg) {
-                    dailyLikesLimit = pkg.dailyLikes === -1 ? 999999 : (pkg.dailyLikes || 7);
+                    dailyLikesLimit = pkg.dailyLikes === -1 ? 999999 : (pkg.dailyLikes || 3);
                 }
                 superlikesRemaining = activeSub.superlikesRemaining || 0;
                 superlikesPerCycle = (activeSub as any).package?.superlikesPerCycle || 0;

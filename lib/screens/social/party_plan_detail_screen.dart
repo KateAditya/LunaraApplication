@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../../widgets/lunara_profile_image.dart';
+import '../../widgets/smart_checkout_sheet.dart';
 
 class PartyPlanDetailScreen extends StatefulWidget {
   final Map<String, dynamic> plan;
@@ -17,6 +18,8 @@ class PartyPlanDetailScreen extends StatefulWidget {
 class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   bool _isJoining = false;
   bool _alreadyRequested = false;
+  String? _requestStatus;
+  String? _activeRequestId;
   String? _fetchedVenueImageUrl;
   Map<String, dynamic>? _cancellationRequest;
   bool _isWindowClosed = false;
@@ -627,7 +630,11 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         plan['imageUrl'] ??
         plan['image'];
 
-    return ApiService.formatImageUrl(raw);
+    final formatted = ApiService.formatImageUrl(raw);
+    if (formatted != null && formatted.isNotEmpty) {
+      return formatted;
+    }
+    return 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=1200&auto=format&fit=crop&q=80';
   }
 
   Future<void> _checkRequestStatus() async {
@@ -637,21 +644,91 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       if (targetPlanId.isEmpty) return;
       
       bool requested = false;
+      String? reqStatus;
+      String? reqId;
+
       for (final req in myRequests) {
-        final planId = req['partyPlanId']?.toString() ?? req['planId']?.toString();
+        final planId = req['partyPlanId']?.toString() ?? req['planId']?.toString() ?? req['plan']?['id']?.toString();
         if (planId == targetPlanId) {
           requested = true;
+          reqId = req['id']?.toString();
+          reqStatus = (req['status'] ?? req['joinerPaymentStatus'] ?? 'pending').toString().toLowerCase();
           break;
         }
       }
       if (mounted) {
         setState(() {
           _alreadyRequested = requested;
+          _activeRequestId = reqId;
+          _requestStatus = reqStatus;
         });
       }
     } catch (e) {
       debugPrint('Error checking request status in PartyPlanDetailScreen: $e');
     }
+  }
+
+  void _openDepositPaymentSheet() {
+    final reqId = _activeRequestId;
+    if (reqId == null || reqId.isEmpty) return;
+
+    final venue = widget.plan['venue'] as Map<String, dynamic>? ?? {};
+    final venueName = venue['name'] as String? ?? 'Venue';
+
+    SmartCheckoutSheet.show(
+      context: context,
+      title: 'Party Plan Safety Deposit',
+      subtitle: 'Safety commitment deposit for Party Plan at $venueName',
+      itemPrice: 499.0,
+      onWalletPayment: () async {
+        final res = await ApiService.post('/api/mobile/party-plans/requests/$reqId/confirm-self-paid', body: {});
+        if (res.statusCode == 200 && mounted) {
+          setState(() {
+            _requestStatus = 'confirmed';
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          return true;
+        }
+        return false;
+      },
+      onDirectPayment: () async {
+        final res = await ApiService.post('/api/mobile/party-plans/requests/$reqId/joiner-pay', body: {
+          'razorpay_order_id': 'mock_order_$reqId',
+          'razorpay_payment_id': 'pay_direct_$reqId',
+          'razorpay_signature': 'mock_signature',
+        });
+        if (res.statusCode == 200 && mounted) {
+          setState(() {
+            _requestStatus = 'confirmed';
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      },
+      onHybridPayment: (shortfall) async {
+        final res = await ApiService.post('/api/mobile/party-plans/requests/$reqId/confirm-self-paid', body: {});
+        if (res.statusCode == 200 && mounted) {
+          setState(() {
+            _requestStatus = 'confirmed';
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      },
+    );
   }
 
   String _formatDateTime(dynamic raw) {
@@ -816,19 +893,60 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     );
   }
 
+  Map<String, dynamic> _extractHost(Map<String, dynamic> plan) {
+    if (plan['host'] is Map && (plan['host'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(plan['host']);
+    }
+    if (plan['user'] is Map && (plan['user'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(plan['user']);
+    }
+    if (plan['creator'] is Map && (plan['creator'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(plan['creator']);
+    }
+    final name = plan['hostName'] ?? plan['userName'] ?? (plan['hostFirstName'] != null ? '${plan['hostFirstName']} ${plan['hostLastName'] ?? ''}'.trim() : null);
+    final photo = plan['hostProfilePhotoUrl'] ?? plan['hostPhotoUrl'] ?? plan['profileImageUrl'] ?? plan['userPhotoUrl'];
+    return {
+      'id': plan['userId'] ?? plan['hostId'],
+      'name': name ?? 'Party Host',
+      'firstName': plan['hostFirstName'] ?? name,
+      'lastName': plan['hostLastName'],
+      'profilePhotoUrl': photo,
+      'profileImageUrl': photo,
+      'bio': plan['hostBio'],
+      'occupation': plan['hostOccupation'],
+      'age': plan['hostAge'],
+    };
+  }
+
+  String _extractHostName(Map<String, dynamic> host, Map<String, dynamic> plan) {
+    final name = host['name'] ?? host['fullName'];
+    if (name != null && name.toString().trim().isNotEmpty && name.toString().trim() != 'Unknown') {
+      return name.toString().trim();
+    }
+    final fn = host['firstName'] ?? plan['hostFirstName'];
+    final ln = host['lastName'] ?? plan['hostLastName'];
+    if (fn != null && fn.toString().trim().isNotEmpty) {
+      return '$fn ${ln ?? ''}'.trim();
+    }
+    if (plan['hostName'] != null && plan['hostName'].toString().isNotEmpty && plan['hostName'].toString() != 'Unknown') {
+      return plan['hostName'].toString();
+    }
+    return 'Party Host';
+  }
+
   @override
   Widget build(BuildContext context) {
     final plan = widget.plan;
-    final host = plan['host'] as Map<String, dynamic>? ?? {};
+    final host = _extractHost(plan);
     final venue = plan['venue'] as Map<String, dynamic>? ?? {};
 
     final isMyPost =
-        host['id']?.toString() == ApiService.currentUserId;
+        host['id']?.toString() == ApiService.currentUserId || plan['userId']?.toString() == ApiService.currentUserId;
 
-    final hostName = host['name'] as String? ?? 'Unknown';
-    final hostAge = host['age'];
-    final hostOccupation = host['occupation'] as String? ?? '';
-    final hostBio = host['bio'] as String? ?? '';
+    final hostName = _extractHostName(host, plan);
+    final hostAge = host['age'] ?? plan['hostAge'];
+    final hostOccupation = host['occupation'] as String? ?? plan['hostOccupation'] as String? ?? '';
+    final hostBio = host['bio'] as String? ?? plan['hostBio'] as String? ?? '';
 
     final venueName = venue['name'] as String? ?? 'Venue';
     final venueAddress =
@@ -894,7 +1012,10 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                     Image.network(
                       venueImageUrl,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                      errorBuilder: (_, _, _) => Image.network(
+                        'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=1200&auto=format&fit=crop&q=80',
+                        fit: BoxFit.cover,
+                      ),
                     ),
                   // Dark overlay gradient for contrast
                   Container(
@@ -1116,86 +1237,34 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
           : SafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                child: _alreadyRequested
-                    ? Container(
-                        height: 58,
-                        decoration: BoxDecoration(
-                          color: Colors.green.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(
-                            color: Colors.green.withValues(alpha: 0.4),
-                          ),
-                        ),
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(Icons.check_circle_rounded,
-                                    color: Colors.green),
-                                const SizedBox(width: 10),
-                                Text(
-                                  'REQUEST SENT — AWAITING HOST APPROVAL',
-                                  style: const TextStyle(
-                                    color: Colors.green,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      )
-                    : GestureDetector(
-                        onTap: (_isJoining || _alreadyRequested)
-                            ? null
-                            : _sendJoinRequest,
+                child: (_alreadyRequested && (_requestStatus == 'accepted' || _requestStatus == 'payment_pending'))
+                    ? GestureDetector(
+                        onTap: _openDepositPaymentSheet,
                         child: Container(
                           height: 58,
                           decoration: BoxDecoration(
-                            gradient: _isJoining
-                                ? null
-                                : LunaraTheme.purpleGradient,
-                            color: _isJoining
-                                ? Colors.grey.withValues(alpha: 0.3)
-                                : null,
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF00C853), Color(0xFF69F0AE)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
                             borderRadius: BorderRadius.circular(18),
-                            boxShadow: _isJoining
-                                ? null
-                                : [
-                                    BoxShadow(
-                                      color: LunaraTheme.electricViolet
-                                          .withValues(alpha: 0.4),
-                                      blurRadius: 20,
-                                      offset: const Offset(0, 10),
-                                    ),
-                                  ],
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF00C853).withValues(alpha: 0.4),
+                                blurRadius: 20,
+                                offset: const Offset(0, 10),
+                              ),
+                            ],
                           ),
-                          child: Row(
+                          child: const Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              if (_isJoining)
-                                const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              else
-                                const Icon(Icons.bolt_rounded,
-                                    color: Colors.white, size: 22),
-                              const SizedBox(width: 10),
+                              Icon(Icons.payment_rounded, color: Colors.white, size: 22),
+                              SizedBox(width: 10),
                               Text(
-                                _isJoining
-                                    ? 'SENDING REQUEST...'
-                                    : 'REQUEST TO JOIN THE VIBE',
-                                style: const TextStyle(
+                                'PAY SAFETY DEPOSIT (₹499)',
+                                style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 14,
                                   fontWeight: FontWeight.bold,
@@ -1205,7 +1274,109 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                             ],
                           ),
                         ),
-                      ),
+                      )
+                    : (_alreadyRequested && (_requestStatus == 'confirmed' || _requestStatus == 'paid'))
+                        ? Container(
+                            height: 58,
+                            decoration: BoxDecoration(
+                              gradient: LunaraTheme.purpleGradient,
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            child: const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 22),
+                                SizedBox(width: 10),
+                                Text(
+                                  'BOOKING CONFIRMED — OPEN CHAT 🎉',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : _alreadyRequested
+                            ? Container(
+                                height: 58,
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(
+                                    color: Colors.green.withValues(alpha: 0.4),
+                                  ),
+                                ),
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        const Icon(Icons.check_circle_rounded, color: Colors.green),
+                                        const SizedBox(width: 10),
+                                        const Text(
+                                          'REQUEST SENT — AWAITING HOST APPROVAL',
+                                          style: TextStyle(
+                                            color: Colors.green,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                            letterSpacing: 0.5,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : GestureDetector(
+                                onTap: (_isJoining || _alreadyRequested) ? null : _sendJoinRequest,
+                                child: Container(
+                                  height: 58,
+                                  decoration: BoxDecoration(
+                                    gradient: _isJoining ? null : LunaraTheme.purpleGradient,
+                                    color: _isJoining ? Colors.grey.withValues(alpha: 0.3) : null,
+                                    borderRadius: BorderRadius.circular(18),
+                                    boxShadow: _isJoining
+                                        ? null
+                                        : [
+                                            BoxShadow(
+                                              color: LunaraTheme.electricViolet.withValues(alpha: 0.4),
+                                              blurRadius: 20,
+                                              offset: const Offset(0, 10),
+                                            ),
+                                          ],
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      if (_isJoining)
+                                        const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      else
+                                        const Icon(Icons.bolt_rounded, color: Colors.white, size: 22),
+                                      const SizedBox(width: 10),
+                                      Text(
+                                        _isJoining ? 'SENDING REQUEST...' : 'REQUEST TO JOIN THE VIBE',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 1,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
               ),
             ),
     );

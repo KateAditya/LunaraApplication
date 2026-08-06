@@ -49,13 +49,19 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
   int _currentPhotoIndex = 0;
   bool _isBlocked = false;
   late User _currentUser;
+  String? _localSwipedAction;
 
   @override
   void initState() {
     super.initState();
     _currentUser = widget.user;
+    _localSwipedAction = widget.swipedAction ??
+        (widget.user.isSuperLiked
+            ? 'superlike'
+            : (widget.user.isLiked ? 'like' : null));
     if (!widget.isMe) {
       _checkBlockStatus();
+      _fetchLiveSwipeStatus();
     }
   }
 
@@ -64,7 +70,29 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
     super.didUpdateWidget(oldWidget);
     if (widget.user != oldWidget.user) {
       _currentUser = widget.user;
+      _localSwipedAction = widget.swipedAction ??
+          (widget.user.isSuperLiked
+              ? 'superlike'
+              : (widget.user.isLiked ? 'like' : null));
+      if (!widget.isMe) {
+        _fetchLiveSwipeStatus();
+      }
+    } else if (widget.swipedAction != oldWidget.swipedAction) {
+      _localSwipedAction = widget.swipedAction;
     }
+  }
+
+  Future<void> _fetchLiveSwipeStatus() async {
+    try {
+      final status = await ApiService.fetchSwipeStatus(_currentUser.id);
+      if (mounted) {
+        if (status['alreadySuperLiked'] == true) {
+          setState(() => _localSwipedAction = 'superlike');
+        } else if (status['alreadyLiked'] == true) {
+          setState(() => _localSwipedAction = 'like');
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> _refreshProfile() async {
@@ -883,8 +911,14 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
   Widget _buildActionButtons() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final isLiked = widget.swipedAction == 'like';
-    final isSuperLiked = widget.swipedAction == 'superlike';
+    final effectiveSwipedAction = _localSwipedAction ??
+        widget.swipedAction ??
+        (_currentUser.isSuperLiked
+            ? 'superlike'
+            : (_currentUser.isLiked ? 'like' : null));
+
+    final isLiked = effectiveSwipedAction == 'like';
+    final isSuperLiked = effectiveSwipedAction == 'superlike';
     final isActed = isLiked || isSuperLiked; // already acted on this profile
     final likeDisabled = widget.isLikeDisabled && !isActed;
     final superLikeDisabled = widget.isSuperLikeDisabled && !isSuperLiked;
@@ -1068,7 +1102,12 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                   ),
                   iconSize: isLiked ? 34 : 32,
                   // Only allow tap if not already liked/superliked AND not limit-hit
-                  onPressed: (isActed || likeDisabled) ? null : widget.onLike,
+                  onPressed: (isActed || likeDisabled)
+                      ? null
+                      : () {
+                          setState(() => _localSwipedAction = 'like');
+                          widget.onLike?.call();
+                        },
                 ),
               ),
               const SizedBox(height: 6),
@@ -1138,7 +1177,10 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                   ),
                   onPressed: (isSuperLiked || superLikeDisabled)
                       ? null
-                      : widget.onSuper,
+                      : () {
+                          setState(() => _localSwipedAction = 'superlike');
+                          widget.onSuper?.call();
+                        },
                 ),
               ),
               const SizedBox(height: 6),
