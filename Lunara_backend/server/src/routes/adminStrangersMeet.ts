@@ -6,6 +6,7 @@ import {
     approveRequest,
     rejectRequest,
     paySettlement,
+    approveSettlementPayout,
 } from '../controllers/strangersMeetController';
 
 const router = Router();
@@ -60,6 +61,20 @@ router.patch(
         validate,
     ],
     rejectRequest
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/admin/strangers-meet/:id/approve-settlement
+// Admin approves payout request (notifies user amount credited in 24 hours)
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch(
+    '/:id/approve-settlement',
+    [
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        body('settlementAmount').optional().isFloat({ gt: 0 }).withMessage('settlementAmount must be greater than 0'),
+        validate,
+    ],
+    approveSettlementPayout
 );
 
 // ─────────────────────────────────────────────────────────────────────────────

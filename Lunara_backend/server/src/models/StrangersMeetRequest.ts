@@ -34,7 +34,7 @@ export interface StrangersMeetRequestAttributes {
     razorpayOrderId?: string;
     razorpayPaymentId?: string;
     razorpaySignature?: string;
-    settlementStatus?: 'none' | 'requested' | 'paid';
+    settlementStatus?: 'none' | 'requested' | 'approved' | 'paid';
     bankDetails?: string;         // Legacy text field (kept for backward compat)
     // v2: Structured bank payment fields (collected at creation)
     bankName?: string;

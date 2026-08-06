@@ -53,7 +53,7 @@ interface SMRequest {
   drinkPreference?: string;
 }
 
-interface Counts { pending: number; approved: number; rejected: number; }
+interface Counts { pending: number; approved: number; rejected: number; payouts: number; }
 
 const BASE_URL = import.meta.env.VITE_API_URL || 
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
@@ -64,19 +64,20 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; border: string }
   pending: { bg: 'rgba(245, 158, 11, 0.12)', text: '#d97706', border: 'rgba(245,158,11,0.3)' },
   approved: { bg: 'rgba(16, 185, 129, 0.12)', text: '#059669', border: 'rgba(16,185,129,0.3)' },
   rejected: { bg: 'rgba(239, 68, 68, 0.12)', text: '#dc2626', border: 'rgba(239,68,68,0.3)' },
+  payouts: { bg: 'rgba(124, 58, 237, 0.12)', text: '#7c3aed', border: 'rgba(124,58,237,0.3)' },
 };
 
 export const StrangersMeet: React.FC = () => {
   const { accessToken } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+  const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'rejected' | 'payouts' | 'all'>('pending');
   const [requests, setRequests] = useState<SMRequest[]>([]);
-  const [counts, setCounts] = useState<Counts>({ pending: 0, approved: 0, rejected: 0 });
+  const [counts, setCounts] = useState<Counts>({ pending: 0, approved: 0, rejected: 0, payouts: 0 });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Modal state
   const [selected, setSelected] = useState<SMRequest | null>(null);
-  const [modalAction, setModalAction] = useState<'approve' | 'reject' | 'view' | 'settlement' | null>(null);
+  const [modalAction, setModalAction] = useState<'approve' | 'reject' | 'view' | 'settlement' | 'approvePayout' | null>(null);
   const [payAmount, setPayAmount] = useState('');
   const [chargesPerHead, setChargesPerHead] = useState('');
   const [adminNote, setAdminNote] = useState('');
@@ -385,6 +386,29 @@ export const StrangersMeet: React.FC = () => {
     }
   };
 
+  const handleApprovePayout = async () => {
+    if (!selected) return;
+    const amt = parseFloat(settlementAmt);
+    setSubmitting(true);
+    try {
+      const res = await fetch(`${BASE_URL}/api/admin/strangers-meet/${selected.id}/approve-settlement`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ settlementAmount: !isNaN(amt) && amt > 0 ? amt : undefined }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSuccessMsg('Payout Approved! Host notified: Amount will be credited within 24 hours ⏳');
+        fetchRequests();
+        setTimeout(closeModal, 2000);
+      } else {
+        alert(data.message || 'Failed to approve payout');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const fmt = (dt: string) =>
     new Date(dt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
@@ -392,7 +416,8 @@ export const StrangersMeet: React.FC = () => {
     { key: 'pending', label: 'Pending', count: counts.pending },
     { key: 'approved', label: 'Approved', count: counts.approved },
     { key: 'rejected', label: 'Rejected', count: counts.rejected },
-    { key: 'all', label: 'All', count: counts.pending + counts.approved + counts.rejected },
+    { key: 'payouts', label: '💳 Strangers Meet Payment & Payouts', count: counts.payouts || 0 },
+    { key: 'all', label: 'All', count: counts.pending + counts.approved + counts.rejected + (counts.payouts || 0) },
   ] as const;
 
   return (
@@ -672,9 +697,14 @@ export const StrangersMeet: React.FC = () => {
                     </button>
                   )}
                   {modalAction === 'settlement' && (
-                    <button onClick={handlePaySettlement} disabled={submitting || !settlementTxnId || !settlementAmt} style={{ padding: '0.6rem 1.5rem', borderRadius: 8, border: 'none', background: '#f59e0b', color: '#fff', cursor: 'pointer', fontWeight: 600, opacity: submitting ? 0.7 : 1 }}>
-                      {submitting ? 'Processing…' : '💰 Mark as Paid'}
-                    </button>
+                    <>
+                      <button onClick={handleApprovePayout} disabled={submitting} style={{ padding: '0.6rem 1.25rem', borderRadius: 8, border: 'none', background: '#7c3aed', color: '#fff', cursor: 'pointer', fontWeight: 600, opacity: submitting ? 0.7 : 1 }}>
+                        {submitting ? 'Approving…' : '⏳ Approve Payout (24h Credit)'}
+                      </button>
+                      <button onClick={handlePaySettlement} disabled={submitting || !settlementTxnId || !settlementAmt} style={{ padding: '0.6rem 1.5rem', borderRadius: 8, border: 'none', background: '#059669', color: '#fff', cursor: 'pointer', fontWeight: 600, opacity: submitting ? 0.7 : 1 }}>
+                        {submitting ? 'Processing…' : '💸 Mark Amount Paid'}
+                      </button>
+                    </>
                   )}
                 </div>
               </>

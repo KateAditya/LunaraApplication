@@ -1497,20 +1497,17 @@ export const handleJoinRequest = async (req: Request, res: Response): Promise<vo
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 // POST /api/mobile/strangers-meet/:id/settlement-request
 // Host submits bank/UPI details to request meetup earnings settlement
 // ─────────────────────────────────────────────────────────────────────────────
 export const submitSettlementRequest = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const { userId, bankDetails } = req.body;
+        const { userId, bankDetails, accountNumber, bankName, accountHolderName, ifscCode, upiId, mobileNumber } = req.body;
 
         if (!userId) {
             res.status(400).json({ success: false, message: 'userId is required' });
-            return;
-        }
-        if (!bankDetails?.trim()) {
-            res.status(400).json({ success: false, message: 'bankDetails is required (UPI ID or Bank Account Details)' });
             return;
         }
 
@@ -1525,26 +1522,50 @@ export const submitSettlementRequest = async (req: Request, res: Response): Prom
             return;
         }
 
-        // Ensure the event date has passed
-        const now = new Date();
-        const eventTime = new Date(request.eventDateTime);
-        if (now < eventTime) {
-            res.status(400).json({ success: false, message: 'Settlement can only be requested after the event date has passed' });
-            return;
-        }
+        const formattedBankDetails = [
+            bankDetails?.trim(),
+            upiId ? `UPI ID: ${upiId.trim()}` : null,
+            accountNumber ? `A/c: ${accountNumber.trim()} (${ifscCode?.trim() || ''})` : null,
+            mobileNumber ? `Mobile: ${mobileNumber.trim()}` : null,
+        ].filter(Boolean).join('\n');
 
         await request.update({
             settlementStatus: 'requested',
-            bankDetails: bankDetails.trim(),
+            bankDetails: formattedBankDetails || request.bankDetails || 'Submitted payout request',
+            accountNumber: accountNumber?.trim() || request.accountNumber,
+            bankName: bankName?.trim() || request.bankName,
+            accountHolderName: accountHolderName?.trim() || request.accountHolderName,
+            ifscCode: ifscCode?.trim() || request.ifscCode,
+            upiId: upiId?.trim() || request.upiId,
+            mobileNumber: mobileNumber?.trim() || request.mobileNumber,
         });
+
+        // Dispatch notification to host
+        try {
+            const { NotificationService } = require('../services/NotificationService');
+            await NotificationService.dispatch({
+                recipientUserId: request.userId,
+                title: '🎉 Party Done Successfully! Payout Request Sent',
+                body: `Your payout request for "${request.subject}" has been submitted to Admin. You will receive updates here!`,
+                category: 'stranger_meet',
+                entityType: 'strangers_meet',
+                entityId: request.id,
+                metadata: { requestId: request.id, settlementStatus: 'requested' }
+            });
+        } catch (notifErr: any) {
+            logger.warn('Failed to dispatch settlement requested notification: ' + notifErr.message);
+        }
 
         res.json({
             success: true,
-            message: 'Settlement requested successfully! Admin has been notified. ⏳',
+            message: 'Party Done Successfully! Settlement payout requested. Admin has been notified. ⏳',
             data: {
                 id: request.id,
                 settlementStatus: 'requested',
                 bankDetails: request.bankDetails,
+                accountNumber: request.accountNumber,
+                upiId: request.upiId,
+                ifscCode: request.ifscCode,
             }
         });
     } catch (err: any) {
@@ -1554,8 +1575,57 @@ export const submitSettlementRequest = async (req: Request, res: Response): Prom
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/admin/strangers-meet/:id/approve-settlement
+// Admin approves payout request (notifies user amount credited within 24 hours)
+// ─────────────────────────────────────────────────────────────────────────────
+export const approveSettlementPayout = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { settlementAmount } = req.body;
+
+        const request = await StrangersMeetRequest.findByPk(id);
+        if (!request) {
+            res.status(404).json({ success: false, message: 'Request not found' });
+            return;
+        }
+
+        const amt = settlementAmount ? Number(settlementAmount) : (request.settlementAmount || 0);
+
+        await request.update({
+            settlementStatus: 'approved',
+            settlementAmount: amt > 0 ? amt : request.settlementAmount,
+        });
+
+        // Notify Host: amount will be credited within 24 hours
+        try {
+            const { NotificationService } = require('../services/NotificationService');
+            await NotificationService.dispatch({
+                recipientUserId: request.userId,
+                title: '⏳ Payout Approved — Credited within 24 Hours',
+                body: `Your Stranger Meet payout request of ₹${amt.toFixed(0)} for "${request.subject}" has been accepted by Admin! Your amount will be credited within 24 hours. ⏳`,
+                category: 'stranger_meet',
+                entityType: 'strangers_meet',
+                entityId: request.id,
+                metadata: { requestId: request.id, settlementStatus: 'approved', settlementAmount: amt }
+            });
+        } catch (notifErr: any) {
+            logger.warn('Failed to dispatch approve settlement notification: ' + notifErr.message);
+        }
+
+        res.json({
+            success: true,
+            message: 'Payout request approved! Notification sent to user (credited within 24h).',
+            data: request,
+        });
+    } catch (err: any) {
+        logger.error('approveSettlementPayout error:', err);
+        res.status(500).json({ success: false, message: 'Failed to approve payout request', error: err.message });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // POST /api/admin/strangers-meet/:id/pay-settlement
-// Admin records settlement payout details
+// Admin records settlement payout details and marks as PAID
 // ─────────────────────────────────────────────────────────────────────────────
 export const paySettlement = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -1590,22 +1660,25 @@ export const paySettlement = async (req: Request, res: Response): Promise<void> 
             settlementMethod: paymentMethod || 'Bank Transfer',
         });
 
-        // Send push notification to host
+        // Construct target account detail label
+        const targetAccountStr = request.upiId
+            ? `UPI ID: ${request.upiId}`
+            : (request.accountNumber ? `A/c: ${request.accountNumber} (${request.ifscCode || ''})` : `Mobile: ${request.mobileNumber}`);
+
+        // Dispatch Notification & FCM to Host
         try {
-            const creator = await User.findByPk(request.userId);
-            if (creator?.fcmToken) {
-                const { sendPushNotification } = require('../services/fcmService');
-                await sendPushNotification(creator.fcmToken, {
-                    title: '💰 Settlement Paid',
-                    body: `Your settlement of ₹${amount} for "${request.subject}" has been paid!`,
-                    data: {
-                        type: 'strangers_meet_settlement_paid',
-                        requestId: request.id,
-                    }
-                });
-            }
+            const { NotificationService } = require('../services/NotificationService');
+            await NotificationService.dispatch({
+                recipientUserId: request.userId,
+                title: '💰 Amount Paid by Admin!',
+                body: `Amount of ₹${Number(amount).toFixed(0)} for "${request.subject}" has been successfully paid by Admin to your ${targetAccountStr}! Txn ID: ${transactionId} 💸`,
+                category: 'stranger_meet',
+                entityType: 'strangers_meet',
+                entityId: request.id,
+                metadata: { requestId: request.id, settlementStatus: 'paid', transactionId, amount: Number(amount), targetAccountStr }
+            });
         } catch (notifErr: any) {
-            logger.warn('Failed to send settlement paid push notification: ' + notifErr.message);
+            logger.warn('Failed to dispatch settlement paid notification: ' + notifErr.message);
         }
 
         res.json({
