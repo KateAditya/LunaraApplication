@@ -3,12 +3,14 @@ import sequelize from '../config/database';
 
 export enum PartyPlanRequestStatus {
     PENDING = 'pending',
+    WAITING = 'waiting',          // Put on hold while another user is accepted
     PAYMENT_PENDING = 'payment_pending',
     ACCEPTED = 'accepted',
     REJECTED = 'rejected',
     CANCELLED = 'cancelled',
     PAYMENT_FAILED = 'payment_failed',
 }
+
 
 export enum PartyPlanJoinerPaymentStatus {
     UNPAID = 'unpaid',

@@ -1,11 +1,11 @@
 import { Request, Response } from 'express';
 import Notification from '../models/Notification';
-import PartyPlanRequest, { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
 import StrangersMeetJoiner, { StrangersMeetJoinerStatus } from '../models/StrangersMeetJoiner';
 import User from '../models/User';
 import { NotificationService } from '../services/NotificationService';
 import { NightPartnerService } from '../services/NightPartnerService';
 import { logger } from '../config/logger';
+import { acceptPartyPlanRequest, rejectPartyPlanRequest } from './partyPlanController';
 
 export class NotificationActionController {
     /**
@@ -38,30 +38,41 @@ export class NotificationActionController {
             let actionResult: any = { status: 'ACTIONED', actionExecuted: action };
 
             // Handle domain entity specific actions
-            if (action === 'ACCEPT' || action === 'DECLINE') {
-                if (notification.entityType === 'PartyPlanRequest' && notification.entityId) {
-                    const reqItem = await PartyPlanRequest.findByPk(notification.entityId);
-                    if (reqItem) {
-                        reqItem.status = action === 'ACCEPT' ? PartyPlanRequestStatus.ACCEPTED : PartyPlanRequestStatus.REJECTED;
-                        await reqItem.save();
+            if (action === 'ACCEPT' || action === 'DECLINE' || action === 'REJECT') {
+                const isPartyPlanEntity = notification.entityType === 'PartyPlanRequest' || 
+                                          notification.entityType === 'party_plan_request' || 
+                                          notification.entityType === 'party_plan';
+                
+                if (isPartyPlanEntity) {
+                    const requestId = notification.metadata?.requestId || 
+                                     (notification.entityType === 'PartyPlanRequest' || notification.entityType === 'party_plan_request' ? notification.entityId : null);
 
-                        // Notify counterpart
-                        const targetUser = reqItem.requesterId;
-                        await NotificationService.dispatch({
-                            recipientUserId: targetUser,
-                            actorUserId: currentUserId,
-                            eventType: action === 'ACCEPT' ? 'PARTNER_REQUEST_ACCEPTED' : 'PARTNER_REQUEST_DECLINED',
-                            category: 'requests',
-                            entityType: 'PartyPlanRequest',
-                            entityId: reqItem.id,
-                            title: action === 'ACCEPT' ? '🟢 Request Accepted' : '🔴 Request Declined',
-                            body: action === 'ACCEPT'
-                                ? 'Your partner request has been accepted! Payment is required to confirm the booking.'
-                                : 'Your partner request was declined.',
-                            actionType: action === 'ACCEPT' ? 'PAY_AND_CONFIRM' : 'VIEW_EVENTS',
-                            deepLink: action === 'ACCEPT' ? `/party-plans/${reqItem.planId}/pay` : '/events',
-                            priority: 'HIGH',
-                        });
+                    if (action === 'ACCEPT' && requestId) {
+                        const mockReq: any = {
+                            params: { reqId: requestId },
+                            body: { userId: currentUserId },
+                        };
+                        let mockStatus = 200;
+                        let mockJsonPayload: any = null;
+                        const mockRes: any = {
+                            status: (code: number) => { mockStatus = code; return mockRes; },
+                            json: (data: any) => { mockJsonPayload = data; return mockRes; },
+                        };
+                        await acceptPartyPlanRequest(mockReq, mockRes);
+                        actionResult = { status: mockStatus === 200 ? 'ACTIONED' : 'FAILED', actionExecuted: action, response: mockJsonPayload };
+                    } else if ((action === 'DECLINE' || action === 'REJECT') && requestId) {
+                        const mockReq: any = {
+                            params: { reqId: requestId },
+                            body: { userId: currentUserId },
+                        };
+                        let mockStatus = 200;
+                        let mockJsonPayload: any = null;
+                        const mockRes: any = {
+                            status: (code: number) => { mockStatus = code; return mockRes; },
+                            json: (data: any) => { mockJsonPayload = data; return mockRes; },
+                        };
+                        await rejectPartyPlanRequest(mockReq, mockRes);
+                        actionResult = { status: mockStatus === 200 ? 'ACTIONED' : 'FAILED', actionExecuted: action, response: mockJsonPayload };
                     }
                 } else if ((notification.entityType === 'StrangersMeetRequest' || notification.entityType === 'StrangersMeetJoiner') && notification.entityId) {
                     const reqItem = await StrangersMeetJoiner.findByPk(notification.entityId);

@@ -312,10 +312,130 @@ export class VenueBookingService {
                     idempotencyKey: `venue_owner_verified_${booking.id}`,
                 }).catch(() => {});
             }
+
+            const enrichedCard = await VenueBookingService.enrichVenueBookingNotificationCard(booking.id, booking.userId);
+            const { io } = require('../server');
+            if (io && enrichedCard) {
+                io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
+                io.to(`user_${booking.userId}`).emit('venue_booking_status_update', { bookingId: booking.id, status: 'confirmed' });
+                io.to('live_feed').emit('live_feed_update', { type: 'venue_booking_activity', bookingId: booking.id, venueName, status: 'confirmed', timestamp: new Date().toISOString() });
+            }
+
+            try {
+                const AuditLog = (await import('../models/AuditLog')).default;
+                await AuditLog.logAction({
+                    userId: booking.userId,
+                    action: 'VENUE_BOOKING_CONFIRMED',
+                    bookingId: booking.id,
+                    metadata: { totalAmount: booking.totalAmount, venueName }
+                }).catch(() => {});
+            } catch (aErr) {}
         } catch (tErr) {
             logger.error(`[VenueBookingService] Ticket generation/notification error for Booking ${booking.id}:`, tErr);
         }
 
         return booking;
+    }
+
+    /**
+     * Consolidates all Venue Booking notifications into ONE single card per booking.
+     * Card ID: venue_booking_timeline_${bookingId}
+     */
+    public static async enrichVenueBookingNotificationCard(bookingId: string, _recipientUserId: string): Promise<any | null> {
+        try {
+            const bookingRecord = await Booking.findByPk(bookingId, {
+                include: [{ model: Venue, as: 'venue', attributes: ['name', 'address', 'city'] }]
+            });
+
+            if (!bookingRecord || bookingRecord.isLargePartyRequest || bookingRecord.isGroupBooking) {
+                return null;
+            }
+
+            const venueName = (bookingRecord as any)?.venue?.name || 'Venue';
+            const guestCount = bookingRecord.numberOfGuests;
+            const bookingDate = bookingRecord.bookingDate;
+
+            const isCreated = true;
+            const isRequested = true;
+            const isConfirmed = bookingRecord.status === BookingStatus.CONFIRMED || bookingRecord.paymentStatus === PaymentStatus.PAID;
+            const isPaid = bookingRecord.paymentStatus === PaymentStatus.PAID;
+            const isActive = isConfirmed && bookingRecord.status !== BookingStatus.CANCELLED;
+            const isCompleted = bookingRecord.status === BookingStatus.COMPLETED;
+            const isCancelled = bookingRecord.status === BookingStatus.CANCELLED;
+
+            const reminder2h = bookingRecord.reminder2hSent || false;
+            const reminder1h = bookingRecord.reminder1hSent || false;
+            const reminder30m = bookingRecord.reminder30mSent || false;
+
+            const timelineSteps = [
+                { id: 'created', label: 'Booking Created', completed: isCreated },
+                { id: 'requested', label: 'Booking Requested', completed: isRequested },
+                { id: 'confirmed', label: 'Booking Confirmed', completed: isConfirmed || isCompleted },
+                { id: 'payment_completed', label: 'Payment Completed', completed: isPaid || isCompleted },
+                { id: 'active', label: 'Booking Active', completed: isActive || isCompleted },
+                { id: 'reminder_2h', label: '2 Hour Reminder', completed: reminder2h || isCompleted },
+                { id: 'reminder_1h', label: '1 Hour Reminder', completed: reminder1h || isCompleted },
+                { id: 'reminder_30m', label: '30 Minute Reminder', completed: reminder30m || isCompleted },
+                { id: 'completed', label: 'Booking Completed', completed: isCompleted }
+            ];
+
+            const completedCount = timelineSteps.filter(s => s.completed).length;
+            const progressPercentage = Math.round((completedCount / timelineSteps.length) * 100);
+
+            let title = `Venue Booking at ${venueName} 🎟`;
+            let body = `Your reservation for ${guestCount} guests at ${venueName} is being processed.`;
+            let statusText = 'Booking Requested';
+
+            if (isCompleted) {
+                title = `Venue Booking Completed ✨`;
+                body = `Hope you enjoyed your experience at ${venueName}!`;
+                statusText = 'Completed';
+            } else if (isConfirmed) {
+                title = `Venue Booking Confirmed! 🎉`;
+                body = `Your table reservation for ${guestCount} guests at ${venueName} is fully confirmed. Your ticket is ready!`;
+                statusText = 'Confirmed';
+            } else if (isCancelled) {
+                title = `Venue Booking Cancelled ❌`;
+                body = `Your booking for ${venueName} was cancelled.`;
+                statusText = 'Cancelled';
+            }
+
+            const actionButtons = [];
+            if (!isPaid && !isCancelled) {
+                actionButtons.push({ id: 'pay_now', label: 'Pay Now', primary: true, action: 'PAY_NOW' });
+            }
+            if (isConfirmed) {
+                actionButtons.push({ id: 'view_ticket', label: 'View Ticket', primary: true, action: 'VIEW_TICKET' });
+            }
+            actionButtons.push({ id: 'view_details', label: 'View Details', primary: false, action: 'VIEW_DETAILS' });
+
+            const updatedIso = bookingRecord.updatedAt ? bookingRecord.updatedAt.toISOString() : new Date().toISOString();
+
+            return {
+                id: `venue_booking_timeline_${bookingId}`,
+                title,
+                body,
+                createdAt: updatedIso,
+                updatedAt: updatedIso,
+                read: false,
+                isRead: false,
+                category: 'bookings',
+                data: {
+                    type: 'venue_booking_timeline',
+                    bookingId,
+                    venueName,
+                    guestCount,
+                    bookingDate,
+                    statusText,
+                    timelineProgress: progressPercentage,
+                    currentStatusStep: isCompleted ? 9 : (isActive ? 5 : (isConfirmed ? 3 : 2)),
+                    timelineSteps,
+                    actionButtons
+                }
+            };
+        } catch (err) {
+            logger.error(`[VenueBookingService] enrichVenueBookingNotificationCard error for booking ${bookingId}:`, err);
+            return null;
+        }
     }
 }

@@ -260,6 +260,15 @@ export class GroupPartyService {
         });
 
         try {
+            const AuditLog = (await import('../models/AuditLog')).default;
+            await AuditLog.logAction({
+                userId: groupParty.userId,
+                action: 'GROUP_PARTY_PAYMENT_VERIFIED',
+                metadata: { razorpay_payment_id, razorpay_order_id, totalAmount: groupParty.totalAmount, partyId: groupParty.id }
+            }).catch(() => {});
+        } catch (aErr) {}
+
+        try {
             await generateTicketForGroupPartyHelper(groupParty.id);
         } catch (tErr) {
             logger.error(`[GroupPartyService] Ticket generation error for GP ${groupParty.id}:`, tErr);
@@ -413,21 +422,285 @@ export class GroupPartyService {
                 }
             }
 
-            // 4. Send Live Socket Event to Host
+            // 4. Send Live Socket Event to Host & Live Feed
             const { io } = require('../server');
             if (io) {
                 io.to(`user_${userId}`).emit('group_party_status_update', { partyId: entityId, eventType });
-                io.to(`user_${userId}`).emit('notification_created', {
-                    id: `gp_${entityId}_${Date.now()}`,
-                    title,
-                    body,
-                    createdAt: new Date().toISOString(),
-                    read: false,
-                    data: { type, entityId }
+                io.to(`user_${userId}`).emit('notification_updated', {
+                    id: `group_party_timeline_${entityId}`,
+                    partyId: entityId,
+                    eventType
+                });
+                io.to('live_feed').emit('live_feed_update', {
+                    type: 'group_party_activity',
+                    partyId: entityId,
+                    venueName,
+                    guestCount,
+                    eventType,
+                    timestamp: new Date().toISOString()
                 });
             }
         } catch (err) {
             logger.warn(`[GroupPartyService] Notification emit warning: ${err}`);
+        }
+    }
+
+    /**
+     * Consolidates all Group Party notifications into ONE single card per party.
+     * Card ID: group_party_timeline_${partyId}
+     */
+    public static async enrichGroupPartyNotificationCard(partyId: string, _recipientUserId: string): Promise<any | null> {
+        try {
+            let gp = await GroupParty.findByPk(partyId, {
+                include: [{ model: Venue, as: 'venue', attributes: ['name', 'address', 'city'] }]
+            });
+
+            let isLargeBooking = false;
+            let bookingRecord: any = null;
+
+            if (!gp) {
+                const Booking = (await import('../models/Booking')).default;
+                bookingRecord = await Booking.findByPk(partyId, {
+                    include: [{ model: Venue, as: 'venue', attributes: ['name', 'address', 'city'] }]
+                });
+                if (!bookingRecord || !bookingRecord.isLargePartyRequest) {
+                    return null;
+                }
+                isLargeBooking = true;
+            }
+
+            const venueName = isLargeBooking ? (bookingRecord.venue?.name || 'Venue') : ((gp as any)?.venue?.name || 'Venue');
+            const partyDate = isLargeBooking ? bookingRecord.bookingDate : gp?.partyDate;
+            const guestCount = isLargeBooking ? bookingRecord.numberOfGuests : gp?.numberOfFriends;
+            const isConfirmed = isLargeBooking 
+                ? (bookingRecord.status === 'confirmed' || bookingRecord.adminApprovalStatus === 'payment_done')
+                : (gp?.status === GroupPartyStatus.CONFIRMED && gp?.paymentStatus === GroupPartyPaymentStatus.PAID);
+            const isPending = isLargeBooking 
+                ? (bookingRecord.adminApprovalStatus === 'pending')
+                : (gp?.status === GroupPartyStatus.PENDING);
+            const isApproved = isLargeBooking 
+                ? (bookingRecord.adminApprovalStatus === 'approved')
+                : (gp?.status === GroupPartyStatus.APPROVED);
+            const isRejected = isLargeBooking 
+                ? (bookingRecord.adminApprovalStatus === 'rejected')
+                : (gp?.status === GroupPartyStatus.REJECTED);
+            const isCancelled = isLargeBooking 
+                ? (bookingRecord.status === 'cancelled')
+                : (gp?.status === GroupPartyStatus.CANCELLED);
+            const isCompleted = isLargeBooking
+                ? (bookingRecord.status === 'completed')
+                : (gp as any)?.status === 'completed';
+
+            const reminder2h = isLargeBooking ? false : (gp?.reminder2hSent || false);
+            const reminder1h = isLargeBooking ? false : (gp?.reminder1hSent || false);
+            const reminder30m = isLargeBooking ? false : (gp?.reminder30mSent || false);
+
+            const timelineSteps = [
+                { id: 'created', label: 'Group Party Created', completed: true },
+                { id: 'joined', label: 'Joined', completed: true },
+                { id: 'request_pending', label: 'Request Pending', completed: isPending || isApproved || isConfirmed || isCompleted },
+                { id: 'approved', label: 'Approved', completed: isApproved || isConfirmed || isCompleted },
+                { id: 'payment_confirmed', label: 'Payment Confirmed', completed: isConfirmed || isCompleted },
+                { id: 'chat_enabled', label: 'Chat Enabled', completed: isConfirmed || isCompleted },
+                { id: 'reminder_2h', label: '2 Hour Reminder', completed: reminder2h || isCompleted },
+                { id: 'reminder_1h', label: '1 Hour Reminder', completed: reminder1h || isCompleted },
+                { id: 'reminder_30m', label: '30 Minute Reminder', completed: reminder30m || isCompleted },
+                { id: 'completed', label: 'Group Party Completed', completed: isCompleted }
+            ];
+
+            const completedCount = timelineSteps.filter(s => s.completed).length;
+            const progressPercentage = Math.round((completedCount / timelineSteps.length) * 100);
+
+            let title = `Group Party at ${venueName} 🎉`;
+            let body = `Group party of ${guestCount} friends at ${venueName}.`;
+            let statusText = 'Group Party Initiated';
+
+            if (isConfirmed) {
+                title = `Group Party Confirmed! 🎉`;
+                body = `Your group party of ${guestCount} friends at ${venueName} is fully confirmed. Get ready!`;
+                statusText = 'Confirmed';
+            } else if (isApproved) {
+                title = `Group Party Approved! 💳`;
+                body = `Your request for ${guestCount} guests at ${venueName} is approved. Complete payment now.`;
+                statusText = 'Approved - Pending Payment';
+            } else if (isPending) {
+                title = `Group Party Request Pending ⏳`;
+                body = `Your party request at ${venueName} is pending admin/venue verification.`;
+                statusText = 'Pending Approval';
+            } else if (isRejected) {
+                title = `Group Party Rejected ❌`;
+                body = `Your party request at ${venueName} could not be approved.`;
+                statusText = 'Rejected';
+            } else if (isCancelled) {
+                title = `Group Party Cancelled ❌`;
+                body = `Your group party at ${venueName} was cancelled.`;
+                statusText = 'Cancelled';
+            } else if (isCompleted) {
+                title = `Group Party Completed ✨`;
+                body = `Hope you had an amazing night at ${venueName}!`;
+                statusText = 'Completed';
+            }
+
+            const actionButtons = [];
+            if (isApproved || (isPending && gp?.paymentStatus === GroupPartyPaymentStatus.PENDING)) {
+                actionButtons.push({ id: 'pay_now', label: 'Pay Now', primary: true, action: 'PAY_NOW' });
+            }
+            if (isConfirmed) {
+                actionButtons.push({ id: 'open_chat', label: 'Open Chat', primary: true, action: 'OPEN_CHAT' });
+                actionButtons.push({ id: 'view_ticket', label: 'View Ticket', primary: false, action: 'VIEW_TICKET' });
+            }
+            actionButtons.push({ id: 'view_details', label: 'View Details', primary: false, action: 'VIEW_DETAILS' });
+
+            const updatedIso = isLargeBooking 
+                ? (bookingRecord.updatedAt ? bookingRecord.updatedAt.toISOString() : new Date().toISOString())
+                : (gp?.updatedAt ? gp.updatedAt.toISOString() : new Date().toISOString());
+
+            return {
+                id: `group_party_timeline_${partyId}`,
+                title,
+                body,
+                createdAt: updatedIso,
+                updatedAt: updatedIso,
+                read: false,
+                isRead: false,
+                category: 'bookings',
+                data: {
+                    type: 'group_party_timeline',
+                    partyId,
+                    venueName,
+                    guestCount,
+                    partyDate,
+                    statusText,
+                    timelineProgress: progressPercentage,
+                    currentStatusStep: isCompleted ? 10 : (isConfirmed ? 6 : (isApproved ? 4 : 2)),
+                    timelineSteps,
+                    actionButtons
+                }
+            };
+        } catch (err) {
+            logger.error(`[GroupPartyService] enrichGroupPartyNotificationCard error for party ${partyId}:`, err);
+            return null;
+        }
+    }
+
+    /**
+     * Consolidates all Large Party notifications into ONE single card per party request.
+     * Card ID: large_party_timeline_${bookingId}
+     */
+    public static async enrichLargePartyNotificationCard(bookingId: string, _recipientUserId: string): Promise<any | null> {
+        try {
+            const Booking = (await import('../models/Booking')).default;
+            const Venue = (await import('../models/Venue')).default;
+            const bookingRecord = await Booking.findByPk(bookingId, {
+                include: [{ model: Venue, as: 'venue', attributes: ['name', 'address', 'city'] }]
+            });
+
+            if (!bookingRecord || !bookingRecord.isLargePartyRequest) {
+                return null;
+            }
+
+            const venueName = (bookingRecord as any)?.venue?.name || 'Venue';
+            const guestCount = bookingRecord.numberOfGuests;
+            const partyDate = bookingRecord.bookingDate;
+
+            const isPublished = true;
+            const isRequestSent = true;
+            const isApproved = bookingRecord.adminApprovalStatus === 'approved' ||
+                bookingRecord.adminApprovalStatus === 'payment_sent' ||
+                bookingRecord.adminApprovalStatus === 'payment_done';
+            const isPaymentPending = bookingRecord.adminApprovalStatus === 'payment_sent' && bookingRecord.paymentStatus !== 'paid';
+            const isPaymentConfirmed = bookingRecord.adminApprovalStatus === 'payment_done' ||
+                bookingRecord.status === 'confirmed' ||
+                bookingRecord.paymentStatus === 'paid';
+            const isChatEnabled = isPaymentConfirmed;
+            const isCompleted = bookingRecord.status === 'completed';
+            const isRejected = bookingRecord.adminApprovalStatus === 'rejected' || bookingRecord.status === 'cancelled';
+
+            const reminder2h = bookingRecord.reminder2hSent || false;
+            const reminder1h = bookingRecord.reminder1hSent || false;
+            const reminder30m = bookingRecord.reminder30mSent || false;
+
+            const timelineSteps = [
+                { id: 'published', label: 'Party Published', completed: isPublished },
+                { id: 'request_sent', label: 'Request Sent', completed: isRequestSent },
+                { id: 'approved', label: 'Approved', completed: isApproved || isPaymentConfirmed || isCompleted },
+                { id: 'payment_pending', label: 'Payment Pending', completed: isPaymentPending || isPaymentConfirmed || isCompleted },
+                { id: 'payment_confirmed', label: 'Payment Confirmed', completed: isPaymentConfirmed || isCompleted },
+                { id: 'chat_enabled', label: 'Chat Enabled', completed: isChatEnabled || isCompleted },
+                { id: 'reminder_2h', label: '2 Hour Reminder', completed: reminder2h || isCompleted },
+                { id: 'reminder_1h', label: '1 Hour Reminder', completed: reminder1h || isCompleted },
+                { id: 'reminder_30m', label: '30 Minute Reminder', completed: reminder30m || isCompleted },
+                { id: 'completed', label: 'Event Completed', completed: isCompleted }
+            ];
+
+            const completedCount = timelineSteps.filter(s => s.completed).length;
+            const progressPercentage = Math.round((completedCount / timelineSteps.length) * 100);
+
+            let title = `Large Party Request at ${venueName} 🚨`;
+            let body = `Your request for ${guestCount} guests at ${venueName} has been submitted for admin approval.`;
+            let statusText = 'Request Submitted';
+
+            if (isCompleted) {
+                title = `Large Party Completed ✨`;
+                body = `Hope you had an amazing night at ${venueName}!`;
+                statusText = 'Completed';
+            } else if (isPaymentConfirmed) {
+                title = `Large Party Confirmed! 🎉`;
+                body = `Your party of ${guestCount} guests at ${venueName} is fully confirmed. Enjoy your night!`;
+                statusText = 'Confirmed';
+            } else if (isPaymentPending) {
+                title = `Large Party Payment Link Received 💳`;
+                body = `Admin sent a payment link of ₹${bookingRecord.adminPaymentAmount || bookingRecord.totalAmount} for your party at ${venueName}. Complete payment now.`;
+                statusText = 'Payment Link Received';
+            } else if (isApproved) {
+                title = `Large Party Request Approved! 🎉`;
+                body = `Admin approved your request for ${guestCount} guests at ${venueName}. Payment link arriving shortly.`;
+                statusText = 'Approved - Awaiting Payment Link';
+            } else if (isRejected) {
+                title = `Large Party Request Rejected ❌`;
+                body = `Your request for ${guestCount} guests at ${venueName} could not be approved.`;
+                statusText = 'Rejected';
+            }
+
+            const actionButtons = [];
+            if (isPaymentPending) {
+                actionButtons.push({ id: 'pay_now', label: 'Pay Now', primary: true, action: 'PAY_NOW', paymentAmount: bookingRecord.adminPaymentAmount });
+            }
+            if (isPaymentConfirmed) {
+                actionButtons.push({ id: 'open_chat', label: 'Open Chat', primary: true, action: 'OPEN_CHAT' });
+                actionButtons.push({ id: 'view_ticket', label: 'View Ticket', primary: false, action: 'VIEW_TICKET' });
+            }
+            actionButtons.push({ id: 'view_details', label: 'View Details', primary: false, action: 'VIEW_DETAILS' });
+
+            const updatedIso = bookingRecord.updatedAt ? bookingRecord.updatedAt.toISOString() : new Date().toISOString();
+
+            return {
+                id: `large_party_timeline_${bookingId}`,
+                title,
+                body,
+                createdAt: updatedIso,
+                updatedAt: updatedIso,
+                read: false,
+                isRead: false,
+                category: 'bookings',
+                data: {
+                    type: 'large_party_timeline',
+                    bookingId,
+                    venueName,
+                    guestCount,
+                    partyDate,
+                    statusText,
+                    timelineProgress: progressPercentage,
+                    currentStatusStep: isCompleted ? 10 : (isPaymentConfirmed ? 6 : (isPaymentPending ? 4 : (isApproved ? 3 : 2))),
+                    timelineSteps,
+                    actionButtons,
+                    adminPaymentAmount: bookingRecord.adminPaymentAmount,
+                    adminPaymentLink: bookingRecord.adminPaymentLink
+                }
+            };
+        } catch (err) {
+            logger.error(`[GroupPartyService] enrichLargePartyNotificationCard error for booking ${bookingId}:`, err);
+            return null;
         }
     }
 }

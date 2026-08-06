@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import { Op } from 'sequelize';
 import PartyPlanRequest, { PartyPlanRequestStatus, PartyPlanJoinerPaymentStatus } from '../models/PartyPlanRequest';
-import PartyPlan, { PartyPlanStatus, PartyPlanPaymentStatus } from '../models/PartyPlan';
+import PartyPlan, { PartyPlanStatus, PartyPlanPaymentStatus, PartyPlanLifecycleStatus } from '../models/PartyPlan';
 import User from '../models/User';
 import Venue from '../models/Venue';
 import UserProfile from '../models/UserProfile';
@@ -45,35 +45,44 @@ export const startPartyPlanCron = () => {
                 const joinerPaid = request.joinerPaymentStatus === 'paid';
 
                 if (!hostPaid) {
-                    // Host did not pay within their 30 min acceptance window:
-                    await request.update({ status: PartyPlanRequestStatus.PAYMENT_FAILED });
-                    await plan.update({ status: PartyPlanStatus.ACTIVE, isLive: plan.visibility !== 'private' });
-                    logger.info(`Plan ${plan.id} is live again because host failed to pay deposit within 30m.`);
-                    await relistPartyPlanInSocket(plan.id);
-                } else if (hostPaid && !joinerPaid) {
-                    // Joiner did not pay within their 30 min window (starts after host paid):
-                    await request.update({ status: PartyPlanRequestStatus.PAYMENT_FAILED });
-                    // Host remains paid, and plan goes back live publicly if not private!
-                    await plan.update({ status: PartyPlanStatus.ACTIVE, isLive: plan.visibility !== 'private' });
-                    logger.info(`Plan ${plan.id} is live again because joiner (req ${request.id}) did not pay within 30m. Host is already paid.`);
-                    await relistPartyPlanInSocket(plan.id);
-
-                    // Send push notification to host
+                    // Host did not pay within their 30 min acceptance window
+                    logger.info(`[Cron] Payment expired for plan ${plan.id}: host did not pay. Reopening plan.`);
                     try {
-                        const hostUser = await User.findByPk(plan.userId);
-                        if (hostUser && hostUser.fcmToken) {
-                            const { sendMulticastPushNotification } = require('../services/fcmService');
-                            await sendMulticastPushNotification([hostUser.fcmToken], {
-                                title: '⚡ Plan Live Again',
-                                body: 'The joiner did not complete payment within 30 minutes. Your party plan is live again with no payment requirements!',
-                                data: {
-                                    type: 'party_plan_timeout_relist',
-                                    partyPlanId: plan.id,
-                                },
-                            });
+                        const { reopenPlan } = require('../controllers/partyPlanController');
+                        await reopenPlan(plan, request.id, 'payment_failed');
+                    } catch (reopenErr: any) {
+                        // Fallback: legacy reset
+                        logger.warn(`[Cron] reopenPlan failed for plan ${plan.id}, using legacy fallback:`, reopenErr.message);
+                        await request.update({ status: PartyPlanRequestStatus.PAYMENT_FAILED });
+                        await plan.update({ status: PartyPlanStatus.ACTIVE, isLive: plan.visibility !== 'private' });
+                        await relistPartyPlanInSocket(plan.id);
+                    }
+                } else if (hostPaid && !joinerPaid) {
+                    // Joiner did not pay within their 30 min window (starts after host paid)
+                    logger.info(`[Cron] Payment expired for plan ${plan.id}: joiner (req ${request.id}) did not pay. Reopening plan.`);
+                    try {
+                        const { reopenPlan } = require('../controllers/partyPlanController');
+                        await reopenPlan(plan, request.id, 'payment_failed');
+                    } catch (reopenErr: any) {
+                        // Fallback: legacy reset, host stays paid, plan goes live again
+                        logger.warn(`[Cron] reopenPlan failed for plan ${plan.id}, using legacy fallback:`, reopenErr.message);
+                        await request.update({ status: PartyPlanRequestStatus.PAYMENT_FAILED });
+                        await plan.update({ status: PartyPlanStatus.ACTIVE, isLive: plan.visibility !== 'private' });
+                        await relistPartyPlanInSocket(plan.id);
+
+                        try {
+                            const hostUser = await User.findByPk(plan.userId);
+                            if (hostUser && hostUser.fcmToken) {
+                                const { sendMulticastPushNotification } = require('../services/fcmService');
+                                await sendMulticastPushNotification([hostUser.fcmToken], {
+                                    title: '⚡ Plan Live Again',
+                                    body: 'The joiner did not complete payment within 30 minutes. Your party plan is live again!',
+                                    data: { type: 'party_plan_timeout_relist', partyPlanId: plan.id },
+                                });
+                            }
+                        } catch (pushErr: any) {
+                            logger.warn('Failed to send timeout relist push notification:', pushErr.message);
                         }
-                    } catch (pushErr: any) {
-                        logger.warn('Failed to send timeout relist push notification:', pushErr.message);
                     }
                 } else {
                     // Fallback: both paid. Mark accepted and inactive.
@@ -89,6 +98,7 @@ export const startPartyPlanCron = () => {
                     logger.info(`Match Success (cron fallback) for plan ${plan.id}.`);
                 }
             }
+
 
             // ── 2. Event Countdown Engine (24h, 3h, 1h, 30m Reminders) ─────────
             const next25h = new Date(now.getTime() + 25 * 60 * 60 * 1000);
@@ -223,33 +233,64 @@ export const startPartyPlanCron = () => {
                     status: { [Op.in]: ['active', 'inactive'] },
                     reminder1hSent: false,
                     planDateTime: { [Op.between]: [next45m, next75m] },
-                }
+                },
+                include: [{ model: Venue, as: 'venue', attributes: ['name', 'address'] }]
             });
 
             for (const plan of upcoming1hPlans) {
-                await plan.update({ reminder1hSent: true });
+                await plan.update({
+                    reminder1hSent: true,
+                    lifecycleStatus: PartyPlanLifecycleStatus.ONE_HOUR_REMINDER,
+                });
                 const acceptedReq = await PartyPlanRequest.findOne({
                     where: { planId: plan.id, status: PartyPlanRequestStatus.ACCEPTED }
                 });
                 if (acceptedReq) {
                     const host = await User.findByPk(plan.userId);
                     const joiner = await User.findByPk(acceptedReq.requesterId);
+                    const venueName = (plan as any).venue?.name || 'Venue';
                     const { sendMulticastPushNotification } = require('../services/fcmService');
-                    const msg = `Hurry! Your Party Plan starts in 1 hour. Please try to reach the venue on time.`;
+                    const NotificationService = (await import('../services/NotificationService')).NotificationService;
+
+                    const hostMsg = `Hurry! Your Party Plan at ${venueName} starts in 1 hour.`;
+                    const guestMsg = `Your Party Plan at ${venueName} starts in 1 hour.`;
+
                     if (host?.fcmToken) {
                         await sendMulticastPushNotification([host.fcmToken], {
                             title: '🚀 1 Hour Remaining!',
-                            body: msg,
+                            body: hostMsg,
                             data: { type: 'reminder_1h', partyPlanId: plan.id }
                         });
                     }
                     if (joiner?.fcmToken) {
                         await sendMulticastPushNotification([joiner.fcmToken], {
                             title: '🚀 1 Hour Remaining!',
-                            body: msg,
+                            body: guestMsg,
                             data: { type: 'reminder_1h', partyPlanId: plan.id }
                         });
                     }
+
+                    await NotificationService.dispatch({
+                        recipientUserId: plan.userId,
+                        actorUserId: acceptedReq.requesterId,
+                        eventType: 'reminder_1h',
+                        category: 'events',
+                        entityType: 'party_plan',
+                        entityId: plan.id,
+                        title: '🚀 1 Hour Remaining!',
+                        body: hostMsg,
+                    });
+
+                    await NotificationService.dispatch({
+                        recipientUserId: acceptedReq.requesterId,
+                        actorUserId: plan.userId,
+                        eventType: 'reminder_1h',
+                        category: 'events',
+                        entityType: 'party_plan',
+                        entityId: plan.id,
+                        title: '🚀 1 Hour Remaining!',
+                        body: guestMsg,
+                    });
                 }
             }
 
@@ -261,33 +302,63 @@ export const startPartyPlanCron = () => {
                     status: { [Op.in]: ['active', 'inactive'] },
                     reminder30mSent: false,
                     planDateTime: { [Op.between]: [next15m, next40m] },
-                }
+                },
+                include: [{ model: Venue, as: 'venue', attributes: ['name', 'address'] }]
             });
 
             for (const plan of upcoming30mPlans) {
-                await plan.update({ reminder30mSent: true });
+                await plan.update({
+                    reminder30mSent: true,
+                    lifecycleStatus: PartyPlanLifecycleStatus.THIRTY_MIN_REMINDER,
+                });
                 const acceptedReq = await PartyPlanRequest.findOne({
                     where: { planId: plan.id, status: PartyPlanRequestStatus.ACCEPTED }
                 });
                 if (acceptedReq) {
                     const host = await User.findByPk(plan.userId);
                     const joiner = await User.findByPk(acceptedReq.requesterId);
+                    const venueName = (plan as any).venue?.name || 'Venue';
+                    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(venueName)}`;
                     const { sendMulticastPushNotification } = require('../services/fcmService');
-                    const msg = `Almost there! Your Party Plan starts in 30 minutes.`;
+                    const NotificationService = (await import('../services/NotificationService')).NotificationService;
+                    const msg = `Time to leave for ${venueName}! Event starts in 30 minutes.`;
+
                     if (host?.fcmToken) {
                         await sendMulticastPushNotification([host.fcmToken], {
-                            title: '🕒 30 Minutes Remaining',
+                            title: '🕒 Time to leave!',
                             body: msg,
-                            data: { type: 'reminder_30m', partyPlanId: plan.id }
+                            data: { type: 'reminder_30m', partyPlanId: plan.id, mapsUrl }
                         });
                     }
                     if (joiner?.fcmToken) {
                         await sendMulticastPushNotification([joiner.fcmToken], {
-                            title: '🕒 30 Minutes Remaining',
+                            title: '🕒 Time to leave!',
                             body: msg,
-                            data: { type: 'reminder_30m', partyPlanId: plan.id }
+                            data: { type: 'reminder_30m', partyPlanId: plan.id, mapsUrl }
                         });
                     }
+
+                    await NotificationService.dispatch({
+                        recipientUserId: plan.userId,
+                        actorUserId: acceptedReq.requesterId,
+                        eventType: 'reminder_30m',
+                        category: 'events',
+                        entityType: 'party_plan',
+                        entityId: plan.id,
+                        title: '🕒 Time to leave!',
+                        body: msg,
+                    });
+
+                    await NotificationService.dispatch({
+                        recipientUserId: acceptedReq.requesterId,
+                        actorUserId: plan.userId,
+                        eventType: 'reminder_30m',
+                        category: 'events',
+                        entityType: 'party_plan',
+                        entityId: plan.id,
+                        title: '🕒 Time to leave!',
+                        body: msg,
+                    });
                 }
             }
 
@@ -303,7 +374,10 @@ export const startPartyPlanCron = () => {
             });
 
             for (const plan of upcoming10mPlans) {
-                await plan.update({ reminder10mSent: true });
+                await plan.update({
+                    reminder10mSent: true,
+                    lifecycleStatus: PartyPlanLifecycleStatus.TEN_MIN_CONFIRMATION,
+                });
                 const acceptedReq = await PartyPlanRequest.findOne({
                     where: { planId: plan.id, status: PartyPlanRequestStatus.ACCEPTED }
                 });
@@ -311,22 +385,638 @@ export const startPartyPlanCron = () => {
                     const host = await User.findByPk(plan.userId);
                     const joiner = await User.findByPk(acceptedReq.requesterId);
                     const { sendMulticastPushNotification } = require('../services/fcmService');
+                    const NotificationService = (await import('../services/NotificationService')).NotificationService;
                     const promptMsg = `Have you reached the venue? Please confirm your arrival.`;
+
                     if (host?.fcmToken) {
                         await sendMulticastPushNotification([host.fcmToken], {
-                            title: '📍 Arrival Check (10 Mins)',
+                            title: '📍 Have you reached the venue?',
                             body: promptMsg,
                             data: { type: 'arrival_prompt', partyPlanId: plan.id }
                         });
                     }
                     if (joiner?.fcmToken) {
                         await sendMulticastPushNotification([joiner.fcmToken], {
-                            title: '📍 Arrival Check (10 Mins)',
+                            title: '📍 Have you reached the venue?',
                             body: promptMsg,
                             data: { type: 'arrival_prompt', partyPlanId: plan.id }
                         });
                     }
+
+                    await NotificationService.dispatch({
+                        recipientUserId: plan.userId,
+                        actorUserId: acceptedReq.requesterId,
+                        eventType: 'arrival_prompt',
+                        category: 'events',
+                        entityType: 'party_plan',
+                        entityId: plan.id,
+                        title: '📍 Have you reached the venue?',
+                        body: promptMsg,
+                        actionType: 'CONFIRM_ARRIVAL'
+                    });
+
+                    await NotificationService.dispatch({
+                        recipientUserId: acceptedReq.requesterId,
+                        actorUserId: plan.userId,
+                        eventType: 'arrival_prompt',
+                        category: 'events',
+                        entityType: 'party_plan',
+                        entityId: plan.id,
+                        title: '📍 Have you reached the venue?',
+                        body: promptMsg,
+                        actionType: 'CONFIRM_ARRIVAL'
+                    });
                 }
+            }
+
+            // ── 2.5 Stranger Meet Automated Reminder Engine (2h, 1h, 30m) ─────
+            try {
+                const sequelize = (await import('../config/database')).default;
+                await sequelize.query(`
+                    ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;
+                    ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;
+                    ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;
+                `).catch(() => {});
+
+                const StrangersMeetRequest = (await import('../models/StrangersMeetRequest')).default;
+                const StrangersMeetStatus = (await import('../models/StrangersMeetRequest')).StrangersMeetStatus;
+                const StrangersMeetPaymentStatus = (await import('../models/StrangersMeetRequest')).StrangersMeetPaymentStatus;
+                const StrangersMeetJoiner = (await import('../models/StrangersMeetJoiner')).default;
+                const { StrangersMeetService } = await import('../services/StrangersMeetService');
+                const { sendMulticastPushNotification } = require('../services/fcmService');
+
+                // 2 Hours Before Reminder
+                const smNext2h5 = new Date(now.getTime() + 135 * 60 * 1000);
+                const smNext2h15 = new Date(now.getTime() + 105 * 60 * 1000);
+                const sm2hMeets = await StrangersMeetRequest.findAll({
+                    where: {
+                        status: StrangersMeetStatus.APPROVED,
+                        paymentStatus: StrangersMeetPaymentStatus.PAID,
+                        reminder2hSent: false,
+                        eventDateTime: { [Op.between]: [smNext2h15, smNext2h5] }
+                    }
+                });
+
+                for (const meet of sm2hMeets) {
+                    await meet.update({ reminder2hSent: true });
+                    const joiners = await StrangersMeetJoiner.findAll({
+                        where: { strangersMeetRequestId: meet.id, paymentStatus: 'paid' }
+                    });
+                    const participantUserIds = Array.from(new Set([meet.userId, ...joiners.map(j => j.userId)]));
+                    const users = await User.findAll({ where: { id: { [Op.in]: participantUserIds } }, attributes: ['id', 'fcmToken'] });
+                    const fcmTokens = users.map(u => u.fcmToken).filter(Boolean) as string[];
+
+                    if (fcmTokens.length > 0) {
+                        await sendMulticastPushNotification(fcmTokens, {
+                            title: '⏳ Stranger Meet Reminder (2 Hours)',
+                            body: 'Your Stranger Meet starts in 2 hours.',
+                            data: { type: 'sm_reminder_2h', strangersMeetId: meet.id }
+                        });
+                    }
+
+                    for (const uId of participantUserIds) {
+                        await StrangersMeetService.emitNotification({
+                            recipientUserId: uId,
+                            eventType: 'sm_reminder_2h',
+                            title: '⏳ Stranger Meet Reminder (2 Hours)',
+                            body: 'Your Stranger Meet starts in 2 hours.',
+                            entityId: meet.id
+                        });
+                    }
+                }
+
+                // 1 Hour Before Reminder
+                const smNext1h15 = new Date(now.getTime() + 75 * 60 * 1000);
+                const smNext1h45 = new Date(now.getTime() + 45 * 60 * 1000);
+                const sm1hMeets = await StrangersMeetRequest.findAll({
+                    where: {
+                        status: StrangersMeetStatus.APPROVED,
+                        paymentStatus: StrangersMeetPaymentStatus.PAID,
+                        reminder1hSent: false,
+                        eventDateTime: { [Op.between]: [smNext1h45, smNext1h15] }
+                    }
+                });
+
+                for (const meet of sm1hMeets) {
+                    await meet.update({ reminder1hSent: true });
+                    const joiners = await StrangersMeetJoiner.findAll({
+                        where: { strangersMeetRequestId: meet.id, paymentStatus: 'paid' }
+                    });
+                    const participantUserIds = Array.from(new Set([meet.userId, ...joiners.map(j => j.userId)]));
+                    const users = await User.findAll({ where: { id: { [Op.in]: participantUserIds } }, attributes: ['id', 'fcmToken'] });
+                    const fcmTokens = users.map(u => u.fcmToken).filter(Boolean) as string[];
+
+                    if (fcmTokens.length > 0) {
+                        await sendMulticastPushNotification(fcmTokens, {
+                            title: '⏳ Stranger Meet Reminder (1 Hour)',
+                            body: 'Your Stranger Meet starts in 1 hour.',
+                            data: { type: 'sm_reminder_1h', strangersMeetId: meet.id }
+                        });
+                    }
+
+                    for (const uId of participantUserIds) {
+                        await StrangersMeetService.emitNotification({
+                            recipientUserId: uId,
+                            eventType: 'sm_reminder_1h',
+                            title: '⏳ Stranger Meet Reminder (1 Hour)',
+                            body: 'Your Stranger Meet starts in 1 hour.',
+                            entityId: meet.id
+                        });
+                    }
+                }
+
+                // 30 Minutes Before Departure Reminder
+                const smNext35m = new Date(now.getTime() + 35 * 60 * 1000);
+                const smNext25m = new Date(now.getTime() + 25 * 60 * 1000);
+                const sm30mMeets = await StrangersMeetRequest.findAll({
+                    where: {
+                        status: StrangersMeetStatus.APPROVED,
+                        paymentStatus: StrangersMeetPaymentStatus.PAID,
+                        reminder30mSent: false,
+                        eventDateTime: { [Op.between]: [smNext25m, smNext35m] }
+                    }
+                });
+
+                for (const meet of sm30mMeets) {
+                    await meet.update({ reminder30mSent: true });
+                    const joiners = await StrangersMeetJoiner.findAll({
+                        where: { strangersMeetRequestId: meet.id, paymentStatus: 'paid' }
+                    });
+                    const participantUserIds = Array.from(new Set([meet.userId, ...joiners.map(j => j.userId)]));
+                    const users = await User.findAll({ where: { id: { [Op.in]: participantUserIds } }, attributes: ['id', 'fcmToken'] });
+                    const fcmTokens = users.map(u => u.fcmToken).filter(Boolean) as string[];
+
+                    if (fcmTokens.length > 0) {
+                        await sendMulticastPushNotification(fcmTokens, {
+                            title: '🚗 Time to Leave!',
+                            body: 'It\'s time to leave for your Stranger Meet.',
+                            data: { type: 'sm_reminder_30m', strangersMeetId: meet.id }
+                        });
+                    }
+
+                    for (const uId of participantUserIds) {
+                        await StrangersMeetService.emitNotification({
+                            recipientUserId: uId,
+                            eventType: 'sm_reminder_30m',
+                            title: '🚗 Time to Leave!',
+                            body: 'It\'s time to leave for your Stranger Meet.',
+                            entityId: meet.id
+                        });
+                    }
+                }
+            } catch (smCronErr) {
+                logger.error('[partyPlanCron] Stranger Meet reminder engine error:', smCronErr);
+            }
+
+            // ── 2.6 Group Party Automated Reminder Engine (2h, 1h, 30m) ─────
+            try {
+                const sequelize = (await import('../config/database')).default;
+                await sequelize.query(`
+                    ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;
+                    ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;
+                    ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;
+                `).catch(() => {});
+
+                const GroupParty = (await import('../models/GroupParty')).default;
+                const GroupPartyStatus = (await import('../models/GroupParty')).GroupPartyStatus;
+                const GroupPartyPaymentStatus = (await import('../models/GroupParty')).GroupPartyPaymentStatus;
+                const { GroupPartyService } = await import('../services/GroupPartyService');
+                const { sendPushNotification } = require('../services/fcmService');
+
+                // 2 Hours Before Reminder
+                const gpNext2h5 = new Date(now.getTime() + 135 * 60 * 1000);
+                const gpNext2h15 = new Date(now.getTime() + 105 * 60 * 1000);
+                const gp2hParties = await GroupParty.findAll({
+                    where: {
+                        status: GroupPartyStatus.CONFIRMED,
+                        paymentStatus: GroupPartyPaymentStatus.PAID,
+                        reminder2hSent: false,
+                        partyDate: { [Op.between]: [gpNext2h15, gpNext2h5] }
+                    }
+                });
+
+                for (const party of gp2hParties) {
+                    await party.update({ reminder2hSent: true });
+                    const user = await User.findByPk(party.userId, { attributes: ['id', 'fcmToken'] });
+                    if (user && user.fcmToken) {
+                        await sendPushNotification(user.fcmToken, {
+                            title: '⏳ Group Party Reminder (2 Hours)',
+                            body: 'Your Group Party starts in 2 hours.',
+                            data: { type: 'gp_reminder_2h', partyId: party.id }
+                        }).catch(() => {});
+                    }
+
+                    const enrichedCard = await GroupPartyService.enrichGroupPartyNotificationCard(party.id, party.userId);
+                    const { io } = require('../server');
+                    if (io) {
+                        io.to(`user_${party.userId}`).emit('notification_updated', enrichedCard);
+                        io.to(`user_${party.userId}`).emit('group_party_status_update', { partyId: party.id, eventType: 'gp_reminder_2h' });
+                    }
+                }
+
+                // 1 Hour Before Reminder
+                const gpNext1h15 = new Date(now.getTime() + 75 * 60 * 1000);
+                const gpNext1h45 = new Date(now.getTime() + 45 * 60 * 1000);
+                const gp1hParties = await GroupParty.findAll({
+                    where: {
+                        status: GroupPartyStatus.CONFIRMED,
+                        paymentStatus: GroupPartyPaymentStatus.PAID,
+                        reminder1hSent: false,
+                        partyDate: { [Op.between]: [gpNext1h45, gpNext1h15] }
+                    }
+                });
+
+                for (const party of gp1hParties) {
+                    await party.update({ reminder1hSent: true });
+                    const user = await User.findByPk(party.userId, { attributes: ['id', 'fcmToken'] });
+                    if (user && user.fcmToken) {
+                        await sendPushNotification(user.fcmToken, {
+                            title: '⏳ Group Party Reminder (1 Hour)',
+                            body: 'Your Group Party starts in 1 hour.',
+                            data: { type: 'gp_reminder_1h', partyId: party.id }
+                        }).catch(() => {});
+                    }
+
+                    const enrichedCard = await GroupPartyService.enrichGroupPartyNotificationCard(party.id, party.userId);
+                    const { io } = require('../server');
+                    if (io) {
+                        io.to(`user_${party.userId}`).emit('notification_updated', enrichedCard);
+                        io.to(`user_${party.userId}`).emit('group_party_status_update', { partyId: party.id, eventType: 'gp_reminder_1h' });
+                    }
+                }
+
+                // 30 Minutes Before Departure Reminder
+                const gpNext35m = new Date(now.getTime() + 35 * 60 * 1000);
+                const gpNext25m = new Date(now.getTime() + 25 * 60 * 1000);
+                const gp30mParties = await GroupParty.findAll({
+                    where: {
+                        status: GroupPartyStatus.CONFIRMED,
+                        paymentStatus: GroupPartyPaymentStatus.PAID,
+                        reminder30mSent: false,
+                        partyDate: { [Op.between]: [gpNext25m, gpNext35m] }
+                    }
+                });
+
+                for (const party of gp30mParties) {
+                    await party.update({ reminder30mSent: true });
+                    const user = await User.findByPk(party.userId, { attributes: ['id', 'fcmToken'] });
+                    if (user && user.fcmToken) {
+                        await sendPushNotification(user.fcmToken, {
+                            title: '🚗 Time to Leave!',
+                            body: "It's time to leave for your Group Party.",
+                            data: { type: 'gp_reminder_30m', partyId: party.id }
+                        }).catch(() => {});
+                    }
+
+                    const enrichedCard = await GroupPartyService.enrichGroupPartyNotificationCard(party.id, party.userId);
+                    const { io } = require('../server');
+                    if (io) {
+                        io.to(`user_${party.userId}`).emit('notification_updated', enrichedCard);
+                        io.to(`user_${party.userId}`).emit('group_party_status_update', { partyId: party.id, eventType: 'gp_reminder_30m' });
+                    }
+                }
+            } catch (gpCronErr) {
+                logger.error('[partyPlanCron] Group Party reminder engine error:', gpCronErr);
+            }
+
+            // ── 2.7 Large Party Automated Reminder Engine (2h, 1h, 30m) ─────
+            try {
+                const sequelize = (await import('../config/database')).default;
+                await sequelize.query(`
+                    ALTER TABLE bookings ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;
+                    ALTER TABLE bookings ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;
+                    ALTER TABLE bookings ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;
+                `).catch(() => {});
+
+                const Booking = (await import('../models/Booking')).default;
+                const BookingStatus = (await import('../models/Booking')).BookingStatus;
+                const PaymentStatus = (await import('../models/Booking')).PaymentStatus;
+                const { GroupPartyService } = await import('../services/GroupPartyService');
+                const { sendPushNotification } = require('../services/fcmService');
+
+                // 2 Hours Before Reminder
+                const lpNext2h5 = new Date(now.getTime() + 135 * 60 * 1000);
+                const lpNext2h15 = new Date(now.getTime() + 105 * 60 * 1000);
+                const lp2hBookings = await Booking.findAll({
+                    where: {
+                        isLargePartyRequest: true,
+                        status: BookingStatus.CONFIRMED,
+                        paymentStatus: PaymentStatus.PAID,
+                        reminder2hSent: false,
+                        bookingDate: { [Op.between]: [lpNext2h15, lpNext2h5] }
+                    }
+                });
+
+                for (const booking of lp2hBookings) {
+                    await booking.update({ reminder2hSent: true });
+                    const user = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
+                    if (user && user.fcmToken) {
+                        await sendPushNotification(user.fcmToken, {
+                            title: '⏳ Large Party Reminder (2 Hours)',
+                            body: 'Your Large Party starts in 2 hours.',
+                            data: { type: 'lp_reminder_2h', bookingId: booking.id }
+                        }).catch(() => {});
+                    }
+
+                    const enrichedCard = await GroupPartyService.enrichLargePartyNotificationCard(booking.id, booking.userId);
+                    const { io } = require('../server');
+                    if (io) {
+                        io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
+                        io.to(`user_${booking.userId}`).emit('large_party_status_update', { bookingId: booking.id, eventType: 'lp_reminder_2h' });
+                    }
+                }
+
+                // 1 Hour Before Reminder
+                const lpNext1h15 = new Date(now.getTime() + 75 * 60 * 1000);
+                const lpNext1h45 = new Date(now.getTime() + 45 * 60 * 1000);
+                const lp1hBookings = await Booking.findAll({
+                    where: {
+                        isLargePartyRequest: true,
+                        status: BookingStatus.CONFIRMED,
+                        paymentStatus: PaymentStatus.PAID,
+                        reminder1hSent: false,
+                        bookingDate: { [Op.between]: [lpNext1h45, lpNext1h15] }
+                    }
+                });
+
+                for (const booking of lp1hBookings) {
+                    await booking.update({ reminder1hSent: true });
+                    const user = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
+                    if (user && user.fcmToken) {
+                        await sendPushNotification(user.fcmToken, {
+                            title: '⏳ Large Party Reminder (1 Hour)',
+                            body: 'Your Large Party starts in 1 hour.',
+                            data: { type: 'lp_reminder_1h', bookingId: booking.id }
+                        }).catch(() => {});
+                    }
+
+                    const enrichedCard = await GroupPartyService.enrichLargePartyNotificationCard(booking.id, booking.userId);
+                    const { io } = require('../server');
+                    if (io) {
+                        io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
+                        io.to(`user_${booking.userId}`).emit('large_party_status_update', { bookingId: booking.id, eventType: 'lp_reminder_1h' });
+                    }
+                }
+
+                // 30 Minutes Before Departure Reminder
+                const lpNext35m = new Date(now.getTime() + 35 * 60 * 1000);
+                const lpNext25m = new Date(now.getTime() + 25 * 60 * 1000);
+                const lp30mBookings = await Booking.findAll({
+                    where: {
+                        isLargePartyRequest: true,
+                        status: BookingStatus.CONFIRMED,
+                        paymentStatus: PaymentStatus.PAID,
+                        reminder30mSent: false,
+                        bookingDate: { [Op.between]: [lpNext25m, lpNext35m] }
+                    }
+                });
+
+                for (const booking of lp30mBookings) {
+                    await booking.update({ reminder30mSent: true });
+                    const user = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
+                    if (user && user.fcmToken) {
+                        await sendPushNotification(user.fcmToken, {
+                            title: '🚗 Time to Leave!',
+                            body: "It's time to leave for your Large Party.",
+                            data: { type: 'lp_reminder_30m', bookingId: booking.id }
+                        }).catch(() => {});
+                    }
+
+                    const enrichedCard = await GroupPartyService.enrichLargePartyNotificationCard(booking.id, booking.userId);
+                    const { io } = require('../server');
+                    if (io) {
+                        io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
+                        io.to(`user_${booking.userId}`).emit('large_party_status_update', { bookingId: booking.id, eventType: 'lp_reminder_30m' });
+                    }
+                }
+            } catch (lpCronErr) {
+                logger.error('[partyPlanCron] Large Party reminder engine error:', lpCronErr);
+            }
+
+            // ── 2.8 Upcoming Nights Automated Reminder Engine (2h, 1h, 30m) ─────
+            try {
+                const sequelize = (await import('../config/database')).default;
+                await sequelize.query(`
+                    ALTER TABLE night_partner_matches ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;
+                    ALTER TABLE night_partner_matches ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;
+                    ALTER TABLE night_partner_matches ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;
+                `).catch(() => {});
+
+                const NightPartnerMatch = (await import('../models/NightPartnerMatch')).default;
+                const NightPartnerMatchStatus = (await import('../models/NightPartnerMatch')).NightPartnerMatchStatus;
+                const { NightPartnerService } = await import('../services/NightPartnerService');
+                const { sendPushNotification } = require('../services/fcmService');
+
+                // 2 Hours Before Reminder
+                const unNext2h5 = new Date(now.getTime() + 135 * 60 * 1000);
+                const unNext2h15 = new Date(now.getTime() + 105 * 60 * 1000);
+                const un2hMatches = await NightPartnerMatch.findAll({
+                    where: {
+                        status: NightPartnerMatchStatus.CONFIRMED,
+                        reminder2hSent: false,
+                        eventDate: { [Op.between]: [unNext2h15, unNext2h5] }
+                    }
+                });
+
+                for (const match of un2hMatches) {
+                    await match.update({ reminder2hSent: true });
+                    const participants = [match.hostId, match.partnerId];
+                    for (const pId of participants) {
+                        const user = await User.findByPk(pId, { attributes: ['id', 'fcmToken'] });
+                        if (user && user.fcmToken) {
+                            await sendPushNotification(user.fcmToken, {
+                                title: '⏳ Upcoming Night Reminder (2 Hours)',
+                                body: 'Your Upcoming Night starts in 2 hours.',
+                                data: { type: 'un_reminder_2h', matchId: match.id }
+                            }).catch(() => {});
+                        }
+
+                        const enrichedCard = await NightPartnerService.enrichUpcomingNightNotificationCard(match.id, pId);
+                        const { io } = require('../server');
+                        if (io) {
+                            io.to(`user_${pId}`).emit('notification_updated', enrichedCard);
+                            io.to(`user_${pId}`).emit('upcoming_night_status_update', { matchId: match.id, eventType: 'un_reminder_2h' });
+                        }
+                    }
+                }
+
+                // 1 Hour Before Reminder
+                const unNext1h15 = new Date(now.getTime() + 75 * 60 * 1000);
+                const unNext1h45 = new Date(now.getTime() + 45 * 60 * 1000);
+                const un1hMatches = await NightPartnerMatch.findAll({
+                    where: {
+                        status: NightPartnerMatchStatus.CONFIRMED,
+                        reminder1hSent: false,
+                        eventDate: { [Op.between]: [unNext1h45, unNext1h15] }
+                    }
+                });
+
+                for (const match of un1hMatches) {
+                    await match.update({ reminder1hSent: true });
+                    const participants = [match.hostId, match.partnerId];
+                    for (const pId of participants) {
+                        const user = await User.findByPk(pId, { attributes: ['id', 'fcmToken'] });
+                        if (user && user.fcmToken) {
+                            await sendPushNotification(user.fcmToken, {
+                                title: '⏳ Upcoming Night Reminder (1 Hour)',
+                                body: 'Your Upcoming Night starts in 1 hour.',
+                                data: { type: 'un_reminder_1h', matchId: match.id }
+                            }).catch(() => {});
+                        }
+
+                        const enrichedCard = await NightPartnerService.enrichUpcomingNightNotificationCard(match.id, pId);
+                        const { io } = require('../server');
+                        if (io) {
+                            io.to(`user_${pId}`).emit('notification_updated', enrichedCard);
+                            io.to(`user_${pId}`).emit('upcoming_night_status_update', { matchId: match.id, eventType: 'un_reminder_1h' });
+                        }
+                    }
+                }
+
+                // 30 Minutes Before Departure Reminder
+                const unNext35m = new Date(now.getTime() + 35 * 60 * 1000);
+                const unNext25m = new Date(now.getTime() + 25 * 60 * 1000);
+                const un30mMatches = await NightPartnerMatch.findAll({
+                    where: {
+                        status: NightPartnerMatchStatus.CONFIRMED,
+                        reminder30mSent: false,
+                        eventDate: { [Op.between]: [unNext25m, unNext35m] }
+                    }
+                });
+
+                for (const match of un30mMatches) {
+                    await match.update({ reminder30mSent: true });
+                    const participants = [match.hostId, match.partnerId];
+                    for (const pId of participants) {
+                        const user = await User.findByPk(pId, { attributes: ['id', 'fcmToken'] });
+                        if (user && user.fcmToken) {
+                            await sendPushNotification(user.fcmToken, {
+                                title: '🚗 Time to Leave!',
+                                body: "It's time to leave for your Upcoming Night.",
+                                data: { type: 'un_reminder_30m', matchId: match.id }
+                            }).catch(() => {});
+                        }
+
+                        const enrichedCard = await NightPartnerService.enrichUpcomingNightNotificationCard(match.id, pId);
+                        const { io } = require('../server');
+                        if (io) {
+                            io.to(`user_${pId}`).emit('notification_updated', enrichedCard);
+                            io.to(`user_${pId}`).emit('upcoming_night_status_update', { matchId: match.id, eventType: 'un_reminder_30m' });
+                        }
+                    }
+                }
+            } catch (unCronErr) {
+                logger.error('[partyPlanCron] Upcoming Night reminder engine error:', unCronErr);
+            }
+
+            // ── 2.9 Venue Booking Automated Reminder Engine (2h, 1h, 30m) ─────
+            try {
+                const Booking = (await import('../models/Booking')).default;
+                const BookingStatus = (await import('../models/Booking')).BookingStatus;
+                const PaymentStatus = (await import('../models/Booking')).PaymentStatus;
+                const { VenueBookingService } = await import('../services/VenueBookingService');
+                const { sendPushNotification } = require('../services/fcmService');
+
+                // 2 Hours Before Reminder
+                const vbNext2h5 = new Date(now.getTime() + 135 * 60 * 1000);
+                const vbNext2h15 = new Date(now.getTime() + 105 * 60 * 1000);
+                const vb2hBookings = await Booking.findAll({
+                    where: {
+                        isGroupBooking: false,
+                        isLargePartyRequest: false,
+                        status: BookingStatus.CONFIRMED,
+                        paymentStatus: PaymentStatus.PAID,
+                        reminder2hSent: false,
+                        bookingDate: { [Op.between]: [vbNext2h15, vbNext2h5] }
+                    }
+                });
+
+                for (const booking of vb2hBookings) {
+                    await booking.update({ reminder2hSent: true });
+                    const user = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
+                    if (user && user.fcmToken) {
+                        await sendPushNotification(user.fcmToken, {
+                            title: '⏳ Venue Booking Reminder (2 Hours)',
+                            body: 'Your Venue Booking starts in 2 hours.',
+                            data: { type: 'vb_reminder_2h', bookingId: booking.id }
+                        }).catch(() => {});
+                    }
+
+                    const enrichedCard = await VenueBookingService.enrichVenueBookingNotificationCard(booking.id, booking.userId);
+                    const { io } = require('../server');
+                    if (io) {
+                        io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
+                        io.to(`user_${booking.userId}`).emit('venue_booking_status_update', { bookingId: booking.id, eventType: 'vb_reminder_2h' });
+                    }
+                }
+
+                // 1 Hour Before Reminder
+                const vbNext1h15 = new Date(now.getTime() + 75 * 60 * 1000);
+                const vbNext1h45 = new Date(now.getTime() + 45 * 60 * 1000);
+                const vb1hBookings = await Booking.findAll({
+                    where: {
+                        isGroupBooking: false,
+                        isLargePartyRequest: false,
+                        status: BookingStatus.CONFIRMED,
+                        paymentStatus: PaymentStatus.PAID,
+                        reminder1hSent: false,
+                        bookingDate: { [Op.between]: [vbNext1h45, vbNext1h15] }
+                    }
+                });
+
+                for (const booking of vb1hBookings) {
+                    await booking.update({ reminder1hSent: true });
+                    const user = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
+                    if (user && user.fcmToken) {
+                        await sendPushNotification(user.fcmToken, {
+                            title: '⏳ Venue Booking Reminder (1 Hour)',
+                            body: 'Your Venue Booking starts in 1 hour.',
+                            data: { type: 'vb_reminder_1h', bookingId: booking.id }
+                        }).catch(() => {});
+                    }
+
+                    const enrichedCard = await VenueBookingService.enrichVenueBookingNotificationCard(booking.id, booking.userId);
+                    const { io } = require('../server');
+                    if (io) {
+                        io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
+                        io.to(`user_${booking.userId}`).emit('venue_booking_status_update', { bookingId: booking.id, eventType: 'vb_reminder_1h' });
+                    }
+                }
+
+                // 30 Minutes Before Departure Reminder
+                const vbNext35m = new Date(now.getTime() + 35 * 60 * 1000);
+                const vbNext25m = new Date(now.getTime() + 25 * 60 * 1000);
+                const vb30mBookings = await Booking.findAll({
+                    where: {
+                        isGroupBooking: false,
+                        isLargePartyRequest: false,
+                        status: BookingStatus.CONFIRMED,
+                        paymentStatus: PaymentStatus.PAID,
+                        reminder30mSent: false,
+                        bookingDate: { [Op.between]: [vbNext25m, vbNext35m] }
+                    }
+                });
+
+                for (const booking of vb30mBookings) {
+                    await booking.update({ reminder30mSent: true });
+                    const user = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
+                    if (user && user.fcmToken) {
+                        await sendPushNotification(user.fcmToken, {
+                            title: '🚗 Time to Leave!',
+                            body: "It's time to leave for your Venue Booking.",
+                            data: { type: 'vb_reminder_30m', bookingId: booking.id }
+                        }).catch(() => {});
+                    }
+
+                    const enrichedCard = await VenueBookingService.enrichVenueBookingNotificationCard(booking.id, booking.userId);
+                    const { io } = require('../server');
+                    if (io) {
+                        io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
+                        io.to(`user_${booking.userId}`).emit('venue_booking_status_update', { bookingId: booking.id, eventType: 'vb_reminder_30m' });
+                    }
+                }
+            } catch (vbCronErr) {
+                logger.error('[partyPlanCron] Venue Booking reminder engine error:', vbCronErr);
             }
 
             // ── 3. Process Completed Plans & Execute 4-Case Refund Engine ─────
@@ -372,40 +1062,46 @@ export const startPartyPlanCron = () => {
                     logger.info(`[RefundEngine Case 1] Both Host and Guest confirmed arrival for plan ${plan.id}`);
 
                     if (hostUser) {
-                        const hOld = Number(hostUser.walletBalance || 0);
-                        const hNew = hOld + hostDeposit;
-                        await hostUser.update({ walletBalance: hNew });
-                        await plan.update({ hostPaymentStatus: PartyPlanPaymentStatus.REFUNDED });
-                        await WalletTransaction.logTransaction({
-                            userId: hostUser.id,
-                            partyPlanId: plan.id,
-                            amount: hostDeposit,
-                            openingBalance: hOld,
-                            closingBalance: hNew,
-                            transactionType: WalletTransactionType.REFUND,
-                            reference: `REFUND_HOST_${plan.id}`,
-                        });
-                        await ReliabilityService.updateScore({
-                            userId: hostUser.id,
-                            action: ReliabilityAction.SUCCESSFUL_ATTENDANCE,
-                            partyPlanId: plan.id,
-                        });
+                        const existingHostTx = await WalletTransaction.findOne({ where: { reference: `REFUND_HOST_${plan.id}` } });
+                        if (!existingHostTx) {
+                            const hOld = Number(hostUser.walletBalance || 0);
+                            const hNew = hOld + hostDeposit;
+                            await hostUser.update({ walletBalance: hNew });
+                            await plan.update({ hostPaymentStatus: PartyPlanPaymentStatus.REFUNDED });
+                            await WalletTransaction.logTransaction({
+                                userId: hostUser.id,
+                                partyPlanId: plan.id,
+                                amount: hostDeposit,
+                                openingBalance: hOld,
+                                closingBalance: hNew,
+                                transactionType: WalletTransactionType.REFUND,
+                                reference: `REFUND_HOST_${plan.id}`,
+                            });
+                            await ReliabilityService.updateScore({
+                                userId: hostUser.id,
+                                action: ReliabilityAction.SUCCESSFUL_ATTENDANCE,
+                                partyPlanId: plan.id,
+                            });
+                        }
                     }
 
                     if (guestUser && guestDeposit > 0) {
-                        const gOld = Number(guestUser.walletBalance || 0);
-                        const gNew = gOld + guestDeposit;
-                        await guestUser.update({ walletBalance: gNew });
-                        await acceptedReq.update({ joinerPaymentStatus: PartyPlanJoinerPaymentStatus.REFUNDED });
-                        await WalletTransaction.logTransaction({
-                            userId: guestUser.id,
-                            partyPlanId: plan.id,
-                            amount: guestDeposit,
-                            openingBalance: gOld,
-                            closingBalance: gNew,
-                            transactionType: WalletTransactionType.REFUND,
-                            reference: `REFUND_GUEST_${acceptedReq.id}`,
-                        });
+                        const existingGuestTx = await WalletTransaction.findOne({ where: { reference: `REFUND_GUEST_${acceptedReq.id}` } });
+                        if (!existingGuestTx) {
+                            const gOld = Number(guestUser.walletBalance || 0);
+                            const gNew = gOld + guestDeposit;
+                            await guestUser.update({ walletBalance: gNew });
+                            await acceptedReq.update({ joinerPaymentStatus: PartyPlanJoinerPaymentStatus.REFUNDED });
+                            await WalletTransaction.logTransaction({
+                                userId: guestUser.id,
+                                partyPlanId: plan.id,
+                                amount: guestDeposit,
+                                openingBalance: gOld,
+                                closingBalance: gNew,
+                                transactionType: WalletTransactionType.REFUND,
+                                reference: `REFUND_GUEST_${acceptedReq.id}`,
+                            });
+                        }
                     }
 
                     if (guestUser) {
@@ -416,31 +1112,38 @@ export const startPartyPlanCron = () => {
                         });
                     }
 
-                    await plan.update({ status: PartyPlanStatus.INACTIVE, paymentStatus: 'Completed (Both Refunded)' });
+                    await plan.update({
+                        status: PartyPlanStatus.INACTIVE,
+                        lifecycleStatus: PartyPlanLifecycleStatus.PLAN_COMPLETED,
+                        paymentStatus: 'Completed (Both Refunded)'
+                    });
                 }
                 // ── CASE 2: Host YES, Guest NO ─────────────────────────────────
                 else if (hostYes && !guestYes) {
                     logger.info(`[RefundEngine Case 2] Host YES, Guest NO for plan ${plan.id}`);
 
                     if (hostUser) {
-                        const hOld = Number(hostUser.walletBalance || 0);
-                        const hNew = hOld + hostDeposit;
-                        await hostUser.update({ walletBalance: hNew });
-                        await plan.update({ hostPaymentStatus: PartyPlanPaymentStatus.REFUNDED });
-                        await WalletTransaction.logTransaction({
-                            userId: hostUser.id,
-                            partyPlanId: plan.id,
-                            amount: hostDeposit,
-                            openingBalance: hOld,
-                            closingBalance: hNew,
-                            transactionType: WalletTransactionType.REFUND,
-                            reference: `REFUND_HOST_${plan.id}`,
-                        });
-                        await ReliabilityService.updateScore({
-                            userId: hostUser.id,
-                            action: ReliabilityAction.SUCCESSFUL_ATTENDANCE,
-                            partyPlanId: plan.id,
-                        });
+                        const existingHostTx = await WalletTransaction.findOne({ where: { reference: `REFUND_HOST_${plan.id}` } });
+                        if (!existingHostTx) {
+                            const hOld = Number(hostUser.walletBalance || 0);
+                            const hNew = hOld + hostDeposit;
+                            await hostUser.update({ walletBalance: hNew });
+                            await plan.update({ hostPaymentStatus: PartyPlanPaymentStatus.REFUNDED });
+                            await WalletTransaction.logTransaction({
+                                userId: hostUser.id,
+                                partyPlanId: plan.id,
+                                amount: hostDeposit,
+                                openingBalance: hOld,
+                                closingBalance: hNew,
+                                transactionType: WalletTransactionType.REFUND,
+                                reference: `REFUND_HOST_${plan.id}`,
+                            });
+                            await ReliabilityService.updateScore({
+                                userId: hostUser.id,
+                                action: ReliabilityAction.SUCCESSFUL_ATTENDANCE,
+                                partyPlanId: plan.id,
+                            });
+                        }
                     }
 
                     if (guestUser) {
@@ -451,26 +1154,33 @@ export const startPartyPlanCron = () => {
                         });
                     }
 
-                    await plan.update({ status: PartyPlanStatus.INACTIVE, paymentStatus: 'Completed (Host Refunded, Guest No-Show)' });
+                    await plan.update({
+                        status: PartyPlanStatus.INACTIVE,
+                        lifecycleStatus: PartyPlanLifecycleStatus.PLAN_COMPLETED,
+                        paymentStatus: 'Completed (Host Refunded, Guest No-Show)'
+                    });
                 }
                 // ── CASE 3: Host NO, Guest YES ─────────────────────────────────
                 else if (!hostYes && guestYes) {
                     logger.info(`[RefundEngine Case 3] Host NO, Guest YES for plan ${plan.id}`);
 
                     if (guestUser && guestDeposit > 0) {
-                        const gOld = Number(guestUser.walletBalance || 0);
-                        const gNew = gOld + guestDeposit;
-                        await guestUser.update({ walletBalance: gNew });
-                        await acceptedReq.update({ joinerPaymentStatus: PartyPlanJoinerPaymentStatus.REFUNDED });
-                        await WalletTransaction.logTransaction({
-                            userId: guestUser.id,
-                            partyPlanId: plan.id,
-                            amount: guestDeposit,
-                            openingBalance: gOld,
-                            closingBalance: gNew,
-                            transactionType: WalletTransactionType.REFUND,
-                            reference: `REFUND_GUEST_${acceptedReq.id}`,
-                        });
+                        const existingGuestTx = await WalletTransaction.findOne({ where: { reference: `REFUND_GUEST_${acceptedReq.id}` } });
+                        if (!existingGuestTx) {
+                            const gOld = Number(guestUser.walletBalance || 0);
+                            const gNew = gOld + guestDeposit;
+                            await guestUser.update({ walletBalance: gNew });
+                            await acceptedReq.update({ joinerPaymentStatus: PartyPlanJoinerPaymentStatus.REFUNDED });
+                            await WalletTransaction.logTransaction({
+                                userId: guestUser.id,
+                                partyPlanId: plan.id,
+                                amount: guestDeposit,
+                                openingBalance: gOld,
+                                closingBalance: gNew,
+                                transactionType: WalletTransactionType.REFUND,
+                                reference: `REFUND_GUEST_${acceptedReq.id}`,
+                            });
+                        }
                     }
 
                     if (guestUser) {
@@ -489,11 +1199,15 @@ export const startPartyPlanCron = () => {
                         });
                     }
 
-                    await plan.update({ status: PartyPlanStatus.INACTIVE, paymentStatus: 'Completed (Guest Refunded, Host No-Show)' });
+                    await plan.update({
+                        status: PartyPlanStatus.INACTIVE,
+                        lifecycleStatus: PartyPlanLifecycleStatus.PLAN_COMPLETED,
+                        paymentStatus: 'Completed (Guest Refunded, Host No-Show)'
+                    });
                 }
-                // ── CASE 4: Host NO, Guest NO ──────────────────────────────────
+                // ── CASE 4 & 5: Host NO, Guest NO (or Timeout) ───────────────
                 else {
-                    logger.info(`[RefundEngine Case 4] Host NO, Guest NO for plan ${plan.id}`);
+                    logger.info(`[RefundEngine Case 4/5] Host NO, Guest NO for plan ${plan.id}`);
 
                     if (hostUser) {
                         await ReliabilityService.updateScore({
@@ -511,7 +1225,11 @@ export const startPartyPlanCron = () => {
                         });
                     }
 
-                    await plan.update({ status: PartyPlanStatus.INACTIVE, paymentStatus: 'Closed (Both No-Show)' });
+                    await plan.update({
+                        status: PartyPlanStatus.INACTIVE,
+                        lifecycleStatus: PartyPlanLifecycleStatus.PLAN_COMPLETED,
+                        paymentStatus: 'Closed (Both No-Show / Timeout)'
+                    });
                 }
             }
 

@@ -24,6 +24,38 @@ export enum PartyPlanPaymentType {
     SELF_PAY = 'self_pay',
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Master Lifecycle State Machine
+// This is the single source of truth for every Party Plan's current state.
+// ─────────────────────────────────────────────────────────────────────────────
+export enum PartyPlanLifecycleStatus {
+    DRAFT                   = 'draft',
+    POSTED                  = 'posted',
+    REQUEST_RECEIVED        = 'request_received',
+    HOST_REVIEWING          = 'host_reviewing',
+    USER_ACCEPTED           = 'user_accepted',
+    PAYMENT_PENDING         = 'payment_pending',
+    HOST_PAYMENT_COMPLETED  = 'host_payment_completed',
+    GUEST_PAYMENT_COMPLETED = 'guest_payment_completed',
+    MATCH_CONFIRMED         = 'match_confirmed',
+    CHAT_ENABLED            = 'chat_enabled',
+    EVENT_UPCOMING          = 'event_upcoming',
+    EVENT_REMINDER          = 'event_reminder',
+    ONE_HOUR_REMINDER       = 'one_hour_reminder',
+    THIRTY_MIN_REMINDER     = 'thirty_min_reminder',
+    TEN_MIN_CONFIRMATION    = 'ten_min_confirmation',
+    ARRIVAL_PENDING         = 'arrival_pending',
+    ARRIVAL_CONFIRMATION    = 'arrival_confirmation',
+    ARRIVAL_VERIFIED        = 'arrival_verified',
+    WALLET_CREDIT_PROCESSED = 'wallet_credit_processed',
+    PLAN_COMPLETED          = 'plan_completed',
+    COMPLETED               = 'completed',
+    ARCHIVED                = 'archived',
+    CANCELLED               = 'cancelled',
+    EXPIRED                 = 'expired',
+    FAILED                  = 'failed',
+}
+
 export interface PartyPlanAttributes {
     id: string;
     userId: string;           // Who created the plan
@@ -31,6 +63,7 @@ export interface PartyPlanAttributes {
     message: string;          // Party message / description
     planDateTime: Date;       // Combined date + time of the party
     status: PartyPlanStatus;
+    lifecycleStatus: PartyPlanLifecycleStatus;  // Master state machine field
     visibility: PartyPlanVisibility;
     selectedUsers?: string[];
     depositAmount: number;
@@ -58,6 +91,10 @@ export interface PartyPlanAttributes {
     reminder30mSent?: boolean;
     reminder2hSent?: boolean;
     reminder10mSent?: boolean;
+    // ── Lifecycle Timestamps ──────────────────────────────────────────────────
+    acceptedAt?: Date | null;       // When host accepted a requester
+    paymentDeadlineAt?: Date | null; // Canonical 30-min payment deadline
+    matchedRequestId?: string | null; // FK to the currently accepted PartyPlanRequest
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -65,7 +102,7 @@ export interface PartyPlanAttributes {
 export interface PartyPlanCreationAttributes
     extends Optional<
         PartyPlanAttributes,
-        'id' | 'status' | 'visibility' | 'createdAt' | 'updatedAt' | 'selectedUsers' | 'depositAmount' | 'hostPaymentStatus' | 'isLive' | 'expiresAt' | 'hostLatLangCheckIn' | 'paymentStatus' | 'optionalMobileNumber' | 'foodPreference' | 'drinkPreference' | 'paymentType' | 'showProfilePhoto' | 'showHostName' | 'showVenueDetails' | 'showDateDetails'
+        'id' | 'status' | 'lifecycleStatus' | 'visibility' | 'createdAt' | 'updatedAt' | 'selectedUsers' | 'depositAmount' | 'hostPaymentStatus' | 'isLive' | 'expiresAt' | 'hostLatLangCheckIn' | 'paymentStatus' | 'optionalMobileNumber' | 'foodPreference' | 'drinkPreference' | 'paymentType' | 'showProfilePhoto' | 'showHostName' | 'showVenueDetails' | 'showDateDetails' | 'acceptedAt' | 'paymentDeadlineAt' | 'matchedRequestId'
     > { }
 
 class PartyPlan
@@ -77,6 +114,7 @@ class PartyPlan
     public message!: string;
     public planDateTime!: Date;
     public status!: PartyPlanStatus;
+    public lifecycleStatus!: PartyPlanLifecycleStatus;
     public visibility!: PartyPlanVisibility;
     public selectedUsers?: string[];
     public depositAmount!: number;
@@ -104,6 +142,9 @@ class PartyPlan
     public reminder30mSent!: boolean;
     public reminder2hSent!: boolean;
     public reminder10mSent!: boolean;
+    public acceptedAt?: Date | null;
+    public paymentDeadlineAt?: Date | null;
+    public matchedRequestId?: string | null;
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 }
@@ -149,6 +190,12 @@ PartyPlan.init(
             type: DataTypes.ENUM(...Object.values(PartyPlanStatus)),
             allowNull: false,
             defaultValue: PartyPlanStatus.ACTIVE,
+        },
+        lifecycleStatus: {
+            type: DataTypes.ENUM(...Object.values(PartyPlanLifecycleStatus)),
+            allowNull: false,
+            defaultValue: PartyPlanLifecycleStatus.POSTED,
+            field: 'lifecycle_status',
         },
         visibility: {
             type: DataTypes.ENUM(...Object.values(PartyPlanVisibility)),
@@ -290,6 +337,22 @@ PartyPlan.init(
             defaultValue: false,
             field: 'reminder_10m_sent',
         },
+        // ── Lifecycle Timestamps ────────────────────────────────────────────────
+        acceptedAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'accepted_at',
+        },
+        paymentDeadlineAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'payment_deadline_at',
+        },
+        matchedRequestId: {
+            type: DataTypes.UUID,
+            allowNull: true,
+            field: 'matched_request_id',
+        },
     },
     {
         sequelize,
@@ -300,6 +363,7 @@ PartyPlan.init(
             { fields: ['user_id'] },
             { fields: ['venue_id'] },
             { fields: ['status'] },
+            { fields: ['lifecycle_status'] },
             { fields: ['plan_date_time'] },
             { fields: ['created_at'] },
         ],

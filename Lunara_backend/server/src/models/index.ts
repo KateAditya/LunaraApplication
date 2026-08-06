@@ -622,6 +622,16 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
         // Sync in order of dependencies
         await User.sync(options);
         await Venue.sync(options);
+        try {
+            await sequelize.query(`
+                ALTER TABLE bookings ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;
+                ALTER TABLE bookings ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;
+                ALTER TABLE bookings ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;
+            `);
+        } catch (colErr) {
+            console.warn('⚠️ Auto-adding Booking reminder columns note:', colErr);
+        }
+
         await Booking.sync(options);
         await GroupBooking.sync(options);
         await Payment.sync(options);
@@ -647,7 +657,27 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
         await LegalDocument.sync(options);
         await PartyPlan.sync(options);
         await Ad.sync(options);
+        try {
+            await sequelize.query(`
+                ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;
+                ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;
+                ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;
+            `);
+        } catch (colErr) {
+            console.warn('⚠️ Auto-adding GroupParty reminder columns note:', colErr);
+        }
+
         await GroupParty.sync(options);
+        try {
+            await sequelize.query(`
+                ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;
+                ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;
+                ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;
+            `);
+        } catch (colErr) {
+            console.warn('⚠️ Auto-adding StrangersMeetRequest reminder columns note:', colErr);
+        }
+
         await StrangersMeetRequest.sync(options);
         await StrangersMeetJoiner.sync(options);
         await PartyPlanRequest.sync(options);
@@ -664,6 +694,19 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
         await PlanTimeLockConfig.sync(options);
         await PlanTimeLockConfigHistory.sync(options);
         await NotificationJob.sync(options);
+        try {
+            await sequelize.query(`
+                ALTER TABLE night_partner_requests ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;
+                ALTER TABLE night_partner_requests ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;
+                ALTER TABLE night_partner_requests ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;
+                ALTER TABLE night_partner_matches ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;
+                ALTER TABLE night_partner_matches ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;
+                ALTER TABLE night_partner_matches ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;
+            `);
+        } catch (colErr) {
+            console.warn('⚠️ Auto-adding NightPartner reminder columns note:', colErr);
+        }
+
         await NightInterest.sync(options);
         await NightPartnerRequest.sync(options);
         await NightPartnerMatch.sync(options);

@@ -168,23 +168,29 @@ export const approveLargePartyRequest = async (req: Request, res: Response) => {
                 });
             }
             const { io } = require('../server');
-            io.to(`user_${booking.userId}`).emit('large_party_status_update', {
-                bookingId: booking.id,
-                status: booking.adminApprovalStatus
-            });
-
-            // Emit notification_created
-            io.to(`user_${booking.userId}`).emit('notification_created', {
-                id: `large_party_${booking.id}_${status}`,
-                title: notifTitle,
-                body: notifBody,
-                createdAt: new Date().toISOString(),
-                read: false,
-                data: {
-                    type: notifType,
+            if (io) {
+                io.to(`user_${booking.userId}`).emit('large_party_status_update', {
                     bookingId: booking.id,
-                }
-            });
+                    status: booking.adminApprovalStatus
+                });
+
+                try {
+                    const { GroupPartyService } = await import('../services/GroupPartyService');
+                    const enrichedCard = await GroupPartyService.enrichLargePartyNotificationCard(booking.id, booking.userId);
+                    io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
+                    io.to('live_feed').emit('live_feed_update', { type: 'large_party_activity', bookingId: booking.id, venueName, status, timestamp: new Date().toISOString() });
+                } catch (cardErr) {}
+
+                try {
+                    const AuditLog = (await import('../models/AuditLog')).default;
+                    await AuditLog.logAction({
+                        userId: booking.userId,
+                        action: status === 'approved' ? 'LARGE_PARTY_APPROVED' : 'LARGE_PARTY_REJECTED',
+                        bookingId: booking.id,
+                        metadata: { totalAmount: booking.totalAmount, venueName }
+                    }).catch(() => {});
+                } catch (aErr) {}
+            }
         } catch (pushErr) {
             logger.warn('Failed to send push/socket for admin approval: ' + pushErr);
         }
@@ -240,23 +246,29 @@ export const sendPaymentLink = async (req: Request, res: Response) => {
                 });
             }
             const { io } = require('../server');
-            io.to(`user_${booking.userId}`).emit('large_party_status_update', {
-                bookingId: booking.id,
-                status: booking.adminApprovalStatus
-            });
-
-            // Emit notification_created
-            io.to(`user_${booking.userId}`).emit('notification_created', {
-                id: `large_party_${booking.id}_payment_sent`,
-                title: 'Large Party Payment Link Received 💳',
-                body: `Admin sent a payment link of ₹${paymentAmount} for your party at ${venueName}. Complete payment.`,
-                createdAt: new Date().toISOString(),
-                read: false,
-                data: {
-                    type: 'large_party_payment_link',
+            if (io) {
+                io.to(`user_${booking.userId}`).emit('large_party_status_update', {
                     bookingId: booking.id,
-                }
-            });
+                    status: booking.adminApprovalStatus
+                });
+
+                try {
+                    const { GroupPartyService } = await import('../services/GroupPartyService');
+                    const enrichedCard = await GroupPartyService.enrichLargePartyNotificationCard(booking.id, booking.userId);
+                    io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
+                    io.to('live_feed').emit('live_feed_update', { type: 'large_party_activity', bookingId: booking.id, venueName, status: 'payment_sent', timestamp: new Date().toISOString() });
+                } catch (cardErr) {}
+
+                try {
+                    const AuditLog = (await import('../models/AuditLog')).default;
+                    await AuditLog.logAction({
+                        userId: booking.userId,
+                        action: 'LARGE_PARTY_PAYMENT_LINK_SENT',
+                        bookingId: booking.id,
+                        metadata: { paymentAmount, paymentLink, venueName }
+                    }).catch(() => {});
+                } catch (aErr) {}
+            }
         } catch (pushErr) {
             logger.warn('Failed to send push/socket for sendPaymentLink: ' + pushErr);
         }

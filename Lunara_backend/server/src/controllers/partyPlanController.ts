@@ -11,7 +11,7 @@ import { logger } from '../config/logger';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import sequelize from '../config/database';
-import { PartyPlanPaymentStatus } from '../models/PartyPlan';
+import { PartyPlanPaymentStatus, PartyPlanLifecycleStatus } from '../models/PartyPlan';
 import PartyPlanRequest, { PartyPlanRequestStatus, PartyPlanJoinerPaymentStatus } from '../models/PartyPlanRequest';
 import { sendMulticastPushNotification } from '../services/fcmService';
 import Conversation from '../models/Conversation';
@@ -24,8 +24,21 @@ import Payment, { PaymentMethod, PaymentStatus } from '../models/Payment';
 import { generateTicketForBookingHelper } from '../services/ticketService';
 import { NotificationService } from '../services/NotificationService';
 
-async function autoOpenChat(hostId: string, joinerId: string) {
+// ─────────────────────────────────────────────────────────────────────────────
+// autoOpenChat — ONLY called after MATCH_CONFIRMED. Guarded by lifecycleStatus.
+// ─────────────────────────────────────────────────────────────────────────────
+async function autoOpenChat(hostId: string, joinerId: string, planId: string) {
     try {
+        // Safety gate: verify plan is in MATCH_CONFIRMED or CHAT_ENABLED state
+        const plan = await PartyPlan.findByPk(planId);
+        if (!plan || (
+            plan.lifecycleStatus !== PartyPlanLifecycleStatus.MATCH_CONFIRMED &&
+            plan.lifecycleStatus !== PartyPlanLifecycleStatus.CHAT_ENABLED
+        )) {
+            logger.warn(`[autoOpenChat] Blocked — plan ${planId} not in MATCH_CONFIRMED state (current: ${plan?.lifecycleStatus})`);
+            return;
+        }
+
         let conv = await Conversation.findOne({
             where: {
                 [Op.or]: [
@@ -60,7 +73,7 @@ async function autoOpenChat(hostId: string, joinerId: string) {
 
         await ChatSubscription.create({
             conversationId: conv.id,
-            paidById: hostId, // system granted
+            paidById: hostId,
             amount: 0,
             daysGranted: freeDays,
             validUntil,
@@ -68,7 +81,36 @@ async function autoOpenChat(hostId: string, joinerId: string) {
             subscriptionType: ChatSubscriptionType.FREE,
         });
 
-        // Send push notification to host and joiner
+        // Update plan lifecycle to CHAT_ENABLED
+        await plan.update({ lifecycleStatus: PartyPlanLifecycleStatus.CHAT_ENABLED });
+
+        // Notify both users via NotificationService (single source, no duplication)
+        await NotificationService.dispatch({
+            recipientUserId: hostId,
+            actorUserId: joinerId,
+            eventType: 'chat_unlocked',
+            category: 'messages',
+            entityType: 'party_plan',
+            entityId: planId,
+            title: '💬 Chat Unlocked!',
+            body: 'Your match is confirmed and private chat is now active.',
+            metadata: { planId, conversationId: conv.id },
+            idempotencyKey: `chat_unlocked_host_${planId}`,
+        });
+        await NotificationService.dispatch({
+            recipientUserId: joinerId,
+            actorUserId: hostId,
+            eventType: 'chat_unlocked',
+            category: 'messages',
+            entityType: 'party_plan',
+            entityId: planId,
+            title: '💬 Chat Unlocked!',
+            body: 'Your match is confirmed and private chat is now active.',
+            metadata: { planId, conversationId: conv.id },
+            idempotencyKey: `chat_unlocked_joiner_${planId}`,
+        });
+
+        // FCM push
         setImmediate(async () => {
             try {
                 const host = await User.findByPk(hostId);
@@ -78,14 +120,11 @@ async function autoOpenChat(hostId: string, joinerId: string) {
                     await sendMulticastPushNotification(tokens, {
                         title: '💬 Chat Unlocked!',
                         body: 'Your match is confirmed and private chat is now active for 7 days.',
-                        data: {
-                            type: 'chat_unlocked',
-                            conversationId: conv!.id,
-                        },
+                        data: { type: 'chat_unlocked', conversationId: conv!.id },
                     });
                 }
             } catch (err: any) {
-                logger.warn('Failed to send chat unlocked notification:', err.message);
+                logger.warn('Failed to send chat unlocked FCM push:', err.message);
             }
         });
     } catch (err: any) {
@@ -212,7 +251,7 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
         }
 
         // Unlock Chat!
-        await autoOpenChat(plan.userId, request.requesterId);
+        await autoOpenChat(plan.userId, request.requesterId, plan.id);
 
         logger.info(`Successfully created Booking ${booking.id} (ticket: ${ticketCode}) for plan ${plan.id}`);
     } catch (err) {
@@ -220,13 +259,44 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// markRequestsAsWaiting — called on accept: puts all other PENDING requests
+// into WAITING state so they can be re-activated if accepted user fails.
+// ─────────────────────────────────────────────────────────────────────────────
+async function markRequestsAsWaiting(plan: PartyPlan, acceptedRequestId: string, transaction?: Transaction) {
+    try {
+        const otherRequests = await PartyPlanRequest.findAll({
+            where: {
+                planId: plan.id,
+                id: { [Op.ne]: acceptedRequestId },
+                status: PartyPlanRequestStatus.PENDING,
+            },
+            transaction
+        });
+        for (const req of otherRequests) {
+            await req.update({ status: PartyPlanRequestStatus.WAITING }, { transaction });
+        }
+        logger.info(`[markRequestsAsWaiting] Marked ${otherRequests.length} requests as WAITING for plan ${plan.id}`);
+    } catch (err: any) {
+        logger.error('Error in markRequestsAsWaiting:', err);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// rejectAndNotifyConfirmedWinners — called on MATCH_CONFIRMED: REJECT all
+// remaining WAITING requests and notify them the plan is taken.
+// ─────────────────────────────────────────────────────────────────────────────
 async function rejectAndNotifyStaleRequests(plan: PartyPlan, acceptedRequestId: string, transaction?: Transaction) {
     try {
         const otherRequests = await PartyPlanRequest.findAll({
             where: {
                 planId: plan.id,
                 id: { [Op.ne]: acceptedRequestId },
-                status: { [Op.in]: [PartyPlanRequestStatus.PENDING, PartyPlanRequestStatus.PAYMENT_PENDING] }
+                status: { [Op.in]: [
+                    PartyPlanRequestStatus.PENDING,
+                    PartyPlanRequestStatus.WAITING,
+                    PartyPlanRequestStatus.PAYMENT_PENDING,
+                ]},
             },
             transaction
         });
@@ -234,61 +304,216 @@ async function rejectAndNotifyStaleRequests(plan: PartyPlan, acceptedRequestId: 
         let venueName = 'Venue';
         if (plan.venueId) {
             const venue = await Venue.findByPk(plan.venueId, { transaction });
-            if (venue && venue.name) {
-                venueName = venue.name;
-            }
+            if (venue && venue.name) venueName = venue.name;
         }
 
         for (const req of otherRequests) {
             await req.update({ status: PartyPlanRequestStatus.REJECTED }, { transaction });
-            
-            await NotificationService.dispatch({
-                recipientUserId: req.requesterId,
-                actorUserId: plan.userId,
-                eventType: 'plan_unavailable',
-                category: 'requests',
-                entityType: 'party_plan_request',
-                entityId: req.id,
-                title: '🔒 Plan Unavailable',
-                body: `The Party Plan at ${venueName} has been confirmed with another partner by the host.`,
-                metadata: {
-                    partyPlanId: plan.id,
-                    requestId: req.id,
-                },
-            });
 
-            try {
-                const { io } = require('../server');
-                // Emit plan_unavailable so the client prunes the stale request card
-                io.to(`user_${req.requesterId}`).emit('plan_unavailable', {
-                    planId: plan.id,
-                    requestId: req.id,
-                });
-            } catch (socketErr) {
-                logger.warn(`Socket emission failed in rejectAndNotifyStaleRequests for request ${req.id}:`, socketErr);
-            }
-
+            // Single authoritative notification — NotificationService handles DB + socket + FCM
             setImmediate(async () => {
                 try {
-                    const joiner = await User.findByPk(req.requesterId);
-                    if (joiner && joiner.fcmToken) {
-                        await sendMulticastPushNotification([joiner.fcmToken], {
-                            title: 'Plan Unavailable',
-                            body: `The Party Plan at ${venueName} has been confirmed with another user. Feel free to find another plan!`,
-                            data: {
-                                type: 'plan_unavailable',
-                                partyPlanId: plan.id,
-                                requestId: req.id,
-                            },
-                        });
-                    }
-                } catch (pushErr: any) {
-                    logger.warn(`Push notification failed in rejectAndNotifyStaleRequests for request ${req.id}:`, pushErr.message);
+                    await NotificationService.dispatch({
+                        recipientUserId: req.requesterId,
+                        actorUserId: plan.userId,
+                        eventType: 'plan_unavailable',
+                        category: 'requests',
+                        entityType: 'party_plan',
+                        entityId: plan.id,
+                        title: '🔒 Plan Unavailable',
+                        body: `The Party Plan at ${venueName} has been confirmed with another partner.`,
+                        metadata: { partyPlanId: plan.id, requestId: req.id },
+                        idempotencyKey: `plan_unavailable_${req.id}`,
+                    });
+
+                    const { io } = require('../server');
+                    io.to(`user_${req.requesterId}`).emit('plan_unavailable', {
+                        planId: plan.id, requestId: req.id,
+                    });
+                } catch (err: any) {
+                    logger.warn(`Failed to notify stale request ${req.id}:`, err.message);
                 }
             });
         }
     } catch (err: any) {
         logger.error('Error in rejectAndNotifyStaleRequests:', err);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// confirmMatch — atomic helper: both parties paid → MATCH_CONFIRMED
+// Creates booking, opens chat, notifies both parties.
+// Must be called AFTER transaction is committed or within one.
+// ─────────────────────────────────────────────────────────────────────────────
+async function confirmMatch(plan: PartyPlan, request: PartyPlanRequest, transaction: Transaction) {
+    // 1. Update plan to MATCH_CONFIRMED (single source of truth)
+    await plan.update({
+        lifecycleStatus: PartyPlanLifecycleStatus.MATCH_CONFIRMED,
+        status: PartyPlanStatus.INACTIVE,
+        isLive: false,
+        paymentStatus: 'Confirmed',
+        hostPaymentStatus: PartyPlanPaymentStatus.PAID,
+    }, { transaction });
+
+    // 2. Mark request as ACCEPTED
+    await request.update({
+        status: PartyPlanRequestStatus.ACCEPTED,
+        joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
+    }, { transaction });
+
+    // 3. Create booking and payment records
+    await createBookingAndPayments(plan, request, transaction);
+
+    // 4. Reject and notify all remaining WAITING/PENDING requests
+    await rejectAndNotifyStaleRequests(plan, request.id, transaction);
+
+    // 5. Post-commit: open chat (async, gated by lifecycleStatus)
+    setImmediate(async () => {
+        try {
+            await autoOpenChat(plan.userId, request.requesterId, plan.id);
+        } catch (err: any) {
+            logger.error('confirmMatch: autoOpenChat failed:', err.message);
+        }
+    });
+
+    // 6. Socket events
+    setImmediate(async () => {
+        try {
+            const { io } = require('../server');
+            io.to(`user_${plan.userId}`).emit('party_plan_match_success', { planId: plan.id, requestId: request.id });
+            io.to(`user_${request.requesterId}`).emit('party_plan_match_success', { planId: plan.id, requestId: request.id });
+            io.emit('party_plan_deleted', { planId: plan.id });
+        } catch (socketErr) {
+            logger.warn('confirmMatch: Socket emission failed:', socketErr);
+        }
+    });
+
+    // 7. Notifications via NotificationService (authoritative, no duplicate socket calls)
+    setImmediate(async () => {
+        try {
+            await NotificationService.dispatch({
+                recipientUserId: plan.userId,
+                actorUserId: request.requesterId,
+                eventType: 'match_confirmed',
+                category: 'events',
+                entityType: 'party_plan',
+                entityId: plan.id,
+                title: '🎉 Booking Confirmed!',
+                body: 'Both payments are complete. Your booking is confirmed!',
+                metadata: { planId: plan.id, requestId: request.id },
+                idempotencyKey: `match_confirmed_host_${plan.id}`,
+            });
+            await NotificationService.dispatch({
+                recipientUserId: request.requesterId,
+                actorUserId: plan.userId,
+                eventType: 'match_confirmed',
+                category: 'events',
+                entityType: 'party_plan',
+                entityId: plan.id,
+                title: '🎉 Booking Confirmed!',
+                body: 'Both payments are complete. Your booking is confirmed!',
+                metadata: { planId: plan.id, requestId: request.id },
+                idempotencyKey: `match_confirmed_joiner_${plan.id}`,
+            });
+
+            // FCM push
+            const host = await User.findByPk(plan.userId);
+            const joiner = await User.findByPk(request.requesterId);
+            const tokens = [host?.fcmToken, joiner?.fcmToken].filter(t => t && t.trim() !== '') as string[];
+            if (tokens.length > 0) {
+                await sendMulticastPushNotification(tokens, {
+                    title: '🎉 Booking Confirmed!',
+                    body: 'Both payments are complete. Your booking is confirmed!',
+                    data: { type: 'booking_confirmed', partyPlanId: plan.id },
+                });
+            }
+        } catch (err: any) {
+            logger.warn('confirmMatch: notification dispatch failed:', err.message);
+        }
+    });
+
+    logger.info(`[confirmMatch] MATCH_CONFIRMED for plan ${plan.id}, request ${request.id}`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// reopenPlan — resets plan to POSTED and reactivates all WAITING requests.
+// Called when payment expires, accepted user cancels, or system timeout.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function reopenPlan(plan: PartyPlan, failedRequestId: string, failReason: 'payment_failed' | 'cancelled') {
+    const transaction = await sequelize.transaction();
+    try {
+        // Mark the failed request
+        const failedReq = await PartyPlanRequest.findByPk(failedRequestId, { transaction });
+        if (failedReq) {
+            await failedReq.update({
+                status: failReason === 'payment_failed'
+                    ? PartyPlanRequestStatus.PAYMENT_FAILED
+                    : PartyPlanRequestStatus.CANCELLED,
+            }, { transaction });
+        }
+
+        // Reactivate all WAITING requests on this plan
+        await PartyPlanRequest.update(
+            { status: PartyPlanRequestStatus.PENDING },
+            {
+                where: { planId: plan.id, status: PartyPlanRequestStatus.WAITING },
+                transaction,
+            }
+        );
+
+        const pendingCount = await PartyPlanRequest.count({
+            where: { planId: plan.id, status: PartyPlanRequestStatus.PENDING },
+            transaction,
+        });
+
+        // Reset plan lifecycle
+        const newLifecycle = pendingCount > 0
+            ? PartyPlanLifecycleStatus.REQUEST_RECEIVED
+            : PartyPlanLifecycleStatus.POSTED;
+
+        await plan.update({
+            lifecycleStatus: newLifecycle,
+            status: PartyPlanStatus.ACTIVE,
+            isLive: plan.visibility !== 'private',
+            matchedRequestId: null,
+            acceptedAt: null,
+            paymentDeadlineAt: null,
+            paymentStatus: 'pending',
+        }, { transaction });
+
+        await transaction.commit();
+
+        logger.info(`[reopenPlan] Plan ${plan.id} reopened. ${pendingCount} waiting requests reactivated. New lifecycle: ${newLifecycle}`);
+
+        // Notify host and emit socket relisted event
+        setImmediate(async () => {
+            try {
+                const { io } = require('../server');
+                if (plan.visibility !== 'private') {
+                    io.emit('party_plan_relisted', { planId: plan.id });
+                } else {
+                    io.to(`user_${plan.userId}`).emit('party_plan_relisted', { planId: plan.id });
+                }
+
+                await NotificationService.dispatch({
+                    recipientUserId: plan.userId,
+                    actorUserId: plan.userId,
+                    eventType: 'plan_relisted',
+                    category: 'events',
+                    entityType: 'party_plan',
+                    entityId: plan.id,
+                    title: '⚡ Plan Live Again',
+                    body: 'The payment session expired. Your Party Plan is live again and accepting requests.',
+                    metadata: { planId: plan.id },
+                    idempotencyKey: `plan_relisted_${plan.id}_${failedRequestId}`,
+                });
+            } catch (err: any) {
+                logger.warn('reopenPlan: notification failed:', err.message);
+            }
+        });
+    } catch (err: any) {
+        await transaction.rollback();
+        logger.error(`[reopenPlan] Error reopening plan ${plan.id}:`, err);
     }
 }
 
@@ -438,7 +663,9 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                     showHostName,
                     showVenueDetails,
                     showDateDetails,
+                    lifecycleStatus: PartyPlanLifecycleStatus.POSTED,
                 }, { transaction });
+
 
                 // Auto-generate accepted requests for invited users of private or both plan
                 if ((parsedVisibility === PartyPlanVisibility.PRIVATE || parsedVisibility === PartyPlanVisibility.BOTH) && Array.isArray(selectedUsers) && selectedUsers.length > 0) {
@@ -617,6 +844,12 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
         const generatedSignature = hmac.digest('hex');
 
         if (isMockPayment || generatedSignature === razorpay_signature || razorpay_signature === 'mock_signature') {
+            // ── Idempotency guard: if host already paid, return success ────────
+            if (plan.hostRazorpayPaymentId && plan.hostRazorpayPaymentId === razorpay_payment_id) {
+                res.json({ success: true, message: 'Host payment already verified (idempotent).', data: plan });
+                return;
+            }
+
             const activeRequests = await PartyPlanRequest.findAll({
                 where: {
                     planId: id,
@@ -636,7 +869,7 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
                 paymentStatus: 'Awaiting Participant Payment',
             });
 
-            // Send push notification for Host successful payment
+            // FCM push to host confirming payment
             setImmediate(async () => {
                 try {
                     const host = await User.findByPk(plan.userId);
@@ -644,10 +877,7 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
                         await sendMulticastPushNotification([host.fcmToken], {
                             title: '💳 Host Payment Successful',
                             body: `Your ₹${plan.depositAmount || 99} deposit payment was successfully verified.`,
-                            data: {
-                                type: 'host_payment_successful',
-                                partyPlanId: plan.id,
-                            },
+                            data: { type: 'host_payment_successful', partyPlanId: plan.id },
                         });
                     }
                 } catch (pushErr: any) {
@@ -658,103 +888,53 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
             if (activeRequests.length > 0) {
                 let matchSuccessful = false;
                 for (const activeReq of activeRequests) {
-                    // Host has paid! Now start the 30-minute timer for the Joiner.
-                    const timeout = new Date();
-                    timeout.setMinutes(timeout.getMinutes() + 30);
-                    
-                    await activeReq.update({
-                        paymentTimeoutAt: timeout,
-                    });
-
-                    // Notify participant/joiner that they can now pay or join
-                    setImmediate(async () => {
-                        try {
-                            const joiner = await User.findByPk(activeReq.requesterId);
-                            if (joiner && joiner.fcmToken) {
-                                await sendMulticastPushNotification([joiner.fcmToken], {
-                                    title: plan.paymentType === 'self_pay' ? '🎉 Private Party Plan Invite' : '⚡ Action Required: Pay Deposit',
-                                    body: plan.paymentType === 'self_pay'
-                                        ? 'The host has paid. Please confirm your invite to join the party!'
-                                        : 'The host has paid. Please pay your ₹99 deposit to confirm the booking!',
-                                    data: {
-                                        type: plan.paymentType === 'self_pay' ? 'participant_payment_required' : 'participant_payment_required',
-                                        partyPlanId: plan.id,
-                                        requestId: activeReq.id,
-                                    },
-                                });
-                            }
-                        } catch (pushErr: any) {
-                            logger.warn('Failed to send participant payment required push:', pushErr.message);
-                        }
-                    });
-
                     if (activeReq.joinerPaymentStatus === PartyPlanJoinerPaymentStatus.PAID) {
+                        // Joiner already paid! Both paid → trigger MATCH_CONFIRMED
                         matchSuccessful = true;
-                        // Both parties have paid! Match success. Keep statuses as PAID (not refunded)
-                        await activeReq.update({
-                            status: PartyPlanRequestStatus.ACCEPTED,
-                            joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
-                        });
-                        await plan.update({
-                            hostPaymentStatus: PartyPlanPaymentStatus.PAID,
-                            status: PartyPlanStatus.INACTIVE,
-                            isLive: false,
-                            paymentStatus: 'Confirmed',
-                        });
-
-                        // Create Booking & Payments
-                        await createBookingAndPayments(plan, activeReq);
-
-                        // Reject and notify all other requests now that match is fully confirmed
-                        await rejectAndNotifyStaleRequests(plan, activeReq.id);
-
-                        // Notify both about confirmed booking and ticket
-                        setImmediate(async () => {
-                            try {
-                                const joiner = await User.findByPk(activeReq.requesterId);
-                                const host = await User.findByPk(plan.userId);
-                                const tokens = [host?.fcmToken, joiner?.fcmToken].filter(t => t && t.trim() !== '') as string[];
-                                if (tokens.length > 0) {
-                                    await sendMulticastPushNotification(tokens, {
-                                        title: '🎉 Booking Confirmed!',
-                                        body: 'Both payments are complete. Your booking is confirmed!',
-                                        data: {
-                                            type: 'booking_confirmed',
-                                            partyPlanId: plan.id,
-                                        },
-                                    });
-                                }
-                                if (host && host.fcmToken) {
-                                    await sendMulticastPushNotification([host.fcmToken], {
-                                        title: '🎟️ Party Ticket Generated',
-                                        body: 'Your booking ticket has been successfully generated. Present it at the venue!',
-                                        data: {
-                                            type: 'ticket_generated',
-                                            partyPlanId: plan.id,
-                                        },
-                                    });
-                                }
-                            } catch (pushErr: any) {
-                                logger.warn('Failed to send booking confirmed push notifications:', pushErr.message);
-                            }
-                        });
-
-                        // Emit socket match success
+                        const innerTransaction = await sequelize.transaction();
                         try {
-                            const { io } = require('../server');
-                            io.to(`user_${plan.userId}`).emit('party_plan_match_success', { planId: plan.id, requestId: activeReq.id });
-                            io.to(`user_${activeReq.requesterId}`).emit('party_plan_match_success', { planId: plan.id, requestId: activeReq.id });
-                        } catch (socketErr) {
-                            logger.warn('Socket emission failed for party_plan_match_success:', socketErr);
+                            await plan.reload({ lock: innerTransaction.LOCK.UPDATE, transaction: innerTransaction });
+                            await confirmMatch(plan, activeReq, innerTransaction);
+                            await innerTransaction.commit();
+                        } catch (matchErr: any) {
+                            await innerTransaction.rollback();
+                            logger.error('verifyHostPayment: confirmMatch failed:', matchErr);
                         }
                     } else {
-                        // Emit host paid to joiner so they know they can pay now
-                        try {
-                            const { io } = require('../server');
-                            io.to(`user_${activeReq.requesterId}`).emit('party_plan_host_paid', { planId: plan.id, requestId: activeReq.id });
-                        } catch (socketErr) {
-                            logger.warn('Socket emission failed for party_plan_host_paid:', socketErr);
-                        }
+                        // Host paid, joiner hasn't yet — reset joiner's 30-min window from NOW
+                        const joinerDeadline = new Date(Date.now() + 30 * 60 * 1000);
+                        await activeReq.update({ paymentTimeoutAt: joinerDeadline });
+
+                        // Update plan lifecycle to HOST_PAYMENT_COMPLETED
+                        await (plan as any).update({
+                            lifecycleStatus: PartyPlanLifecycleStatus.HOST_PAYMENT_COMPLETED,
+                            paymentDeadlineAt: joinerDeadline,
+                        });
+
+                        // Notify joiner their window starts now
+                        setImmediate(async () => {
+                            try {
+                                await NotificationService.dispatch({
+                                    recipientUserId: activeReq.requesterId,
+                                    actorUserId: plan.userId,
+                                    eventType: 'participant_payment_required',
+                                    category: 'requests',
+                                    entityType: 'party_plan',
+                                    entityId: plan.id,
+                                    title: '⚡ Action Required: Pay Deposit',
+                                    body: 'The host has paid. Please pay your ₹99 deposit to confirm the booking!',
+                                    metadata: { planId: plan.id, requestId: activeReq.id },
+                                    idempotencyKey: `participant_payment_required_${activeReq.id}`,
+                                });
+
+                                const { io } = require('../server');
+                                io.to(`user_${activeReq.requesterId}`).emit('party_plan_host_paid', {
+                                    planId: plan.id, requestId: activeReq.id
+                                });
+                            } catch (err: any) {
+                                logger.warn('Failed to notify joiner of host payment:', err.message);
+                            }
+                        });
                     }
                 }
 
@@ -765,6 +945,10 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
                 }
                 return;
             } else {
+                // No active request — plan is live, host paid but no one accepted yet
+                await (plan as any).update({
+                    lifecycleStatus: PartyPlanLifecycleStatus.POSTED,
+                });
                 res.json({ success: true, message: 'Payment verified. No active join requests currently.', data: plan });
                 return;
             }
@@ -776,6 +960,7 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
         res.status(500).json({ success: false, message: 'Failed to verify payment', error: err.message });
     }
 };
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/mobile/party-plans
@@ -1305,8 +1490,8 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
                         actorUserId: userId,
                         eventType: 'party_plan_request_received',
                         category: 'requests',
-                        entityType: 'party_plan_request',
-                        entityId: newReq.id,
+                        entityType: 'party_plan',
+                        entityId: plan.id,
                         title: '📩 New Party Plan Request!',
                         body: `${requesterName} requested to join your Party Plan at ${venueName}.`,
                         metadata: {
@@ -1321,8 +1506,8 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
                         actorUserId: plan.userId,
                         eventType: 'party_plan_request_sent',
                         category: 'requests',
-                        entityType: 'party_plan_request',
-                        entityId: newReq.id,
+                        entityType: 'party_plan',
+                        entityId: plan.id,
                         title: '✅ Request Sent',
                         body: `Your request to join ${host.firstName}'s Party Plan at ${venueName} was submitted successfully!`,
                         metadata: {
@@ -1444,206 +1629,111 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
         }
 
         const plan = (request as any).plan as PartyPlan;
-        if (plan.userId !== userId) {
+        if (!plan || plan.userId !== userId) {
             await transaction.rollback();
             res.status(403).json({ success: false, message: 'Only the host can accept requests' });
             return;
         }
 
-        // Acquire transactional row update lock on the party plan
+        // Acquire transactional row update lock on the party plan FIRST (prevents race conditions)
         await plan.reload({ lock: transaction.LOCK.UPDATE, transaction });
 
-        // Enforce state transition checks: plan status must be active
-        if (plan.status !== PartyPlanStatus.ACTIVE) {
-            await transaction.rollback();
-            res.status(400).json({ success: false, message: 'This plan is not active or has already been completed/cancelled.' });
-            return;
-        }
-
-        // Check if there is already an active unpaid request on this plan
-        const activeReq = await PartyPlanRequest.findOne({
-            where: {
-                planId: plan.id,
-                status: PartyPlanRequestStatus.PAYMENT_PENDING,
-                paymentTimeoutAt: { [Op.gt]: new Date() }
-            },
-            transaction
-        });
-        if (activeReq) {
+        // Lifecycle-based state validation (single source of truth)
+        const acceptableStates = [
+            PartyPlanLifecycleStatus.POSTED,
+            PartyPlanLifecycleStatus.REQUEST_RECEIVED,
+            PartyPlanLifecycleStatus.HOST_REVIEWING,
+        ];
+        if (!acceptableStates.includes(plan.lifecycleStatus)) {
             await transaction.rollback();
             res.status(400).json({
                 success: false,
-                message: 'You already accepted another request. Please complete the payment or wait for the 30-minute window to expire.'
+                message: `This plan cannot accept requests in its current state (${plan.lifecycleStatus}). It may already have an active payment session or be completed/cancelled.`
             });
             return;
         }
 
-        // Clean up any expired requests in the DB for this plan in real-time
-        const expiredReqs = await PartyPlanRequest.findAll({
-            where: {
-                planId: plan.id,
-                status: PartyPlanRequestStatus.PAYMENT_PENDING,
-                paymentTimeoutAt: { [Op.lte]: new Date() }
-            },
-            transaction
-        });
-        for (const expiredReq of expiredReqs) {
-            await expiredReq.update({ status: PartyPlanRequestStatus.PAYMENT_FAILED }, { transaction });
+        if (plan.status === PartyPlanStatus.CANCELLED) {
+            await transaction.rollback();
+            res.status(400).json({ success: false, message: 'This plan has been cancelled.' });
+            return;
+        }
+
+        // Validate that the request being accepted is still PENDING or WAITING
+        if (request.status !== PartyPlanRequestStatus.PENDING && request.status !== PartyPlanRequestStatus.WAITING) {
+            await transaction.rollback();
+            res.status(400).json({
+                success: false,
+                message: `Cannot accept this request — it is already in status: ${request.status}`
+            });
+            return;
         }
 
         const hostAlreadyPaid = plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID;
+        const paymentDeadline = new Date(Date.now() + 30 * 60 * 1000); // 30 min from now
 
         if (plan.paymentType === 'self_pay') {
             if (hostAlreadyPaid) {
-                await request.update({
-                    status: PartyPlanRequestStatus.ACCEPTED,
-                    joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
-                }, { transaction });
-
-                await plan.update({
-                    status: PartyPlanStatus.INACTIVE,
-                    isLive: false,
-                    paymentStatus: 'Confirmed',
-                }, { transaction });
-
-                await createBookingAndPayments(plan, request, transaction);
-
-                // Reject and notify all other requests now that match is fully confirmed
-                await rejectAndNotifyStaleRequests(plan, request.id, transaction);
-
+                // Self-pay + host already paid = instant match. confirmMatch handles everything atomically.
+                await confirmMatch(plan, request, transaction);
                 await transaction.commit();
-
-                setImmediate(async () => {
-                    try {
-                        const joiner = await User.findByPk(request.requesterId);
-                        const host = await User.findByPk(plan.userId);
-                        const tokens = [host?.fcmToken, joiner?.fcmToken].filter(t => t && t.trim() !== '') as string[];
-                        if (tokens.length > 0) {
-                            await sendMulticastPushNotification(tokens, {
-                                title: '🎉 Booking Confirmed!',
-                                body: 'Your booking has been confirmed! (Paid by the Host)',
-                                data: {
-                                    type: 'booking_confirmed',
-                                    partyPlanId: plan.id,
-                                },
-                            });
-                        }
-                    } catch (pushErr: any) {
-                        logger.warn('Failed to send booking confirmed push notifications:', pushErr.message);
-                    }
-                });
-
-                try {
-                    const { io } = require('../server');
-                    io.to(`user_${plan.userId}`).emit('party_plan_match_success', { planId: plan.id, requestId: request.id });
-                    io.to(`user_${request.requesterId}`).emit('party_plan_match_success', { planId: plan.id, requestId: request.id });
-                    io.emit('party_plan_deleted', { planId: plan.id });
-
-                    const host = await User.findByPk(plan.userId);
-                    const requester = await User.findByPk(request.requesterId);
-                    if (host && requester) {
-                        const venueName = (plan as any)?.venue?.name || 'Club';
-                        io.to(`user_${request.requesterId}`).emit('notification_created', {
-                            id: `ppr_${request.id}`,
-                            title: 'Plan Request Accepted',
-                            body: `Your request to join Party Plan at ${venueName} is confirmed! (Paid by host) 🎉`,
-                            createdAt: new Date().toISOString(),
-                            read: false,
-                            sender: {
-                                id: host.id,
-                                firstName: host.firstName,
-                                lastName: host.lastName,
-                                profileImageUrl: host.profileImageUrl,
-                            }
-                        });
-                        io.to(`user_${plan.userId}`).emit('notification_created', {
-                            id: `ppr_host_${request.id}`,
-                            title: 'Participant Joined',
-                            body: `${requester.firstName} ${requester.lastName} joined your Party Plan at ${venueName}.`,
-                            createdAt: new Date().toISOString(),
-                            read: false,
-                            sender: {
-                                id: requester.id,
-                                firstName: requester.firstName,
-                                lastName: requester.lastName,
-                                profileImageUrl: requester.profileImageUrl,
-                            }
-                        });
-                    }
-                } catch (socketErr) {
-                    logger.warn('Socket emission failed for party_plan_match_success:', socketErr);
-                }
 
                 res.json({ success: true, message: 'Request accepted & booking confirmed immediately (Self-Paid) 🎉', data: request });
                 return;
             } else {
+                // Self-pay but host hasn't paid yet — mark request accepted, put plan in PAYMENT_PENDING
                 await request.update({
                     status: PartyPlanRequestStatus.ACCEPTED,
                     joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
                 }, { transaction });
 
+                // Mark other requests as WAITING
+                await markRequestsAsWaiting(plan, request.id, transaction);
+
                 await plan.update({
+                    lifecycleStatus: PartyPlanLifecycleStatus.GUEST_PAYMENT_COMPLETED,
                     isLive: false,
                     paymentStatus: 'Awaiting Host Payment',
+                    matchedRequestId: request.id,
+                    acceptedAt: new Date(),
+                    paymentDeadlineAt: paymentDeadline,
                 }, { transaction });
 
                 await transaction.commit();
 
-                try {
-                    const { io } = require('../server');
-                    io.to(`user_${request.requesterId}`).emit('party_plan_request_accepted', {
-                        requestId: request.id,
-                        planId: plan.id,
-                        hostAlreadyPaid: false,
-                        hostRazorpayOrderId: plan.hostRazorpayOrderId,
-                        hostAmount: Math.round(plan.depositAmount * 100),
-                        hostCurrency: 'INR',
-                        joinerRazorpayOrderId: null,
-                        joinerAmount: 0,
-                        joinerCurrency: 'INR',
-                    });
-
-                    const host = await User.findByPk(plan.userId);
-                    const requester = await User.findByPk(request.requesterId);
-                    if (host && requester) {
-                        const venueName = (plan as any)?.venue?.name || 'Club';
-                        io.to(`user_${request.requesterId}`).emit('notification_created', {
-                            id: `ppr_${request.id}`,
-                            title: 'Plan Request Accepted',
-                            body: `Your request to join Party Plan at ${venueName} was accepted. Waiting for host payment to confirm. ⏳`,
-                            createdAt: new Date().toISOString(),
-                            read: false,
-                            sender: {
-                                id: host.id,
-                                firstName: host.firstName,
-                                lastName: host.lastName,
-                                profileImageUrl: host.profileImageUrl,
-                            }
+                // Notify joiner via NotificationService (authoritative — no duplicate inline socket call)
+                setImmediate(async () => {
+                    try {
+                        await NotificationService.dispatch({
+                            recipientUserId: request.requesterId,
+                            actorUserId: plan.userId,
+                            eventType: 'party_plan_request_accepted',
+                            category: 'requests',
+                            entityType: 'party_plan',
+                            entityId: plan.id,
+                            title: '✅ Request Accepted!',
+                            body: 'Your join request was accepted. Waiting for host to complete their payment.',
+                            metadata: { planId: plan.id, requestId: request.id },
+                            idempotencyKey: `request_accepted_${request.id}`,
                         });
-                        io.to(`user_${plan.userId}`).emit('notification_created', {
-                            id: `ppr_host_${request.id}`,
-                            title: 'Participant Joined',
-                            body: `${requester.firstName} ${requester.lastName} joined your Party Plan at ${venueName}.`,
-                            createdAt: new Date().toISOString(),
-                            read: false,
-                            sender: {
-                                id: requester.id,
-                                firstName: requester.firstName,
-                                lastName: requester.lastName,
-                                profileImageUrl: requester.profileImageUrl,
-                            }
+                        const { io } = require('../server');
+                        io.to(`user_${request.requesterId}`).emit('party_plan_request_accepted', {
+                            requestId: request.id,
+                            planId: plan.id,
+                            hostAlreadyPaid: false,
+                            hostRazorpayOrderId: plan.hostRazorpayOrderId,
                         });
+                    } catch (err: any) {
+                        logger.warn('Failed to send request accepted notification:', err.message);
                     }
-                } catch (socketErr) {
-                    logger.warn('Socket emission failed for acceptPartyPlanRequest:', socketErr);
-                }
+                });
 
                 res.json({ success: true, message: 'Request accepted. Waiting for Host to pay deposit.', data: request });
                 return;
             }
         }
 
-        // Generate Razorpay Order for the Joiner
+        // ── Split-pay flow: generate Razorpay order for Joiner ─────────────────
         const joinerOptions = {
             amount: Math.round(plan.depositAmount * 100),
             currency: 'INR',
@@ -1653,17 +1743,15 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
         if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id' && process.env.RAZORPAY_KEY_ID !== 'rzp_test_123') {
             try {
                 const resOrder = await razorpay.orders.create(joinerOptions);
-                if (resOrder) {
-                    joinerOrder = resOrder;
-                }
+                if (resOrder) joinerOrder = resOrder;
             } catch (err: any) {
                 logger.warn('Razorpay joiner order failed, using mock: ' + err.message);
             }
         }
 
+        // Only create a new host order if the host hasn't paid yet
         let hostOrder: any = null;
         if (!hostAlreadyPaid) {
-            // Generate Razorpay Order for the Host since they haven't paid yet
             const hostOptions = {
                 amount: Math.round(plan.depositAmount * 100),
                 currency: 'INR',
@@ -1673,128 +1761,103 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
             if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id' && process.env.RAZORPAY_KEY_ID !== 'rzp_test_123') {
                 try {
                     const resOrder = await razorpay.orders.create(hostOptions);
-                    if (resOrder) {
-                        hostOrder = resOrder;
-                    }
+                    if (resOrder) hostOrder = resOrder;
                 } catch (err: any) {
                     logger.warn('Razorpay host order failed, using mock: ' + err.message);
                 }
             }
         }
 
-        const timeout = new Date();
-        timeout.setMinutes(timeout.getMinutes() + 30);
-
-        // Mark request as PAYMENT_PENDING.
+        // Mark request PAYMENT_PENDING
         await request.update({
             status: PartyPlanRequestStatus.PAYMENT_PENDING,
             joinerRazorpayOrderId: joinerOrder.id,
-            paymentTimeoutAt: timeout, // Reset for Joiner when Host pays
+            paymentTimeoutAt: paymentDeadline,
             joinerPaymentStatus: PartyPlanJoinerPaymentStatus.UNPAID,
         }, { transaction });
 
-        // Reserve the plan while waiting for payment
+        // Mark other PENDING requests as WAITING (they can be re-activated if this fails)
+        await markRequestsAsWaiting(plan, request.id, transaction);
+
+        // Reserve the plan with lifecycle state
+        const newLifecycle = hostAlreadyPaid
+            ? PartyPlanLifecycleStatus.HOST_PAYMENT_COMPLETED
+            : PartyPlanLifecycleStatus.PAYMENT_PENDING;
+
         await plan.update({
+            lifecycleStatus: newLifecycle,
             isLive: false,
             hostPaymentStatus: hostAlreadyPaid ? PartyPlanPaymentStatus.PAID : PartyPlanPaymentStatus.UNPAID,
             hostRazorpayOrderId: hostOrder ? hostOrder.id : plan.hostRazorpayOrderId,
             paymentStatus: hostAlreadyPaid ? 'Awaiting Participant Payment' : 'Awaiting Host Payment',
+            matchedRequestId: request.id,
+            acceptedAt: new Date(),
+            paymentDeadlineAt: paymentDeadline,
         }, { transaction });
 
         await transaction.commit();
 
-        // Emit socket events
-        try {
-            const { io } = require('../server');
-            
-            // Notify joiner
-            io.to(`user_${request.requesterId}`).emit('party_plan_request_accepted', {
-                requestId: request.id,
-                planId: plan.id,
-                hostAlreadyPaid,
-                hostRazorpayOrderId: hostOrder ? hostOrder.id : null,
-                hostAmount: hostOrder ? hostOrder.amount : null,
-                hostCurrency: hostOrder ? hostOrder.currency : null,
-                joinerRazorpayOrderId: joinerOrder.id,
-                joinerAmount: joinerOrder.amount,
-                joinerCurrency: joinerOrder.currency,
-            });
-
-            // Remove from global feeds (since it's reserved)
-            io.emit('party_plan_deleted', { planId: plan.id });
-
-            const host = await User.findByPk(plan.userId);
-            const requester = await User.findByPk(request.requesterId);
-            if (host && requester) {
-                const venueName = (plan as any)?.venue?.name || 'Club';
-                io.to(`user_${request.requesterId}`).emit('notification_created', {
-                    id: `ppr_${request.id}`,
-                    title: 'Plan Request Accepted',
-                    body: `Your request to join Party Plan at ${venueName} was accepted. Pay to confirm.`,
-                    createdAt: new Date().toISOString(),
-                    read: false,
-                    sender: {
-                        id: host.id,
-                        firstName: host.firstName,
-                        lastName: host.lastName,
-                        profileImageUrl: host.profileImageUrl,
-                    }
-                });
-            }
-        } catch (socketErr) {
-            logger.warn('Socket emission failed for acceptPartyPlanRequest:', socketErr);
-        }
-
-        // Notify users
+        // Post-commit socket & notification dispatch (non-blocking, authoritative via NotificationService)
         setImmediate(async () => {
             try {
-                const joiner = await User.findByPk(request.requesterId);
-                if (joiner && joiner.fcmToken) {
-                    await sendMulticastPushNotification([joiner.fcmToken], {
-                        title: '🎉 Request Accepted!',
-                        body: 'Your join request was accepted by the host. Get ready to pay!',
-                        data: {
-                            type: 'party_plan_request_accepted',
-                            partyPlanId: plan.id,
-                            requestId: request.id,
-                        },
-                    });
+                const { io } = require('../server');
 
-                    if (hostAlreadyPaid) {
-                        await sendMulticastPushNotification([joiner.fcmToken], {
-                            title: '⚡ Action Required: Pay Deposit',
-                            body: 'Host has paid. Please pay your ₹99 deposit to confirm the booking!',
-                            data: {
-                                type: 'participant_payment_required',
-                                partyPlanId: plan.id,
-                                requestId: request.id,
-                            },
-                        });
-                    }
-                }
+                // Notify joiner of acceptance + payment details
+                io.to(`user_${request.requesterId}`).emit('party_plan_request_accepted', {
+                    requestId: request.id,
+                    planId: plan.id,
+                    hostAlreadyPaid,
+                    hostRazorpayOrderId: hostOrder ? hostOrder.id : null,
+                    hostAmount: hostOrder ? hostOrder.amount : null,
+                    hostCurrency: hostOrder ? hostOrder.currency : null,
+                    joinerRazorpayOrderId: joinerOrder.id,
+                    joinerAmount: joinerOrder.amount,
+                    joinerCurrency: joinerOrder.currency,
+                });
 
+                // Remove from global feeds (plan is reserved)
+                io.emit('party_plan_deleted', { planId: plan.id });
+
+                // Notify joiner via NotificationService (DB + socket + FCM in one call)
+                await NotificationService.dispatch({
+                    recipientUserId: request.requesterId,
+                    actorUserId: plan.userId,
+                    eventType: 'party_plan_request_accepted',
+                    category: 'requests',
+                    entityType: 'party_plan',
+                    entityId: plan.id,
+                    title: '✅ Request Accepted!',
+                    body: hostAlreadyPaid
+                        ? 'Host has paid. Please pay your deposit to confirm the booking!'
+                        : 'Your join request was accepted by the host. Pay your deposit to confirm.',
+                    metadata: { planId: plan.id, requestId: request.id },
+                    idempotencyKey: `request_accepted_${request.id}`,
+                });
+
+                // If host hasn't paid — notify host to pay
                 if (!hostAlreadyPaid) {
-                    const host = await User.findByPk(plan.userId);
-                    if (host && host.fcmToken) {
-                        await sendMulticastPushNotification([host.fcmToken], {
-                            title: '⚡ Action Required: Pay Deposit',
-                            body: 'Please pay your ₹99 deposit to lock this match!',
-                            data: {
-                                type: 'host_payment_required',
-                                partyPlanId: plan.id,
-                            },
-                        });
-                    }
+                    await NotificationService.dispatch({
+                        recipientUserId: plan.userId,
+                        actorUserId: request.requesterId,
+                        eventType: 'host_payment_required',
+                        category: 'requests',
+                        entityType: 'party_plan',
+                        entityId: plan.id,
+                        title: '⚡ Action Required: Pay Deposit',
+                        body: 'You accepted a request. Please pay your ₹99 deposit to lock this match!',
+                        metadata: { planId: plan.id, requestId: request.id },
+                        idempotencyKey: `host_payment_required_${plan.id}_${request.id}`,
+                    });
                 }
             } catch (err: any) {
-                logger.warn('Failed to send accept request notifications:', err.message);
+                logger.warn('acceptPartyPlanRequest: post-commit notifications failed:', err.message);
             }
         });
 
         res.json({
             success: true,
-            message: hostAlreadyPaid 
-                ? 'Request accepted. Plan reserved. Joiner has 30 minutes to pay deposit.' 
+            message: hostAlreadyPaid
+                ? 'Request accepted. Plan reserved. Joiner has 30 minutes to pay deposit.'
                 : 'Request accepted. Plan reserved. Host must pay deposit first within 30 minutes.',
             data: {
                 request,
@@ -1812,6 +1875,90 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
         res.status(500).json({ success: false, message: 'Failed to accept request', error: err.message });
     }
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/party-plans/requests/:reqId/reject
+// Reject request
+// ─────────────────────────────────────────────────────────────────────────────
+export const rejectPartyPlanRequest = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { reqId } = req.params;
+        const { userId } = req.body; // Host's userId
+
+        const request = await PartyPlanRequest.findByPk(reqId, {
+            include: [{ model: PartyPlan, as: 'plan' }]
+        });
+        if (!request) {
+            res.status(404).json({ success: false, message: 'Request not found' });
+            return;
+        }
+
+        const plan = (request as any).plan as PartyPlan;
+        if (!plan || plan.userId !== userId) {
+            res.status(403).json({ success: false, message: 'Only the host can reject requests' });
+            return;
+        }
+
+        if (request.status === PartyPlanRequestStatus.REJECTED || request.status === PartyPlanRequestStatus.CANCELLED) {
+            res.status(400).json({ success: false, message: 'Request is already rejected or cancelled.' });
+            return;
+        }
+
+        const isMatchedRequest = plan.matchedRequestId === request.id;
+
+        if (isMatchedRequest) {
+            // Reopen the plan & reactivate WAITING requests (reopenPlan handles transaction & states)
+            await reopenPlan(plan, request.id, 'cancelled');
+        } else {
+            // Just reject this specific request
+            const transaction = await sequelize.transaction();
+            try {
+                await request.update({ status: PartyPlanRequestStatus.REJECTED }, { transaction });
+                await transaction.commit();
+            } catch (err) {
+                await transaction.rollback();
+                throw err;
+            }
+        }
+
+        // Authoritative notification to the requester
+        setImmediate(async () => {
+            try {
+                let venueName = 'Venue';
+                if (plan.venueId) {
+                    const venue = await Venue.findByPk(plan.venueId);
+                    if (venue) venueName = venue.name;
+                }
+
+                await NotificationService.dispatch({
+                    recipientUserId: request.requesterId,
+                    actorUserId: plan.userId,
+                    eventType: 'party_plan_request_rejected',
+                    category: 'requests',
+                    entityType: 'party_plan_request',
+                    entityId: request.id,
+                    title: '🔴 Request Declined',
+                    body: `Your request to join the Party Plan at ${venueName} was declined.`,
+                    metadata: { planId: plan.id, requestId: request.id },
+                    idempotencyKey: `request_rejected_${request.id}`,
+                });
+
+                const { io } = require('../server');
+                io.to(`user_${request.requesterId}`).emit('plan_unavailable', {
+                    planId: plan.id, requestId: request.id,
+                });
+            } catch (err: any) {
+                logger.warn('Failed to send rejection notifications:', err.message);
+            }
+        });
+
+        res.json({ success: true, message: 'Request rejected successfully' });
+    } catch (err: any) {
+        logger.error('rejectPartyPlanRequest error:', err);
+        res.status(500).json({ success: false, message: 'Failed to reject request', error: err.message });
+    }
+};
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/mobile/party-plans/requests/:reqId/joiner-pay
@@ -1851,11 +1998,6 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
         const generatedSignature = hmac.digest('hex');
 
         if (generatedSignature === razorpay_signature || razorpay_signature === 'mock_signature') {
-            await request.update({
-                joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
-                joinerRazorpayPaymentId: razorpay_payment_id,
-            }, { transaction });
-
             const plan = (request as any).plan as PartyPlan;
             if (!plan) {
                 await transaction.rollback();
@@ -1863,114 +2005,72 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
                 return;
             }
 
-            // Acquire transactional row update lock on the party plan
-            await plan.reload({ lock: transaction.LOCK.UPDATE, transaction });
-
-            // Enforce state transition checks: plan status must be active
-            if (plan.status !== PartyPlanStatus.ACTIVE) {
+            // ── Idempotency guard: if joiner already paid, return success ────────
+            if (request.joinerRazorpayPaymentId && request.joinerRazorpayPaymentId === razorpay_payment_id) {
                 await transaction.rollback();
-                res.status(400).json({ success: false, message: 'This plan is not active or has already been completed/cancelled.' });
+                res.json({ success: true, message: 'Joiner payment already verified (idempotent).', data: request });
                 return;
             }
+
+            // Acquire transactional row update lock on the party plan FIRST
+            await plan.reload({ lock: transaction.LOCK.UPDATE, transaction });
+
+            // Lifecycle guard — plan must be in a payment-accepting state
+            const validPaymentStates = [
+                PartyPlanLifecycleStatus.PAYMENT_PENDING,
+                PartyPlanLifecycleStatus.HOST_PAYMENT_COMPLETED,
+                PartyPlanLifecycleStatus.GUEST_PAYMENT_COMPLETED,
+            ];
+            if (!validPaymentStates.includes(plan.lifecycleStatus) && plan.status !== PartyPlanStatus.ACTIVE) {
+                await transaction.rollback();
+                res.status(400).json({ success: false, message: `This plan is not in a payment-accepting state (${plan.lifecycleStatus}).` });
+                return;
+            }
+
+            // Record joiner payment
+            await request.update({
+                joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
+                joinerRazorpayPaymentId: razorpay_payment_id,
+            }, { transaction });
 
             const hostPaid = plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID;
 
             if (hostPaid) {
-                // Both parties have paid within 30 minutes! Keep both as PAID (not refunded)
-                await request.update({
-                    status: PartyPlanRequestStatus.ACCEPTED,
-                    joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
-                }, { transaction });
-                await plan.update({
-                    hostPaymentStatus: PartyPlanPaymentStatus.PAID,
-                    status: PartyPlanStatus.INACTIVE,
-                    isLive: false,
-                    paymentStatus: 'Confirmed',
-                }, { transaction });
-
-                // Create Booking & Payments
-                await createBookingAndPayments(plan, request, transaction);
-
-                // Reject and notify all other requests now that match is fully confirmed
-                await rejectAndNotifyStaleRequests(plan, request.id, transaction);
-
+                // Both parties have paid → MATCH_CONFIRMED
+                await confirmMatch(plan, request, transaction);
                 await transaction.commit();
-
-                // Notify both about confirmed booking and ticket
-                setImmediate(async () => {
-                    try {
-                        const joiner = await User.findByPk(request.requesterId);
-                        const host = await User.findByPk(plan.userId);
-                        const tokens = [host?.fcmToken, joiner?.fcmToken].filter(t => t && t.trim() !== '') as string[];
-                        if (tokens.length > 0) {
-                            await sendMulticastPushNotification(tokens, {
-                                title: '🎉 Booking Confirmed!',
-                                body: 'Both payments are complete. Your booking is confirmed!',
-                                data: {
-                                    type: 'booking_confirmed',
-                                    partyPlanId: plan.id,
-                                },
-                            });
-                        }
-                        if (host && host.fcmToken) {
-                            await sendMulticastPushNotification([host.fcmToken], {
-                                title: '🎟️ Party Ticket Generated',
-                                body: 'Your booking ticket has been successfully generated. Present it at the venue!',
-                                data: {
-                                    type: 'ticket_generated',
-                                    partyPlanId: plan.id,
-                                },
-                            });
-                        }
-                    } catch (pushErr: any) {
-                        logger.warn('Failed to send booking confirmed push notifications:', pushErr.message);
-                    }
-                });
-
-                // Send push notification for Joiner successful payment
-                setImmediate(async () => {
-                    try {
-                        const joiner = await User.findByPk(request.requesterId);
-                        if (joiner && joiner.fcmToken) {
-                            await sendMulticastPushNotification([joiner.fcmToken], {
-                                title: '💳 Payment Successful',
-                                body: 'Your ₹99 deposit payment was successfully verified.',
-                                data: {
-                                    type: 'joiner_payment_successful',
-                                    partyPlanId: request.planId,
-                                },
-                            });
-                        }
-                    } catch (pushErr: any) {
-                        logger.warn('Failed to send joiner payment success push:', pushErr.message);
-                    }
-                });
-
-                // Emit socket match success
-                try {
-                    const { io } = require('../server');
-                    io.to(`user_${plan.userId}`).emit('party_plan_match_success', { planId: plan.id, requestId: request.id });
-                    io.to(`user_${request.requesterId}`).emit('party_plan_match_success', { planId: plan.id, requestId: request.id });
-                } catch (socketErr) {
-                    logger.warn('Socket emission failed for party_plan_match_success:', socketErr);
-                }
 
                 res.json({ success: true, message: 'Both paid! Match Successful & Chat Opened 🎉', data: request });
             } else {
-                // Joiner paid, wait for host (though in flow Host should pay first)
-                await request.update({
-                    status: PartyPlanRequestStatus.PAYMENT_PENDING,
+                // Joiner paid but host hasn't yet — update lifecycle to GUEST_PAYMENT_COMPLETED
+                await plan.update({
+                    lifecycleStatus: PartyPlanLifecycleStatus.GUEST_PAYMENT_COMPLETED,
                 }, { transaction });
 
                 await transaction.commit();
 
-                // Emit joiner paid to host
-                try {
-                    const { io } = require('../server');
-                    io.to(`user_${plan.userId}`).emit('party_plan_joiner_paid', { planId: plan.id, requestId: request.id });
-                } catch (socketErr) {
-                    logger.warn('Socket emission failed for party_plan_joiner_paid:', socketErr);
-                }
+                // Notify host that joiner has paid and they need to pay
+                setImmediate(async () => {
+                    try {
+                        await NotificationService.dispatch({
+                            recipientUserId: plan.userId,
+                            actorUserId: request.requesterId,
+                            eventType: 'joiner_payment_completed',
+                            category: 'requests',
+                            entityType: 'party_plan',
+                            entityId: plan.id,
+                            title: '💳 Participant Paid!',
+                            body: 'Your party partner has paid their deposit. Please pay yours to confirm the booking!',
+                            metadata: { planId: plan.id, requestId: request.id },
+                            idempotencyKey: `joiner_paid_${request.id}`,
+                        });
+
+                        const { io } = require('../server');
+                        io.to(`user_${plan.userId}`).emit('party_plan_joiner_paid', { planId: plan.id, requestId: request.id });
+                    } catch (err: any) {
+                        logger.warn('Failed to notify host of joiner payment:', err.message);
+                    }
+                });
 
                 res.json({ success: true, message: 'Payment verified. Waiting for host payment. ⏳', data: request });
             }
@@ -1984,6 +2084,7 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
         res.status(500).json({ success: false, message: 'Failed to verify payment', error: err.message });
     }
 };
+
 
 export const confirmSelfPaidJoin = async (req: Request, res: Response): Promise<void> => {
     const transaction = await sequelize.transaction();
@@ -2225,18 +2326,17 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
                         io.to(`user_${request.requesterId}`).emit('party_plan_match_success', { planId: plan.id, requestId: request.id });
                         io.emit('party_plan_deleted', { planId: plan.id });
 
-                        io.to(`user_${plan.userId}`).emit('notification_created', {
-                            id: `ppr_host_${request.id}`,
+                        await NotificationService.dispatch({
+                            recipientUserId: plan.userId,
+                            actorUserId: joiner.id,
+                            eventType: 'invite_accepted',
+                            category: 'requests',
+                            entityType: 'party_plan',
+                            entityId: plan.id,
                             title: 'Invite Accepted',
                             body: `${joinerName} accepted and confirmed your private invite to the Party Plan at ${venueName}.`,
-                            createdAt: new Date().toISOString(),
-                            read: false,
-                            sender: {
-                                id: joiner.id,
-                                firstName: joiner.firstName,
-                                lastName: joiner.lastName,
-                                profileImageUrl: joiner.profileImageUrl,
-                            }
+                            metadata: { planId: plan.id, requestId: request.id },
+                            idempotencyKey: `invite_accepted_${request.id}`,
                         });
                     }
                 } catch (socketErr) {
@@ -2288,18 +2388,17 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
                         
                         io.emit('party_plan_deleted', { planId: plan.id });
 
-                        io.to(`user_${plan.userId}`).emit('notification_created', {
-                            id: `ppr_host_${request.id}`,
+                        await NotificationService.dispatch({
+                            recipientUserId: plan.userId,
+                            actorUserId: joiner.id,
+                            eventType: 'invite_accepted',
+                            category: 'requests',
+                            entityType: 'party_plan',
+                            entityId: plan.id,
                             title: 'Invite Accepted',
                             body: `${joinerName} accepted your private invite to the Party Plan at ${venueName}. Please complete your payment.`,
-                            createdAt: new Date().toISOString(),
-                            read: false,
-                            sender: {
-                                id: joiner.id,
-                                firstName: joiner.firstName,
-                                lastName: joiner.lastName,
-                                profileImageUrl: joiner.profileImageUrl,
-                            }
+                            metadata: { planId: plan.id, requestId: request.id },
+                            idempotencyKey: `invite_accepted_awaiting_host_${request.id}`,
                         });
                     }
                 } catch (socketErr) {
@@ -2346,20 +2445,19 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
 
                     io.emit('party_plan_deleted', { planId: plan.id });
 
-                    io.to(`user_${plan.userId}`).emit('notification_created', {
-                        id: `ppr_host_${request.id}`,
-                        title: 'Invite Accepted',
-                        body: `${joinerName} accepted your private invite to the Party Plan at ${venueName}. Awaiting participant payment.`,
-                        createdAt: new Date().toISOString(),
-                        read: false,
-                        sender: {
-                            id: joiner.id,
-                            firstName: joiner.firstName,
-                            lastName: joiner.lastName,
-                            profileImageUrl: joiner.profileImageUrl,
-                        }
-                    });
-                }
+                        await NotificationService.dispatch({
+                            recipientUserId: plan.userId,
+                            actorUserId: joiner.id,
+                            eventType: 'invite_accepted',
+                            category: 'requests',
+                            entityType: 'party_plan',
+                            entityId: plan.id,
+                            title: 'Invite Accepted',
+                            body: `${joinerName} accepted your private invite to the Party Plan at ${venueName}. Awaiting participant payment.`,
+                            metadata: { planId: plan.id, requestId: request.id },
+                            idempotencyKey: `invite_accepted_awaiting_joiner_${request.id}`,
+                        });
+                    }
             } catch (socketErr) {
                 logger.warn('Socket emission failed for acceptPartyPlanInvite:', socketErr);
             }
@@ -3012,11 +3110,12 @@ export const initiateJoinerPayment = async (req: Request, res: Response): Promis
 // ─────────────────────────────────────────────────────────────────────────────
 export const confirmArrival = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { id } = req.params;
-        const { userId, hasArrived } = req.body;
+        const id = req.params.id || req.params.planId;
+        const { response, hasArrived, latitude, longitude, device, ip } = req.body;
+        const userId = req.user?.id || req.body.userId || req.query.userId;
 
-        if (!userId || hasArrived === undefined) {
-            res.status(400).json({ success: false, message: 'userId and hasArrived boolean are required' });
+        if (!userId) {
+            res.status(401).json({ success: false, message: 'Unauthorized' });
             return;
         }
 
@@ -3027,11 +3126,14 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
         }
 
         const isHost = plan.userId === userId;
+        const choice = response ? response.toString().toUpperCase() : (hasArrived === false ? 'NO' : 'YES');
+        const isYes = choice === 'YES' || hasArrived === true;
 
         if (isHost) {
             await plan.update({
-                hostArrivalConfirmed: Boolean(hasArrived),
-                hostArrivalTime: hasArrived ? new Date() : null,
+                hostArrivalConfirmed: isYes,
+                hostArrivalTime: isYes ? new Date() : null,
+                hostLatLangCheckIn: latitude && longitude ? true : plan.hostLatLangCheckIn
             });
         } else {
             const acceptedReq = await PartyPlanRequest.findOne({
@@ -3042,8 +3144,9 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
                 return;
             }
             await acceptedReq.update({
-                guestArrivalConfirmed: Boolean(hasArrived),
-                guestArrivalTime: hasArrived ? new Date() : null,
+                guestArrivalConfirmed: isYes,
+                guestArrivalTime: isYes ? new Date() : null,
+                latLangCheckIn: latitude && longitude ? true : acceptedReq.latLangCheckIn
             });
         }
 
@@ -3051,14 +3154,14 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
         await AuditLog.logAction({
             userId,
             partyPlanId: id,
-            action: 'Arrival Confirmed',
-            metadata: { isHost, hasArrived: Boolean(hasArrived) }
+            action: `Arrival Response (${choice})`,
+            metadata: { isHost, response: choice, latitude, longitude, device, ip }
         });
 
         res.json({
             success: true,
-            message: `Arrival confirmation (${hasArrived ? 'YES' : 'NOT YET'}) recorded.`,
-            data: { planId: id, isHost, hasArrived: Boolean(hasArrived) }
+            message: `Arrival response (${choice}) recorded.`,
+            data: { planId: id, isHost, confirmed: isYes }
         });
     } catch (err: any) {
         logger.error('confirmArrival error:', err);
@@ -3119,3 +3222,355 @@ export const submitPartyReview = async (req: Request, res: Response): Promise<vo
         res.status(500).json({ success: false, message: 'Failed to submit review', error: err.message });
     }
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dynamic Payload Enrichment Helper for Notification Timeline
+// ─────────────────────────────────────────────────────────────────────────────
+export async function enrichPartyPlanNotificationCard(planId: string, recipientUserId: string) {
+    try {
+        const plan = await PartyPlan.findByPk(planId, {
+            include: [
+                { model: User, as: 'creator', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] },
+                { model: Venue, as: 'venue', attributes: ['id', 'name', 'area'] },
+                { 
+                    model: PartyPlanRequest, 
+                    as: 'requests', 
+                    include: [{ model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] }] 
+                }
+            ]
+        });
+
+        if (!plan) return null;
+
+        const p = plan as any;
+        const isHost = plan.userId === recipientUserId;
+        const matchedRequest = plan.matchedRequestId 
+            ? p.requests?.find((r: any) => r.id === plan.matchedRequestId)
+            : p.requests?.find((r: any) => r.status === 'accepted' || r.status === 'payment_pending');
+
+        const counterpartUser = isHost
+            ? (matchedRequest ? matchedRequest.requester : null)
+            : p.creator;
+
+        const hostName = `${p.creator?.firstName || 'Host'} ${p.creator?.lastName || ''}`.trim();
+        const guestName = counterpartUser ? `${counterpartUser.firstName} ${counterpartUser.lastName}`.trim() : 'Partner';
+
+        const partyImage = p.creator?.profileImageUrl || '';
+        const planTitle = plan.message || 'Party Night Out';
+        const venueArea = p.venue?.area || 'Pune';
+        const distance = '1.2 km'; 
+        const dateStr = plan.planDateTime.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+        const timeStr = plan.planDateTime.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+
+        const timeline: any[] = [];
+        const status = plan.lifecycleStatus;
+
+        const addStep = (title: string, completed: boolean, dateVal?: Date | null) => {
+            timeline.push({
+                title,
+                completed,
+                timestamp: dateVal ? dateVal.toISOString() : null
+            });
+        };
+
+        // 1. Plan Posted
+        addStep('Plan Posted', true, plan.createdAt);
+
+        // 2. Request Sent / Received
+        const hasRequests = p.requests && p.requests.length > 0;
+        addStep(isHost ? 'Request Received' : 'Request Sent', hasRequests || !!matchedRequest, matchedRequest?.createdAt);
+
+        // 3. Request Accepted
+        const isAccepted = [
+            PartyPlanLifecycleStatus.USER_ACCEPTED,
+            PartyPlanLifecycleStatus.PAYMENT_PENDING,
+            PartyPlanLifecycleStatus.HOST_PAYMENT_COMPLETED,
+            PartyPlanLifecycleStatus.GUEST_PAYMENT_COMPLETED,
+            PartyPlanLifecycleStatus.MATCH_CONFIRMED,
+            PartyPlanLifecycleStatus.CHAT_ENABLED,
+            PartyPlanLifecycleStatus.EVENT_UPCOMING,
+            PartyPlanLifecycleStatus.EVENT_REMINDER,
+            PartyPlanLifecycleStatus.ONE_HOUR_REMINDER,
+            PartyPlanLifecycleStatus.THIRTY_MIN_REMINDER,
+            PartyPlanLifecycleStatus.TEN_MIN_CONFIRMATION,
+            PartyPlanLifecycleStatus.ARRIVAL_PENDING,
+            PartyPlanLifecycleStatus.ARRIVAL_CONFIRMATION,
+            PartyPlanLifecycleStatus.ARRIVAL_VERIFIED,
+            PartyPlanLifecycleStatus.WALLET_CREDIT_PROCESSED,
+            PartyPlanLifecycleStatus.PLAN_COMPLETED,
+            PartyPlanLifecycleStatus.COMPLETED
+        ].includes(status as any);
+        addStep('Request Accepted', isAccepted, plan.acceptedAt);
+
+        // 4. Waiting Payment
+        const isWaitingPayment = isAccepted;
+        addStep('Waiting Payment', isWaitingPayment, plan.acceptedAt);
+
+        // 5. Host Paid
+        const hostPaid = plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID;
+        addStep('Host Paid', hostPaid);
+
+        // 6. Guest Paid
+        const guestPaid = matchedRequest?.joinerPaymentStatus === 'paid' || plan.paymentType === 'self_pay';
+        addStep('Guest Paid', guestPaid);
+
+        // 7. Match Confirmed
+        const isConfirmed = [
+            PartyPlanLifecycleStatus.MATCH_CONFIRMED,
+            PartyPlanLifecycleStatus.CHAT_ENABLED,
+            PartyPlanLifecycleStatus.EVENT_UPCOMING,
+            PartyPlanLifecycleStatus.EVENT_REMINDER,
+            PartyPlanLifecycleStatus.ONE_HOUR_REMINDER,
+            PartyPlanLifecycleStatus.THIRTY_MIN_REMINDER,
+            PartyPlanLifecycleStatus.TEN_MIN_CONFIRMATION,
+            PartyPlanLifecycleStatus.ARRIVAL_PENDING,
+            PartyPlanLifecycleStatus.ARRIVAL_CONFIRMATION,
+            PartyPlanLifecycleStatus.ARRIVAL_VERIFIED,
+            PartyPlanLifecycleStatus.WALLET_CREDIT_PROCESSED,
+            PartyPlanLifecycleStatus.PLAN_COMPLETED,
+            PartyPlanLifecycleStatus.COMPLETED
+        ].includes(status as any);
+        addStep('Match Confirmed', isConfirmed);
+
+        // 8. Chat Enabled
+        const isChatEnabled = [
+            PartyPlanLifecycleStatus.CHAT_ENABLED,
+            PartyPlanLifecycleStatus.EVENT_UPCOMING,
+            PartyPlanLifecycleStatus.EVENT_REMINDER,
+            PartyPlanLifecycleStatus.ONE_HOUR_REMINDER,
+            PartyPlanLifecycleStatus.THIRTY_MIN_REMINDER,
+            PartyPlanLifecycleStatus.TEN_MIN_CONFIRMATION,
+            PartyPlanLifecycleStatus.ARRIVAL_PENDING,
+            PartyPlanLifecycleStatus.ARRIVAL_CONFIRMATION,
+            PartyPlanLifecycleStatus.ARRIVAL_VERIFIED,
+            PartyPlanLifecycleStatus.WALLET_CREDIT_PROCESSED,
+            PartyPlanLifecycleStatus.PLAN_COMPLETED,
+            PartyPlanLifecycleStatus.COMPLETED
+        ].includes(status as any);
+        addStep('Chat Enabled', isChatEnabled);
+
+        // 9. Reminder Scheduled
+        const now = new Date();
+        const eventTime = new Date(plan.planDateTime);
+        const isClose = (eventTime.getTime() - now.getTime()) <= 24 * 60 * 60 * 1000;
+        addStep('Reminder Scheduled', isClose || [
+            PartyPlanLifecycleStatus.ONE_HOUR_REMINDER,
+            PartyPlanLifecycleStatus.THIRTY_MIN_REMINDER,
+            PartyPlanLifecycleStatus.TEN_MIN_CONFIRMATION
+        ].includes(status as any));
+
+        // 10. Arrival Pending / Verified
+        const isArrivalStep = [
+            PartyPlanLifecycleStatus.TEN_MIN_CONFIRMATION,
+            PartyPlanLifecycleStatus.ARRIVAL_PENDING,
+            PartyPlanLifecycleStatus.ARRIVAL_CONFIRMATION,
+            PartyPlanLifecycleStatus.ARRIVAL_VERIFIED,
+            PartyPlanLifecycleStatus.WALLET_CREDIT_PROCESSED,
+            PartyPlanLifecycleStatus.PLAN_COMPLETED,
+            PartyPlanLifecycleStatus.COMPLETED
+        ].includes(status as any);
+        addStep('Arrival Verified', isArrivalStep);
+
+        // 11. Completed
+        const isCompleted = [
+            PartyPlanLifecycleStatus.WALLET_CREDIT_PROCESSED,
+            PartyPlanLifecycleStatus.PLAN_COMPLETED,
+            PartyPlanLifecycleStatus.COMPLETED,
+            PartyPlanLifecycleStatus.ARCHIVED
+        ].includes(status as any);
+        addStep('Completed', isCompleted);
+
+        let primaryAction: string | null = null;
+        let secondaryAction: string | null = null;
+        let primaryActionUrl: string | null = null;
+        let secondaryActionUrl: string | null = null;
+        let currentStatusText = 'Active';
+
+        if (status === PartyPlanLifecycleStatus.CANCELLED) {
+            currentStatusText = 'Cancelled';
+        } else if (status === PartyPlanLifecycleStatus.EXPIRED) {
+            currentStatusText = 'Expired';
+        } else if (isCompleted) {
+            currentStatusText = 'Completed';
+            primaryAction = 'View Summary';
+            primaryActionUrl = `/party-plans/${plan.id}/summary`;
+        } else if (status === PartyPlanLifecycleStatus.TEN_MIN_CONFIRMATION || status === PartyPlanLifecycleStatus.ARRIVAL_PENDING || status === PartyPlanLifecycleStatus.ARRIVAL_CONFIRMATION) {
+            currentStatusText = 'Action Required: Confirm Arrival';
+            primaryAction = 'Confirm Arrival';
+            secondaryAction = 'Open Chat';
+            primaryActionUrl = `/party-plans/${plan.id}/arrival-confirm`;
+            secondaryActionUrl = `/chat/${plan.id}`;
+        } else if (status === PartyPlanLifecycleStatus.ONE_HOUR_REMINDER || status === PartyPlanLifecycleStatus.THIRTY_MIN_REMINDER) {
+            currentStatusText = 'Event Starting Soon';
+            primaryAction = 'Open Chat';
+            primaryActionUrl = `/chat/${plan.id}`;
+        } else if (isChatEnabled || isConfirmed) {
+            currentStatusText = 'Match Confirmed';
+            primaryAction = 'Open Chat';
+            primaryActionUrl = `/chat/${plan.id}`;
+        } else if (isAccepted) {
+            if (isHost) {
+                if (!hostPaid) {
+                    currentStatusText = 'Action Required: Pay Deposit';
+                    primaryAction = 'Pay Now';
+                    primaryActionUrl = `/party-plans/${plan.id}/pay-host`;
+                } else {
+                    currentStatusText = 'Waiting other user';
+                    primaryAction = 'Waiting...';
+                }
+            } else {
+                if (!guestPaid) {
+                    currentStatusText = 'Action Required: Pay Deposit';
+                    primaryAction = 'Pay Now';
+                    primaryActionUrl = `/party-plans/${plan.id}/pay-joiner/${matchedRequest?.id}`;
+                } else {
+                    currentStatusText = 'Waiting other user';
+                    primaryAction = 'Waiting...';
+                }
+            }
+        } else {
+            if (isHost) {
+                if (hasRequests) {
+                    currentStatusText = 'Request Received';
+                    primaryAction = 'Accept';
+                    secondaryAction = 'Reject';
+                    primaryActionUrl = `/requests/accept`;
+                    secondaryActionUrl = `/requests/reject`;
+                } else {
+                    currentStatusText = 'Active';
+                }
+            } else {
+                currentStatusText = 'Request Sent';
+                primaryAction = 'Pending Review';
+            }
+        }
+
+        let countdownText: string | null = null;
+        if (plan.paymentDeadlineAt && !isConfirmed && [PartyPlanLifecycleStatus.USER_ACCEPTED, PartyPlanLifecycleStatus.PAYMENT_PENDING, PartyPlanLifecycleStatus.HOST_PAYMENT_COMPLETED, PartyPlanLifecycleStatus.GUEST_PAYMENT_COMPLETED].includes(status as any)) {
+            const deadline = new Date(plan.paymentDeadlineAt);
+            const diffMs = deadline.getTime() - now.getTime();
+            if (diffMs > 0) {
+                const minutes = Math.floor(diffMs / 60000);
+                const seconds = Math.floor((diffMs % 60000) / 1000);
+                countdownText = `Payment expires in ${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+            } else {
+                countdownText = 'Payment session expired';
+            }
+        } else if (eventTime.getTime() > now.getTime()) {
+            const diffMs = eventTime.getTime() - now.getTime();
+            const diffHours = Math.floor(diffMs / (3600 * 1000));
+            if (diffHours >= 24) {
+                const diffDays = Math.floor(diffHours / 24);
+                countdownText = `Event starts in ${diffDays} Day${diffDays > 1 ? 's' : ''}`;
+            } else if (diffHours >= 1) {
+                countdownText = `Event starts in ${diffHours} Hour${diffHours > 1 ? 's' : ''}`;
+            } else {
+                const diffMins = Math.floor(diffMs / 60000);
+                countdownText = `Event starts in ${diffMins} Minutes`;
+            }
+        }
+
+        return {
+            partyPlanId: plan.id,
+            partyImage,
+            hostName,
+            guestName,
+            planTitle,
+            venueArea,
+            distance,
+            date: dateStr,
+            time: timeStr,
+            currentStatus: currentStatusText,
+            progressTimeline: timeline,
+            primaryAction,
+            secondaryAction,
+            primaryActionUrl,
+            secondaryActionUrl,
+            countdown: countdownText,
+            lastUpdated: plan.updatedAt ? plan.updatedAt.toISOString() : plan.createdAt.toISOString(),
+            matchedRequestId: plan.matchedRequestId,
+        };
+    } catch (enrichErr: any) {
+        logger.error(`Error enriching party plan notification card ${planId}:`, enrichErr);
+        return null;
+    }
+}
+
+
+
+/**
+ * GET /api/mobile/party-plans/:planId/summary
+ * Returns a comprehensive post-event summary for Host and Guest
+ */
+export async function getPlanSummary(req: Request, res: Response): Promise<Response> {
+    try {
+        const { planId } = req.params;
+        const userId = (req.query.userId as string) || (req.user as any)?.id;
+
+        const plan = await PartyPlan.findByPk(planId, {
+            include: [
+                { model: Venue, as: 'venue', attributes: ['name', 'area', 'address'] },
+                { model: User, as: 'creator', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] },
+                {
+                    model: PartyPlanRequest,
+                    as: 'requests',
+                    include: [{ model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] }]
+                }
+            ]
+        });
+
+        if (!plan) {
+            return res.status(404).json({ success: false, message: 'Party plan not found' });
+        }
+
+        const p = plan as any;
+        const matchedRequest = plan.matchedRequestId
+            ? p.requests?.find((r: any) => r.id === plan.matchedRequestId)
+            : p.requests?.find((r: any) => r.status === 'accepted');
+
+        const host = p.creator;
+        const guest = matchedRequest ? matchedRequest.requester : null;
+
+        const hostConfirmed = Boolean(plan.hostArrivalConfirmed);
+        const guestConfirmed = Boolean(matchedRequest?.guestArrivalConfirmed);
+
+        let completionStatus = 'Completed (Both Reached)';
+        if (hostConfirmed && guestConfirmed) completionStatus = 'Completed (Both Reached)';
+        else if (hostConfirmed && !guestConfirmed) completionStatus = 'Completed (Host Reached, Guest No-Show)';
+        else if (!hostConfirmed && guestConfirmed) completionStatus = 'Completed (Guest Reached, Host No-Show)';
+        else completionStatus = 'Closed (Both No-Show)';
+
+        const walletCreditHost = plan.hostPaymentStatus === 'refunded' ? `₹${plan.depositAmount || 99}` : '₹0';
+        const walletCreditGuest = matchedRequest?.joinerPaymentStatus === 'refunded' ? '₹99' : '₹0';
+
+        const reliabilityImpactHost = hostConfirmed ? '+5 Score' : '-10 Score';
+        const reliabilityImpactGuest = guestConfirmed ? '+5 Score' : '-10 Score';
+
+        return res.json({
+            success: true,
+            data: {
+                partyPlanId: plan.id,
+                planTitle: plan.message || 'Party Night Out',
+                venueName: p.venue?.name || 'Venue',
+                venueArea: p.venue?.area || 'Pune',
+                eventDate: plan.planDateTime ? plan.planDateTime.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '',
+                eventTime: plan.planDateTime ? plan.planDateTime.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '',
+                host: host ? { id: host.id, name: `${host.firstName} ${host.lastName}`.trim(), photo: host.profileImageUrl } : null,
+                guest: guest ? { id: guest.id, name: `${guest.firstName} ${guest.lastName}`.trim(), photo: guest.profileImageUrl } : null,
+                completionStatus,
+                walletCredit: userId === plan.userId ? walletCreditHost : walletCreditGuest,
+                reliabilityImpact: userId === plan.userId ? reliabilityImpactHost : reliabilityImpactGuest,
+                timeline: [
+                    { step: 'Plan Created', timestamp: plan.createdAt },
+                    { step: 'Request Accepted', timestamp: plan.acceptedAt },
+                    { step: 'Match Confirmed', timestamp: plan.updatedAt },
+                    { step: 'Arrival Verified', timestamp: plan.hostArrivalTime || matchedRequest?.guestArrivalTime },
+                    { step: 'Plan Completed', timestamp: plan.updatedAt },
+                ]
+            }
+        });
+    } catch (err: any) {
+        logger.error('[partyPlanController] getPlanSummary error:', err);
+        return res.status(500).json({ success: false, message: 'Failed to fetch plan summary' });
+    }
+}

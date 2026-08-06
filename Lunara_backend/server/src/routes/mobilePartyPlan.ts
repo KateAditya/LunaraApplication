@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { body, param } from 'express-validator';
 import { validate } from '../middleware/validate';
 import {
@@ -22,6 +22,8 @@ import {
     getPartyPlanTicket,
     confirmArrival,
     submitPartyReview,
+    rejectPartyPlanRequest,
+    getPlanSummary,
 } from '../controllers/partyPlanController';
 
 const router = Router();
@@ -287,20 +289,7 @@ router.post(
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         validate,
     ],
-    async (req: Request, res: Response) => {
-        try {
-            const { reqId } = req.params;
-            // A simple patch to set status to cancelled
-            const { PartyPlanRequest } = require('../../models');
-            const request = await PartyPlanRequest.findByPk(reqId);
-            if (!request) return res.status(404).json({ success: false, message: 'Request not found' });
-            request.status = 'rejected';
-            await request.save();
-            return res.json({ success: true, message: 'Request rejected' });
-        } catch (error) {
-            return res.status(500).json({ success: false, message: 'Error rejecting request', error });
-        }
-    }
+    rejectPartyPlanRequest
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -348,8 +337,10 @@ import { respondToSafetyCheck, getPendingSafetyCheck } from '../controllers/mobi
 router.post('/safety-checks/respond', respondToSafetyCheck);
 router.get('/safety-checks/pending', getPendingSafetyCheck);
 
-// Phase 2 Routes
+// Phase 2 & 3 Routes
 router.post('/:id/confirm-arrival', confirmArrival);
+router.post('/:planId/arrival-confirm', confirmArrival);
+router.get('/:planId/summary', getPlanSummary);
 router.post('/:id/review', submitPartyReview);
 
 export default router;

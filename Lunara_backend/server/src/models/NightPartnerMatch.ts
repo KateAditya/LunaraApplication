@@ -25,6 +25,9 @@ export interface NightPartnerMatchAttributes {
     razorpayOrderId?: string;
     maxPartners: number;
     paymentExpiresAt?: Date;
+    reminder2hSent?: boolean;
+    reminder1hSent?: boolean;
+    reminder30mSent?: boolean;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -41,6 +44,9 @@ export interface NightPartnerMatchCreationAttributes
         | 'razorpayOrderId'
         | 'maxPartners'
         | 'paymentExpiresAt'
+        | 'reminder2hSent'
+        | 'reminder1hSent'
+        | 'reminder30mSent'
         | 'createdAt'
         | 'updatedAt'
     > {}
@@ -62,6 +68,9 @@ class NightPartnerMatch
     public razorpayOrderId?: string;
     public maxPartners!: number;
     public paymentExpiresAt?: Date;
+    public reminder2hSent!: boolean;
+    public reminder1hSent!: boolean;
+    public reminder30mSent!: boolean;
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 }
@@ -142,6 +151,24 @@ NightPartnerMatch.init(
             type: DataTypes.DATE,
             allowNull: true,
             field: 'payment_expires_at',
+        },
+        reminder2hSent: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+            field: 'reminder_2h_sent',
+        },
+        reminder1hSent: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+            field: 'reminder_1h_sent',
+        },
+        reminder30mSent: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+            field: 'reminder_30m_sent',
         },
     },
     {

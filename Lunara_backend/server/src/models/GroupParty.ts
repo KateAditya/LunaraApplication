@@ -33,6 +33,9 @@ export interface GroupPartyAttributes {
     optionalMobileNumber?: string;
     foodPreference?: string;
     drinkPreference?: string;
+    reminder2hSent?: boolean;
+    reminder1hSent?: boolean;
+    reminder30mSent?: boolean;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -40,7 +43,7 @@ export interface GroupPartyAttributes {
 export interface GroupPartyCreationAttributes
     extends Optional<
         GroupPartyAttributes,
-        'id' | 'status' | 'paymentStatus' | 'paymentId' | 'ticketCode' | 'ticketUrl' | 'createdAt' | 'updatedAt' | 'optionalMobileNumber' | 'foodPreference' | 'drinkPreference'
+        'id' | 'status' | 'paymentStatus' | 'paymentId' | 'ticketCode' | 'ticketUrl' | 'createdAt' | 'updatedAt' | 'optionalMobileNumber' | 'foodPreference' | 'drinkPreference' | 'reminder2hSent' | 'reminder1hSent' | 'reminder30mSent'
     > { }
 
 class GroupParty
@@ -63,6 +66,9 @@ class GroupParty
     public optionalMobileNumber?: string;
     public foodPreference?: string;
     public drinkPreference?: string;
+    public reminder2hSent!: boolean;
+    public reminder1hSent!: boolean;
+    public reminder30mSent!: boolean;
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 }
@@ -162,6 +168,24 @@ GroupParty.init(
             type: DataTypes.STRING(100),
             allowNull: true,
             field: 'drink_preference',
+        },
+        reminder2hSent: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+            field: 'reminder_2h_sent',
+        },
+        reminder1hSent: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+            field: 'reminder_1h_sent',
+        },
+        reminder30mSent: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+            field: 'reminder_30m_sent',
         },
     },
     {

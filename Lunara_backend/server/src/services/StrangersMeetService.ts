@@ -109,6 +109,16 @@ export class StrangersMeetService {
             }
         );
 
+        try {
+            const AuditLog = (await import('../models/AuditLog')).default;
+            await AuditLog.logAction({
+                userId,
+                partyPlanId: request.id,
+                action: 'Stranger Meet Created',
+                metadata: { subject, venueId, numberOfPersons }
+            });
+        } catch (_) {}
+
         return request;
     }
 
@@ -152,6 +162,16 @@ export class StrangersMeetService {
         } catch (tErr) {
             logger.error(`[StrangersMeetService] Ticket generation error for SM Request ${request.id}:`, tErr);
         }
+
+        try {
+            const AuditLog = (await import('../models/AuditLog')).default;
+            await AuditLog.logAction({
+                userId: request.userId,
+                partyPlanId: request.id,
+                action: 'Stranger Meet Host Deposit Verified',
+                metadata: { razorpay_payment_id, razorpay_order_id }
+            });
+        } catch (_) {}
 
         await this.emitNotification({
             recipientUserId: request.userId,
@@ -224,6 +244,16 @@ export class StrangersMeetService {
             await joiner.update({ razorpayOrderId: razorpayOrder.id });
         }
 
+        try {
+            const AuditLog = (await import('../models/AuditLog')).default;
+            await AuditLog.logAction({
+                userId,
+                partyPlanId: requestId,
+                action: 'Stranger Meet Join Requested',
+                metadata: { joinerId: joiner.id, chargesPerHead }
+            });
+        } catch (_) {}
+
         return { joiner, order: razorpayOrder };
     }
 
@@ -281,14 +311,22 @@ export class StrangersMeetService {
             try {
                 const { io } = require('../server');
                 if (io) {
-                    io.to(`user_${recipientUserId}`).emit('strangers_meet_status_update', { entityId, eventType });
-                    io.to(`user_${recipientUserId}`).emit('notification_created', {
-                        id: `sm_${entityId}_${Date.now()}`,
+                    const card = await StrangersMeetService.enrichStrangersMeetNotificationCard(entityId, recipientUserId);
+
+                    io.to(`user_${recipientUserId}`).emit('strangers_meet_status_update', { entityId, eventType, card });
+                    io.to(`user_${recipientUserId}`).emit('notification_updated', {
+                        id: `strangers_meet_timeline_${entityId}`,
                         title,
                         body,
-                        createdAt: new Date().toISOString(),
-                        read: false,
-                        data: { type: eventType, entityId }
+                        card,
+                        updatedAt: new Date().toISOString()
+                    });
+
+                    // Live feed update broadcast
+                    io.emit('live_feed_update', {
+                        type: 'strangers_meet_update',
+                        entityId,
+                        eventType
                     });
                 }
             } catch (sockErr) {
@@ -343,6 +381,173 @@ export class StrangersMeetService {
             }
         } catch (err) {
             logger.warn(`[StrangersMeetService] emitNotification global error: ${err}`);
+        }
+    }
+
+    /**
+     * Unifies and enriches Stranger Meet notification card into ONE single timeline card
+     */
+    public static async enrichStrangersMeetNotificationCard(
+        meetId: string,
+        recipientUserId: string
+    ): Promise<Record<string, any> | null> {
+        try {
+            const User = (await import('../models/User')).default;
+            const Venue = (await import('../models/Venue')).default;
+
+            const request = await StrangersMeetRequest.findByPk(meetId, {
+                include: [
+                    { model: Venue, as: 'venue', attributes: ['name', 'area'] },
+                    { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] },
+                    {
+                        model: StrangersMeetJoiner,
+                        as: 'joiners',
+                        include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] }]
+                    }
+                ]
+            });
+
+            if (!request) return null;
+
+            const reqAny = request as any;
+            const isHost = request.userId === recipientUserId;
+            const joiners: any[] = reqAny.joiners || [];
+            const userJoiner = joiners.find((j: any) => j.userId === recipientUserId);
+            const isParticipant = isHost || Boolean(userJoiner);
+
+            if (!isParticipant) return null;
+
+            const now = new Date();
+            const eventTime = new Date(request.eventDateTime);
+            const isCompleted = request.status === StrangersMeetStatus.COMPLETED || (eventTime.getTime() < now.getTime() - 2 * 60 * 60 * 1000);
+            const isConfirmed = request.status === StrangersMeetStatus.APPROVED && request.paymentStatus === StrangersMeetPaymentStatus.PAID;
+            const isHostPaid = request.paymentStatus === StrangersMeetPaymentStatus.PAID;
+            const isApproved = request.status === StrangersMeetStatus.APPROVED;
+
+            // Countdown calculation
+            const diffMs = eventTime.getTime() - now.getTime();
+            const diffHours = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60)));
+            const diffMins = Math.max(0, Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60)));
+
+            const timeline: any[] = [];
+            const addStep = (title: string, completed: boolean, dateVal?: Date | null) => {
+                timeline.push({
+                    title,
+                    completed,
+                    timestamp: dateVal ? dateVal.toISOString() : null
+                });
+            };
+
+            // 1. Booking Created
+            addStep('Booking Created', true, request.createdAt);
+
+            // 2. Request Sent
+            addStep('Request Sent', isApproved || isConfirmed, request.createdAt);
+
+            // 3. Request Accepted
+            addStep('Request Accepted', isApproved || isConfirmed, request.updatedAt);
+
+            // 4. Booking Confirmed
+            addStep('Booking Confirmed', isConfirmed, request.updatedAt);
+
+            // 5. Chat Enabled
+            addStep('Chat Enabled', isConfirmed, request.updatedAt);
+
+            // 6. 2 Hour Reminder
+            addStep('2 Hour Reminder', Boolean(request.reminder2hSent) || diffMs <= 2 * 60 * 60 * 1000);
+
+            // 7. 1 Hour Reminder
+            addStep('1 Hour Reminder', Boolean(request.reminder1hSent) || diffMs <= 1 * 60 * 60 * 1000);
+
+            // 8. 30 Minute Reminder
+            addStep('30 Minute Reminder', Boolean(request.reminder30mSent) || diffMs <= 30 * 60 * 1000);
+
+            // 9. Completed
+            addStep('Completed', isCompleted);
+
+            let currentStatusText = 'Booking Requested';
+            let primaryAction: string | null = null;
+            let secondaryAction: string | null = null;
+            let primaryActionUrl: string | null = null;
+            let secondaryActionUrl: string | null = null;
+
+            if (isCompleted) {
+                currentStatusText = 'Completed';
+                primaryAction = 'View Details';
+                primaryActionUrl = `/strangers-meet/${request.id}`;
+            } else if (isConfirmed) {
+                if (diffMs <= 30 * 60 * 1000) {
+                    currentStatusText = 'Time to leave for your Stranger Meet';
+                } else if (diffMs <= 60 * 60 * 1000) {
+                    currentStatusText = 'Starts in 1 Hour';
+                } else if (diffMs <= 2 * 60 * 60 * 1000) {
+                    currentStatusText = 'Starts in 2 Hours';
+                } else {
+                    currentStatusText = 'Booking Confirmed • Chat Active';
+                }
+                primaryAction = 'Open Chat';
+                primaryActionUrl = `/chat/strangers-meet-${request.id}`;
+                secondaryAction = 'View Ticket';
+                secondaryActionUrl = `/strangers-meet/${request.id}/ticket`;
+            } else if (isApproved) {
+                if (isHost) {
+                    if (!isHostPaid) {
+                        currentStatusText = 'Action Required: Pay Deposit';
+                        primaryAction = 'Pay Deposit';
+                        primaryActionUrl = `/strangers-meet/${request.id}/pay-deposit`;
+                    } else {
+                        currentStatusText = 'Host Reviewing Joiners';
+                        primaryAction = 'Review Joiners';
+                        primaryActionUrl = `/strangers-meet/${request.id}/joiners`;
+                    }
+                } else {
+                    if (userJoiner?.status === 'accepted' && userJoiner?.paymentStatus !== 'paid') {
+                        currentStatusText = 'Action Required: Pay Seat Fee';
+                        primaryAction = 'Pay Now';
+                        primaryActionUrl = `/strangers-meet/${request.id}/pay-joiner`;
+                    } else {
+                        currentStatusText = 'Booking Requested';
+                        primaryAction = 'Pending Review';
+                    }
+                }
+            } else {
+                currentStatusText = 'Under Host Review';
+                primaryAction = 'Pending Approval';
+            }
+
+            const venueName = reqAny.venue?.name || 'Venue';
+            const eventDateStr = request.eventDateTime
+                ? new Date(request.eventDateTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                : '';
+
+            return {
+                id: `strangers_meet_timeline_${request.id}`,
+                meetId: request.id,
+                title: request.subject || 'Stranger Meetup',
+                tagline: request.tagline || '',
+                venueName,
+                venueArea: reqAny.venue?.area || 'Pune',
+                eventDate: eventDateStr,
+                host: reqAny.user ? {
+                    id: reqAny.user.id,
+                    name: `${reqAny.user.firstName} ${reqAny.user.lastName}`.trim(),
+                    photo: reqAny.user.profileImageUrl
+                } : null,
+                slotsFilled: request.slotsFilled || 0,
+                totalSlots: request.numberOfPersons,
+                chargesPerHead: request.chargesPerHead,
+                currentStatusText,
+                timeline,
+                countdown: diffMs > 0 ? `${diffHours}h ${diffMins}m remaining` : 'Started / Past',
+                primaryAction,
+                secondaryAction,
+                primaryActionUrl,
+                secondaryActionUrl,
+                updatedAt: request.updatedAt ? request.updatedAt.toISOString() : new Date().toISOString()
+            };
+        } catch (err) {
+            logger.error('[StrangersMeetService] enrichStrangersMeetNotificationCard error:', err);
+            return null;
         }
     }
 }

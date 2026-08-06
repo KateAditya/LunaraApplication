@@ -176,10 +176,62 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
             await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_arrival_time TIMESTAMP WITH TIME ZONE;`);
             await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS lat_lang_check_in VARCHAR(255);`);
 
+            // ── Party Plan Engine V2 — Lifecycle State Machine Migrations ─────────────
+            // Add lifecycle_status enum type (PostgreSQL requires explicit type creation)
+            await sequelize.query(`
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_party_plans_lifecycle_status') THEN
+                        CREATE TYPE "enum_party_plans_lifecycle_status" AS ENUM (
+                            'draft', 'posted', 'request_received', 'host_reviewing',
+                            'user_accepted', 'payment_pending', 'host_payment_completed',
+                            'guest_payment_completed', 'match_confirmed', 'chat_enabled',
+                            'event_reminder', 'arrival_confirmation', 'completed',
+                            'cancelled', 'expired', 'failed'
+                        );
+                    END IF;
+                END $$;
+            `);
+            // Add lifecycle_status column to party_plans
+            await sequelize.query(`
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='lifecycle_status') THEN
+                        ALTER TABLE party_plans ADD COLUMN lifecycle_status "enum_party_plans_lifecycle_status" NOT NULL DEFAULT 'posted';
+                    END IF;
+                END $$;
+            `);
+            // Backfill existing rows: active+isLive=true → posted, inactive → match_confirmed, cancelled → cancelled
+            await sequelize.query(`
+                UPDATE party_plans SET lifecycle_status = 'match_confirmed'
+                WHERE lifecycle_status = 'posted' AND status = 'inactive' AND host_payment_status = 'paid';
+            `);
+            await sequelize.query(`
+                UPDATE party_plans SET lifecycle_status = 'cancelled'
+                WHERE lifecycle_status = 'posted' AND status = 'cancelled';
+            `);
+
+            // Add lifecycle timestamp columns to party_plans
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS accepted_at TIMESTAMP WITH TIME ZONE;`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS payment_deadline_at TIMESTAMP WITH TIME ZONE;`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS matched_request_id UUID;`);
+
+            // Add WAITING value to party_plan_request status enum if not already present
+            await sequelize.query(`
+                DO $$ BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_enum
+                        WHERE enumlabel = 'waiting'
+                        AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'enum_party_plan_requests_status')
+                    ) THEN
+                        ALTER TYPE "enum_party_plan_requests_status" ADD VALUE 'waiting';
+                    END IF;
+                END $$;
+            `);
+
             // Automatically unblock any users previously autoblocked due to no-shows (only 10+ user blocks should trigger autoblock)
             await sequelize.query(`UPDATE users SET is_autoblocked = false, autoblocked_reason = NULL, is_active = true WHERE is_autoblocked = true AND (block_count IS NULL OR block_count < 10);`);
 
             logger.info('users, messages, and party_plans table columns verified/migrated successfully.');
+
 
 
 

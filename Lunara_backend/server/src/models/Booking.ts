@@ -77,6 +77,9 @@ export interface BookingAttributes {
     adminPaymentLink?: string;
     adminPaymentAmount?: number;
     razorpayOrderId?: string;
+    reminder2hSent?: boolean;
+    reminder1hSent?: boolean;
+    reminder30mSent?: boolean;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -111,6 +114,9 @@ export interface BookingCreationAttributes
         | 'adminPaymentLink'
         | 'adminPaymentAmount'
         | 'razorpayOrderId'
+        | 'reminder2hSent'
+        | 'reminder1hSent'
+        | 'reminder30mSent'
         | 'createdAt'
         | 'updatedAt'
     > { }
@@ -152,6 +158,9 @@ class Booking extends Model<BookingAttributes, BookingCreationAttributes> implem
     public adminPaymentLink?: string;
     public adminPaymentAmount?: number;
     public razorpayOrderId?: string;
+    public reminder2hSent!: boolean;
+    public reminder1hSent!: boolean;
+    public reminder30mSent!: boolean;
     
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
@@ -375,6 +384,24 @@ Booking.init(
             type: DataTypes.STRING(255),
             allowNull: true,
             field: 'razorpay_order_id',
+        },
+        reminder2hSent: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+            field: 'reminder_2h_sent',
+        },
+        reminder1hSent: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+            field: 'reminder_1h_sent',
+        },
+        reminder30mSent: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+            field: 'reminder_30m_sent',
         },
     },
     {

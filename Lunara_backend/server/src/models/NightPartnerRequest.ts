@@ -19,6 +19,9 @@ export interface NightPartnerRequestAttributes {
     status: NightPartnerRequestStatus;
     expiresAt: Date;
     nightInterestId?: string;
+    reminder2hSent?: boolean;
+    reminder1hSent?: boolean;
+    reminder30mSent?: boolean;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -26,7 +29,7 @@ export interface NightPartnerRequestAttributes {
 export interface NightPartnerRequestCreationAttributes
     extends Optional<
         NightPartnerRequestAttributes,
-        'id' | 'eventTime' | 'status' | 'nightInterestId' | 'createdAt' | 'updatedAt'
+        'id' | 'eventTime' | 'status' | 'nightInterestId' | 'createdAt' | 'updatedAt' | 'reminder2hSent' | 'reminder1hSent' | 'reminder30mSent'
     > {}
 
 class NightPartnerRequest
@@ -41,6 +44,9 @@ class NightPartnerRequest
     public status!: NightPartnerRequestStatus;
     public expiresAt!: Date;
     public nightInterestId?: string;
+    public reminder2hSent!: boolean;
+    public reminder1hSent!: boolean;
+    public reminder30mSent!: boolean;
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 }
@@ -94,6 +100,24 @@ NightPartnerRequest.init(
             allowNull: true,
             field: 'night_interest_id',
             references: { model: 'night_interests', key: 'id' },
+        },
+        reminder2hSent: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+            field: 'reminder_2h_sent',
+        },
+        reminder1hSent: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+            field: 'reminder_1h_sent',
+        },
+        reminder30mSent: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+            field: 'reminder_30m_sent',
         },
     },
     {

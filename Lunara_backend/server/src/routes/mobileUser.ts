@@ -9,6 +9,7 @@ import Notification from '../models/Notification';
 import { Op } from 'sequelize';
 import { optionalAuth } from '../middleware/auth';
 import { NotificationActionController } from '../controllers/NotificationActionController';
+import { enrichPartyPlanNotificationCard } from '../controllers/partyPlanController';
 
 const router = Router();
 
@@ -165,30 +166,59 @@ function getReadRequestIds(userId: string): Set<string> {
     return userReadRequestIds.get(userId)!;
 }
 
-async function getUserNotifications(uId: string, clientReadNotificationIds?: Set<string>, serverReadNotificationIds?: Set<string>): Promise<any[]> {
+
+function getDateSection(createdAtStr: string): 'Today' | 'Yesterday' | 'This Week' | 'Earlier' {
+    const date = new Date(createdAtStr);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(startOfWeek.getDate() - today.getDay());
+    const dateTime = date.getTime();
+    if (dateTime >= today.getTime()) return 'Today';
+    if (dateTime >= yesterday.getTime()) return 'Yesterday';
+    if (dateTime >= startOfWeek.getTime()) return 'This Week';
+    return 'Earlier';
+}
+
+async function getUserNotifications(
+    uId: string,
+    filter: string = 'all',
+    search: string = '',
+    clientReadNotificationIds?: Set<string>,
+    serverReadNotificationIds?: Set<string>
+): Promise<any[]> {
     const user = await User.findByPk(uId, { attributes: ['clearedNotificationsAt'] });
     const clearedAt = user?.clearedNotificationsAt ? new Date(user.clearedNotificationsAt).getTime() : 0;
-    // Merge client-side read IDs with server-side per-user read IDs (never use the global set)
     const perUserServerIds = serverReadNotificationIds || getReadNotificationIds(uId);
     const activeReadNotificationIds = new Set<string>([
         ...(clientReadNotificationIds || []),
         ...perUserServerIds,
     ]);
 
-    // Compile notifications list
     const notifications: any[] = [];
+    const partyPlanIds = new Set<string>();
 
     // 0. Fetch stored DB Notification records
     try {
         const storedNotifs = await Notification.findAll({
             where: { recipientUserId: uId },
             order: [['createdAt', 'DESC']],
-            limit: 50
+            limit: 100
         });
 
         for (const sn of storedNotifs) {
             const notificationId = sn.id;
             const isRead = sn.isRead || activeReadNotificationIds.has(notificationId);
+            const metadata = sn.metadata || {};
+            
+            // Extract partyPlanId if present
+            const pId = metadata.planId || metadata.partyPlanId || (sn.entityType === 'party_plan' ? sn.entityId : null);
+            if (pId) {
+                partyPlanIds.add(pId);
+            }
+
             notifications.push({
                 id: notificationId,
                 title: sn.title,
@@ -198,617 +228,208 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
                 createdAt: sn.createdAt ? sn.createdAt.toISOString() : new Date().toISOString(),
                 read: isRead,
                 isRead: isRead,
-                data: sn.metadata || {},
+                data: metadata,
                 deepLink: sn.deepLink,
                 actionType: sn.actionType,
+                entityType: sn.entityType,
+                entityId: sn.entityId,
             });
         }
     } catch (snErr) {
         console.error('Error fetching stored Notification records:', snErr);
     }
 
-    // 1. Fetch Likes & Super Likes
-    const matches = await UserMatch.findAll({
-        where: { user2Id: uId },
-        include: [
-            {
-                model: User,
-                as: 'user1',
-                attributes: ['id', 'firstName', 'lastName', 'profileImageUrl']
-            }
-        ],
-        order: [['createdAt', 'DESC']],
-        limit: 20
-    });
-
-    // 2. Fetch Payments
-    const payments = await Payment.findAll({
-        where: { userId: uId },
-        order: [['createdAt', 'DESC']],
-        limit: 20
-    });
-
-    // 3. Fetch PartyPlanRequests
-    const partyRequests = await PartyPlanRequest.findAll({
-        where: { requesterId: uId },
-        include: [
-            {
-                model: PartyPlan,
-                as: 'plan',
-                include: [
-                    {
-                        model: Venue,
-                        as: 'venue',
-                        attributes: ['name']
-                    }
-                ]
-            }
-        ],
-        order: [['createdAt', 'DESC']],
-        limit: 20
-    });
-
-    // Fetch PartyPlanRequests where current user is host
-    const myHostedPlans = await PartyPlan.findAll({
-        where: { userId: uId },
-        attributes: ['id', 'venueId', 'visibility'],
-        include: [{ model: Venue, as: 'venue', attributes: ['name'] }]
-    });
-
-    const hostPartyRequests = myHostedPlans.length > 0
-        ? await PartyPlanRequest.findAll({
+    // Fetch active/recent PartyPlans for the user to make sure they have a card
+    try {
+        const recentPlans = await PartyPlan.findAll({
             where: {
-                planId: { [Op.in]: myHostedPlans.map(p => p.id) },
-                status: { [Op.in]: ['accepted', 'payment_pending'] }
+                [Op.or]: [
+                    { userId: uId },
+                    { '$requests.requesterId$': uId }
+                ]
             },
-            include: [
-                {
-                    model: User,
-                    as: 'requester',
-                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl']
-                }
-            ],
+            include: [{
+                model: PartyPlanRequest,
+                as: 'requests',
+                required: false
+            }],
+            limit: 20
+        });
+        for (const plan of recentPlans) {
+            partyPlanIds.add(plan.id);
+        }
+    } catch (planErr) {
+        console.error('Error fetching recent plans for notifications:', planErr);
+    }
+
+    // Build/Enrich Unified Party Plan Timeline Cards
+    const timelineCards: any[] = [];
+    for (const planId of partyPlanIds) {
+        const card = await enrichPartyPlanNotificationCard(planId, uId);
+        if (card) {
+            // Find all DB notifications associated with this plan
+            const planNotifs = notifications.filter(n => {
+                const metadata = n.data || {};
+                const pId = metadata.planId || metadata.partyPlanId || (n.entityType === 'party_plan' ? n.entityId : null);
+                return pId === planId;
+            });
+
+            // Timeline card is unread if ANY database notification for this plan is unread
+            const hasUnread = planNotifs.length > 0 ? planNotifs.some(n => !n.read) : false;
+            
+            // The timestamp is the max of the plan's update time and latest notification's time
+            let maxTime = new Date(card.lastUpdated).getTime();
+            for (const pn of planNotifs) {
+                const pt = new Date(pn.createdAt).getTime();
+                if (pt > maxTime) maxTime = pt;
+            }
+
+            timelineCards.push({
+                id: `party_plan_timeline_${planId}`,
+                title: card.planTitle,
+                body: card.currentStatus,
+                category: 'events',
+                type: 'party_plan_timeline',
+                createdAt: new Date(maxTime).toISOString(),
+                read: !hasUnread,
+                isRead: !hasUnread,
+                data: card,
+                deepLink: `/party-plans/${planId}`,
+            });
+        }
+    }
+
+    // Filter out raw party plan notifications (they are now unified in timelineCards)
+    const otherNotifs = notifications.filter(n => {
+        const metadata = n.data || {};
+        const pId = metadata.planId || metadata.partyPlanId || (n.entityType === 'party_plan' ? n.entityId : null);
+        return !pId;
+    });
+
+    // Merge other notifications and unified timeline cards
+    notifications.length = 0;
+    notifications.push(...otherNotifs, ...timelineCards);
+
+    // 1. Fetch Likes & Super Likes (in-memory fallback)
+    try {
+        const matches = await UserMatch.findAll({
+            where: { user2Id: uId },
+            include: [{ model: User, as: 'user1', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] }],
             order: [['createdAt', 'DESC']],
             limit: 20
-        })
-        : [];
+        });
+        for (const match of matches) {
+            const m = match as any;
+            const firstUser = m.user1;
+            const notificationId = `match_${match.id}`;
+            notifications.push({
+                id: notificationId,
+                title: m.isSuperLike ? '⭐ Super Liked!' : '💖 New Connection!',
+                body: `${firstUser?.firstName || 'Someone'} ${m.isSuperLike ? 'super liked' : 'liked'} your profile.`,
+                category: 'likes',
+                type: m.isSuperLike ? 'super_like' : 'like',
+                createdAt: match.createdAt ? match.createdAt.toISOString() : new Date().toISOString(),
+                read: activeReadNotificationIds.has(notificationId),
+                isRead: activeReadNotificationIds.has(notificationId),
+                sender: firstUser ? {
+                    id: firstUser.id,
+                    firstName: firstUser.firstName,
+                    lastName: firstUser.lastName,
+                    profileImageUrl: firstUser.profileImageUrl,
+                } : null,
+                data: { matchId: match.id }
+            });
+        }
+    } catch (matchErr) {
+        console.error('Error fetching match notifications:', matchErr);
+    }
 
-    // 4. Fetch PlanJoinRequests
-    const planJoinRequests = await PlanJoinRequest.findAll({
-        where: { requesterId: uId },
-        include: [
-            {
-                model: Plan,
-                as: 'plan',
-                include: [
-                    {
-                        model: Venue,
-                        as: 'venue',
-                        attributes: ['name']
-                    }
-                ]
-            }
-        ],
-        order: [['createdAt', 'DESC']],
-        limit: 20
-    });
-
-    // 5. Fetch StrangersMeetRequests created by uId (Host)
-    const hostMeets = await StrangersMeetRequest.findAll({
-        where: { userId: uId },
-        include: [{ model: Venue, as: 'venue', attributes: ['name'] }],
-        order: [['createdAt', 'DESC']],
-        limit: 20
-    });
-
-    // 6. Fetch StrangersMeetJoiners where user is participant
-    const myJoinRequests = await StrangersMeetJoiner.findAll({
-        where: { userId: uId },
-        include: [
-            {
-                model: StrangersMeetRequest,
-                as: 'strangersMeetRequest',
-                include: [{ model: Venue, as: 'venue', attributes: ['name'] }]
-            }
-        ],
-        order: [['createdAt', 'DESC']],
-        limit: 20
-    });
-
-    // 7. Fetch StrangersMeetJoiners for host's meets
-    const hostMeetIds = hostMeets.map(m => m.id);
-    const incomingJoinRequests = hostMeetIds.length > 0
-        ? await StrangersMeetJoiner.findAll({
-            where: {
-                strangersMeetRequestId: { [Op.in]: hostMeetIds }
-            },
-            include: [
-                {
-                    model: User,
-                    as: 'user',
-                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl']
-                },
-                {
-                    model: StrangersMeetRequest,
-                    as: 'strangersMeetRequest'
-                }
-            ],
+    // 2. Fetch Payments (in-memory fallback)
+    try {
+        const payments = await Payment.findAll({
+            where: { userId: uId },
             order: [['createdAt', 'DESC']],
             limit: 20
-        })
-        : [];
-
-    // Add Likes/Super Likes
-    for (const match of matches) {
-        const sender = (match as any).user1;
-        if (!sender) continue;
-        const senderName = `${sender.firstName} ${sender.lastName}`;
-        const isSuper = match.matchReason === 'superlike';
-        const title = isSuper ? 'Super Like' : 'Like';
-        const body = isSuper 
-            ? `${senderName} super liked your profile 🌟`
-            : `${senderName} liked your profile ❤️`;
-        
-        const notificationId = `match_${match.id}`;
-        const isRead = match.status === 'connected' || match.status === 'declined' || activeReadNotificationIds.has(notificationId);
-
-        notifications.push({
-            id: notificationId,
-            title,
-            body,
-            category: 'activity',
-            type: isSuper ? 'superlike' : 'like',
-            createdAt: match.createdAt ? match.createdAt.toISOString() : new Date().toISOString(),
-            read: isRead,
-            isRead: isRead,
-            sender: {
-                id: sender.id,
-                firstName: sender.firstName,
-                lastName: sender.lastName,
-                profileImageUrl: sender.profileImageUrl,
-            }
         });
+        for (const payment of payments) {
+            const notificationId = `payment_${payment.id}`;
+            notifications.push({
+                id: notificationId,
+                title: '💳 Payment Transaction',
+                body: `Transaction of ₹${payment.amount} was ${payment.status}.`,
+                category: 'payments',
+                type: 'payment_update',
+                createdAt: payment.createdAt ? payment.createdAt.toISOString() : new Date().toISOString(),
+                read: activeReadNotificationIds.has(notificationId),
+                isRead: activeReadNotificationIds.has(notificationId),
+                data: { paymentId: payment.id }
+            });
+        }
+    } catch (payErr) {
+        console.error('Error fetching payment notifications:', payErr);
     }
 
-    // Add Payments
-    for (const p of payments) {
-        const notificationId = `payment_${p.id}`;
-        const isSuccess = p.status === 'successful';
-        notifications.push({
-            id: notificationId,
-            title: isSuccess ? 'Payment Successful' : 'Payment Update',
-            body: `Payment of ₹${p.amount} ${isSuccess ? 'confirmed' : p.status}.`,
-            category: 'activity',
-            type: 'payment',
-            createdAt: p.createdAt ? p.createdAt.toISOString() : new Date().toISOString(),
-            read: activeReadNotificationIds.has(notificationId),
-            isRead: activeReadNotificationIds.has(notificationId),
+    // 3. Fetch Stranger Meet Cards (Unified Timeline Card Engine)
+    try {
+        const { StrangersMeetService } = await import('../services/StrangersMeetService');
+
+        const hostMeets = await StrangersMeetRequest.findAll({
+            where: { userId: uId },
+            attributes: ['id']
         });
-    }
 
-    // Add PartyPlanRequests
-    for (const pr of partyRequests) {
-        const plan = (pr as any).plan;
-        const venueName = plan?.venue?.name || 'Club';
-        let body = '';
-        let title = 'Plan Request Update';
-        const notificationId = `ppr_${pr.id}`;
-        let isRead = false;
-        let type = 'party_plan_request';
+        const joinedRecords = await StrangersMeetJoiner.findAll({
+            where: { userId: uId },
+            attributes: ['strangersMeetRequestId']
+        });
 
-        if (pr.status === 'accepted' || pr.status === 'payment_pending') {
-            const isInvite = plan && plan.selectedUsers && plan.selectedUsers.includes(uId);
-            const isSelfPay = plan && plan.paymentType === 'self_pay';
-            const hostPaid = plan && plan.hostPaymentStatus === 'paid';
+        const meetIds = Array.from(new Set([
+            ...hostMeets.map(m => m.id),
+            ...joinedRecords.map(j => j.strangersMeetRequestId)
+        ]));
 
-            if (isInvite) {
-                title = 'Private Party Plan Invite';
-                if (isSelfPay) {
-                    if (hostPaid) {
-                        body = `Your private invite to Party Plan at ${venueName} is confirmed! (Paid by host) 🎉`;
-                    } else {
-                        body = `You have been privately invited to a Party Plan at ${venueName}. Accept to join.`;
+        for (const mId of meetIds) {
+            const card = await StrangersMeetService.enrichStrangersMeetNotificationCard(mId, uId);
+            if (card) {
+                const notificationId = card.id;
+                const isRead = activeReadNotificationIds.has(notificationId);
+                notifications.push({
+                    id: notificationId,
+                    title: card.title,
+                    body: `${card.currentStatusText} — ${card.venueName} (${card.venueArea})`,
+                    createdAt: card.updatedAt,
+                    read: isRead,
+                    isRead: isRead,
+                    category: 'bookings',
+                    sender: card.host,
+                    eventDetails: {
+                        subject: card.title,
+                        tagline: card.tagline,
+                        venue: card.venueName,
+                        eventDate: card.eventDate,
+                        slotsFilled: card.slotsFilled,
+                        totalSlots: card.totalSlots
+                    },
+                    data: {
+                        type: 'strangers_meet_timeline',
+                        strangersMeetId: card.meetId,
+                        cardPayload: card
                     }
-                } else {
-                    body = `You have been privately invited to a Party Plan at ${venueName}. Pay to confirm.`;
-                }
-            } else {
-                title = 'Plan Request Accepted';
-                if (isSelfPay) {
-                    if (hostPaid) {
-                        body = `Your request to join Party Plan at ${venueName} is confirmed! (Paid by host) 🎉`;
-                    } else {
-                        body = `Your request to join Party Plan at ${venueName} was accepted. Waiting for host payment to confirm. ⏳`;
-                    }
-                } else {
-                    body = `Your request to join Party Plan at ${venueName} was accepted. Pay to confirm.`;
-                }
-            }
-        } else if (pr.status === 'rejected') {
-            const isInvite = plan && plan.selectedUsers && plan.selectedUsers.includes(uId);
-            if (plan && plan.status === 'inactive') {
-                title = 'Plan Unavailable';
-                body = `The Party Plan at ${venueName} has been confirmed with another user. Feel free to find another plan!`;
-                type = 'plan_unavailable';
-            } else {
-                if (isInvite) {
-                    body = `The Party Plan at ${venueName} is no longer available.`;
-                } else {
-                    body = `Your request to join Party Plan at ${venueName} was declined.`;
-                }
-                type = 'party_plan_request';
-            }
-            isRead = true;
-        } else if (pr.status === 'pending' && plan && (plan.visibility === 'private' || plan.visibility === 'both') && plan.selectedUsers?.includes(uId)) {
-            title = 'Private Party Plan Invite';
-            const isSelfPay = plan.paymentType === 'self_pay';
-            if (isSelfPay) {
-                body = `You have been privately invited to a Party Plan at ${venueName}. Accept to join.`;
-            } else {
-                body = `You have been privately invited to a Party Plan at ${venueName}. Accept and pay to join.`;
-            }
-            isRead = false;
-        } else {
-            continue;
-        }
-
-        notifications.push({
-            id: notificationId,
-            title,
-            body,
-            createdAt: pr.updatedAt ? pr.updatedAt.toISOString() : (pr.createdAt ? pr.createdAt.toISOString() : new Date().toISOString()),
-            read: isRead || activeReadNotificationIds.has(notificationId),
-            type,
-            entityType: 'party_plan',
-            entityId: plan?.id || pr.planId,
-            data: {
-                type,
-                partyPlanId: plan?.id || pr.planId,
-                requestId: pr.id,
-                status: pr.status,
-                joinerPaymentStatus: pr.joinerPaymentStatus,
-                venueName,
-            },
-        });
-    }
-
-    // Add Host PartyPlanRequests (Incoming accepted / paid)
-    for (const pr of hostPartyRequests) {
-        const plan = myHostedPlans.find(p => p.id === pr.planId);
-        const venueName = (plan as any)?.venue?.name || 'Club';
-        const joiner = (pr as any).requester;
-        if (!joiner) continue;
-        const joinerName = `${joiner.firstName} ${joiner.lastName}`;
-        const notificationId = `ppr_host_${pr.id}`;
-        
-        let title = '';
-        let body = '';
-        const isInvite = plan && plan.selectedUsers && plan.selectedUsers.includes(joiner.id);
-
-        if (isInvite) {
-            title = 'Invite Accepted';
-            if (pr.joinerPaymentStatus === 'paid') {
-                body = `${joinerName} accepted and confirmed your private invite to the Party Plan at ${venueName}.`;
-            } else {
-                body = `${joinerName} accepted your private invite to the Party Plan at ${venueName}.`;
-            }
-        } else {
-            title = 'Participant Joined';
-            if (pr.joinerPaymentStatus === 'paid') {
-                body = `${joinerName} completed their payment and joined your Party Plan at ${venueName}.`;
-            } else if (pr.status === 'accepted') {
-                body = `${joinerName} joined your Party Plan at ${venueName}.`;
-            } else {
-                continue;
+                });
             }
         }
-
-        notifications.push({
-            id: notificationId,
-            title,
-            body,
-            createdAt: pr.updatedAt ? pr.updatedAt.toISOString() : (pr.createdAt ? pr.createdAt.toISOString() : new Date().toISOString()),
-            read: activeReadNotificationIds.has(notificationId),
-            entityType: 'party_plan',
-            entityId: pr.planId,
-            data: {
-                type: 'party_plan_host_update',
-                partyPlanId: pr.planId,
-                requestId: pr.id,
-                status: pr.status,
-                joinerPaymentStatus: pr.joinerPaymentStatus,
-                venueName,
-            },
-            sender: {
-                id: joiner.id,
-                firstName: joiner.firstName,
-                lastName: joiner.lastName,
-                profileImageUrl: joiner.profileImageUrl,
-            }
-        });
+    } catch (smErr) {
+        console.error('Error fetching strangers meet notifications:', smErr);
     }
 
-    // Add PlanJoinRequests
-    for (const pjr of planJoinRequests) {
-        const plan = (pjr as any).plan;
-        const venueName = plan?.venue?.name || 'Club';
-        let body = '';
-        let title = 'Plan Request Update';
-        const notificationId = `pjr_${pjr.id}`;
-        let isRead = false;
-
-        if (pjr.status === 'accepted') {
-            title = 'Plan Request Accepted';
-            body = `Your request to join Stranger Meet at ${venueName} was accepted.`;
-        } else if (pjr.status === 'rejected') {
-            body = `Your request to join Stranger Meet at ${venueName} was declined.`;
-            isRead = true;
-        } else {
-            continue;
-        }
-
-        notifications.push({
-            id: notificationId,
-            title,
-            body,
-            createdAt: pjr.updatedAt ? pjr.updatedAt.toISOString() : (pjr.createdAt ? pjr.createdAt.toISOString() : new Date().toISOString()),
-            read: isRead || activeReadNotificationIds.has(notificationId),
-        });
-    }
-
-    // Add Strangers Meet Host Requests Status Update Notifications
-    for (const meet of hostMeets) {
-        const m = meet as any;
-        const venueName = m.venue?.name || 'Venue';
-        if (m.status === 'approved') {
-            const notificationId = `sm_host_approved_${m.id}`;
-            const isPaid = m.paymentStatus === 'paid';
-            notifications.push({
-                id: notificationId,
-                title: 'Stranger Meet Approved',
-                body: `Your meet request "${m.subject}" at ${venueName} has been approved. ${isPaid ? 'Deposit paid.' : 'Please pay the deposit to make it live.'}`,
-                createdAt: m.updatedAt ? m.updatedAt.toISOString() : (m.createdAt ? m.createdAt.toISOString() : new Date().toISOString()),
-                read: activeReadNotificationIds.has(notificationId),
-                data: {
-                    type: 'strangers_meet_approved',
-                    requestId: m.id,
-                }
-            });
-        } else if (m.status === 'rejected') {
-            const notificationId = `sm_host_rejected_${m.id}`;
-            notifications.push({
-                id: notificationId,
-                title: 'Stranger Meet Rejected',
-                body: `Your meet request "${m.subject}" at ${venueName} was rejected by admin. Reason: ${m.adminNotes || 'N/A'}`,
-                createdAt: m.updatedAt ? m.updatedAt.toISOString() : (m.createdAt ? m.createdAt.toISOString() : new Date().toISOString()),
-                read: activeReadNotificationIds.has(notificationId),
-                data: {
-                    type: 'strangers_meet_rejected',
-                    requestId: m.id,
-                }
-            });
-        } else if (m.status === 'pending') {
-            const notificationId = `sm_host_pending_${m.id}`;
-            notifications.push({
-                id: notificationId,
-                title: 'Request Submitted',
-                body: `Your Stranger Meet request "${m.subject}" has been submitted for admin approval.`,
-                createdAt: m.createdAt ? m.createdAt.toISOString() : new Date().toISOString(),
-                read: activeReadNotificationIds.has(notificationId),
-                data: {
-                    type: 'strangers_meet_request_submitted',
-                    requestId: m.id,
-                }
-            });
-        }
-    }
-
-    // Add Strangers Meet Participant Join Request Notifications
-    for (const jr of myJoinRequests) {
-        const j = jr as any;
-        const meet = j.strangersMeetRequest;
-        if (!meet) continue;
-        const venueName = meet.venue?.name || 'Venue';
-        const eventDate = meet.eventDateTime ? new Date(meet.eventDateTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : null;
-        const notificationId = `sm_join_${j.id}`;
-        
-        let title = '';
-        let body = '';
-        let showNotification = false;
-        let type = '';
-
-        if (j.status === 'accepted' && j.paymentStatus !== 'paid') {
-            title = 'Request Accepted';
-            body = `Your request to join "${meet.subject}" at ${venueName}${eventDate ? ' on ' + eventDate : ''} was accepted! Complete the payment to secure your spot.`;
-            showNotification = true;
-            type = 'strangers_meet_request_accepted';
-        } else if (j.status === 'rejected') {
-            title = 'Request Declined';
-            body = `Your request to join "${meet.subject}" at ${venueName}${eventDate ? ' on ' + eventDate : ''} was declined by the host.`;
-            showNotification = true;
-            type = 'strangers_meet_request_rejected';
-        } else if (j.status === 'paid' || j.paymentStatus === 'paid') {
-            title = 'Booking Confirmed ✓';
-            body = `Your payment for "${meet.subject}" at ${venueName}${eventDate ? ' on ' + eventDate : ''} was successful. Spot confirmed!`;
-            showNotification = true;
-            type = 'strangers_meet_payment_success';
-        }
-
-        if (showNotification) {
-            notifications.push({
-                id: notificationId,
-                title,
-                body,
-                createdAt: j.updatedAt ? j.updatedAt.toISOString() : (j.createdAt ? j.createdAt.toISOString() : new Date().toISOString()),
-                read: activeReadNotificationIds.has(notificationId),
-                eventDetails: {
-                    subject: meet.subject,
-                    tagline: meet.tagline || null,
-                    eventDate: eventDate,
-                    venue: venueName,
-                    chargesPerHead: meet.chargesPerHead,
-                    totalSeats: meet.numberOfPersons,
-                },
-                data: {
-                    type,
-                    requestId: meet.id,
-                }
-            });
-        }
-    }
-
-    // Add Strangers Meet Host Incoming Join Request Notifications
-    // Group joiners by meet so multiple requests are merged Instagram-style
-    const joinRequestsByMeet = new Map<string, any[]>();
-    for (const ijr of incomingJoinRequests) {
-        const ij = ijr as any;
-        const meet = ij.strangersMeetRequest;
-        if (!meet) continue;
-        if (!joinRequestsByMeet.has(meet.id)) joinRequestsByMeet.set(meet.id, []);
-        joinRequestsByMeet.get(meet.id)!.push(ij);
-    }
-
-    for (const [meetId, joiners] of joinRequestsByMeet) {
-        const firstJoiner = joiners[0];
-        const meet = firstJoiner.strangersMeetRequest;
-        const venueName = meet?.venue?.name || 'Venue';
-        const eventDate = meet?.eventDateTime ? new Date(meet.eventDateTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : null;
-
-        // Pending joiners (need host action)
-        const pendingJoiners = joiners.filter((ij: any) => ij.status === 'pending');
-        if (pendingJoiners.length > 0) {
-            const notificationId = `sm_incoming_grp_${meetId}`;
-            const firstUser = pendingJoiners[0].user;
-            const firstName = firstUser?.firstName || 'Someone';
-            const othersCount = pendingJoiners.length - 1;
-            const bodyText = othersCount > 0
-                ? `${firstName} and ${othersCount} other${othersCount > 1 ? 's' : ''} want to join your "${meet.subject}" meet${eventDate ? ' on ' + eventDate : ''}.`
-                : `${firstName} ${pendingJoiners[0].user?.lastName || ''} requested to join your "${meet.subject}" meet${eventDate ? ' on ' + eventDate : ''}.`;
-
-            const isRead = pendingJoiners.every((ij: any) => activeReadNotificationIds.has(`sm_incoming_${ij.id}`));
-            notifications.push({
-                id: notificationId,
-                title: `New Join Request${pendingJoiners.length > 1 ? 's' : ''}`,
-                body: bodyText,
-                createdAt: pendingJoiners[0].updatedAt?.toISOString() || pendingJoiners[0].createdAt?.toISOString() || new Date().toISOString(),
-                read: isRead,
-                grouped: true,
-                groupCount: pendingJoiners.length,
-                eventDetails: {
-                    subject: meet.subject,
-                    tagline: meet?.tagline || null,
-                    eventDate: eventDate,
-                    venue: venueName,
-                    totalSeats: meet.numberOfPersons,
-                    chargesPerHead: meet.chargesPerHead,
-                },
-                sender: firstUser ? {
-                    id: firstUser.id,
-                    firstName: firstUser.firstName,
-                    lastName: firstUser.lastName,
-                    profileImageUrl: firstUser.profileImageUrl,
-                } : null,
-                data: {
-                    type: 'strangers_meet_join_request',
-                    requestId: meetId,
-                    joinerIds: pendingJoiners.map((ij: any) => ij.id),
-                }
-            });
-        }
-
-        // Accepted joiners who haven't paid yet (not vanishing after host accepts)
-        const acceptedUnpaidJoiners = joiners.filter((ij: any) => ij.status === 'accepted' && ij.paymentStatus !== 'paid');
-        if (acceptedUnpaidJoiners.length > 0) {
-            const notificationId = `sm_incoming_accepted_${meetId}`;
-            const firstUser = acceptedUnpaidJoiners[0].user;
-            const othersCount = acceptedUnpaidJoiners.length - 1;
-            const bodyText = othersCount > 0
-                ? `${firstUser?.firstName || 'Someone'} and ${othersCount} other${othersCount > 1 ? 's' : ''} accepted, awaiting payment for "${meet.subject}"${eventDate ? ' on ' + eventDate : ''}.`
-                : `${firstUser?.firstName || 'Someone'} ${firstUser?.lastName || ''} was accepted. Awaiting payment for "${meet.subject}"${eventDate ? ' on ' + eventDate : ''}.`;
-            const isRead = acceptedUnpaidJoiners.every((ij: any) => activeReadNotificationIds.has(`sm_incoming_${ij.id}`));
-            notifications.push({
-                id: notificationId,
-                title: 'Awaiting Payment',
-                body: bodyText,
-                createdAt: acceptedUnpaidJoiners[0].updatedAt?.toISOString() || new Date().toISOString(),
-                read: isRead,
-                grouped: true,
-                groupCount: acceptedUnpaidJoiners.length,
-                eventDetails: {
-                    subject: meet.subject,
-                    eventDate: eventDate,
-                    venue: venueName,
-                },
-                sender: firstUser ? {
-                    id: firstUser.id,
-                    firstName: firstUser.firstName,
-                    lastName: firstUser.lastName,
-                    profileImageUrl: firstUser.profileImageUrl,
-                } : null,
-                data: {
-                    type: 'strangers_meet_awaiting_payment',
-                    requestId: meetId,
-                }
-            });
-        }
-
-        // Paid joiners (confirmation)
-        const paidJoiners = joiners.filter((ij: any) => ij.status === 'paid' || ij.paymentStatus === 'paid');
-        if (paidJoiners.length > 0) {
-            const notificationId = `sm_incoming_paid_${meetId}`;
-            const firstUser = paidJoiners[0].user;
-            const othersCount = paidJoiners.length - 1;
-            const bodyText = othersCount > 0
-                ? `${firstUser?.firstName || 'Someone'} and ${othersCount} other${othersCount > 1 ? 's' : ''} paid and joined your "${meet.subject}" meet${eventDate ? ' on ' + eventDate : ''}.`
-                : `${firstUser?.firstName || 'Someone'} ${firstUser?.lastName || ''} paid and joined your "${meet.subject}" meet${eventDate ? ' on ' + eventDate : ''}.`;
-            const isRead = paidJoiners.every((ij: any) => activeReadNotificationIds.has(`sm_incoming_${ij.id}`));
-            notifications.push({
-                id: notificationId,
-                title: 'Participant Joined',
-                body: bodyText,
-                createdAt: paidJoiners[0].updatedAt?.toISOString() || new Date().toISOString(),
-                read: isRead,
-                grouped: true,
-                groupCount: paidJoiners.length,
-                eventDetails: {
-                    subject: meet.subject,
-                    eventDate: eventDate,
-                    venue: venueName,
-                },
-                sender: firstUser ? {
-                    id: firstUser.id,
-                    firstName: firstUser.firstName,
-                    lastName: firstUser.lastName,
-                    profileImageUrl: firstUser.profileImageUrl,
-                } : null,
-                data: {
-                    type: 'strangers_meet_participant_joined',
-                    requestId: meetId,
-                }
-            });
-        }
-    }
-
-    // NOTE: Profile visit notifications are sent via real-time socket events (notification_created)
-    // and stored per-user. Simulated visits have been removed to prevent cross-user notification leakage.
-    // Fetch safety check feedbacks for the user
+    // 4. Fetch Safety Check feedbacks
     try {
         const safetyFeedbacks = await SafetyCheck.findAll({
-            where: {
-                userId: uId,
-                adminFeedback: { [Op.ne]: null as any }
-            },
-            include: [
-                {
-                    model: User,
-                    as: 'partner',
-                    attributes: ['firstName', 'lastName', 'profileImageUrl']
-                }
-            ],
+            where: { userId: uId, adminFeedback: { [Op.ne]: null as any } },
+            include: [{ model: User, as: 'partner', attributes: ['firstName', 'lastName', 'profileImageUrl'] }],
             order: [['updatedAt', 'DESC']],
             limit: 10
         });
-
         for (const sf of safetyFeedbacks) {
             const partner = (sf as any).partner;
             const partnerName = partner ? `${partner.firstName} ${partner.lastName}` : 'your partner';
@@ -819,23 +440,21 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
                 body: `Regarding your safety check with ${partnerName}: ${sf.adminFeedback}`,
                 createdAt: sf.updatedAt ? sf.updatedAt.toISOString() : new Date().toISOString(),
                 read: activeReadNotificationIds.has(notificationId),
+                isRead: activeReadNotificationIds.has(notificationId),
                 sender: partner ? {
                     id: sf.partnerId,
                     firstName: partner.firstName,
                     lastName: partner.lastName,
                     profileImageUrl: partner.profileImageUrl,
                 } : null,
-                data: {
-                    type: 'safety_check_feedback',
-                    safetyCheckId: sf.id,
-                }
+                data: { type: 'safety_check_feedback', safetyCheckId: sf.id }
             });
         }
     } catch (err) {
-        console.error('Error fetching safety check feedbacks for notifications:', err);
+        console.error('Error fetching safety check feedbacks:', err);
     }
 
-    // Fetch Booking records (goingMode = party_request or solo)
+    // 5. Fetch Booking records (goingMode = party_request or solo)
     try {
         const bookings = await Booking.findAll({
             where: { userId: uId },
@@ -843,106 +462,22 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
             order: [['createdAt', 'DESC']],
             limit: 30
         });
-
         for (const booking of bookings) {
-            const venueName = (booking as any).venue?.name || 'Venue';
-            
-            if (booking.goingMode === 'party_request') {
-                // Stable ID without status — deduplication keeps only latest
-                const notificationId = `large_party_${booking.id}`;
-                let title = '';
-                let body = '';
-                let showNotification = false;
-                let type = '';
-
-                if (booking.adminApprovalStatus === 'pending') {
-                    title = 'Large Party Request Submitted ⏳';
-                    body = `Your party request of ${booking.numberOfGuests} guests at ${venueName} is pending admin approval.`;
-                    showNotification = true;
-                    type = 'large_party_pending';
-                } else if (booking.adminApprovalStatus === 'approved') {
-                    title = 'Large Party Request Approved! 🎉';
-                    body = `Your party request at ${venueName} has been approved! Complete payment to confirm.`;
-                    showNotification = true;
-                    type = 'large_party_approved';
-                } else if (booking.adminApprovalStatus === 'rejected') {
-                    title = 'Large Party Request Rejected ❌';
-                    body = `Your party request at ${venueName} was rejected by admin.`;
-                    showNotification = true;
-                    type = 'large_party_rejected';
-                } else if (booking.adminApprovalStatus === 'payment_sent') {
-                    title = 'Large Party Payment Link Received 💳';
-                    body = `Admin sent a payment link of ₹${booking.adminPaymentAmount} for your party at ${venueName}. Complete payment.`;
-                    showNotification = true;
-                    type = 'large_party_payment_link';
-                } else if (booking.adminApprovalStatus === 'payment_done') {
-                    title = 'Large Party Confirmed! 🎉';
-                    body = `Your party of ${booking.numberOfGuests} guests at ${venueName} is fully confirmed. Enjoy your night!`;
-                    showNotification = true;
-                    type = 'large_party_confirmed';
-                }
-
-                if (showNotification) {
-                    notifications.push({
-                        id: notificationId,
-                        title,
-                        body,
-                        createdAt: booking.updatedAt ? booking.updatedAt.toISOString() : (booking.createdAt ? booking.createdAt.toISOString() : new Date().toISOString()),
-                        read: activeReadNotificationIds.has(notificationId),
-                        data: {
-                            type,
-                            bookingId: booking.id,
-                        }
-                    });
+            if (booking.goingMode === 'party_request' || booking.isLargePartyRequest) {
+                const { GroupPartyService } = await import('../services/GroupPartyService');
+                const enrichedCard = await GroupPartyService.enrichLargePartyNotificationCard(booking.id, uId);
+                if (enrichedCard) {
+                    enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
+                    enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);
+                    notifications.push(enrichedCard);
                 }
             } else {
-                // goingMode === 'solo' or standard bookings
-                // Stable ID without status — deduplication keeps only latest
-                const notificationId = `solo_booking_${booking.id}`;
-                let title = '';
-                let body = '';
-                let showNotification = false;
-                let type = '';
-
-                if (booking.status === 'pending') {
-                    title = 'Booking Initiated ⏳';
-                    body = `Your booking at ${venueName} is pending.`;
-                    showNotification = true;
-                    type = 'booking_pending';
-                } else if (booking.status === 'confirmed') {
-                    title = 'Booking Confirmed! 🎉';
-                    body = `Your booking at ${venueName} has been confirmed. Enjoy your night!`;
-                    showNotification = true;
-                    type = 'booking_confirmed';
-                } else if (booking.status === 'cancelled') {
-                    title = 'Booking Cancelled ❌';
-                    body = `Your booking at ${venueName} was cancelled.`;
-                    showNotification = true;
-                    type = 'booking_cancelled';
-                } else if (booking.status === 'completed') {
-                    title = 'Booking Completed ✨';
-                    body = `We hope you had a great time at ${venueName}!`;
-                    showNotification = true;
-                    type = 'booking_completed';
-                } else if (booking.status === 'no_show') {
-                    title = 'Booking No-Show ⚠️';
-                    body = `Your booking at ${venueName} was marked as no-show.`;
-                    showNotification = true;
-                    type = 'booking_no_show';
-                }
-
-                if (showNotification) {
-                    notifications.push({
-                        id: notificationId,
-                        title,
-                        body,
-                        createdAt: booking.updatedAt ? booking.updatedAt.toISOString() : (booking.createdAt ? booking.createdAt.toISOString() : new Date().toISOString()),
-                        read: activeReadNotificationIds.has(notificationId),
-                        data: {
-                            type,
-                            bookingId: booking.id,
-                        }
-                    });
+                const { VenueBookingService } = await import('../services/VenueBookingService');
+                const enrichedCard = await VenueBookingService.enrichVenueBookingNotificationCard(booking.id, uId);
+                if (enrichedCard) {
+                    enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
+                    enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);
+                    notifications.push(enrichedCard);
                 }
             }
         }
@@ -950,120 +485,173 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
         console.error('Error fetching booking notifications:', bookingErr);
     }
 
-    // Fetch GroupParty records (<= 20 guests)
+    // 6. Fetch GroupParty records (Unified Timeline Card per Party)
     try {
+        const { GroupPartyService } = await import('../services/GroupPartyService');
         const groupParties = await GroupParty.findAll({
             where: { userId: uId },
-            include: [{ model: Venue, as: 'venue', attributes: ['name'] }],
             order: [['createdAt', 'DESC']],
             limit: 20
         });
-
         for (const gp of groupParties) {
-            const venueName = (gp as any).venue?.name || 'Venue';
-            // Stable ID without status suffix — deduplication will keep only latest
-            const notificationId = `group_party_${gp.id}`;
-
-            let title = '';
-            let body = '';
-            let showNotification = false;
-            let type = '';
-
-            if (gp.status === 'pending') {
-                title = 'Group Party Initiated 💳';
-                body = `Please complete the payment for your group party at ${venueName} to confirm.`;
-                showNotification = true;
-                type = 'group_party_initiated';
-            } else if (gp.status === 'approved') {
-                title = 'Group Party Approved! 🎉';
-                body = `Your group party request at ${venueName} has been approved! Complete payment to confirm.`;
-                showNotification = true;
-                type = 'group_party_approved';
-            } else if (gp.status === 'rejected') {
-                title = 'Group Party Rejected ❌';
-                body = `Your group party request at ${venueName} was rejected by the admin.`;
-                showNotification = true;
-                type = 'group_party_rejected';
-            } else if (gp.status === 'confirmed') {
-                title = 'Group Party Confirmed! 🎉';
-                body = `Your group party of ${gp.numberOfFriends} friends at ${venueName} is confirmed!`;
-                showNotification = true;
-                type = 'group_party_confirmed';
-            } else if (gp.status === 'cancelled') {
-                title = 'Group Party Cancelled ❌';
-                body = `Your group party booking at ${venueName} was cancelled.`;
-                showNotification = true;
-                type = 'group_party_cancelled';
-            }
-
-            if (showNotification) {
-                notifications.push({
-                    id: notificationId,
-                    title,
-                    body,
-                    createdAt: gp.updatedAt ? gp.updatedAt.toISOString() : (gp.createdAt ? gp.createdAt.toISOString() : new Date().toISOString()),
-                    read: activeReadNotificationIds.has(notificationId),
-                    data: {
-                        type,
-                        partyId: gp.id,
-                    }
-                });
+            const enrichedCard = await GroupPartyService.enrichGroupPartyNotificationCard(gp.id, uId);
+            if (enrichedCard) {
+                enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
+                enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);
+                notifications.push(enrichedCard);
             }
         }
     } catch (gpErr) {
         console.error('Error fetching group party notifications:', gpErr);
     }
 
+    // 7. Fetch Upcoming Night records (Unified Timeline Card per Night)
+    try {
+        const { NightPartnerService } = await import('../services/NightPartnerService');
+        const NightPartnerRequest = (await import('../models/NightPartnerRequest')).default;
+        const NightPartnerMatch = (await import('../models/NightPartnerMatch')).default;
+
+        const hostRequests = await NightPartnerRequest.findAll({
+            where: { hostId: uId },
+            attributes: ['id']
+        });
+        const partnerRequests = await NightPartnerRequest.findAll({
+            where: { partnerId: uId },
+            attributes: ['id']
+        });
+        const hostMatches = await NightPartnerMatch.findAll({
+            where: { hostId: uId },
+            attributes: ['id']
+        });
+        const partnerMatches = await NightPartnerMatch.findAll({
+            where: { partnerId: uId },
+            attributes: ['id']
+        });
+
+        const nightIds = Array.from(new Set([
+            ...hostRequests.map(r => r.id),
+            ...partnerRequests.map(r => r.id),
+            ...hostMatches.map(m => m.id),
+            ...partnerMatches.map(m => m.id)
+        ]));
+
+        for (const nId of nightIds) {
+            const enrichedCard = await NightPartnerService.enrichUpcomingNightNotificationCard(nId, uId);
+            if (enrichedCard) {
+                enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
+                enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);
+                notifications.push(enrichedCard);
+            }
+        }
+    } catch (unErr) {
+        console.error('Error fetching upcoming night notifications:', unErr);
+    }
+
+    // Sort by createdAt descending
     notifications.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-    // ── Universal Deduplication: 1 card per plan/booking/event ──────────────
-    // The notifications list above may contain BOTH stored DB notifications
-    // (from Notification.findAll with UUID IDs) AND status-generated notifications
-    // (like ppr_xxx, group_party_xxx, etc.) for the same entity.
-    // We deduplicate by entity key, keeping ONLY the most recent notification
-    // (first after sort-by-date-desc).
+    // universal deduplication fallback for non-timeline cards
     const entityKeys = new Map<string, any>();
     const deduplicatedNotifications: any[] = [];
 
     for (const n of notifications) {
-        const data = n.data || n.metadata || {};
-
-        // Derive a stable entity grouping key
-        const partyPlanId = data.partyPlanId?.toString() ||
-            (n.entityType === 'party_plan' ? n.entityId?.toString() : null) ||
-            (n.id?.startsWith('ppr_') ? (data.requestId || null) : null);
-
+        const data = n.data || {};
         const groupPartyId = data.partyId?.toString() || data.groupPartyId?.toString() ||
             (n.id?.startsWith('group_party_') ? n.id.replace(/^group_party_([^_]+).*/, '$1') : null);
-
         const bookingId = data.bookingId?.toString() ||
             (n.id?.startsWith('solo_booking_') ? n.id.replace(/^solo_booking_([^_]+).*/, '$1') : null) ||
             (n.id?.startsWith('large_party_') ? n.id.replace(/^large_party_([^_]+).*/, '$1') : null);
 
-        // Build composite key
         let key: string | null = null;
-        if (partyPlanId) key = `pp_${partyPlanId}`;
-        else if (groupPartyId) key = `gp_${groupPartyId}`;
+        if (groupPartyId) key = `gp_${groupPartyId}`;
         else if (bookingId) key = `bk_${bookingId}`;
-        // Strangers meet: use requestId as key for joiner/host joined notifications
         else if (data.type?.startsWith('strangers_meet') && data.requestId) key = `sm_${data.requestId}`;
-        else if (n.id?.startsWith('sm_incoming_grp_')) key = n.id; // grouped already
-        else if (n.id?.startsWith('sm_incoming_accepted_')) key = n.id; // grouped already
-        else if (n.id?.startsWith('sm_incoming_paid_')) key = n.id; // grouped already
 
         if (key) {
             if (!entityKeys.has(key)) {
                 entityKeys.set(key, n);
                 deduplicatedNotifications.push(n);
             }
-            // Skip older duplicate notifications for same entity
         } else {
-            // Not entity-grouped: include as-is (likes, payments, safety checks, etc.)
             deduplicatedNotifications.push(n);
         }
     }
 
-    return deduplicatedNotifications.filter(n => new Date(n.createdAt).getTime() > clearedAt);
+    // Apply category filtering
+    let filtered = deduplicatedNotifications;
+    if (filter && filter !== 'all') {
+        filtered = filtered.filter(n => {
+            const type = n.type || '';
+            const statusText = n.data?.currentStatus || '';
+            
+            if (filter === 'action_required') {
+                if (n.type === 'party_plan_timeline') {
+                    const action = n.data?.primaryAction;
+                    return action && ['Pay Now', 'Accept', 'Confirm Arrival'].includes(action);
+                }
+                if (type.startsWith('group_party_initiated') || type.startsWith('large_party_payment_link') || type.startsWith('large_party_approved')) {
+                    return true;
+                }
+                if (type.includes('join_request') || type.includes('awaiting_payment')) {
+                    return true;
+                }
+                return false;
+            }
+            
+            if (filter === 'completed') {
+                if (n.type === 'party_plan_timeline') {
+                    return ['Completed', 'Cancelled', 'Expired'].includes(statusText);
+                }
+                if (type.includes('completed') || type.includes('cancelled') || type.includes('rejected')) {
+                    return true;
+                }
+                return false;
+            }
+            
+            if (filter === 'updates') {
+                const isCompleted = n.type === 'party_plan_timeline' 
+                    ? ['Completed', 'Cancelled', 'Expired'].includes(statusText)
+                    : (type.includes('completed') || type.includes('cancelled') || type.includes('rejected'));
+                
+                const isActionReq = n.type === 'party_plan_timeline'
+                    ? (n.data?.primaryAction && ['Pay Now', 'Accept', 'Confirm Arrival'].includes(n.data.primaryAction))
+                    : (type.startsWith('group_party_initiated') || type.startsWith('large_party_payment_link') || type.startsWith('large_party_approved') || type.includes('join_request') || type.includes('awaiting_payment'));
+                
+                return !isCompleted && !isActionReq;
+            }
+            
+            return true;
+        });
+    }
+
+    // Apply search query
+    if (search) {
+        const query = search.toLowerCase();
+        filtered = filtered.filter(n => {
+            if (n.title?.toLowerCase().includes(query)) return true;
+            if (n.body?.toLowerCase().includes(query)) return true;
+
+            if (n.type === 'party_plan_timeline' && n.data) {
+                const d = n.data;
+                if (d.planTitle?.toLowerCase().includes(query)) return true;
+                if (d.hostName?.toLowerCase().includes(query)) return true;
+                if (d.guestName?.toLowerCase().includes(query)) return true;
+                if (d.venueArea?.toLowerCase().includes(query)) return true;
+                if (d.currentStatus?.toLowerCase().includes(query)) return true;
+                if (d.date?.toLowerCase().includes(query)) return true;
+            }
+            return false;
+        });
+    }
+
+    // Clear old cleared notifications
+    const activeNotifs = filtered.filter(n => new Date(n.createdAt).getTime() > clearedAt);
+
+    // Map each notification to include its date grouping section
+    return activeNotifs.map(n => ({
+        ...n,
+        section: getDateSection(n.createdAt)
+    }));
 }
 
 /**
@@ -1072,17 +660,26 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
  */
 router.get('/notifications', async (req, res) => {
     try {
-        const { userId, readNotificationIds } = req.query;
+        const { userId, readNotificationIds, filter, search } = req.query;
         if (!userId) return res.status(400).json({ success: false, message: 'userId required' });
 
         const uId = userId as string;
+        const filterStr = (filter as string) || 'all';
+        const searchStr = (search as string) || '';
+
         const clientReadNotificationIds = new Set<string>(
             typeof readNotificationIds === 'string'
                 ? readNotificationIds.split(',').filter(Boolean)
                 : []
         );
         // Pass server-side per-user read IDs so they are merged correctly
-        const notifications = await getUserNotifications(uId, clientReadNotificationIds, getReadNotificationIds(uId));
+        const notifications = await getUserNotifications(
+            uId,
+            filterStr,
+            searchStr,
+            clientReadNotificationIds,
+            getReadNotificationIds(uId)
+        );
 
         return res.json({ success: true, data: notifications });
     } catch (error: any) {
@@ -1096,11 +693,31 @@ router.get('/notifications', async (req, res) => {
  */
 router.patch('/notifications/:id/read', async (req, res) => {
     const { id } = req.params;
-    // userId is required to scope the read state to the correct user
     const userId = (req.query.userId as string) || (req.body?.userId as string);
+    
     if (userId) {
         getReadNotificationIds(userId).add(id);
     }
+
+    try {
+        if (id.startsWith('party_plan_timeline_')) {
+            const planId = id.replace('party_plan_timeline_', '');
+            await Notification.update(
+                { isRead: true, readAt: new Date() },
+                { where: { recipientUserId: userId, entityType: 'party_plan', entityId: planId } }
+            );
+        } else {
+            const notification = await Notification.findByPk(id);
+            if (notification) {
+                notification.isRead = true;
+                notification.readAt = new Date();
+                await notification.save();
+            }
+        }
+    } catch (dbErr: any) {
+        console.error('Error persisting notification read status in DB:', dbErr.message);
+    }
+
     return res.json({ success: true, message: 'Notification marked as read' });
 });
 
@@ -1179,7 +796,7 @@ router.get('/badge-counts', async (req, res) => {
         ]);
 
         // 1. General notifications count
-        const notifications = await getUserNotifications(uId, activeReadNotificationIds, getReadNotificationIds(uId));
+        const notifications = await getUserNotifications(uId, 'all', '', activeReadNotificationIds, getReadNotificationIds(uId));
         const unreadNotificationsCount = notifications.filter(n => n.read !== true).length;
 
         // 2. Incoming Stranger Meet requests
@@ -1363,5 +980,94 @@ router.post(
     ],
     mobileUserController.deleteAccount
 );
+
+/**
+ * GET /api/mobile/user/profile-summary
+ * Returns comprehensive profile statistics, reliability level, streaks, and platform metrics
+ */
+router.get('/profile-summary', async (req, res) => {
+    try {
+        const userId = (req.query.userId as string) || (req.user as any)?.id;
+        if (!userId) {
+            return res.status(400).json({ success: false, message: 'userId required' });
+        }
+
+        const user = await User.findByPk(userId);
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        const score = Number(user.reliabilityScore !== undefined ? user.reliabilityScore : 70);
+        
+        let level = 'Good ✅';
+        if (score >= 95) level = 'Elite 💎';
+        else if (score >= 90) level = 'Excellent 🌟';
+        else if (score >= 80) level = 'Trusted 🛡️';
+        else if (score >= 70) level = 'Good ✅';
+        else if (score >= 60) level = 'Average 📊';
+        else if (score >= 40) level = 'Low ⚠️';
+        else level = 'Restricted ⛔';
+
+        const plansCreated = await PartyPlan.count({ where: { userId } });
+        const plansJoined = await PartyPlanRequest.count({
+            where: { requesterId: userId, status: 'accepted' }
+        });
+
+        const plansCompleted = await PartyPlan.count({
+            where: {
+                [Op.or]: [{ userId }, { '$requests.requester_id$': userId }],
+                status: 'inactive'
+            },
+            include: [{ model: PartyPlanRequest, as: 'requests', required: false }]
+        });
+
+        const noShowCount = user.noShowCount || 0;
+        const cancelledPlans = await PartyPlan.count({ where: { userId, status: 'cancelled' } });
+        
+        const requestsAccepted = await PartyPlanRequest.count({
+            where: { '$plan.user_id$': userId, status: 'accepted' },
+            include: [{ model: PartyPlan, as: 'plan', required: true }]
+        });
+
+        const requestsRejected = await PartyPlanRequest.count({
+            where: { '$plan.user_id$': userId, status: 'rejected' },
+            include: [{ model: PartyPlan, as: 'plan', required: true }]
+        });
+
+        const superLikesReceived = await UserMatch.count({
+            where: { user2Id: userId, isSuperLike: true } as any
+        });
+
+        const totalTotalPlans = plansCreated + plansJoined;
+        const completionRate = totalTotalPlans > 0 ? Math.round((plansCompleted / totalTotalPlans) * 100) : 100;
+        const arrivalSuccessPercent = (totalTotalPlans - noShowCount) > 0 ? Math.min(100, Math.round(((totalTotalPlans - noShowCount) / totalTotalPlans) * 100)) : 100;
+
+        return res.json({
+            success: true,
+            data: {
+                userId: user.id,
+                reliabilityScore: score,
+                reliabilityLevel: level,
+                overallRank: score >= 90 ? 'Top 5%' : score >= 80 ? 'Top 15%' : 'Top 30%',
+                plansCreated,
+                plansJoined,
+                plansCompleted,
+                completionRate: `${completionRate}%`,
+                arrivalSuccessPercent: `${arrivalSuccessPercent}%`,
+                noShowCount,
+                cancelledPlans,
+                requestsAccepted,
+                requestsRejected,
+                superLikesReceived,
+                currentStreak: user.loginStreakDays || 1,
+                bestStreak: Math.max(user.loginStreakDays || 1, 5),
+                memberSince: user.createdAt ? user.createdAt.toISOString() : new Date().toISOString()
+            }
+        });
+    } catch (err: any) {
+        console.error('Error fetching profile summary:', err);
+        return res.status(500).json({ success: false, message: 'Failed to fetch profile summary' });
+    }
+});
 
 export default router;

@@ -992,6 +992,12 @@ export const blockUser = async (req: Request, res: Response): Promise<Response> 
                 targetUser.isAutoblocked = true;
                 targetUser.autoblockedReason = `Autoblocked due to receiving ${count} blocks from other users.`;
                 targetUser.isActive = false;
+            } else {
+                targetUser.isAutoblocked = false;
+                targetUser.autoblockedReason = null;
+                if (!targetUser.isDeleted) {
+                    targetUser.isActive = true;
+                }
             }
             await targetUser.save();
 
@@ -1049,6 +1055,17 @@ export const unblockUser = async (req: Request, res: Response): Promise<Response
         const targetUser = await User.findByPk(targetUserId);
         if (targetUser) {
             targetUser.blockCount = count;
+            if (count >= 10) {
+                targetUser.isAutoblocked = true;
+                targetUser.autoblockedReason = `Autoblocked due to receiving ${count} blocks from other users.`;
+                targetUser.isActive = false;
+            } else {
+                targetUser.isAutoblocked = false;
+                targetUser.autoblockedReason = null;
+                if (!targetUser.isDeleted) {
+                    targetUser.isActive = true;
+                }
+            }
             await targetUser.save();
         }
 
@@ -1107,6 +1124,12 @@ export const reportUser = async (req: Request, res: Response): Promise<Response>
                 targetUser.isAutoblocked = true;
                 targetUser.autoblockedReason = `Autoblocked due to receiving ${count} blocks from other users.`;
                 targetUser.isActive = false;
+            } else {
+                targetUser.isAutoblocked = false;
+                targetUser.autoblockedReason = null;
+                if (!targetUser.isDeleted) {
+                    targetUser.isActive = true;
+                }
             }
             await targetUser.save();
 

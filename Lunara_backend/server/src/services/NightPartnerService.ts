@@ -770,8 +770,154 @@ export class NightPartnerService {
                 deepLink: payload.deepLink,
                 metadata: payload.data,
             });
+
+            const enrichedCard = await NightPartnerService.enrichUpcomingNightNotificationCard(payload.entityId, userId);
+            const { io } = require('../server');
+            if (io && enrichedCard) {
+                io.to(`user_${userId}`).emit('notification_updated', enrichedCard);
+                io.to(`user_${userId}`).emit('upcoming_night_status_update', { nightId: payload.entityId, type: payload.type });
+                io.to('live_feed').emit('live_feed_update', { type: 'upcoming_night_activity', nightId: payload.entityId, timestamp: new Date().toISOString() });
+            }
+
+            try {
+                const AuditLog = (await import('../models/AuditLog')).default;
+                await AuditLog.logAction({
+                    userId,
+                    action: `UPCOMING_NIGHT_${payload.type}`,
+                    metadata: payload.data
+                }).catch(() => {});
+            } catch (aErr) {}
         } catch (err) {
             logger.warn(`[NightPartnerService] Notification emit warning: ${err}`);
+        }
+    }
+
+    /**
+     * Consolidates all Upcoming Night notifications into ONE single card per event/match.
+     * Card ID: upcoming_night_timeline_${nightId}
+     */
+    public static async enrichUpcomingNightNotificationCard(nightId: string, recipientUserId: string): Promise<any | null> {
+        try {
+            let match = await NightPartnerMatch.findByPk(nightId, {
+                include: [{ model: Venue, as: 'venue', attributes: ['name', 'address', 'city'] }]
+            });
+
+            let requestRecord: NightPartnerRequest | null = null;
+            if (!match) {
+                requestRecord = await NightPartnerRequest.findByPk(nightId, {
+                    include: [{ model: Venue, as: 'venue', attributes: ['name', 'address', 'city'] }]
+                });
+                if (!requestRecord) {
+                    return null;
+                }
+            }
+
+            const isMatch = !!match;
+            const venueName = isMatch ? ((match as any)?.venue?.name || 'Venue') : ((requestRecord as any)?.venue?.name || 'Venue');
+            const eventDate = isMatch ? match!.eventDate : requestRecord!.eventDate;
+            const hostId = isMatch ? match!.hostId : requestRecord!.hostId;
+            const partnerId = isMatch ? match!.partnerId : requestRecord!.partnerId;
+            const isHost = recipientUserId === hostId;
+
+            const isPosted = true;
+            const isInterested = true;
+            const isRequestSent = true;
+            const isAccepted = isMatch || (requestRecord && requestRecord.status === NightPartnerRequestStatus.ACCEPTED);
+            const isPaymentPending = isMatch && match!.status === NightPartnerMatchStatus.PAYMENT_PENDING;
+            const isPaymentConfirmed = isMatch && match!.status === NightPartnerMatchStatus.CONFIRMED;
+            const isChatEnabled = isMatch && match!.status === NightPartnerMatchStatus.CONFIRMED && !!match!.conversationId;
+            const isCompleted = isMatch && match!.status === NightPartnerMatchStatus.CONFIRMED && new Date(eventDate).getTime() < Date.now() - 24 * 60 * 60 * 1000;
+            const isDeclined = requestRecord && (requestRecord.status === NightPartnerRequestStatus.DECLINED || requestRecord.status === NightPartnerRequestStatus.CANCELLED);
+
+            const reminder2h = isMatch ? (match!.reminder2hSent || false) : (requestRecord?.reminder2hSent || false);
+            const reminder1h = isMatch ? (match!.reminder1hSent || false) : (requestRecord?.reminder1hSent || false);
+            const reminder30m = isMatch ? (match!.reminder30mSent || false) : (requestRecord?.reminder30mSent || false);
+
+            const timelineSteps = [
+                { id: 'posted', label: 'Night Posted', completed: isPosted },
+                { id: 'interested', label: 'Interested', completed: isInterested },
+                { id: 'request_sent', label: 'Request Sent', completed: isRequestSent },
+                { id: 'request_accepted', label: 'Request Accepted', completed: isAccepted || isPaymentConfirmed || isCompleted },
+                { id: 'payment_pending', label: 'Payment Pending', completed: isPaymentPending || isPaymentConfirmed || isCompleted },
+                { id: 'payment_completed', label: 'Payment Completed', completed: isPaymentConfirmed || isCompleted },
+                { id: 'chat_enabled', label: 'Chat Enabled', completed: isChatEnabled || isCompleted },
+                { id: 'reminder_2h', label: '2 Hour Reminder', completed: reminder2h || isCompleted },
+                { id: 'reminder_1h', label: '1 Hour Reminder', completed: reminder1h || isCompleted },
+                { id: 'reminder_30m', label: '30 Minute Reminder', completed: reminder30m || isCompleted },
+                { id: 'completed', label: 'Event Completed', completed: isCompleted }
+            ];
+
+            const completedCount = timelineSteps.filter(s => s.completed).length;
+            const progressPercentage = Math.round((completedCount / timelineSteps.length) * 100);
+
+            let title = `Upcoming Night at ${venueName} 🌟`;
+            let body = `Your Upcoming Night partner invite at ${venueName}.`;
+            let statusText = 'Request Sent';
+
+            if (isCompleted) {
+                title = `Upcoming Night Completed ✨`;
+                body = `Hope you had a great time at ${venueName}!`;
+                statusText = 'Completed';
+            } else if (isPaymentConfirmed) {
+                title = `Upcoming Night Confirmed! 🎉`;
+                body = `Your night at ${venueName} is fully confirmed. Chat is now unlocked!`;
+                statusText = 'Confirmed & Chat Unlocked';
+            } else if (isPaymentPending) {
+                title = `Payment Pending for Upcoming Night 💳`;
+                body = `Request accepted! Complete payment to confirm your night at ${venueName}.`;
+                statusText = 'Payment Pending';
+            } else if (isAccepted) {
+                title = `Upcoming Night Invite Accepted! 🎉`;
+                body = `Your partner request for ${venueName} was accepted!`;
+                statusText = 'Accepted';
+            } else if (isDeclined) {
+                title = `Upcoming Night Invite Declined ❌`;
+                body = `Partner invite for ${venueName} was declined or cancelled.`;
+                statusText = 'Declined';
+            }
+
+            const actionButtons = [];
+            if (!isHost && requestRecord && requestRecord.status === NightPartnerRequestStatus.PENDING) {
+                actionButtons.push({ id: 'accept_request', label: 'Accept Request', primary: true, action: 'ACCEPT_REQUEST' });
+            }
+            if (isPaymentPending) {
+                actionButtons.push({ id: 'pay_now', label: 'Pay Now', primary: true, action: 'PAY_NOW' });
+            }
+            if (isChatEnabled) {
+                actionButtons.push({ id: 'open_chat', label: 'Open Chat', primary: true, action: 'OPEN_CHAT' });
+            }
+            actionButtons.push({ id: 'view_details', label: 'View Details', primary: false, action: 'VIEW_DETAILS' });
+
+            const updatedIso = isMatch 
+                ? (match!.updatedAt ? match!.updatedAt.toISOString() : new Date().toISOString())
+                : (requestRecord!.updatedAt ? requestRecord!.updatedAt.toISOString() : new Date().toISOString());
+
+            return {
+                id: `upcoming_night_timeline_${nightId}`,
+                title,
+                body,
+                createdAt: updatedIso,
+                updatedAt: updatedIso,
+                read: false,
+                isRead: false,
+                category: isPaymentConfirmed ? 'bookings' : 'requests',
+                data: {
+                    type: 'upcoming_night_timeline',
+                    nightId,
+                    venueName,
+                    eventDate,
+                    isHost,
+                    otherUserId: isHost ? partnerId : hostId,
+                    statusText,
+                    timelineProgress: progressPercentage,
+                    currentStatusStep: isCompleted ? 11 : (isPaymentConfirmed ? 7 : (isPaymentPending ? 5 : (isAccepted ? 4 : 3))),
+                    timelineSteps,
+                    actionButtons
+                }
+            };
+        } catch (err) {
+            logger.error(`[NightPartnerService] enrichUpcomingNightNotificationCard error for ${nightId}:`, err);
+            return null;
         }
     }
 }
