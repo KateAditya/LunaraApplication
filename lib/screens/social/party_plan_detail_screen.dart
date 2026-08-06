@@ -94,7 +94,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
             SizedBox(height: 14),
             Text('If approved:', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
             SizedBox(height: 6),
-            Text('• Commitment Deposit (₹499) will be returned to both users\' Lunara Wallets.', style: TextStyle(color: Colors.white60, fontSize: 12)),
+            Text('• Commitment Deposit (₹99) will be returned to both users\' Lunara Wallets.', style: TextStyle(color: Colors.white60, fontSize: 12)),
             SizedBox(height: 4),
             Text('• Chat will become read-only (archived after 24h).', style: TextStyle(color: Colors.white60, fontSize: 12)),
             SizedBox(height: 4),
@@ -276,7 +276,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     if (res['success'] == true) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(action == 'approve' ? 'Party Plan cancelled. ₹499 Commitment Deposit credited to your Lunara Wallet!' : 'Cancellation request declined.'),
+          content: Text(action == 'approve' ? 'Party Plan cancelled. ₹99 Commitment Deposit credited to your Lunara Wallet!' : 'Cancellation request declined.'),
           backgroundColor: action == 'approve' ? Colors.green : Colors.grey.shade800,
         ),
       );
@@ -404,7 +404,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
               const SizedBox(height: 12),
               const Text('If you approve:', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 12)),
               const SizedBox(height: 4),
-              const Text('• Both Commitment Deposits (₹499) will be credited to each user\'s Lunara Wallet.', style: TextStyle(color: Colors.white54, fontSize: 11)),
+              const Text('• Both Commitment Deposits (₹99) will be credited to each user\'s Lunara Wallet.', style: TextStyle(color: Colors.white54, fontSize: 11)),
               const Text('• Chat becomes read-only.', style: TextStyle(color: Colors.white54, fontSize: 11)),
               const SizedBox(height: 16),
               Row(
@@ -681,10 +681,10 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       context: context,
       title: 'Party Plan Safety Deposit',
       subtitle: 'Safety commitment deposit for Party Plan at $venueName',
-      itemPrice: 499.0,
+      itemPrice: 99.0,
       onWalletPayment: () async {
         final res = await ApiService.payWithWallet(
-          amount: 499.0,
+          amount: 99.0,
           planId: widget.plan['id']?.toString(),
           paymentType: 'commitment_deposit',
         );
@@ -1288,7 +1288,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                               Icon(Icons.payment_rounded, color: Colors.white, size: 22),
                               SizedBox(width: 10),
                               Text(
-                                'PAY SAFETY DEPOSIT (₹499)',
+                                'PAY SAFETY DEPOSIT (₹99)',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 14,

@@ -459,6 +459,16 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
             createdAt: pr.updatedAt ? pr.updatedAt.toISOString() : (pr.createdAt ? pr.createdAt.toISOString() : new Date().toISOString()),
             read: isRead || activeReadNotificationIds.has(notificationId),
             type,
+            entityType: 'party_plan',
+            entityId: plan?.id || pr.planId,
+            data: {
+                type,
+                partyPlanId: plan?.id || pr.planId,
+                requestId: pr.id,
+                status: pr.status,
+                joinerPaymentStatus: pr.joinerPaymentStatus,
+                venueName,
+            },
         });
     }
 
@@ -499,6 +509,16 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
             body,
             createdAt: pr.updatedAt ? pr.updatedAt.toISOString() : (pr.createdAt ? pr.createdAt.toISOString() : new Date().toISOString()),
             read: activeReadNotificationIds.has(notificationId),
+            entityType: 'party_plan',
+            entityId: pr.planId,
+            data: {
+                type: 'party_plan_host_update',
+                partyPlanId: pr.planId,
+                requestId: pr.id,
+                status: pr.status,
+                joinerPaymentStatus: pr.joinerPaymentStatus,
+                venueName,
+            },
             sender: {
                 id: joiner.id,
                 firstName: joiner.firstName,
@@ -828,7 +848,8 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
             const venueName = (booking as any).venue?.name || 'Venue';
             
             if (booking.goingMode === 'party_request') {
-                const notificationId = `large_party_${booking.id}_${booking.adminApprovalStatus}`;
+                // Stable ID without status — deduplication keeps only latest
+                const notificationId = `large_party_${booking.id}`;
                 let title = '';
                 let body = '';
                 let showNotification = false;
@@ -876,7 +897,8 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
                 }
             } else {
                 // goingMode === 'solo' or standard bookings
-                const notificationId = `solo_booking_${booking.id}_${booking.status}`;
+                // Stable ID without status — deduplication keeps only latest
+                const notificationId = `solo_booking_${booking.id}`;
                 let title = '';
                 let body = '';
                 let showNotification = false;
@@ -939,7 +961,8 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
 
         for (const gp of groupParties) {
             const venueName = (gp as any).venue?.name || 'Venue';
-            const notificationId = `group_party_${gp.id}_${gp.status}`;
+            // Stable ID without status suffix — deduplication will keep only latest
+            const notificationId = `group_party_${gp.id}`;
 
             let title = '';
             let body = '';
@@ -992,7 +1015,55 @@ async function getUserNotifications(uId: string, clientReadNotificationIds?: Set
     }
 
     notifications.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    return notifications.filter(n => new Date(n.createdAt).getTime() > clearedAt);
+
+    // ── Universal Deduplication: 1 card per plan/booking/event ──────────────
+    // The notifications list above may contain BOTH stored DB notifications
+    // (from Notification.findAll with UUID IDs) AND status-generated notifications
+    // (like ppr_xxx, group_party_xxx, etc.) for the same entity.
+    // We deduplicate by entity key, keeping ONLY the most recent notification
+    // (first after sort-by-date-desc).
+    const entityKeys = new Map<string, any>();
+    const deduplicatedNotifications: any[] = [];
+
+    for (const n of notifications) {
+        const data = n.data || n.metadata || {};
+
+        // Derive a stable entity grouping key
+        const partyPlanId = data.partyPlanId?.toString() ||
+            (n.entityType === 'party_plan' ? n.entityId?.toString() : null) ||
+            (n.id?.startsWith('ppr_') ? (data.requestId || null) : null);
+
+        const groupPartyId = data.partyId?.toString() || data.groupPartyId?.toString() ||
+            (n.id?.startsWith('group_party_') ? n.id.replace(/^group_party_([^_]+).*/, '$1') : null);
+
+        const bookingId = data.bookingId?.toString() ||
+            (n.id?.startsWith('solo_booking_') ? n.id.replace(/^solo_booking_([^_]+).*/, '$1') : null) ||
+            (n.id?.startsWith('large_party_') ? n.id.replace(/^large_party_([^_]+).*/, '$1') : null);
+
+        // Build composite key
+        let key: string | null = null;
+        if (partyPlanId) key = `pp_${partyPlanId}`;
+        else if (groupPartyId) key = `gp_${groupPartyId}`;
+        else if (bookingId) key = `bk_${bookingId}`;
+        // Strangers meet: use requestId as key for joiner/host joined notifications
+        else if (data.type?.startsWith('strangers_meet') && data.requestId) key = `sm_${data.requestId}`;
+        else if (n.id?.startsWith('sm_incoming_grp_')) key = n.id; // grouped already
+        else if (n.id?.startsWith('sm_incoming_accepted_')) key = n.id; // grouped already
+        else if (n.id?.startsWith('sm_incoming_paid_')) key = n.id; // grouped already
+
+        if (key) {
+            if (!entityKeys.has(key)) {
+                entityKeys.set(key, n);
+                deduplicatedNotifications.push(n);
+            }
+            // Skip older duplicate notifications for same entity
+        } else {
+            // Not entity-grouped: include as-is (likes, payments, safety checks, etc.)
+            deduplicatedNotifications.push(n);
+        }
+    }
+
+    return deduplicatedNotifications.filter(n => new Date(n.createdAt).getTime() > clearedAt);
 }
 
 /**
