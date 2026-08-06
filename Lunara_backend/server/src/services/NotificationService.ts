@@ -53,10 +53,9 @@ export class NotificationService {
             // 3. Persist / In-Place Upsert Notification in Database
             let notification: Notification | null = null;
 
-            const isPartyPlanRequest = entityType === 'party_plan_request' || entityType === 'PartyPlanRequest' || (metadata && (metadata.partyPlanId || metadata.requestId));
-            const targetEntityId = entityId || (metadata ? (metadata.requestId || metadata.partyPlanId) : undefined);
+            const targetEntityId = entityId || (metadata ? (metadata.requestId || metadata.partyPlanId || metadata.strangersMeetId || metadata.bookingId) : undefined);
 
-            if (isPartyPlanRequest && targetEntityId) {
+            if (targetEntityId) {
                 const existing = await Notification.findOne({
                     where: {
                         recipientUserId,
@@ -69,6 +68,7 @@ export class NotificationService {
                         actorUserId: actorUserId || existing.actorUserId,
                         eventType: String(eventType),
                         category: category || existing.category,
+                        entityType: entityType || existing.entityType,
                         title,
                         body,
                         imageUrl: resolvedImageUrl || existing.imageUrl,

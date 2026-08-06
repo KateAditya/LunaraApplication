@@ -1019,14 +1019,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
 
       List<NotificationAction>? actionsList;
-      final bool isStranger = requestType.startsWith('stranger') || type.startsWith('stranger');
+      final bool isStranger = requestType.toLowerCase().contains('stranger') ||
+          type.toLowerCase().contains('stranger') ||
+          item['strangersMeetId'] != null ||
+          (item['plan'] is Map && item['plan']['strangersMeetId'] != null);
+
       Color accent = isStranger
           ? const Color(0xFF6366F1)
           : const Color(0xFF8B5CF6);
       String title = isStranger
           ? '🤝 Stranger Meet Request'
           : '🎉 Party Plan Update';
-      String body = '$userName requested to join Stranger Meet at $venueName';
+      String body = isStranger
+          ? '$userName requested to join Stranger Meet at $venueName'
+          : '$userName requested to join Party Plan at $venueName';
       String badge = isStranger
           ? 'STRANGER MEET'
           : 'PARTY PLAN';
@@ -1747,12 +1753,27 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     // Sort all timeline items descending by createdAt
     items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-    // Deduplicate by item ID
-    final Set<String> seenIds = {};
+    // Universal Entity Grouping & Deduplication so only 1 notification card is shown per plan/meet/booking
+    final Set<String> seenEntityKeys = {};
     final List<UnifiedNotificationItem> uniqueItems = [];
     for (final item in items) {
-      if (!seenIds.contains(item.id)) {
-        seenIds.add(item.id);
+      final raw = item.rawData;
+      final planData = raw['plan'] is Map ? (raw['plan'] as Map<String, dynamic>) : raw;
+
+      String groupKey = item.id;
+      final entityId = raw['entityId']?.toString() ??
+          raw['requestId']?.toString() ??
+          raw['partyPlanId']?.toString() ??
+          raw['strangersMeetId']?.toString() ??
+          raw['bookingId']?.toString() ??
+          planData['id']?.toString();
+
+      if (entityId != null && entityId.isNotEmpty) {
+        groupKey = '${item.category}_$entityId';
+      }
+
+      if (!seenEntityKeys.contains(groupKey)) {
+        seenEntityKeys.add(groupKey);
         uniqueItems.add(item);
       }
     }
@@ -2031,62 +2052,56 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
             return Padding(
               padding: const EdgeInsets.only(right: 8),
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  ChoiceChip(
-                    label: Text(label),
-                    selected: isSelected,
-                    onSelected: (selected) {
-                      if (selected) setState(() => _selectedStatusPill = id);
-                    },
-                    selectedColor: LunaraTheme.electricViolet,
-                    backgroundColor: hasUnread && !isSelected
-                        ? LunaraTheme.electricViolet.withValues(alpha: 0.06)
-                        : const Color(0xFFF3F4F6),
-                    labelStyle: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: isSelected ? Colors.white : Colors.black87,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                      side: BorderSide(
-                        color: isSelected
-                            ? LunaraTheme.electricViolet
-                            : hasUnread
-                                ? LunaraTheme.electricViolet.withValues(alpha: 0.3)
-                                : Colors.transparent,
-                      ),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  // Unread count badge
-                  if (hasUnread)
-                    Positioned(
-                      top: -5,
-                      right: -5,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              child: ChoiceChip(
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(label),
+                    if (hasUnread) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                         decoration: BoxDecoration(
-                          color: isSelected ? Colors.white : Colors.red,
-                          borderRadius: BorderRadius.circular(8),
-                          border: isSelected
-                              ? Border.all(color: LunaraTheme.electricViolet, width: 1)
-                              : null,
+                          color: isSelected ? Colors.white : Colors.redAccent,
+                          borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
                           unreadCount > 99 ? '99+' : '$unreadCount',
                           style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w900,
                             color: isSelected ? LunaraTheme.electricViolet : Colors.white,
                           ),
                         ),
                       ),
-                    ),
-                ],
+                    ],
+                  ],
+                ),
+                selected: isSelected,
+                onSelected: (selected) {
+                  if (selected) setState(() => _selectedStatusPill = id);
+                },
+                selectedColor: LunaraTheme.electricViolet,
+                backgroundColor: hasUnread && !isSelected
+                    ? LunaraTheme.electricViolet.withValues(alpha: 0.06)
+                    : const Color(0xFFF3F4F6),
+                labelStyle: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: isSelected ? Colors.white : Colors.black87,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  side: BorderSide(
+                    color: isSelected
+                        ? LunaraTheme.electricViolet
+                        : hasUnread
+                            ? LunaraTheme.electricViolet.withValues(alpha: 0.3)
+                            : Colors.transparent,
+                  ),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                visualDensity: VisualDensity.compact,
               ),
             );
           }).toList(),
