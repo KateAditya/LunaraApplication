@@ -409,16 +409,37 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       subtitle: 'Deposit payment for Group Party at $venueName',
       itemPrice: amount,
       onWalletPayment: () async {
-        final res = await ApiService.post('/api/mobile/large-parties/$bookingId/pay-wallet', body: {});
-        if (res.statusCode == 200 && mounted) {
-          await _loadGroupPartyBookings();
+        final res = await ApiService.payWithWallet(
+          amount: amount,
+          bookingId: bookingId,
+          paymentType: 'group_party',
+        );
+        if (res != null && res['success'] == true) {
+          final transactionId = res['data']?['transactionId']?.toString() ?? 'wallet';
+          final confirmRes = await ApiService.verifyLargePartyPayment(
+            bookingId,
+            razorpayOrderId: 'order_mock_wallet',
+            razorpayPaymentId: 'wallet_$transactionId',
+            razorpaySignature: 'mock_signature',
+          );
+          if (confirmRes && mounted) {
+            await _loadGroupPartyBookings();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('🎉 Group Party Paid via Smart Credit Wallet!'),
+                backgroundColor: Colors.green,
+              ),
+            );
+            return true;
+          }
+        }
+        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('🎉 Group Party Paid via Smart Credit Wallet!'),
-              backgroundColor: Colors.green,
+            SnackBar(
+              content: Text(res?['message'] ?? 'Wallet payment failed'),
+              backgroundColor: Colors.redAccent,
             ),
           );
-          return true;
         }
         return false;
       },
@@ -428,9 +449,25 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         if (result != null && result['success'] == true) {
           final orderData = result['order'] ?? result['data'] ?? result;
           final razorpayKey = result['razorpayKeyId']?.toString() ?? orderData['key']?.toString() ?? '';
+          final orderId = orderData['razorpayOrderId']?.toString() ?? orderData['id']?.toString() ?? '';
+          
+          if (orderId.startsWith('order_mock_')) {
+            final success = await ApiService.verifyLargePartyPayment(
+              bookingId,
+              razorpayOrderId: orderId,
+              razorpayPaymentId: 'mock_payment',
+              razorpaySignature: 'mock_signature',
+            );
+            if (success && mounted) {
+              await _loadGroupPartyBookings();
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('🎉 Group Party Paid successfully!'), backgroundColor: Colors.green));
+            }
+            return;
+          }
+
           _razorpay?.open({
             'key': razorpayKey,
-            'order_id': orderData['razorpayOrderId']?.toString() ?? orderData['id']?.toString(),
+            'order_id': orderId,
             'amount': orderData['amount'],
             'name': 'Lunara – Group Party',
             'description': 'Group Party at $venueName',
@@ -612,17 +649,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final status = (item.rawData['status'] ?? item.rawData['paymentStatus'] ?? '').toString().toLowerCase();
     final category = item.category.toLowerCase();
 
-    if (category.contains('party') || category.contains('plan')) {
-      final planData = item.rawData['plan'] is Map ? item.rawData['plan'] : item.rawData;
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => PartyPlanDetailScreen(
-            plan: Map<String, dynamic>.from(planData),
-          ),
-        ),
-      );
-    } else if (category.contains('stranger') || category.contains('meet')) {
+    if (category.contains('stranger') || category.contains('meet')) {
       try {
         final req = StrangersMeetRequest.fromJson(item.rawData['plan'] ?? item.rawData);
         if (status == 'accepted' || status == 'payment_pending') {
@@ -668,6 +695,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ),
         );
       }
+    } else if (category.contains('party') || category.contains('plan')) {
+      final planData = item.rawData['plan'] is Map ? item.rawData['plan'] : item.rawData;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PartyPlanDetailScreen(
+            plan: Map<String, dynamic>.from(planData),
+          ),
+        ),
+      );
     } else if (category.contains('pay') || category.contains('wallet')) {
       Navigator.push(
         context,
@@ -709,16 +746,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final List<UnifiedNotificationItem> items = [];
     final currentUserId = ApiService.currentUserId;
 
-    // Build set of SM plan IDs already represented in feedItems so that we can
-    // skip redundant server-side push notifications for the same meet.
-    final Set<String> smFeedPlanIds = <String>{};
+    // Build set of entity IDs already represented in feedItems so that we can
+    // skip redundant server-side push notifications for the same plan/meet.
+    final Set<String> feedEntityIds = <String>{};
     for (final fi in _feedItems) {
-      final rType = fi['requestType']?.toString() ?? '';
-      if (rType == 'stranger_meet_join') {
-        final plan = fi['plan'];
-        final pId = plan is Map ? plan['id']?.toString() : null;
-        if (pId != null && pId.isNotEmpty) smFeedPlanIds.add(pId);
-      }
+      final reqId = fi['id']?.toString();
+      if (reqId != null && reqId.isNotEmpty) feedEntityIds.add(reqId);
+      final plan = fi['plan'];
+      final pId = plan is Map ? plan['id']?.toString() : fi['planId']?.toString();
+      if (pId != null && pId.isNotEmpty) feedEntityIds.add(pId);
     }
 
     // 1. Process System / DB Notifications from `_notifications`
@@ -737,16 +773,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       String? actionText;
       VoidCallback? actionTap;
 
-      if (category.contains('party') || category.contains('plan')) {
-        accentColor = const Color(0xFF8B5CF6);
-        icon = Icons.celebration_rounded;
-        badge = 'PARTY PLAN';
-      } else if (category.contains('stranger') || category.contains('meet')) {
-        // Skip SM push-notifications that are already shown as live feed items
-        // (avoids duplicate cards for the same Stranger Meet).
+      if (category.contains('stranger') || category.contains('meet')) {
+        // Skip push-notifications that are already shown as live feed items
+        // (avoids duplicate cards).
         final notifEntityId = n['entityId']?.toString() ?? '';
-        if (smFeedPlanIds.isNotEmpty && notifEntityId.isNotEmpty &&
-            smFeedPlanIds.contains(notifEntityId)) {
+        if (feedEntityIds.isNotEmpty && notifEntityId.isNotEmpty &&
+            feedEntityIds.contains(notifEntityId)) {
           continue;
         }
         accentColor = const Color(0xFF6366F1);
@@ -756,6 +788,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         accentColor = const Color(0xFF7C3AED);
         icon = Icons.confirmation_number_rounded;
         badge = 'BOOKING';
+      } else if (category.contains('party') || category.contains('plan')) {
+        // Skip push-notifications that are already shown as live feed items
+        final notifEntityId = n['entityId']?.toString() ?? '';
+        if (feedEntityIds.isNotEmpty && notifEntityId.isNotEmpty &&
+            feedEntityIds.contains(notifEntityId)) {
+          continue;
+        }
+        accentColor = const Color(0xFF8B5CF6);
+        icon = Icons.celebration_rounded;
+        badge = 'PARTY PLAN';
       } else if (category.contains('pay') || category.contains('deposit')) {
         accentColor = const Color(0xFF10B981);
         icon = Icons.payments_rounded;
@@ -805,87 +847,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         final entityId = n['entityId']?.toString() ?? '';
 
         if (entityId.isNotEmpty) {
-          if (category.contains('party') || category.contains('plan')) {
-            if (titleLower.contains('request') || bodyLower.contains('request')) {
-              actionsList = [
-                NotificationAction(
-                  label: 'Accept',
-                  icon: Icons.check_circle_rounded,
-                  isPrimary: true,
-                  onTap: () => _handleAcceptPartyPlan(entityId),
-                ),
-                NotificationAction(
-                  label: 'Decline',
-                  icon: Icons.cancel_rounded,
-                  isPrimary: false,
-                  color: Colors.grey[200],
-                  onTap: () => _handleRejectPartyPlan(entityId),
-                ),
-              ];
-            } else if (titleLower.contains('accepted') || bodyLower.contains('accepted')) {
-              actionsList = [
-                NotificationAction(
-                  label: 'Pay Deposit',
-                  icon: Icons.payment_rounded,
-                  isPrimary: true,
-                  onTap: () {
-                    final planData = n['plan'] is Map ? n['plan'] : n;
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => PartyPlanDetailScreen(
-                          plan: Map<String, dynamic>.from(planData),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ];
-            } else if (titleLower.contains('confirmed') || bodyLower.contains('confirmed')) {
-              final otherId = n['actor']?['id']?.toString() ?? n['actorId']?.toString();
-              actionsList = [
-                NotificationAction(
-                  label: 'Chat',
-                  icon: Icons.chat_bubble_rounded,
-                  isPrimary: true,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ChatScreen(
-                          user: {
-                            'id': otherId ?? '',
-                            'firstName': n['actor']?['firstName'] ?? 'Partner',
-                            'lastName': n['actor']?['lastName'] ?? '',
-                            'profilePhotoUrl': n['imageUrl']?.toString() ?? n['actor']?['profilePhotoUrl']?.toString(),
-                          },
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                NotificationAction(
-                  label: 'View Ticket',
-                  icon: Icons.confirmation_number_rounded,
-                  isPrimary: false,
-                  color: Colors.grey[200],
-                  onTap: () {
-                    final planData = n['plan'] is Map ? n['plan'] : n;
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => PartyPlanTicketScreen(
-                          request: n,
-                          plan: Map<String, dynamic>.from(planData),
-                          isHost: currentUserId == (planData['userId'] ?? planData['creator']?['id']),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ];
-            }
-          } else if (category.contains('stranger') || category.contains('meet')) {
+          if (category.contains('stranger') || category.contains('meet')) {
             if (titleLower.contains('request') || bodyLower.contains('request')) {
               final match = _feedItems.firstWhere(
                 (item) => item['type'] == 'incoming_request' && 
@@ -974,6 +936,86 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                             'lastName': host['lastName'] ?? '',
                             'profilePhotoUrl': host['profilePhotoUrl'] ?? host['photoUrl'] ?? host['image'],
                           },
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ];
+            }
+          } else if (category.contains('party') || category.contains('plan')) {
+            if (titleLower.contains('request') || bodyLower.contains('request')) {
+              actionsList = [
+                NotificationAction(
+                  label: 'Accept',
+                  icon: Icons.check_circle_rounded,
+                  isPrimary: true,
+                  onTap: () => _handleAcceptPartyPlan(entityId),
+                ),
+                NotificationAction(
+                  label: 'Decline',
+                  icon: Icons.cancel_rounded,
+                  isPrimary: false,
+                  color: Colors.grey[200],
+                  onTap: () => _handleRejectPartyPlan(entityId),
+                ),
+              ];
+            } else if (titleLower.contains('accepted') || bodyLower.contains('accepted')) {
+              actionsList = [
+                NotificationAction(
+                  label: 'Pay Deposit',
+                  icon: Icons.payment_rounded,
+                  isPrimary: true,
+                  onTap: () {
+                    final planData = n['plan'] is Map ? n['plan'] : n;
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PartyPlanDetailScreen(
+                          plan: Map<String, dynamic>.from(planData),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ];
+            } else if (titleLower.contains('confirmed') || bodyLower.contains('confirmed')) {
+              final otherId = n['actor']?['id']?.toString() ?? n['actorId']?.toString();
+              actionsList = [
+                NotificationAction(
+                  label: 'Chat',
+                  icon: Icons.chat_bubble_rounded,
+                  isPrimary: true,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ChatScreen(
+                          user: {
+                            'id': otherId ?? '',
+                            'firstName': n['actor']?['firstName'] ?? 'Partner',
+                            'lastName': n['actor']?['lastName'] ?? '',
+                            'profilePhotoUrl': n['imageUrl']?.toString() ?? n['actor']?['profilePhotoUrl']?.toString(),
+                          },
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                NotificationAction(
+                  label: 'View Ticket',
+                  icon: Icons.confirmation_number_rounded,
+                  isPrimary: false,
+                  color: Colors.grey[200],
+                  onTap: () {
+                    final planData = n['plan'] is Map ? n['plan'] : n;
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PartyPlanTicketScreen(
+                          request: n,
+                          plan: Map<String, dynamic>.from(planData),
+                          isHost: currentUserId == (planData['userId'] ?? planData['creator']?['id']),
                         ),
                       ),
                     );
