@@ -1494,13 +1494,16 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     if (desc != null && desc.isNotEmpty) return desc;
 
     final String tier = pkg['tier'] ?? '';
-    if (tier == 'CORE')
+    if (tier == 'CORE') {
       return 'Perfect for daily swiping and standard messaging.';
+    }
     if (tier == 'PLUS') return 'Boost your reach and browse anonymously.';
-    if (tier == 'PRO')
+    if (tier == 'PRO') {
       return 'Stand out from the crowd with priority visibility.';
-    if (tier == 'ELITE')
+    }
+    if (tier == 'ELITE') {
       return 'Maximum features, priority entry, and elite badges.';
+    }
     return '';
   }
 }

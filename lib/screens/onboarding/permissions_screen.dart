@@ -348,7 +348,7 @@ class _PermissionsScreenState extends State<PermissionsScreen>
                   position: _slideAnim,
                   child: FadeTransition(
                     opacity: _fadeAnim,
-                    child: Padding(
+                    child: SingleChildScrollView(
                       padding: const EdgeInsets.symmetric(horizontal: 28),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
