@@ -3,22 +3,44 @@ import sequelize from '../config/database';
 
 export enum WalletTransactionType {
     RECHARGE = 'recharge',
-    REFUND = 'refund',
-    COMMITMENT_DEPOSIT = 'commitment_deposit',
-    VIP_PURCHASE = 'vip_purchase',
     BOOKING_PAYMENT = 'booking_payment',
+    COMMITMENT_DEPOSIT = 'commitment_deposit',
+    DEPOSIT_UNLOCK = 'deposit_unlock',
+    REFUND = 'refund',
+    CASHBACK = 'cashback',
+    CASHBACK_CREDIT = 'cashback_credit',
+    REWARD_CREDIT = 'reward_credit',
+    REWARD_REDEMPTION = 'reward_redemption',
+    VIP_PURCHASE = 'vip_purchase',
+    MEMBERSHIP_RENEWAL = 'membership_renewal',
+    MEMBERSHIP_UPGRADE = 'membership_upgrade',
+    SUPER_LIKE_PURCHASE = 'super_like_purchase',
+    PRIORITY_LIKE_PURCHASE = 'priority_like_purchase',
+    BOOST_PURCHASE = 'boost_purchase',
+    REFERRAL_REWARD = 'referral_reward',
+    PROMOTIONAL_CREDIT = 'promotional_credit',
+    ADMIN_CREDIT = 'admin_credit',
+    ADMIN_DEBIT = 'admin_debit',
+    CHARGEBACK = 'chargeback',
+    REVERSAL = 'reversal',
     WALLET_DEDUCTION = 'wallet_deduction',
     WALLET_CREDIT = 'wallet_credit',
 }
 
 export enum WalletTransactionStatus {
     PENDING = 'pending',
+    PROCESSING = 'processing',
     SUCCESS = 'success',
     FAILED = 'failed',
+    LOCKED = 'locked',
+    REFUNDED = 'refunded',
+    CANCELLED = 'cancelled',
+    EXPIRED = 'expired',
 }
 
 export interface WalletTransactionAttributes {
     id: string;
+    walletId?: string | null;
     userId: string;
     bookingId?: string | null;
     partyPlanId?: string | null;
@@ -28,18 +50,22 @@ export interface WalletTransactionAttributes {
     transactionType: WalletTransactionType;
     status: WalletTransactionStatus;
     reference?: string | null;
+    source?: string | null;
+    destination?: string | null;
+    createdBy?: string | null;
     metadata?: object | null;
     createdAt?: Date;
     updatedAt?: Date;
 }
 
 export interface WalletTransactionCreationAttributes
-    extends Optional<WalletTransactionAttributes, 'id' | 'status' | 'createdAt' | 'updatedAt'> {}
+    extends Optional<WalletTransactionAttributes, 'id' | 'walletId' | 'status' | 'source' | 'destination' | 'createdBy' | 'createdAt' | 'updatedAt'> {}
 
 class WalletTransaction
     extends Model<WalletTransactionAttributes, WalletTransactionCreationAttributes>
     implements WalletTransactionAttributes {
     public id!: string;
+    public walletId?: string | null;
     public userId!: string;
     public bookingId?: string | null;
     public partyPlanId?: string | null;
@@ -49,11 +75,15 @@ class WalletTransaction
     public transactionType!: WalletTransactionType;
     public status!: WalletTransactionStatus;
     public reference?: string | null;
+    public source?: string | null;
+    public destination?: string | null;
+    public createdBy?: string | null;
     public metadata?: object | null;
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 
     public static async logTransaction(params: {
+        walletId?: string | null;
         userId: string;
         bookingId?: string | null;
         partyPlanId?: string | null;
@@ -63,6 +93,9 @@ class WalletTransaction
         transactionType: WalletTransactionType;
         status?: WalletTransactionStatus;
         reference?: string | null;
+        source?: string | null;
+        destination?: string | null;
+        createdBy?: string | null;
         metadata?: object | null;
     }): Promise<WalletTransaction> {
         return await WalletTransaction.create({
@@ -78,6 +111,11 @@ WalletTransaction.init(
             type: DataTypes.UUID,
             defaultValue: DataTypes.UUIDV4,
             primaryKey: true,
+        },
+        walletId: {
+            type: DataTypes.UUID,
+            allowNull: true,
+            field: 'wallet_id',
         },
         userId: {
             type: DataTypes.UUID,
@@ -136,6 +174,19 @@ WalletTransaction.init(
             type: DataTypes.STRING(255),
             allowNull: true,
         },
+        source: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+        },
+        destination: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+        },
+        createdBy: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'created_by',
+        },
         metadata: {
             type: DataTypes.JSONB,
             allowNull: true,
@@ -148,6 +199,7 @@ WalletTransaction.init(
         indexes: [
             { fields: ['user_id'] },
             { fields: ['transaction_type'] },
+            { fields: ['status'] },
             { fields: ['created_at'] },
         ],
     }

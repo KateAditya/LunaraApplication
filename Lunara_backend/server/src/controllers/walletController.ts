@@ -16,6 +16,7 @@ import StrangersMeetRequest, { StrangersMeetStatus, StrangersMeetPaymentStatus }
 import StrangersMeetJoiner, { StrangersMeetJoinerPaymentStatus } from '../models/StrangersMeetJoiner';
 import SubscriptionTransaction from '../models/SubscriptionTransaction';
 import SubscriptionPackage from '../models/SubscriptionPackage';
+import WalletTransaction from '../models/WalletTransaction';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/mobile/wallet?userId=<uuid>
@@ -33,8 +34,6 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
             res.status(400).json({ success: false, message: 'userId is required' });
             return;
         }
-
-        const userRecord = await User.findByPk(userId);
 
         // ── 1. Incomplete Events ─────────────────────────────────────────────
         //
@@ -786,22 +785,52 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
             .filter(t => t.status === 'success')
             .reduce((sum, t) => sum + t.amount, 0);
 
+        const smartWallet = await WalletService.getOrCreateWallet(userId);
+        const config = await WalletService.getGlobalConfig();
+        const smartTransactions = await WalletTransaction.findAll({
+            where: { userId },
+            order: [['createdAt', 'DESC']],
+            limit: 50,
+        });
+
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
         res.json({
             success: true,
             data: {
-                walletBalance: userRecord?.walletBalance ? Number(userRecord.walletBalance) : 0.00,
+                wallet: {
+                    id: smartWallet.id,
+                    userId: smartWallet.userId,
+                    availableBalance: smartWallet.totalAvailableBalance,
+                    balance: smartWallet.balance,
+                    lockedBalance: smartWallet.lockedBalance,
+                    pendingBalance: smartWallet.pendingBalance,
+                    promotionalBalance: smartWallet.promotionalBalance,
+                    cashbackBalance: smartWallet.cashbackBalance,
+                    rewardBalance: smartWallet.rewardBalance,
+                    lifetimeRecharged: smartWallet.lifetimeRecharged,
+                    lifetimeSpent: smartWallet.lifetimeSpent,
+                    lifetimePromotional: smartWallet.lifetimePromotional,
+                    lifetimeCashback: smartWallet.lifetimeCashback,
+                    lifetimeRewards: smartWallet.lifetimeRewards,
+                    lifetimeRefunds: smartWallet.lifetimeRefunds,
+                    isFrozen: smartWallet.isFrozen,
+                    frozenReason: smartWallet.frozenReason,
+                },
+                config: {
+                    minRecharge: config.minRechargeAmount,
+                    maxRecharge: config.maxRechargeAmount,
+                    suggestedAmounts: config.suggestedAmounts,
+                    isWalletActive: config.isWalletActive,
+                },
                 incompleteEvents,
                 transactions: allTransactions,
-                subscriptionTransactions: subscriptionTxns,
+                smartTransactions,
                 summary: {
                     totalIncompleteEvents: incompleteEvents.length,
                     totalTransactions: allTransactions.length,
                     totalSpent: Math.round(totalSpent * 100) / 100,
                     totalRefunded: Math.round(totalRefunded * 100) / 100,
                     totalSubscriptionSpent: Math.round(totalSubscriptionSpent * 100) / 100,
-                    totalPlanPayments: transactions.length,
-                    totalSubscriptionPayments: subscriptionTxns.length,
                 },
             },
         });
@@ -811,13 +840,15 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
     }
 };
 
+import WalletService from '../services/walletService';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/mobile/wallet/pay-with-wallet
-// Pays commitment deposit or booking fees using user wallet balance
+// Processes booking / party deposit spending using Smart Credit Wallet
 // ─────────────────────────────────────────────────────────────────────────────
 export const payWithWallet = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { userId, amount, planId, requestId, paymentType = 'host_deposit' } = req.body;
+        const { userId, amount, planId, bookingId, paymentType = 'booking_payment' } = req.body;
 
         if (!userId || !amount) {
             res.status(400).json({ success: false, message: 'userId and amount are required' });
@@ -830,176 +861,181 @@ export const payWithWallet = async (req: Request, res: Response): Promise<void> 
             return;
         }
 
-        const user = await User.findByPk(userId);
-        if (!user) {
-            res.status(404).json({ success: false, message: 'User not found' });
-            return;
-        }
-
-        const currentBalance = Number(user.walletBalance || 0);
-
-        if (currentBalance < requiredAmount) {
-            const requiredRecharge = Math.ceil(requiredAmount - currentBalance);
-            res.status(402).json({
-                success: false,
-                insufficientBalance: true,
-                requiredRecharge,
-                currentBalance,
-                requiredAmount,
-                message: `Recharge ₹${requiredRecharge} to complete this payment.`,
+        if (paymentType === 'commitment_deposit') {
+            const lockResult = await WalletService.lockDeposit({
+                userId,
+                amount: requiredAmount,
+                partyPlanId: planId,
+                bookingId,
+            });
+            res.json({
+                success: true,
+                message: 'Commitment deposit locked in wallet successfully!',
+                data: lockResult,
             });
             return;
         }
 
-        // Deduct from wallet atomically
-        const newBalance = Math.max(0, currentBalance - requiredAmount);
-        await user.update({ walletBalance: newBalance });
-
-        // Record WalletTransaction Ledger
-        const WalletTransaction = (await import('../models/WalletTransaction')).default;
         const WalletTransactionType = (await import('../models/WalletTransaction')).WalletTransactionType;
-        await WalletTransaction.logTransaction({
+        const purchaseResult = await WalletService.purchaseFeatureWithCredit({
             userId,
+            price: requiredAmount,
+            transactionType: WalletTransactionType.BOOKING_PAYMENT,
+            reference: `BOOK_${planId || bookingId || Date.now()}`,
+            bookingId,
             partyPlanId: planId,
-            amount: requiredAmount,
-            openingBalance: currentBalance,
-            closingBalance: newBalance,
-            transactionType: WalletTransactionType.COMMITMENT_DEPOSIT,
-            reference: `PLAN_${planId || 'DIRECT'}`,
-            metadata: { paymentType, requestId }
-        });
-
-        // Record Audit Log
-        const AuditLog = (await import('../models/AuditLog')).default;
-        await AuditLog.logAction({
-            userId,
-            partyPlanId: planId,
-            action: 'Wallet Payment Completed',
-            metadata: { amount: requiredAmount, paymentType, requestId, remainingBalance: newBalance }
+            metadata: { paymentType },
         });
 
         res.json({
             success: true,
-            message: 'Wallet payment successful',
-            data: {
-                userId,
-                amountPaid: requiredAmount,
-                remainingBalance: newBalance,
-                transactionId: `WAL_TXN_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-            }
+            message: 'Wallet booking payment successful!',
+            data: purchaseResult.data,
         });
     } catch (err: any) {
+        if (err.statusCode === 402) {
+            res.status(402).json({
+                success: false,
+                insufficientBalance: true,
+                message: 'Insufficient wallet balance. Recharge missing amount to auto-complete booking.',
+                data: err.shortfallData,
+            });
+            return;
+        }
         logger.error('payWithWallet error:', err);
-        res.status(500).json({ success: false, message: 'Wallet payment failed', error: err.message });
+        res.status(500).json({ success: false, message: err.message || 'Wallet payment failed' });
     }
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/mobile/wallet/recharge
-// Recharges user wallet balance
+// POST /api/mobile/wallet/recharge-order
+// Creates Razorpay Order for Smart Wallet Recharge
 // ─────────────────────────────────────────────────────────────────────────────
-export const rechargeWallet = async (req: Request, res: Response): Promise<void> => {
+export const createRechargeOrder = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { userId, amount, paymentId, paymentGateway = 'razorpay' } = req.body;
-
+        const { userId, amount, autoContinueSession } = req.body;
         if (!userId || !amount) {
             res.status(400).json({ success: false, message: 'userId and amount are required' });
             return;
         }
 
         const rechargeAmount = Number(amount);
-        if (isNaN(rechargeAmount) || rechargeAmount <= 0) {
-            res.status(400).json({ success: false, message: 'Invalid recharge amount' });
+        const config = await WalletService.getGlobalConfig();
+        if (rechargeAmount < Number(config.minRechargeAmount) || rechargeAmount > Number(config.maxRechargeAmount)) {
+            res.status(400).json({
+                success: false,
+                message: `Recharge amount must be between ₹${config.minRechargeAmount} and ₹${config.maxRechargeAmount}`,
+            });
             return;
         }
 
-        const user = await User.findByPk(userId);
-        if (!user) {
-            res.status(404).json({ success: false, message: 'User not found' });
-            return;
+        let razorpayOrder = null;
+        if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+            const Razorpay = require('razorpay');
+            const razorpay = new Razorpay({
+                key_id: process.env.RAZORPAY_KEY_ID,
+                key_secret: process.env.RAZORPAY_KEY_SECRET,
+            });
+            razorpayOrder = await razorpay.orders.create({
+                amount: Math.round(rechargeAmount * 100),
+                currency: 'INR',
+                receipt: `WAL_${userId.substring(0, 8)}_${Date.now()}`,
+                notes: { userId, type: 'WALLET_RECHARGE' },
+            });
+        } else {
+            razorpayOrder = {
+                id: `order_sim_${Date.now()}`,
+                amount: Math.round(rechargeAmount * 100),
+                currency: 'INR',
+            };
         }
-
-        const currentBalance = Number(user.walletBalance || 0);
-        const newBalance = currentBalance + rechargeAmount;
-        await user.update({ walletBalance: newBalance });
-
-        const WalletTransaction = (await import('../models/WalletTransaction')).default;
-        const WalletTransactionType = (await import('../models/WalletTransaction')).WalletTransactionType;
-        const txn = await WalletTransaction.logTransaction({
-            userId,
-            amount: rechargeAmount,
-            openingBalance: currentBalance,
-            closingBalance: newBalance,
-            transactionType: WalletTransactionType.RECHARGE,
-            reference: paymentId || `RECHARGE_${Date.now()}`,
-            metadata: { paymentGateway, paymentId }
-        });
-
-        const AuditLog = (await import('../models/AuditLog')).default;
-        await AuditLog.logAction({
-            userId,
-            action: 'Wallet Recharged',
-            metadata: { amount: rechargeAmount, newBalance, paymentId }
-        });
 
         res.json({
             success: true,
-            message: `Successfully recharged ₹${rechargeAmount} to your wallet!`,
+            message: 'Razorpay recharge order created successfully',
             data: {
-                userId,
-                rechargedAmount: rechargeAmount,
-                walletBalance: newBalance,
-                transactionId: txn.id,
-            }
+                orderId: razorpayOrder.id,
+                amount: rechargeAmount,
+                currency: 'INR',
+                keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_fallback',
+                autoContinueSession: autoContinueSession || null,
+            },
         });
     } catch (err: any) {
+        logger.error('createRechargeOrder error:', err);
+        res.status(500).json({ success: false, message: 'Failed to create Razorpay recharge order', error: err.message });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/wallet/verify-recharge
+// Recharges user wallet after Razorpay signature verification
+// ─────────────────────────────────────────────────────────────────────────────
+export const verifyRechargePayment = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { userId, amount, razorpayOrderId, razorpayPaymentId, razorpaySignature, autoContinueSession } = req.body;
+        const result = await WalletService.rechargeWalletWithRazorpay({
+            userId,
+            amount: Number(amount),
+            razorpayOrderId,
+            razorpayPaymentId,
+            razorpaySignature,
+            autoContinueSession,
+        });
+        res.json(result);
+    } catch (err: any) {
+        logger.error('verifyRechargePayment error:', err);
+        res.status(500).json({ success: false, message: err.message || 'Failed to verify wallet recharge payment' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/wallet/recharge (Direct Fallback)
+// ─────────────────────────────────────────────────────────────────────────────
+export const rechargeWallet = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { userId, amount, paymentId = `PAY_${Date.now()}` } = req.body;
+        const result = await WalletService.rechargeWalletWithRazorpay({
+            userId,
+            amount: Number(amount),
+            razorpayPaymentId: paymentId,
+        });
+        res.json(result);
+    } catch (err: any) {
         logger.error('rechargeWallet error:', err);
-        res.status(500).json({ success: false, message: 'Wallet recharge failed', error: err.message });
+        res.status(500).json({ success: false, message: err.message || 'Wallet recharge failed' });
     }
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/mobile/wallet/pay-vip
-// Purchases VIP membership using wallet balance
+// Purchases/Renews/Upgrades VIP membership using Smart Credit Wallet
 // ─────────────────────────────────────────────────────────────────────────────
 export const payVipWithWallet = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { userId, packageId, tier = 'GOLD', price = 199 } = req.body;
+        const { userId, packageId, tier = 'PRO', price = 199 } = req.body;
 
         if (!userId) {
             res.status(400).json({ success: false, message: 'userId is required' });
             return;
         }
 
-        const user = await User.findByPk(userId);
-        if (!user) {
-            res.status(404).json({ success: false, message: 'User not found' });
-            return;
-        }
-
         const requiredPrice = Number(price);
-        const currentBalance = Number(user.walletBalance || 0);
 
-        if (currentBalance < requiredPrice) {
-            const requiredRecharge = Math.ceil(requiredPrice - currentBalance);
-            res.status(402).json({
-                success: false,
-                insufficientBalance: true,
-                requiredRecharge,
-                currentBalance,
-                requiredPrice,
-                message: `Recharge ₹${requiredRecharge} to complete VIP Purchase.`,
-            });
-            return;
-        }
+        // Execute Feature Purchase via WalletService Engine
+        const WalletTransactionType = (await import('../models/WalletTransaction')).WalletTransactionType;
+        const purchaseResult = await WalletService.purchaseFeatureWithCredit({
+            userId,
+            price: requiredPrice,
+            transactionType: WalletTransactionType.VIP_PURCHASE,
+            reference: `VIP_${tier}_${Date.now()}`,
+            metadata: { packageId, tier },
+        });
 
-        const newBalance = Math.max(0, currentBalance - requiredPrice);
-        await user.update({ walletBalance: newBalance });
-
-        // Activate UserSubscription
+        // Activate User Subscription
         const UserSubscriptionModel = (await import('../models/UserSubscription')).default;
         const SubscriptionStatusEnum = (await import('../models/UserSubscription')).SubscriptionStatus;
-        
+
         const validUntil = new Date();
         validUntil.setMonth(validUntil.getMonth() + 1);
 
@@ -1023,47 +1059,95 @@ export const payVipWithWallet = async (req: Request, res: Response): Promise<voi
             });
         }
 
-        // Ledger & Audit
-        const WalletTransaction = (await import('../models/WalletTransaction')).default;
-        const WalletTransactionType = (await import('../models/WalletTransaction')).WalletTransactionType;
-        await WalletTransaction.logTransaction({
-            userId,
-            amount: requiredPrice,
-            openingBalance: currentBalance,
-            closingBalance: newBalance,
-            transactionType: WalletTransactionType.VIP_PURCHASE,
-            reference: `VIP_${tier}`,
-            metadata: { tier, packageId, validUntil: validUntil.toISOString() }
-        });
-
-        const AuditLog = (await import('../models/AuditLog')).default;
-        await AuditLog.logAction({
-            userId,
-            action: 'VIP Membership Purchased via Wallet',
-            metadata: { tier, price: requiredPrice, validUntil: validUntil.toISOString() }
-        });
-
         res.json({
             success: true,
-            message: `🎉 Congratulations! VIP Membership (${tier}) is now active.`,
+            message: `🎉 VIP Membership (${tier}) is now active!`,
             data: {
                 userId,
                 tier,
                 pricePaid: requiredPrice,
-                walletBalance: newBalance,
+                remainingBalance: purchaseResult.data.remainingBalance,
                 subscriptionId: sub.id,
                 validUntil: validUntil.toISOString(),
-            }
+            },
         });
     } catch (err: any) {
+        if (err.statusCode === 402) {
+            res.status(402).json({
+                success: false,
+                insufficientBalance: true,
+                message: 'Insufficient Smart Credit Wallet balance.',
+                data: err.shortfallData,
+            });
+            return;
+        }
         logger.error('payVipWithWallet error:', err);
-        res.status(500).json({ success: false, message: 'VIP wallet purchase failed', error: err.message });
+        res.status(500).json({ success: false, message: err.message || 'VIP wallet purchase failed' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/wallet/pay-super-likes
+// ─────────────────────────────────────────────────────────────────────────────
+export const paySuperLikesWithWallet = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { userId, count = 5, price = 49 } = req.body;
+        const WalletTransactionType = (await import('../models/WalletTransaction')).WalletTransactionType;
+
+        const purchaseResult = await WalletService.purchaseFeatureWithCredit({
+            userId,
+            price: Number(price),
+            transactionType: WalletTransactionType.SUPER_LIKE_PURCHASE,
+            reference: `SUPER_LIKES_${count}_${Date.now()}`,
+            metadata: { count },
+        });
+
+        res.json({
+            success: true,
+            message: `Successfully purchased ${count} Super Likes!`,
+            data: purchaseResult.data,
+        });
+    } catch (err: any) {
+        if (err.statusCode === 402) {
+            res.status(402).json({ success: false, insufficientBalance: true, data: err.shortfallData });
+            return;
+        }
+        res.status(500).json({ success: false, message: err.message || 'Super Likes purchase failed' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/wallet/pay-boost
+// ─────────────────────────────────────────────────────────────────────────────
+export const payBoostWithWallet = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { userId, count = 1, price = 99 } = req.body;
+        const WalletTransactionType = (await import('../models/WalletTransaction')).WalletTransactionType;
+
+        const purchaseResult = await WalletService.purchaseFeatureWithCredit({
+            userId,
+            price: Number(price),
+            transactionType: WalletTransactionType.BOOST_PURCHASE,
+            reference: `BOOST_${count}_${Date.now()}`,
+            metadata: { count },
+        });
+
+        res.json({
+            success: true,
+            message: `Successfully purchased Profile Boost!`,
+            data: purchaseResult.data,
+        });
+    } catch (err: any) {
+        if (err.statusCode === 402) {
+            res.status(402).json({ success: false, insufficientBalance: true, data: err.shortfallData });
+            return;
+        }
+        res.status(500).json({ success: false, message: err.message || 'Profile Boost purchase failed' });
     }
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/mobile/wallet/transactions
-// Fetches full audit history of wallet transactions
 // ─────────────────────────────────────────────────────────────────────────────
 export const getWalletTransactions = async (req: Request, res: Response): Promise<void> => {
     try {

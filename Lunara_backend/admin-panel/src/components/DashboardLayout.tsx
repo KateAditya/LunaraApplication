@@ -29,6 +29,7 @@ import {
     BiFlag,
     BiRefresh,
     BiTimeFive,
+    BiWallet,
 } from 'react-icons/bi';
 import { useAuthStore } from '../store/authStore';
 import { useThemeMode } from '../context/ThemeContext';
@@ -79,6 +80,7 @@ const navGroups: NavGroup[] = [
             { text: 'Analytics', icon: <BiBarChartAlt2 />, path: '/analytics' },
             { text: 'Venue Summary', icon: <BiBarChartAlt2 />, path: '/reports/venue-summary' },
             { text: 'Payments', icon: <BiCreditCard />, path: '/payments' },
+            { text: 'Smart Credit Wallet', icon: <BiWallet />, path: '/wallet' },
             { text: 'Compliance', icon: <BiShieldQuarter />, path: '/compliance' },
         ],
     },

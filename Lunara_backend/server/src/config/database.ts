@@ -511,6 +511,106 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
             logger.warn('Failed to verify/seed Time Lock schema: ' + dbErr.message);
         }
 
+        // ── Smart Credit Wallet Tables & Migration ─────────────────────────────
+        try {
+            await sequelize.query(`
+                CREATE TABLE IF NOT EXISTS smart_wallets (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+                    balance DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    locked_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    pending_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    promotional_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    cashback_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    reward_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    lifetime_recharged DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    lifetime_spent DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    lifetime_promotional DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    lifetime_cashback DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    lifetime_rewards DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    lifetime_refunds DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    is_frozen BOOLEAN NOT NULL DEFAULT FALSE,
+                    frozen_reason TEXT,
+                    frozen_at TIMESTAMP WITH TIME ZONE,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                );
+            `);
+
+            // Idempotent column additions for smart_wallets
+            await sequelize.query(`ALTER TABLE smart_wallets ADD COLUMN IF NOT EXISTS locked_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00;`);
+            await sequelize.query(`ALTER TABLE smart_wallets ADD COLUMN IF NOT EXISTS pending_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00;`);
+            await sequelize.query(`ALTER TABLE smart_wallets ADD COLUMN IF NOT EXISTS reward_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00;`);
+            await sequelize.query(`ALTER TABLE smart_wallets ADD COLUMN IF NOT EXISTS lifetime_rewards DECIMAL(10,2) NOT NULL DEFAULT 0.00;`);
+            await sequelize.query(`ALTER TABLE smart_wallets ADD COLUMN IF NOT EXISTS lifetime_refunds DECIMAL(10,2) NOT NULL DEFAULT 0.00;`);
+
+            // Idempotent column additions for wallet_transactions
+            await sequelize.query(`ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS wallet_id UUID;`);
+            await sequelize.query(`ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS source VARCHAR(100);`);
+            await sequelize.query(`ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS destination VARCHAR(100);`);
+            await sequelize.query(`ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS created_by VARCHAR(100);`);
+
+            await sequelize.query(`
+                CREATE TABLE IF NOT EXISTS smart_wallet_configs (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    scope VARCHAR(50) NOT NULL UNIQUE DEFAULT 'global',
+                    min_recharge_amount DECIMAL(10,2) NOT NULL DEFAULT 100.00,
+                    max_recharge_amount DECIMAL(10,2) NOT NULL DEFAULT 50000.00,
+                    suggested_amounts JSONB NOT NULL DEFAULT '[100, 250, 500, 1000, 2000]',
+                    daily_recharge_limit DECIMAL(10,2) NOT NULL DEFAULT 100000.00,
+                    monthly_recharge_limit DECIMAL(10,2) NOT NULL DEFAULT 500000.00,
+                    is_wallet_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                );
+            `);
+
+            await sequelize.query(`
+                CREATE TABLE IF NOT EXISTS wallet_promotional_campaigns (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    campaign_code VARCHAR(50) NOT NULL UNIQUE,
+                    title VARCHAR(200) NOT NULL,
+                    description TEXT,
+                    credit_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    expiry_days INTEGER NOT NULL DEFAULT 30,
+                    max_uses INTEGER NOT NULL DEFAULT 1000,
+                    used_count INTEGER NOT NULL DEFAULT 0,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    start_date TIMESTAMP WITH TIME ZONE,
+                    end_date TIMESTAMP WITH TIME ZONE,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                );
+            `);
+
+            await sequelize.query(`
+                CREATE TABLE IF NOT EXISTS wallet_cashback_rules (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    rule_name VARCHAR(200) NOT NULL,
+                    trigger_type VARCHAR(50) NOT NULL,
+                    min_spend DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    cashback_type VARCHAR(20) NOT NULL DEFAULT 'percentage',
+                    cashback_value DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    max_cashback DECIMAL(10,2) NOT NULL DEFAULT 500.00,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    expiry_days INTEGER NOT NULL DEFAULT 30,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                );
+            `);
+
+            // Seed default global config if none exists
+            await sequelize.query(`
+                INSERT INTO smart_wallet_configs (id, scope, min_recharge_amount, max_recharge_amount, suggested_amounts, daily_recharge_limit, monthly_recharge_limit, is_wallet_active, created_at, updated_at)
+                VALUES (gen_random_uuid(), 'global', 100.00, 50000.00, '[100, 250, 500, 1000, 2000]'::jsonb, 100000.00, 500000.00, true, NOW(), NOW())
+                ON CONFLICT (scope) DO NOTHING;
+            `);
+
+            logger.info('Smart Credit Wallet schema & default configurations verified.');
+        } catch (walletErr: any) {
+            logger.warn('Failed to verify/seed Smart Credit Wallet schema: ' + walletErr.message);
+        }
+
         if (process.env.NODE_ENV === 'development') {
             // Sync models in development (be careful in production)
             try {

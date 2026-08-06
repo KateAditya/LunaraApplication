@@ -7,7 +7,7 @@ const router = Router();
 
 /**
  * GET /api/mobile/wallet
- * Returns incomplete events and transaction histories.
+ * Returns Smart Credit Wallet dashboard payload & recent transactions.
  */
 router.get(
     '/',
@@ -19,26 +19,46 @@ router.get(
 );
 
 /**
- * POST /api/mobile/wallet/pay-with-wallet
+ * POST /api/mobile/wallet/recharge-order
+ * Creates Razorpay Order for wallet recharge.
  */
-router.post(
-    '/pay-with-wallet',
-    ctrl.payWithWallet
-);
+router.post('/recharge-order', ctrl.createRechargeOrder);
 
-router.post(
-    '/recharge',
-    ctrl.rechargeWallet
-);
+/**
+ * POST /api/mobile/wallet/verify-recharge
+ * Verifies Razorpay signature & credits wallet.
+ */
+router.post('/verify-recharge', ctrl.verifyRechargePayment);
 
-router.post(
-    '/pay-vip',
-    ctrl.payVipWithWallet
-);
+/**
+ * POST /api/mobile/wallet/recharge
+ */
+router.post('/recharge', ctrl.rechargeWallet);
 
-router.get(
-    '/transactions',
-    ctrl.getWalletTransactions
-);
+/**
+ * POST /api/mobile/wallet/pay-vip
+ */
+router.post('/pay-vip', ctrl.payVipWithWallet);
+
+/**
+ * POST /api/mobile/wallet/pay-super-likes
+ */
+router.post('/pay-super-likes', ctrl.paySuperLikesWithWallet);
+
+/**
+ * POST /api/mobile/wallet/pay-boost
+ */
+router.post('/pay-boost', ctrl.payBoostWithWallet);
+
+/**
+ * POST /api/mobile/wallet/pay-with-wallet
+ * Legacy Guard: Blocks booking/deposit payments via wallet.
+ */
+router.post('/pay-with-wallet', ctrl.payWithWallet);
+
+/**
+ * GET /api/mobile/wallet/transactions
+ */
+router.get('/transactions', ctrl.getWalletTransactions);
 
 export default router;

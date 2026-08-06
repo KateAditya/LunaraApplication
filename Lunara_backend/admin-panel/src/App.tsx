@@ -28,7 +28,7 @@ import { Payments } from './pages/Payments';
 import { VenueBookingSummary } from './pages/reports/VenueBookingSummary';
 import { CancelledPartyPlans } from './pages/CancelledPartyPlans';
 import { CancellationAnalytics } from './pages/CancellationAnalytics';
-import { ThemeProvider, useThemeMode } from './context/ThemeContext';
+import { WalletManagement } from './pages/WalletManagement';
 
 // Create React Query client
 const queryClient = new QueryClient({
@@ -102,6 +102,7 @@ function AppContent() {
             <Route path="legal-terms" element={<LegalTerms />} />
             <Route path="chat-settings" element={<ChatSettings />} />
             <Route path="subscriptions" element={<SubscriptionManagement />} />
+            <Route path="wallet" element={<WalletManagement />} />
             <Route path="cancelled-plans" element={<CancelledPartyPlans />} />
             <Route path="cancellation-analytics" element={<CancellationAnalytics />} />
           </Route>

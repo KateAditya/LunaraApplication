@@ -53,6 +53,14 @@ import WalletTransaction from './WalletTransaction';
 import PartyReview from './PartyReview';
 import ReliabilityHistory from './ReliabilityHistory';
 import RewardPointLedger from './RewardPointLedger';
+import SmartWallet from './SmartWallet';
+import SmartWalletConfig from './SmartWalletConfig';
+import WalletPromotionalCampaign from './WalletPromotionalCampaign';
+import WalletCashbackRule from './WalletCashbackRule';
+
+// Smart Credit Wallet Associations
+User.hasOne(SmartWallet, { foreignKey: 'userId', as: 'smartWallet' });
+SmartWallet.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
 // ============================================================================
 // Notification Associations
@@ -686,5 +694,9 @@ export default {
     PartyPlanCancellationRequest,
     CancellationRequestStatus,
     CancellationReason,
+    SmartWallet,
+    SmartWalletConfig,
+    WalletPromotionalCampaign,
+    WalletCashbackRule,
     syncModels,
 };

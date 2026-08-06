@@ -197,6 +197,8 @@ app.use('/api/admin/safety-checks', adminSafetyChecksRoutes); // Safety Checks (
 app.use('/api/mobile/subscriptions', mobileSubscriptionRoutes); // Subscriptions (Mobile)
 app.use('/api/mobile/wallet', mobileWalletRoutes);             // Wallet (Mobile)
 app.use('/api/mobile/tickets', mobileTicketRoutes);           // Digital Tickets (Mobile)
+import adminWalletRoutes from './routes/adminWalletRoutes';
+app.use('/api/admin/wallet', adminWalletRoutes);                  // Smart Credit Wallet (Admin)
 app.use('/api/admin/payments', adminPaymentsRoutes);          // Payments (Admin)
 app.use('/api/admin/notifications', adminNotificationRoutes);   // Admin Notifications (Admin)
 
