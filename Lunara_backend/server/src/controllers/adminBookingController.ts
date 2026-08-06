@@ -1064,11 +1064,30 @@ export const getVenueWiseBookingSummary = async (req: Request, res: Response) =>
         let bookingWhere: any = { venueId: { [Op.in]: venueIds } };
         
         if (fromDate && toDate) {
-            bookingWhere.bookingDate = { [Op.between]: [fromDate, toDate] };
+            const fDate = new Date(fromDate as string);
+            const tDate = new Date(toDate as string);
+            tDate.setHours(23, 59, 59, 999);
+            const toDateStr = `${toDate} 23:59:59`;
+
+            bookingWhere[Op.or] = [
+                { bookingDate: { [Op.between]: [fromDate, toDateStr] } },
+                { bookingDate: { [Op.between]: [fDate, tDate] } },
+                { createdAt: { [Op.between]: [fDate, tDate] } }
+            ];
         } else if (fromDate) {
-            bookingWhere.bookingDate = { [Op.gte]: fromDate };
+            const fDate = new Date(fromDate as string);
+            bookingWhere[Op.or] = [
+                { bookingDate: { [Op.gte]: fromDate } },
+                { createdAt: { [Op.gte]: fDate } }
+            ];
         } else if (toDate) {
-            bookingWhere.bookingDate = { [Op.lte]: toDate };
+            const tDate = new Date(toDate as string);
+            tDate.setHours(23, 59, 59, 999);
+            const toDateStr = `${toDate} 23:59:59`;
+            bookingWhere[Op.or] = [
+                { bookingDate: { [Op.lte]: toDateStr } },
+                { createdAt: { [Op.lte]: tDate } }
+            ];
         }
 
         if (bookingStatus && bookingStatus !== 'all') {
@@ -1270,25 +1289,29 @@ export const getVenueRevenueDetails = async (req: Request, res: Response) => {
 
         const periodStr = (period as string).toLowerCase();
 
-        if (periodStr === 'custom' && fromDate && toDate) {
+        if (fromDate && toDate) {
             startDate = new Date(fromDate as string);
             startDate.setHours(0, 0, 0, 0);
             endDate = new Date(toDate as string);
             endDate.setHours(23, 59, 59, 999);
+        } else if (fromDate) {
+            startDate = new Date(fromDate as string);
+            startDate.setHours(0, 0, 0, 0);
+        } else if (toDate) {
+            endDate = new Date(toDate as string);
+            endDate.setHours(23, 59, 59, 999);
+            startDate = new Date(endDate);
+            startDate.setMonth(startDate.getMonth() - 1, 1);
+            startDate.setHours(0, 0, 0, 0);
         } else if (periodStr === 'daily') {
-            // Default last 30 days
             startDate = new Date();
             startDate.setDate(startDate.getDate() - 29);
             startDate.setHours(0, 0, 0, 0);
-            if (fromDate) startDate = new Date(fromDate as string);
-            if (toDate) endDate = new Date(toDate as string);
         } else if (periodStr === 'weekly') {
-            // Default last 12 weeks
             startDate = new Date();
             startDate.setDate(startDate.getDate() - (12 * 7));
             startDate.setHours(0, 0, 0, 0);
         } else if (periodStr === 'yearly') {
-            // Default last 5 years
             startDate = new Date();
             startDate.setFullYear(startDate.getFullYear() - 4, 0, 1);
             startDate.setHours(0, 0, 0, 0);
@@ -1311,11 +1334,16 @@ export const getVenueRevenueDetails = async (req: Request, res: Response) => {
 
         const startDateStr = startDate.toISOString().split('T')[0];
         const endDateStr = endDate.toISOString().split('T')[0];
+        const endDateFullStr = `${endDateStr} 23:59:59`;
 
-        // Build Booking query
+        // Build Booking query matching bookingDate as Date, string, and createdAt fallback
         let bookingWhere: any = {
             venueId: venue.id,
-            bookingDate: { [Op.between]: [startDateStr, endDateStr] }
+            [Op.or]: [
+                { bookingDate: { [Op.between]: [startDate, endDate] } },
+                { bookingDate: { [Op.between]: [startDateStr, endDateFullStr] } },
+                { createdAt: { [Op.between]: [startDate, endDate] } }
+            ]
         };
 
         if (status && status !== 'all') {
@@ -1413,7 +1441,8 @@ export const getVenueRevenueDetails = async (req: Request, res: Response) => {
             const bData: any = b;
             if (bData.payments && bData.payments.length > 0) {
                 bData.payments.forEach((p: any) => {
-                    if (p.status === 'successful') {
+                    const statusLower = (p.status || '').toString().toLowerCase();
+                    if (['successful', 'paid', 'success', 'completed'].includes(statusLower)) {
                         bPaid += Number(p.amount) || 0;
                     }
                     bRefund += Number(p.refundAmount) || 0;
@@ -1421,9 +1450,15 @@ export const getVenueRevenueDetails = async (req: Request, res: Response) => {
             } else {
                 if (b.paymentStatus === 'paid') {
                     bPaid = bAmount;
-                } else {
+                } else if (b.paymentStatus === 'partially_paid') {
                     bPaid = Number(b.depositAmount) || 0;
+                } else if (b.depositAmount && Number(b.depositAmount) > 0) {
+                    bPaid = Number(b.depositAmount);
                 }
+            }
+
+            if (bPaid > bAmount && bAmount > 0) {
+                bPaid = bAmount;
             }
 
             const bPending = Math.max(0, bAmount - bPaid);
@@ -1465,7 +1500,18 @@ export const getVenueRevenueDetails = async (req: Request, res: Response) => {
                 trendKey = bDate.getFullYear().toString();
             }
 
-            if (trendKey && trendMap.has(trendKey)) {
+            if (trendKey) {
+                if (!trendMap.has(trendKey)) {
+                    let label = trendKey;
+                    if (periodStr === 'daily' || periodStr === 'custom') {
+                        label = bDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+                    } else if (periodStr === 'weekly') {
+                        label = `W${getWeekNumber(bDate)} (${bDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })})`;
+                    } else if (periodStr === 'monthly') {
+                        label = bDate.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+                    }
+                    trendMap.set(trendKey, { label, dateKey: trendKey, totalAmount: 0, paidAmount: 0, pendingAmount: 0, bookingCount: 0 });
+                }
                 const item = trendMap.get(trendKey)!;
                 item.totalAmount += bAmount;
                 item.paidAmount += bPaid;

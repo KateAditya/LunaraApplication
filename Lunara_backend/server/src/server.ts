@@ -274,7 +274,8 @@ io.on('connection', (socket) => {
 
     socket.on('join_admin_room', () => {
         socket.join('admin');
-        logger.info(`Socket ${socket.id} joined admin room`);
+        socket.join('admin_notifications');
+        logger.info(`Socket ${socket.id} joined admin and admin_notifications room`);
     });
 
     socket.on('join_user_room', async (userId: string) => {
