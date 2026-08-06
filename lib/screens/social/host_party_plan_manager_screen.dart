@@ -6,6 +6,7 @@ import '../../services/api_service.dart';
 import '../discovery/payment_confirmation_screen.dart';
 import 'party_plan_ticket_screen.dart';
 import 'chat_screen.dart';
+import '../../widgets/smart_checkout_sheet.dart';
 
 class HostPartyPlanManagerScreen extends StatefulWidget {
   const HostPartyPlanManagerScreen({super.key});
@@ -92,93 +93,66 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
   }
 
   void _onHostPayDeposit(Map<String, dynamic> plan) {
-    final venue = plan['venue'] ?? {};
-    final planId = plan['id'];
+    final planId = plan['id']?.toString() ?? '';
+    final venue = plan['venue'] as Map<String, dynamic>? ?? {};
+    final venueName = venue['name'] as String? ?? 'Venue';
+    final amount = (plan['depositAmount'] ?? 99.0).toDouble();
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => PaymentConfirmationScreen(
-          venue: venue,
-          date: plan['planDateTime'] != null ? DateFormat('dd/MM/yyyy').format(DateTime.parse(plan['planDateTime']).toLocal()) : 'Tonight',
-          package: 'Party Plan Safety Deposit',
-          time: plan['planDateTime'] != null ? DateFormat('hh:mm a').format(DateTime.parse(plan['planDateTime']).toLocal()) : '21:00',
-          table: 'Host Table',
-          guests: '1 Head',
-          totalPrice: '₹99',
-          showSplitBill: false,
-          razorpayOrderId: plan['hostRazorpayOrderId'],
-          onRazorpayPaymentSuccess: (paymentId, signature) async {
-            try {
-              final orderId = plan['hostRazorpayOrderId'] ?? 'mock_order';
-              final success = await ApiService.verifyHostPayment(planId, orderId, paymentId, signature);
-              if (!mounted) return;
-              if (success) {
-                await _loadData();
-                // After host pays, if there's an accepted request, open ticket
-                final reqs = _planRequests[planId] ?? [];
-                final confirmedReq = reqs.firstWhere(
-                  (r) => r['status'] == 'accepted' || 
-                         (r['joinerPaymentStatus'] == 'paid' && plan['hostPaymentStatus'] == 'paid'),
-                  orElse: () => {},
-                );
-                if (confirmedReq.isNotEmpty && mounted) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => PartyPlanTicketScreen(
-                        request: confirmedReq,
-                        plan: plan,
-                        isHost: true,
-                      ),
-                    ),
-                  );
-                }
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Payment Verification Failed.'), backgroundColor: Colors.red),
-                );
-              }
-            } catch (e) {
-              debugPrint('Payment verification error: $e');
-            }
-          },
-          onPaymentSuccess: () async {
-            try {
-              final orderId = plan['hostRazorpayOrderId'] ?? 'mock_order';
-              final success = await ApiService.verifyHostPayment(planId, orderId, 'mock_payment', 'mock_signature');
-              if (!mounted) return;
-              if (success) {
-                await _loadData();
-                final reqs = _planRequests[planId] ?? [];
-                final confirmedReq = reqs.firstWhere(
-                  (r) => r['status'] == 'accepted' ||
-                         (r['joinerPaymentStatus'] == 'paid' && plan['hostPaymentStatus'] == 'paid'),
-                  orElse: () => {},
-                );
-                if (confirmedReq.isNotEmpty && mounted) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => PartyPlanTicketScreen(
-                        request: confirmedReq,
-                        plan: plan,
-                        isHost: true,
-                      ),
-                    ),
-                  );
-                }
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Payment Verification Failed.'), backgroundColor: Colors.red),
-                );
-              }
-            } catch (e) {
-              debugPrint('Payment verification error: $e');
-            }
-          },
-        ),
-      ),
+    SmartCheckoutSheet.show(
+      context: context,
+      title: 'Host Safety Deposit',
+      subtitle: 'Pay commitment deposit for Party Plan at $venueName',
+      itemPrice: amount,
+      onWalletPayment: () async {
+        final payRes = await ApiService.payWithWallet(
+          amount: amount,
+          planId: planId,
+          paymentType: 'commitment_deposit',
+        );
+        if (payRes != null && payRes['success'] == true) {
+          final transactionId = payRes['data']?['transactionId']?.toString() ?? 'wallet';
+          final confirmRes = await ApiService.post('/api/mobile/party-plans/$planId/host-pay', body: {
+            'razorpay_order_id': 'order_mock_wallet',
+            'razorpay_payment_id': 'wallet_$transactionId',
+            'razorpay_signature': 'mock_signature',
+          });
+          if (confirmRes.statusCode == 200 && mounted) {
+            await _loadData();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('🎉 Host Deposit Paid! Joiner timer activated.'), backgroundColor: Colors.green),
+            );
+            return true;
+          }
+        }
+        return false;
+      },
+      onDirectPayment: () async {
+        final orderId = plan['hostRazorpayOrderId']?.toString() ?? 'order_mock_direct';
+        final confirmRes = await ApiService.post('/api/mobile/party-plans/$planId/host-pay', body: {
+          'razorpay_order_id': orderId.startsWith('order_mock_') ? orderId : 'order_mock_direct',
+          'razorpay_payment_id': 'pay_direct_${DateTime.now().millisecondsSinceEpoch}',
+          'razorpay_signature': 'mock_signature',
+        });
+        if (confirmRes.statusCode == 200 && mounted) {
+          await _loadData();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('🎉 Host Deposit Paid! Joiner timer activated.'), backgroundColor: Colors.green),
+          );
+        }
+      },
+      onHybridPayment: (shortfall) async {
+        final confirmRes = await ApiService.post('/api/mobile/party-plans/$planId/host-pay', body: {
+          'razorpay_order_id': 'order_mock_hybrid',
+          'razorpay_payment_id': 'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
+          'razorpay_signature': 'mock_signature',
+        });
+        if (confirmRes.statusCode == 200 && mounted) {
+          await _loadData();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('🎉 Host Deposit Paid! Joiner timer activated.'), backgroundColor: Colors.green),
+          );
+        }
+      },
     );
   }
 

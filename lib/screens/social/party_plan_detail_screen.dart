@@ -1345,37 +1345,23 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: GestureDetector(
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => PartyPlanTicketScreen(
-                                          request: {
-                                            'id': _activeRequestId,
-                                            'planId': widget.plan['id'],
-                                            'plan': widget.plan,
-                                          },
-                                          plan: widget.plan,
-                                          isHost: false,
-                                        ),
-                                      ),
-                                    );
-                                  },
+                                  onTap: _isLoadingCancellation ? null : _showCancellationStep1Dialog,
                                   child: Container(
                                     height: 54,
                                     decoration: BoxDecoration(
-                                      color: LunaraTheme.electricViolet,
+                                      color: Colors.redAccent.withValues(alpha: 0.2),
                                       borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
                                     ),
                                     child: const Row(
                                       mainAxisAlignment: MainAxisAlignment.center,
                                       children: [
-                                        Icon(Icons.qr_code_rounded, color: Colors.white, size: 18),
+                                        Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 18),
                                         SizedBox(width: 6),
                                         Text(
-                                          'VIEW TICKET',
+                                          'CANCEL PLAN',
                                           style: TextStyle(
-                                            color: Colors.white,
+                                            color: Colors.redAccent,
                                             fontSize: 13,
                                             fontWeight: FontWeight.bold,
                                           ),
