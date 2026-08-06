@@ -101,6 +101,18 @@ export const startPartyPlanCron = () => {
 
 
             // ── 2. Event Countdown Engine (24h, 3h, 1h, 30m Reminders) ─────────
+            try {
+                const sequelize = (await import('../config/database')).default;
+                await sequelize.query(`
+                    ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_24h_sent BOOLEAN DEFAULT FALSE;
+                    ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_3h_sent BOOLEAN DEFAULT FALSE;
+                    ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;
+                    ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;
+                    ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;
+                    ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_10m_sent BOOLEAN DEFAULT FALSE;
+                `).catch(() => {});
+            } catch (_) {}
+
             const next25h = new Date(now.getTime() + 25 * 60 * 60 * 1000);
             const next23h = new Date(now.getTime() + 23 * 60 * 60 * 1000);
             const upcoming24hPlans = await PartyPlan.findAll({

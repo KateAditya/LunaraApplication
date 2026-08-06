@@ -655,6 +655,19 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
         await HelpArticle.sync(options);
         await CommunityGuideline.sync(options);
         await LegalDocument.sync(options);
+        try {
+            await sequelize.query(`
+                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_24h_sent BOOLEAN DEFAULT FALSE;
+                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_3h_sent BOOLEAN DEFAULT FALSE;
+                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;
+                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;
+                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;
+                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_10m_sent BOOLEAN DEFAULT FALSE;
+            `);
+        } catch (colErr) {
+            console.warn('⚠️ Auto-adding PartyPlan reminder columns note:', colErr);
+        }
+
         await PartyPlan.sync(options);
         await Ad.sync(options);
         try {
