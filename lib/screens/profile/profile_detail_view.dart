@@ -86,10 +86,10 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
     try {
       final status = await ApiService.fetchSwipeStatus(_currentUser.id);
       if (mounted) {
-        if (status['alreadySuperLiked'] == true) {
-          setState(() => _localSwipedAction = 'superlike');
-        } else if (status['alreadyLiked'] == true) {
-          setState(() => _localSwipedAction = 'like');
+        final action = status['actionType']?.toString() ??
+            (status['alreadySuperLiked'] == true ? 'superlike' : (status['alreadyLiked'] == true ? 'like' : null));
+        if (action != null) {
+          setState(() => _localSwipedAction = action);
         }
       }
     } catch (_) {}

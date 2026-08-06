@@ -48,6 +48,7 @@ import NightPartnerMatch from './NightPartnerMatch';
 import Notification from './Notification';
 import Ticket, { TicketStatus, StorageCleanupStatus } from './Ticket';
 import PartySafetyCheck from './PartySafetyCheck';
+import UserLike from './UserLike';
 import AuditLog from './AuditLog';
 import WalletTransaction from './WalletTransaction';
 import PartyReview from './PartyReview';
@@ -698,5 +699,6 @@ export default {
     SmartWalletConfig,
     WalletPromotionalCampaign,
     WalletCashbackRule,
+    UserLike,
     syncModels,
 };

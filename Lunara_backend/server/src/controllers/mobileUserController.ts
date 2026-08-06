@@ -4,6 +4,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import sharp from 'sharp';
 import { UserProfile, UserPreference, UserPhoto, UserMatch, PartyPlan, GroupParty, StrangersMeetRequest, Booking, Plan } from '../models';
+import UserLike from '../models/UserLike';
 import User, { UserRole } from '../models/User';
 import sequelize from '../config/database';
 import DeletedAccount from '../models/DeletedAccount';
@@ -1206,6 +1207,17 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
             return res.status(400).json({ success: false, message: 'Invalid action. Must be like, superlike, or nope' });
         }
 
+        // 0. Save permanent profile like/superlike record in UserLike table
+        try {
+            await UserLike.upsert({
+                userId,
+                targetUserId,
+                actionType: action,
+            });
+        } catch (dbErr) {
+            logger.warn('[swipeUser] Failed to upsert UserLike:', dbErr);
+        }
+
         // Check if there is already a swipe from this user to target
         const existingMySwipe = await UserMatch.findOne({
             where: {
@@ -1593,6 +1605,14 @@ export const getSwipeStatus = async (req: Request, res: Response): Promise<Respo
             return res.status(400).json({ success: false, message: 'userId and targetUserId are required' });
         }
 
+        // Check UserLike table for permanent persistent like/superlike state
+        const swipeActionRecord = await UserLike.findOne({
+            where: {
+                userId,
+                targetUserId,
+            }
+        });
+
         // Check all-time swipe on this specific target (persists across days & refreshes)
         const existingSwipe = await UserMatch.findOne({
             where: {
@@ -1601,9 +1621,10 @@ export const getSwipeStatus = async (req: Request, res: Response): Promise<Respo
             }
         });
 
-        const alreadyLiked = !!existingSwipe && ['pending', 'connected'].includes(existingSwipe.status as string);
-        const alreadySuperLiked = alreadyLiked && existingSwipe?.matchReason === 'superlike';
-        const alreadyNoped = !!existingSwipe && existingSwipe.status === 'declined';
+        const actionType = swipeActionRecord?.actionType || (existingSwipe?.matchReason === 'superlike' ? 'superlike' : existingSwipe?.status === 'declined' ? 'nope' : existingSwipe ? 'like' : null);
+        const alreadyLiked = actionType === 'like' || actionType === 'superlike' || (!!existingSwipe && ['pending', 'connected'].includes(existingSwipe.status as string));
+        const alreadySuperLiked = actionType === 'superlike' || (alreadyLiked && existingSwipe?.matchReason === 'superlike');
+        const alreadyNoped = actionType === 'nope' || actionType === 'dislike' || (!!existingSwipe && existingSwipe.status === 'declined');
 
         // Get today's total like count for this user
         const todayStart = new Date();
@@ -1711,6 +1732,18 @@ export const backtrackSwipe = async (req: Request, res: Response): Promise<Respo
 
         // Consume 1 backtrack usage
         const consume = await SubscriptionService.consumeUsage(userId, 'daily_backtracks');
+
+        // Destroy UserLike record on backtrack
+        try {
+            await UserLike.destroy({
+                where: {
+                    userId,
+                    targetUserId,
+                }
+            });
+        } catch (delErr) {
+            logger.warn('[backtrackSwipe] Failed to destroy UserLike:', delErr);
+        }
 
         // Find the swipe record and destroy it
         const mySwipe = await UserMatch.findOne({
