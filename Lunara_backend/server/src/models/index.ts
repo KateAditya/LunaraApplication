@@ -633,6 +633,7 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
         await NightPartnerRequest.sync(options);
         await NightPartnerMatch.sync(options);
         await PartySafetyCheck.sync(options);
+        await UserLike.sync(options);
 
         console.log('✅ All models synchronized successfully');
     } catch (error) {
