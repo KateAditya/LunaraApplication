@@ -82,6 +82,10 @@ export const VenueRevenueDetailsModal: React.FC<Props> = ({ venueId, venueName, 
 
     const handlePeriodChange = (newPeriod: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom') => {
         setPeriod(newPeriod);
+        if (newPeriod !== 'custom') {
+            setFromDate('');
+            setToDate('');
+        }
         setPage(1);
     };
 

@@ -1,5 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { io } from 'socket.io-client';
 import {
     BiHomeAlt,
     BiGroup,
@@ -35,6 +36,23 @@ import { useAuthStore } from '../store/authStore';
 import { useThemeMode } from '../context/ThemeContext';
 import { ThemeSwitcher } from './ThemeSwitcher';
 import adminNotificationsApi, { type NotificationCounts, type ActivityItem } from '../api/adminNotifications';
+import FloatingNotificationContainer, { type FloatingNotificationItem } from './FloatingNotification';
+
+// Local storage helpers for last seen timestamps
+const getLastSeenKey = (path: string) => `lunara_last_seen_${path}`;
+
+const getStoredTimestamp = (path: string): string => {
+    let stored = localStorage.getItem(getLastSeenKey(path));
+    if (!stored) {
+        stored = new Date().toISOString();
+        localStorage.setItem(getLastSeenKey(path), stored);
+    }
+    return stored;
+};
+
+const markPathSeen = (path: string) => {
+    localStorage.setItem(getLastSeenKey(path), new Date().toISOString());
+};
 
 interface NavItem {
     text: string;
@@ -116,8 +134,10 @@ export const DashboardLayout: React.FC = () => {
     };
 
     const handleNavClick = (path: string) => {
+        markPathSeen(path);
         navigate(path);
         setMobileOpen(false);
+        fetchNotifications();
     };
 
     const [notifCounts, setNotifCounts] = useState<NotificationCounts>({
@@ -131,28 +151,114 @@ export const DashboardLayout: React.FC = () => {
     const [notifOpen, setNotifOpen] = useState(false);
     const notifRef = useRef<HTMLDivElement>(null);
 
-    const fetchNotifications = async () => {
+    // Floating notifications state
+    const [floatingNotifs, setFloatingNotifs] = useState<FloatingNotificationItem[]>([]);
+    const seenNotifIds = useRef<Set<string>>(new Set());
+
+    const dismissFloatingNotif = useCallback((id: string) => {
+        setFloatingNotifs((prev) => prev.filter((item) => item.id !== id));
+    }, []);
+
+    const addFloatingNotification = useCallback((item: FloatingNotificationItem) => {
+        setFloatingNotifs((prev) => {
+            if (prev.some((p) => p.id === item.id)) return prev;
+            return [item, ...prev].slice(0, 3);
+        });
+    }, []);
+
+    const fetchNotifications = useCallback(async () => {
         try {
+            const lastSeenBookings = getStoredTimestamp('/bookings');
+            const lastSeenPartyRequests = getStoredTimestamp('/party-requests');
+            const lastSeenGroupParties = getStoredTimestamp('/group-parties');
+            const lastSeenStrangersMeet = getStoredTimestamp('/strangers-meet');
+
             const [sumRes, actRes] = await Promise.all([
-                adminNotificationsApi.getSummary().catch(() => ({ success: false, data: null })),
+                adminNotificationsApi.getSummary({
+                    lastSeenBookings,
+                    lastSeenPartyRequests,
+                    lastSeenGroupParties,
+                    lastSeenStrangersMeet,
+                }).catch(() => ({ success: false, data: null })),
                 adminNotificationsApi.getActivity().catch(() => ({ success: false, data: [] })),
             ]);
+
             if (sumRes.success && sumRes.data) {
                 setNotifCounts(sumRes.data);
             }
             if (actRes.success && Array.isArray(actRes.data)) {
                 setActivityList(actRes.data);
+
+                // Diff activity items to trigger floating toasts for new posts
+                actRes.data.forEach((item: ActivityItem) => {
+                    const itemTime = new Date(item.createdAt).getTime();
+                    const isRecent = (Date.now() - itemTime) < 5 * 60 * 1000; // created in last 5 min
+                    if (isRecent && !seenNotifIds.current.has(item.id)) {
+                        seenNotifIds.current.add(item.id);
+                        const routeLastSeen = new Date(getStoredTimestamp(item.path)).getTime();
+                        if (itemTime > routeLastSeen) {
+                            addFloatingNotification({
+                                id: item.id,
+                                type: item.type,
+                                title: item.title,
+                                subtitle: item.subtitle,
+                                path: item.path,
+                                createdAt: item.createdAt,
+                            });
+                        }
+                    }
+                });
             }
         } catch (err) {
             console.error('Error fetching admin notifications:', err);
         }
-    };
+    }, [addFloatingNotification]);
 
+    // Handle route navigation: mark current section as seen & refresh counts
     useEffect(() => {
+        const matchingPath = ['/bookings', '/party-requests', '/group-parties', '/strangers-meet'].find((p) =>
+            location.pathname.startsWith(p)
+        );
+        if (matchingPath) {
+            markPathSeen(matchingPath);
+        }
         fetchNotifications();
         const interval = setInterval(fetchNotifications, 10000);
         return () => clearInterval(interval);
-    }, [location.pathname]);
+    }, [location.pathname, fetchNotifications]);
+
+    // Socket.IO for real-time notifications across the admin panel
+    useEffect(() => {
+        const socketUrl = import.meta.env.VITE_API_URL || 'http://localhost:9076';
+        const socket = io(socketUrl, { transports: ['websocket', 'polling'] });
+
+        socket.on('connect', () => {
+            socket.emit('join_admin_room');
+        });
+
+        const handleRealtimeNotification = (data: any) => {
+            const notifId = data.id || data.entityId ? `${data.type || 'notif'}_${data.id || data.entityId}` : `realtime_${Date.now()}`;
+            if (!seenNotifIds.current.has(notifId)) {
+                seenNotifIds.current.add(notifId);
+                addFloatingNotification({
+                    id: notifId,
+                    type: data.type || 'party_request',
+                    title: data.title || '🎉 New Plan Posted!',
+                    subtitle: data.body || data.subtitle || data.message || 'A new plan has been created.',
+                    path: data.path || '/party-requests',
+                    createdAt: data.createdAt || new Date().toISOString(),
+                });
+            }
+            fetchNotifications();
+        };
+
+        socket.on('admin_notification_created', handleRealtimeNotification);
+        socket.on('admin_notification', handleRealtimeNotification);
+
+        return () => {
+            socket.disconnect();
+        };
+    }, [addFloatingNotification, fetchNotifications]);
 
     // Close profile & notification dropdowns on outside click
     useEffect(() => {
@@ -183,18 +289,20 @@ export const DashboardLayout: React.FC = () => {
                     marginLeft: 'auto',
                     backgroundColor: '#ef4444',
                     color: '#ffffff',
-                    fontSize: '0.6875rem',
-                    fontWeight: 700,
-                    borderRadius: '10px',
+                    fontSize: '0.65rem',
+                    fontWeight: 800,
+                    borderRadius: '12px',
                     padding: '2px 7px',
                     lineHeight: '1.2',
-                    boxShadow: '0 2px 4px rgba(239,68,68,0.4)',
+                    boxShadow: '0 0 10px rgba(239, 68, 68, 0.6)',
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
+                    gap: '4px',
                 }}
             >
-                {count}
+                <span style={{ width: 5, height: 5, borderRadius: '50%', backgroundColor: '#ffffff' }} />
+                {count} NEW
             </span>
         );
     };
@@ -511,6 +619,17 @@ export const DashboardLayout: React.FC = () => {
 
                 <Outlet />
             </main>
+
+            {/* Floating Notification Toast Widget */}
+            <FloatingNotificationContainer
+                notifications={floatingNotifs}
+                onDismiss={dismissFloatingNotif}
+                onNavigate={(path) => {
+                    markPathSeen(path);
+                    navigate(path);
+                    fetchNotifications();
+                }}
+            />
 
             {/* Theme Switcher Panel */}
             <ThemeSwitcher />

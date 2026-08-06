@@ -7,15 +7,49 @@ import User from '../models/User';
 import Venue from '../models/Venue';
 
 /**
- * Get pending notification summary counts for admin sidebar and header
+ * Get pending/NEW notification summary counts for admin sidebar and header
  */
-export const getAdminNotificationSummary = async (_req: Request, res: Response): Promise<Response> => {
+export const getAdminNotificationSummary = async (req: Request, res: Response): Promise<Response> => {
     try {
+        const {
+            lastSeenBookings,
+            lastSeenPartyRequests,
+            lastSeenGroupParties,
+            lastSeenStrangersMeet,
+        } = req.query;
+
+        const parseDate = (val?: any): Date | null => {
+            if (!val) return null;
+            const d = new Date(val as string);
+            return isNaN(d.getTime()) ? null : d;
+        };
+
+        const dateBookings = parseDate(lastSeenBookings);
+        const datePartyRequests = parseDate(lastSeenPartyRequests);
+        const dateGroupParties = parseDate(lastSeenGroupParties);
+        const dateStrangersMeet = parseDate(lastSeenStrangersMeet);
+
+        const { Op } = require('sequelize');
+
+        // Helper to build where clause:
+        // If lastSeen timestamp is provided, count items created strictly AFTER that timestamp.
+        // If no timestamp is provided, count items created within the last 24 hours as NEW.
+        const makeWhere = (lastSeenDate: Date | null) => {
+            if (!lastSeenDate) {
+                return {
+                    createdAt: { [Op.gt]: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+                };
+            }
+            return {
+                createdAt: { [Op.gt]: lastSeenDate }
+            };
+        };
+
         const [bookingsCount, partyRequestsCount, groupPartiesCount, strangersMeetCount] = await Promise.all([
-            Booking.count({ where: { status: 'pending' as any } }).catch(() => 0),
-            PartyPlanRequest.count({ where: { status: 'pending' as any } }).catch(() => 0),
-            GroupParty.count({ where: { status: 'pending' as any } }).catch(() => 0),
-            StrangersMeetRequest.count({ where: { status: 'pending' as any } }).catch(() => 0),
+            Booking.count({ where: makeWhere(dateBookings) }).catch(() => 0),
+            PartyPlanRequest.count({ where: makeWhere(datePartyRequests) }).catch(() => 0),
+            GroupParty.count({ where: makeWhere(dateGroupParties) }).catch(() => 0),
+            StrangersMeetRequest.count({ where: makeWhere(dateStrangersMeet) }).catch(() => 0),
         ]);
 
         const totalPending = bookingsCount + partyRequestsCount + groupPartiesCount + strangersMeetCount;

@@ -4,8 +4,6 @@ import { BiCalendar, BiCheckCircle, BiPulse, BiGroup, BiStar, BiCalendarEvent, B
 import { useThemeMode } from '../context/ThemeContext';
 import bookingsApi from '../api/bookings';
 import ReactApexChart from 'react-apexcharts';
-import { io } from 'socket.io-client';
-import toast from 'react-hot-toast';
 
 export const Dashboard: React.FC = () => {
     const { mode } = useThemeMode();
@@ -33,25 +31,7 @@ export const Dashboard: React.FC = () => {
 
     useEffect(() => {
         fetchDashboardData();
-
-        // Socket.io for Real-time Admin Notifications
-        const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000');
-        
-        socket.on('connect', () => {
-            socket.emit('join_admin_room');
-        });
-
-        socket.on('admin_notification', (data) => {
-            toast(data.message || data.title || 'New Notification', {
-                duration: 6000,
-                position: 'top-right',
-            });
-        });
-
-        return () => {
-            socket.disconnect();
-        };
-    }, [fetchDashboardData, isDark]);
+    }, [fetchDashboardData]);
 
     const formatCurrency = (amount: number | string) => {
         return `₹${Number(amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
