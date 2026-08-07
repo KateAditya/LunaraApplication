@@ -11,6 +11,8 @@ import '../../widgets/lunara_profile_image.dart';
 import '../../widgets/top_notification_banner.dart';
 import '../../widgets/upcoming_night_invite_dialog.dart';
 import '../../widgets/upcoming_night_host_confirm_dialog.dart';
+import 'party_plan_detail_screen.dart';
+import '../../widgets/smart_checkout_sheet.dart';
 
 class NotificationCenterScreen extends StatefulWidget {
   const NotificationCenterScreen({super.key});
@@ -786,6 +788,29 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         .toString()
         .toUpperCase();
 
+    // ── Party Plan specific event types ──────────────────────────────
+    if (eventType.contains('PARTY_PLAN_POSTED') ||
+        eventType.contains('PLAN_LIVE') ||
+        titleLower.contains('party plan posted') ||
+        titleLower.contains('plan is now live')) {
+      return _buildPartyPlanPostedCard(item);
+    } else if (eventType.contains('PARTY_PLAN_REQUEST_RECEIVED') ||
+        titleLower.contains('new party plan request')) {
+      return _buildPartyPlanRequestReceivedCard(item);
+    } else if (eventType.contains('PARTY_PLAN_REQUEST_ACCEPTED') ||
+        eventType.contains('PARTICIPANT_PAYMENT_REQUIRED') ||
+        titleLower.contains('invite accepted') ||
+        titleLower.contains('accepted your request')) {
+      return _buildPartyPlanRequestAcceptedCard(item);
+    } else if (eventType.contains('MATCH_CONFIRMED') ||
+        titleLower.contains("match confirmed") ||
+        titleLower.contains("it's a match")) {
+      return _buildMatchCard(item);
+    } else if (eventType.contains('PARTY_PLAN_REQUEST_SENT') ||
+        titleLower.contains('request sent')) {
+      return _buildGenericCard(item);
+    }
+    // ── Generic event types ─────────────────────────────────────
     if (eventType.contains('PARTNER_REQUEST') ||
         titleLower.contains('wants to join') ||
         titleLower.contains('partner request')) {
@@ -799,9 +824,6 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     } else if (eventType.contains('BOOKING_CONFIRMED') ||
         titleLower.contains('booking confirmed')) {
       return _buildBookingConfirmedCard(item);
-    } else if (eventType.contains('MATCH') ||
-        titleLower.contains("it's a match")) {
-      return _buildMatchCard(item);
     } else if (eventType.contains('TICKET') || titleLower.contains('ticket')) {
       return _buildTicketReadyCard(item);
     } else if (eventType.contains('MESSAGE') ||
@@ -913,8 +935,335 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     );
   }
 
+
+  // ── P1. Party Plan Posted Card (Host sees this when their plan goes live) ───
+  Widget _buildPartyPlanPostedCard(dynamic item) {
+    final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final body = item['body']?.toString() ?? 'Your party plan is now live!';
+    final timeStr = _formatTimeAgo(item['createdAt'] ?? item['updatedAt']);
+    final data = item['metadata'] is Map
+        ? Map<String, dynamic>.from(item['metadata'])
+        : (item['data'] is Map ? Map<String, dynamic>.from(item['data']) : <String, dynamic>{});
+    final partyPlanId = data['partyPlanId']?.toString() ?? item['entityId']?.toString() ?? '';
+
+    return _buildBaseCardContainer(
+      isUnread: isUnread,
+      onTap: () => _markAsRead(item),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF7C3AED), Color(0xFFA855F7)],
+                  ),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.celebration_rounded, color: Colors.white, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'PARTY PLAN',
+                      style: TextStyle(
+                        color: Color(0xFF7C3AED),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const Text(
+                      '🎉 Your Party Plan is Live!',
+                      style: TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 13.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(timeStr, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5)),
+                  if (isUnread) ...[const SizedBox(height: 4), _buildUnreadDot()],
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(body, style: const TextStyle(color: Color(0xFF475569), fontSize: 12.5, height: 1.4)),
+          const SizedBox(height: 12),
+          if (partyPlanId.isNotEmpty)
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  _markAsRead(item);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PartyPlanDetailScreen(plan: {'id': partyPlanId, ...data}),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.open_in_new_rounded, size: 14, color: Colors.white),
+                label: const Text('View My Plan', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF7C3AED),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ── P2. Party Plan Request Received Card (Host sees incoming requests) ───────
+  Widget _buildPartyPlanRequestReceivedCard(dynamic item) {
+    final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final actor = item['actor'] ?? item['sender'];
+    final actorName = actor is Map
+        ? '${actor['firstName'] ?? ''} ${actor['lastName'] ?? ''}'.trim()
+        : (item['metadata']?['requesterName']?.toString() ?? 'Someone');
+    final body = item['body']?.toString() ?? '$actorName requested to join your Party Plan.';
+    final timeStr = _formatTimeAgo(item['createdAt'] ?? item['updatedAt']);
+    final data = item['metadata'] is Map
+        ? Map<String, dynamic>.from(item['metadata'])
+        : (item['data'] is Map ? Map<String, dynamic>.from(item['data']) : <String, dynamic>{});
+    final partyPlanId = data['partyPlanId']?.toString() ?? '';
+
+    return _buildBaseCardContainer(
+      isUnread: isUnread,
+      onTap: () => _markAsRead(item),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              LunaraProfileImage(
+                userData: actor is Map ? Map<String, dynamic>.from(actor) : {},
+                radius: 22,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'PARTY PLAN',
+                      style: TextStyle(color: Color(0xFF7C3AED), fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.2),
+                    ),
+                    Text(
+                      actorName.isNotEmpty ? '$actorName sent a request' : 'New Party Plan Request',
+                      style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    Text(timeStr, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5)),
+                  ],
+                ),
+              ),
+              if (isUnread) _buildUnreadDot(),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(body, style: const TextStyle(color: Color(0xFF475569), fontSize: 12, height: 1.4)),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              if (actor is Map)
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => _openUserProfile(actor),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFFCBD5E1)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('View Profile', style: TextStyle(color: Color(0xFF475569), fontSize: 11.5, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              if (actor is Map) const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () {
+                    _markAsRead(item);
+                    if (partyPlanId.isNotEmpty) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PartyPlanDetailScreen(plan: {'id': partyPlanId, ...data}),
+                        ),
+                      );
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF7C3AED),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('View Plan', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── P3. Party Plan Request Accepted — Partner pays deposit ──────────────────
+  Widget _buildPartyPlanRequestAcceptedCard(dynamic item) {
+    final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final body = item['body']?.toString() ?? 'Pay the safety deposit to lock your spot!';
+    final timeStr = _formatTimeAgo(item['createdAt'] ?? item['updatedAt']);
+    final data = item['metadata'] is Map
+        ? Map<String, dynamic>.from(item['metadata'])
+        : (item['data'] is Map ? Map<String, dynamic>.from(item['data']) : <String, dynamic>{});
+    final requestId = data['requestId']?.toString() ?? item['entityId']?.toString() ?? '';
+    final venueName = data['venueName']?.toString() ?? 'Venue';
+
+    return _buildBaseCardContainer(
+      isUnread: isUnread,
+      onTap: () => _markAsRead(item),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: const BoxDecoration(color: Color(0xFFD1FAE5), shape: BoxShape.circle),
+                child: const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'ACTION REQUIRED',
+                      style: TextStyle(color: Color(0xFF10B981), fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.2),
+                    ),
+                    const Text(
+                      '✅ Invite Accepted!',
+                      style: TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.w900, fontSize: 13.5),
+                    ),
+                    Text(timeStr, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5)),
+                  ],
+                ),
+              ),
+              if (isUnread) _buildUnreadDot(),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(body, style: const TextStyle(color: Color(0xFF475569), fontSize: 12.5, height: 1.4)),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    _markAsRead(item);
+                    if (requestId.isNotEmpty) {
+                      SmartCheckoutSheet.show(
+                        context: context,
+                        title: 'Party Plan Safety Deposit',
+                        subtitle: 'Safety commitment deposit for Party Plan at $venueName',
+                        itemPrice: 99.0,
+                        onWalletPayment: () async {
+                          final res = await ApiService.payWithWallet(
+                            amount: 99.0,
+                            planId: data['partyPlanId']?.toString(),
+                            paymentType: 'commitment_deposit',
+                          );
+                          if (res != null && res['success'] == true) {
+                            final txId = res['data']?['transactionId']?.toString() ?? 'wallet';
+                            final confirmRes = await ApiService.post(
+                              '/api/mobile/party-plans/requests/$requestId/joiner-pay',
+                              body: {
+                                'razorpay_order_id': 'order_mock_wallet',
+                                'razorpay_payment_id': 'wallet_$txId',
+                                'razorpay_signature': 'mock_signature',
+                              },
+                            );
+                            if (confirmRes.statusCode == 200 && mounted) {
+                              _fetchNotifications();
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                                content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
+                                backgroundColor: Colors.green,
+                              ));
+                              return true;
+                            }
+                          }
+                          return false;
+                        },
+                        onDirectPayment: () async {
+                          final confirmRes = await ApiService.post(
+                            '/api/mobile/party-plans/requests/$requestId/joiner-pay',
+                            body: {
+                              'razorpay_order_id': 'order_mock_direct',
+                              'razorpay_payment_id': 'pay_direct_${DateTime.now().millisecondsSinceEpoch}',
+                              'razorpay_signature': 'mock_signature',
+                            },
+                          );
+                          if (confirmRes.statusCode == 200 && mounted) {
+                            _fetchNotifications();
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                              content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
+                              backgroundColor: Colors.green,
+                            ));
+                          }
+                        },
+                        onHybridPayment: (shortfall) async {
+                          final confirmRes = await ApiService.post(
+                            '/api/mobile/party-plans/requests/$requestId/joiner-pay',
+                            body: {
+                              'razorpay_order_id': 'order_mock_hybrid',
+                              'razorpay_payment_id': 'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
+                              'razorpay_signature': 'mock_signature',
+                            },
+                          );
+                          if (confirmRes.statusCode == 200 && mounted) {
+                            _fetchNotifications();
+                          }
+                        },
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.payment_rounded, size: 14, color: Colors.white),
+                  label: const Text('Pay Deposit (₹99)', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF7C3AED),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton(
+                onPressed: () => _handleNotificationAction(item, 'DECLINE'),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                ),
+                child: const Icon(Icons.close, color: Color(0xFF94A3B8), size: 18),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── 1. Partner Request Card Component ──────────────────────────────────────
   Widget _buildPartnerRequestCard(dynamic item) {
+
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
     final actor = item['actor'] ?? item['sender'] ?? item['actorUserId'];
     final actorName = actor is Map

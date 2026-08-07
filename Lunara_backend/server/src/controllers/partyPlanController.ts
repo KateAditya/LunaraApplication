@@ -756,48 +756,56 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_123'
         });
 
-        // ── Push notification ──────────────────────────────────────────
-        // For private plans: notify each invited user.
-        // For public plans: notify all users in the same city.
+        // ── Notifications: host plan-posted + invited users ───────────────
         setImmediate(async () => {
             try {
                 const isPrivate = parsedVisibility === PartyPlanVisibility.PRIVATE || parsedVisibility === PartyPlanVisibility.BOTH;
-                const hostName = `${user.firstName} ${user.lastName}`.trim();
                 const venueName = venue.name;
                 const notifData = {
-                    type: 'new_party_plan',
+                    type: 'party_plan_posted',
                     partyPlanId: partyPlan.id,
                     venueId: venueId,
                     hostId: userId,
                 };
 
-                // 1. Notify invited users for Private / Both
+                // 1. Authoritative DB notification for the host (plan posted)
+                await NotificationService.dispatch({
+                    recipientUserId: userId,
+                    actorUserId: userId,
+                    eventType: 'party_plan_posted',
+                    category: 'events',
+                    entityType: 'party_plan',
+                    entityId: partyPlan.id,
+                    title: '🎉 Party Plan Posted!',
+                    body: `Your party plan at ${venueName} is now live and accepting requests!`,
+                    idempotencyKey: `plan_posted_${partyPlan.id}`,
+                    metadata: notifData,
+                });
+
+                // 2. Notify invited users for Private / Both
                 if (isPrivate && Array.isArray(selectedUsers) && selectedUsers.length > 0) {
                     const invitedUsers = await User.findAll({
                         where: { id: { [Op.in]: selectedUsers } },
-                        attributes: ['id', 'fcmToken'],
+                        attributes: ['id', 'fcmToken', 'firstName'],
                     });
-
-                    const tokens = invitedUsers.map(u => u.fcmToken).filter(t => !!t) as string[];
-                    if (tokens.length > 0) {
-                        await sendMulticastPushNotification(tokens, {
+                    const hostName = `${user.firstName} ${user.lastName}`.trim();
+                    for (const invitedUser of invitedUsers) {
+                        await NotificationService.dispatch({
+                            recipientUserId: invitedUser.id,
+                            actorUserId: userId,
+                            eventType: 'party_plan_invitation',
+                            category: 'requests',
+                            entityType: 'party_plan',
+                            entityId: partyPlan.id,
                             title: '🎉 Party Plan Invitation',
                             body: `${hostName} invited you to join a party plan at ${venueName}!`,
-                            data: notifData,
+                            idempotencyKey: `plan_invite_${partyPlan.id}_${invitedUser.id}`,
+                            metadata: notifData,
                         });
                     }
                 }
-
-                // 2. Notify the creator (particular user) instead of all users in the city
-                if (user.fcmToken && user.fcmToken.trim() !== '') {
-                    await sendMulticastPushNotification([user.fcmToken], {
-                        title: '🎉 Party Plan Created',
-                        body: `Your party plan at ${venueName} is now live!`,
-                        data: notifData,
-                    });
-                }
             } catch (pushErr: any) {
-                logger.warn('Party plan push notification failed:', pushErr.message);
+                logger.warn('Party plan creation notification failed:', pushErr.message);
             }
         });
     } catch (err: any) {
@@ -1484,35 +1492,40 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
                     const venueName = (plan as any)?.venue?.name || 'Venue';
                     const requesterName = `${requester.firstName} ${requester.lastName}`.trim();
 
-                    // Notify Host
+                    // Notify Host — use request-scoped idempotencyKey so it never overwrites the plan_posted notification
                     await NotificationService.dispatch({
                         recipientUserId: plan.userId,
                         actorUserId: userId,
                         eventType: 'party_plan_request_received',
                         category: 'requests',
-                        entityType: 'party_plan',
-                        entityId: plan.id,
+                        entityType: 'party_plan_request',
+                        entityId: newReq.id,
                         title: '📩 New Party Plan Request!',
                         body: `${requesterName} requested to join your Party Plan at ${venueName}.`,
+                        idempotencyKey: `plan_request_received_${newReq.id}`,
                         metadata: {
                             partyPlanId: plan.id,
                             requestId: newReq.id,
+                            requesterName,
+                            venueName,
                         },
                     });
 
-                    // Notify Requester
+                    // Notify Requester — scoped idempotencyKey per request
                     await NotificationService.dispatch({
                         recipientUserId: userId,
                         actorUserId: plan.userId,
                         eventType: 'party_plan_request_sent',
                         category: 'requests',
-                        entityType: 'party_plan',
-                        entityId: plan.id,
+                        entityType: 'party_plan_request',
+                        entityId: newReq.id,
                         title: '✅ Request Sent',
                         body: `Your request to join ${host.firstName}'s Party Plan at ${venueName} was submitted successfully!`,
+                        idempotencyKey: `plan_request_sent_${newReq.id}`,
                         metadata: {
                             partyPlanId: plan.id,
                             requestId: newReq.id,
+                            venueName,
                         },
                     });
                 }

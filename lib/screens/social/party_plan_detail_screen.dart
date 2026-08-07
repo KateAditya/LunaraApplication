@@ -1458,6 +1458,131 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   }
 
   Widget _myPlanBanner() {
+    final plan = widget.plan;
+    final lifecycleStatus = plan['lifecycleStatus']?.toString() ?? plan['lifecycle_status']?.toString() ?? '';
+    final planStatus = plan['status']?.toString() ?? '';
+    final hostPaymentStatus = plan['hostPaymentStatus']?.toString() ?? plan['host_payment_status']?.toString() ?? '';
+    final chatEnabled = plan['chatEnabled'] == true || plan['chat_enabled'] == true;
+
+    // Determine if the plan is fully confirmed (match locked)
+    final isConfirmed = chatEnabled ||
+        lifecycleStatus == 'match_confirmed' ||
+        lifecycleStatus == 'chat_enabled' ||
+        lifecycleStatus == 'event_reminder' ||
+        lifecycleStatus == 'arrival_confirmation' ||
+        (planStatus == 'inactive' && hostPaymentStatus == 'paid');
+
+    if (isConfirmed) {
+      // Host sees: Ticket + Chat + Cancel after plan is matched
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Row(
+            children: [
+              // View Ticket
+              Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PartyPlanTicketScreen(
+                          request: const {},
+                          plan: plan,
+                          isHost: true,
+                        ),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    height: 54,
+                    decoration: BoxDecoration(
+                      gradient: LunaraTheme.purpleGradient,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: LunaraTheme.electricViolet.withValues(alpha: 0.4),
+                          blurRadius: 12,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.confirmation_number_rounded, color: Colors.white, size: 18),
+                        SizedBox(width: 6),
+                        Text(
+                          'TICKET',
+                          style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              // Open Chat
+              Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    // Find partner from plan data
+                    final partnerData = plan['matchedPartner'] ?? plan['partner'] ?? plan['guest'] ?? {};
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ChatScreen(user: {
+                          ...(partnerData is Map ? Map<String, dynamic>.from(partnerData) : {}),
+                          'contextType': 'party_plan',
+                          'planId': plan['id']?.toString(),
+                        }),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    height: 54,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF6D28D9), Color(0xFF9333EA)],
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 18),
+                        SizedBox(width: 6),
+                        Text(
+                          'CHAT',
+                          style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              // Cancel
+              GestureDetector(
+                onTap: _isLoadingCancellation ? null : _showCancellationStep1Dialog,
+                child: Container(
+                  height: 54,
+                  width: 54,
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
+                  ),
+                  child: const Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 22),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Not yet confirmed — show the static host label
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
@@ -1490,6 +1615,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       ),
     );
   }
+
 
   Widget _chip({
     required IconData icon,
