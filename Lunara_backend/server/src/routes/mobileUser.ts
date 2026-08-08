@@ -266,7 +266,7 @@ async function getUserNotifications(
     const timelineCards: any[] = [];
     for (const planId of partyPlanIds) {
         const card = await enrichPartyPlanNotificationCard(planId, uId);
-        if (card) {
+        if (card && card.currentStatus !== 'Waiting other user') {
             // Find all DB notifications associated with this plan
             const planNotifs = notifications.filter(n => {
                 const metadata = n.data || {};

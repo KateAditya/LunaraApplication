@@ -138,6 +138,36 @@ export const getOrCreateConversation = async (req: Request, res: Response) => {
             return res.status(400).json({ success: false, message: 'Cannot create conversation with yourself' });
         }
 
+        // ── Security Guard: Enforce that Party Plan chat requires BOTH payments ─────
+        if (contextType === 'party_plan' && contextId) {
+            try {
+                const PartyPlan = (await import('../models/PartyPlan')).default;
+                const PartyPlanRequest = (await import('../models/PartyPlanRequest')).default;
+                const plan = await PartyPlan.findByPk(contextId, {
+                    include: [{ model: PartyPlanRequest, as: 'requests' }]
+                });
+                if (plan) {
+                    const p = plan as any;
+                    const matchedReq = p.requests?.find((r: any) => 
+                        (r.requesterId === userId || r.requesterId === otherUserId) &&
+                        (r.status === 'accepted' || r.status === 'payment_pending' || r.status === 'confirmed' || r.status === 'paid')
+                    );
+                    const hostPaid = plan.hostPaymentStatus === 'paid';
+                    const joinerPaid = matchedReq?.joinerPaymentStatus === 'paid' || plan.paymentType === 'self_pay';
+                    const isChatUnlocked = Boolean(p.chatEnabled) || p.lifecycleStatus === 'chat_enabled' || (hostPaid && joinerPaid);
+
+                    if (!isChatUnlocked) {
+                        return res.status(403).json({
+                            success: false,
+                            message: 'Chat is locked until both host and partner complete their safety deposit payments.'
+                        });
+                    }
+                }
+            } catch (checkErr: any) {
+                logger.warn('Error checking party_plan chat unlock status:', checkErr.message);
+            }
+        }
+
         // Search for any existing conversation between these 2 users in EITHER direction
         const existing = await Conversation.findAll({
             where: {

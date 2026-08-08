@@ -1132,29 +1132,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               ];
             } else if (status == 'accepted' || status == 'payment_pending') {
               title = '⏳ Approved (Awaiting Payment)';
-              body = 'You approved $userName to join Stranger Meet at $venueName. Awaiting payment.';
-              actionsList = [
-                NotificationAction(
-                  label: 'Chat',
-                  icon: Icons.chat_bubble_rounded,
-                  isPrimary: true,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ChatScreen(
-                          user: {
-                            'id': user['id'] ?? '',
-                            'firstName': user['firstName'] ?? 'Partner',
-                            'lastName': user['lastName'] ?? '',
-                            'profilePhotoUrl': userPhoto,
-                          },
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ];
+              body = 'You approved $userName to join Stranger Meet at $venueName. Awaiting payment to unlock chat.';
+              actionsList = [];
             } else if (status == 'paid' || status == 'confirmed') {
               title = '🎉 Seat Confirmed';
               body = '$userName\'s safety deposit is paid! Seat is confirmed.';
@@ -1441,26 +1420,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               ];
             } else if (status == 'accepted' || status == 'payment_pending') {
               title = '⏳ Approved — Awaiting Payment';
-              body = 'You approved $userName. Waiting for safety deposit payment.';
+              body = 'You approved $userName. Waiting for safety deposit payment to unlock chat.';
               actionsList = [
-                NotificationAction(
-                  label: 'Chat',
-                  icon: Icons.chat_bubble_rounded,
-                  isPrimary: true,
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ChatScreen(
-                        user: {
-                          'id': item['requesterId'] ?? user['id'] ?? '',
-                          'firstName': user['firstName'] ?? 'Partner',
-                          'lastName': user['lastName'] ?? '',
-                          'profilePhotoUrl': userPhoto,
-                        },
-                      ),
-                    ),
-                  ),
-                ),
                 NotificationAction(
                   label: 'Revoke',
                   icon: Icons.cancel_rounded,
@@ -1544,7 +1505,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 body = 'You accepted $hostName\'s invite at $venueName. Pay the safety deposit to lock your spot!';
                 actionsList = [
                   NotificationAction(
-                    label: 'Pay Deposit',
+                    label: 'Pay Deposit (30m)',
                     icon: Icons.payment_rounded,
                     isPrimary: true,
                     onTap: () => Navigator.push(
@@ -1628,11 +1589,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 ];
               } else if (status == 'accepted' || status == 'payment_pending') {
                 title = '👤 Request Accepted!';
-                body = 'Your Party Plan request at $venueName was accepted! Pay safety deposit to unlock chat.';
+                body = 'Your Party Plan request at $venueName was accepted! Pay safety deposit within 30 mins to unlock chat.';
                 badge = 'ACTION REQUIRED';
                 actionsList = [
                   NotificationAction(
-                    label: 'Pay Deposit',
+                    label: 'Pay Deposit (30m)',
                     icon: Icons.payment_rounded,
                     isPrimary: true,
                     onTap: () => Navigator.push(

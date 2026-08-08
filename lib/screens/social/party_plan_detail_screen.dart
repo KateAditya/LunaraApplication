@@ -7,6 +7,8 @@ import '../../widgets/lunara_profile_image.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 import 'chat_screen.dart';
 import 'party_plan_ticket_screen.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
+
 
 class PartyPlanDetailScreen extends StatefulWidget {
   final Map<String, dynamic> plan;
@@ -670,6 +672,67 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     }
   }
 
+  void _startRazorpayDirectPayment(String reqId, String venueName) {
+    late Razorpay razorpay;
+    razorpay = Razorpay();
+
+    razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (PaymentSuccessResponse response) async {
+      final confirmRes = await ApiService.post('/api/mobile/party-plans/requests/$reqId/joiner-pay', body: {
+        'razorpay_order_id': response.orderId ?? 'order_rzp_${DateTime.now().millisecondsSinceEpoch}',
+        'razorpay_payment_id': response.paymentId ?? 'pay_${DateTime.now().millisecondsSinceEpoch}',
+        'razorpay_signature': response.signature ?? 'signature',
+      });
+      razorpay.clear();
+      if (confirmRes.statusCode == 200 && mounted) {
+        setState(() {
+          _requestStatus = 'confirmed';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    });
+
+    razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse response) {
+      razorpay.clear();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Payment Failed: ${response.message ?? 'Cancelled'}'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    });
+
+    razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (ExternalWalletResponse response) {
+      razorpay.clear();
+    });
+
+    final options = {
+      'key': 'rzp_test_123',
+      'amount': 9900,
+      'name': 'Lunara Party Deposit',
+      'description': 'Safety deposit for Party Plan at $venueName',
+      'prefill': {
+        'contact': '9999999999',
+        'email': 'user@lunara.app',
+      },
+      'theme': {
+        'color': '#7C3AED',
+      }
+    };
+
+    try {
+      razorpay.open(options);
+    } catch (e) {
+      debugPrint('Error opening Razorpay: $e');
+    }
+  }
+
   void _openDepositPaymentSheet() {
     final reqId = _activeRequestId;
     if (reqId == null || reqId.isEmpty) return;
@@ -718,22 +781,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         return false;
       },
       onDirectPayment: () async {
-        final res = await ApiService.post('/api/mobile/party-plans/requests/$reqId/joiner-pay', body: {
-          'razorpay_order_id': 'order_mock_direct',
-          'razorpay_payment_id': 'pay_direct_${DateTime.now().millisecondsSinceEpoch}',
-          'razorpay_signature': 'mock_signature',
-        });
-        if (res.statusCode == 200 && mounted) {
-          setState(() {
-            _requestStatus = 'confirmed';
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
+        _startRazorpayDirectPayment(reqId, venueName);
       },
       onHybridPayment: (shortfall) async {
         final res = await ApiService.post('/api/mobile/party-plans/requests/$reqId/joiner-pay', body: {

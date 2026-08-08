@@ -13,6 +13,9 @@ import '../../widgets/upcoming_night_invite_dialog.dart';
 import '../../widgets/upcoming_night_host_confirm_dialog.dart';
 import 'party_plan_detail_screen.dart';
 import '../../widgets/smart_checkout_sheet.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
+
+
 
 class NotificationCenterScreen extends StatefulWidget {
   const NotificationCenterScreen({super.key});
@@ -343,9 +346,81 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     }
   }
 
+  void _startRazorpayDirectPayment({
+    required String requestId,
+    required String venueName,
+    required VoidCallback onSuccess,
+  }) {
+    late Razorpay razorpay;
+    razorpay = Razorpay();
+
+    razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (PaymentSuccessResponse response) async {
+      final confirmRes = await ApiService.post(
+        '/api/mobile/party-plans/requests/$requestId/joiner-pay',
+        body: {
+          'razorpay_order_id': response.orderId ?? 'order_rzp_${DateTime.now().millisecondsSinceEpoch}',
+          'razorpay_payment_id': response.paymentId ?? 'pay_${DateTime.now().millisecondsSinceEpoch}',
+          'razorpay_signature': response.signature ?? 'signature',
+        },
+      );
+      razorpay.clear();
+      if (confirmRes.statusCode == 200 && mounted) {
+        onSuccess();
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
+          backgroundColor: Colors.green,
+        ));
+      }
+    });
+
+    razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse response) {
+      razorpay.clear();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Payment Failed: ${response.message ?? 'Cancelled'}'),
+          backgroundColor: Colors.redAccent,
+        ));
+      }
+    });
+
+    razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (ExternalWalletResponse response) {
+      razorpay.clear();
+    });
+
+    final options = {
+      'key': 'rzp_test_123',
+      'amount': 9900,
+      'name': 'Lunara Party Deposit',
+      'description': 'Safety deposit for Party Plan at $venueName',
+      'prefill': {
+        'contact': '9999999999',
+        'email': 'user@lunara.app',
+      },
+      'theme': {
+        'color': '#7C3AED',
+      }
+    };
+
+    try {
+      razorpay.open(options);
+    } catch (e) {
+      debugPrint('Error opening Razorpay: $e');
+    }
+  }
+
+
   // ── Tab & Category Filter Logic ──────────────────────────────────────────────
   List<dynamic> get _filteredNotifications {
-    var rawList = _notifications;
+    var rawList = _notifications.where((item) {
+      if (item is Map) {
+        final body = (item['body'] ?? item['currentStatus'] ?? '').toString().toLowerCase();
+        final title = (item['title'] ?? '').toString().toLowerCase();
+        if (body.contains('waiting other user') || title.contains('waiting other user') || body == 'waiting other user') {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
 
     // Universal Entity Deduplication: Only 1 consolidated card per plan/booking/event showing latest status
     final Map<String, dynamic> entityMap = {};
@@ -1204,21 +1279,11 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                           return false;
                         },
                         onDirectPayment: () async {
-                          final confirmRes = await ApiService.post(
-                            '/api/mobile/party-plans/requests/$requestId/joiner-pay',
-                            body: {
-                              'razorpay_order_id': 'order_mock_direct',
-                              'razorpay_payment_id': 'pay_direct_${DateTime.now().millisecondsSinceEpoch}',
-                              'razorpay_signature': 'mock_signature',
-                            },
+                          _startRazorpayDirectPayment(
+                            requestId: requestId,
+                            venueName: venueName,
+                            onSuccess: () => _fetchNotifications(),
                           );
-                          if (confirmRes.statusCode == 200 && mounted) {
-                            _fetchNotifications();
-                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                              content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
-                              backgroundColor: Colors.green,
-                            ));
-                          }
                         },
                         onHybridPayment: (shortfall) async {
                           final confirmRes = await ApiService.post(

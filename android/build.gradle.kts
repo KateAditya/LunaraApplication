@@ -5,6 +5,14 @@ allprojects {
     }
 }
 
+subprojects {
+    configurations.all {
+        resolutionStrategy {
+            force("com.razorpay:checkout:1.6.40")
+        }
+    }
+}
+
 val newBuildDir: Directory =
     rootProject.layout.buildDirectory
         .dir("../../build")
