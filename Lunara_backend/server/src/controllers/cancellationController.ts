@@ -1,18 +1,22 @@
 import { Request, Response } from 'express';
 import { Op, Transaction } from 'sequelize';
 import sequelize from '../config/database';
-import PartyPlan, { PartyPlanStatus } from '../models/PartyPlan';
+import PartyPlan, { PartyPlanStatus, PartyPlanLifecycleStatus } from '../models/PartyPlan';
 import PartyPlanRequest, { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
 import PartyPlanCancellationRequest, { CancellationRequestStatus, CancellationReason } from '../models/PartyPlanCancellationRequest';
 import Booking, { BookingStatus, GoingMode } from '../models/Booking';
 import Ticket, { TicketStatus } from '../models/Ticket';
-import Payment, { PaymentMethod, PaymentStatus } from '../models/Payment';
+import Payment, { PaymentMethod } from '../models/Payment';
 import User from '../models/User';
 import UserProfile from '../models/UserProfile';
+import SmartWallet from '../models/SmartWallet';
+import WalletTransaction, { WalletTransactionType, WalletTransactionStatus } from '../models/WalletTransaction';
+import ReliabilityHistory from '../models/ReliabilityHistory';
 import Conversation from '../models/Conversation';
 import ChatSubscription, { ChatSubscriptionStatus } from '../models/ChatSubscription';
 import { NotificationService } from '../services/NotificationService';
 import { sendMulticastPushNotification } from '../services/fcmService';
+import { PlanEligibilityService } from '../services/PlanEligibilityService';
 import { logger } from '../config/logger';
 
 /**
@@ -148,8 +152,9 @@ export const createCancellationRequest = async (req: Request, res: Response): Pr
             requestedAt,
             expiresAt,
             autoApprovalEligible,
-            hostDepositAmount: plan.depositAmount || 499.00,
-            joinerDepositAmount: 499.00,
+            // Store the ACTUAL commitment deposit amounts, not a hardcoded fallback
+            hostDepositAmount: Number(plan.depositAmount) || 99.00,
+            joinerDepositAmount: 99.00,   // Joiner commitment deposit is always ₹99
             reliabilityImpact: -5,
         });
 
@@ -310,6 +315,7 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
                     title: 'Cancellation Request Declined',
                     body: `${recipientName} declined your cancellation request. Your Party Plan remains active and confirmed.`,
                     metadata: { planId: plan.id, requestId: cancellationRequest.id },
+                    idempotencyKey: `cancellation_declined_${cancellationRequest.id}`,
                 });
 
                 const requester = await User.findByPk(cancellationRequest.requestedById);
@@ -342,29 +348,62 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
         // =========================================================================
         return await sequelize.transaction(async (t: Transaction) => {
             const acceptedRequest = plan.requests && plan.requests.length > 0 ? plan.requests[0] : null;
+            const joinerId = acceptedRequest ? acceptedRequest.requesterId : cancellationRequest.recipientUserId;
+
+            // Re-read plan inside transaction with row lock to prevent race conditions
+            const lockedPlan = await PartyPlan.findByPk(planId, {
+                lock: t.LOCK.UPDATE,
+                transaction: t,
+            });
+            if (!lockedPlan) throw new Error('Party Plan not found inside transaction');
+
+            // Guard: block if already cancelled (duplicate request / concurrent tap)
+            if (lockedPlan.status === PartyPlanStatus.CANCELLED) {
+                return res.status(200).json({
+                    success: true,
+                    alreadyCancelled: true,
+                    message: 'Party Plan was already cancelled.',
+                });
+            }
+
+            // Guard: re-check 3-hour window inside the transaction (server time is authoritative)
+            const windowCheck = checkCancellationWindow(lockedPlan.planDateTime);
+            if (!windowCheck.isAllowed) {
+                return res.status(400).json({
+                    success: false,
+                    isWindowClosed: true,
+                    message: windowCheck.message,
+                });
+            }
 
             // 1. Lock and Update Booking
             const booking = await Booking.findOne({
                 where: {
                     goingMode: GoingMode.PARTY_REQUEST,
-                    userId: plan.userId,
-                    venueId: plan.venueId,
-                    bookingDate: plan.planDateTime,
+                    userId: lockedPlan.userId,
+                    venueId: lockedPlan.venueId,
+                    bookingDate: lockedPlan.planDateTime,
                 },
                 transaction: t,
             });
-
             if (booking) {
                 await booking.update({ status: BookingStatus.CANCELLED }, { transaction: t });
             }
 
-            // 2. Update PartyPlan & PartyPlanRequest Status
-            await plan.update({ status: PartyPlanStatus.CANCELLED }, { transaction: t });
+            // 2. Update PartyPlan — status, lifecycleStatus, isLive (all must be updated atomically)
+            await lockedPlan.update({
+                status: PartyPlanStatus.CANCELLED,
+                lifecycleStatus: PartyPlanLifecycleStatus.CANCELLED,
+                isLive: false,
+                paymentStatus: 'Cancelled',
+            }, { transaction: t });
+
+            // 3. Update accepted request
             if (acceptedRequest) {
                 await acceptedRequest.update({ status: PartyPlanRequestStatus.CANCELLED }, { transaction: t });
             }
 
-            // 3. Cancel Tickets & Invalidate QR
+            // 4. Cancel Tickets & Invalidate QR
             if (booking) {
                 const tickets = await Ticket.findAll({
                     where: { bookingId: booking.id },
@@ -379,55 +418,123 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
                 }
             }
 
-            // 4. Wallet Credits for Host and Joiner (+₹499 Commitment Deposit)
-            const hostDeposit = cancellationRequest.hostDepositAmount || 499.00;
-            const joinerDeposit = cancellationRequest.joinerDepositAmount || 499.00;
+            // 5. Release PlanEligibilityService time lock (so the date slot becomes available again)
+            try {
+                await PlanEligibilityService.releaseLock(lockedPlan.id, { transaction: t });
+            } catch (lockErr: any) {
+                logger.warn('[CancellationApprove] PlanEligibilityService.releaseLock warning:', lockErr.message);
+            }
 
-            const hostWalletPayment = await Payment.create({
-                transactionId: `WAL_REF_${Date.now()}_HOST_${Math.floor(1000 + Math.random() * 9000)}`,
-                bookingId: booking?.id || plan.id,
-                userId: plan.userId,
-                amount: hostDeposit,
-                currency: 'INR',
-                paymentMethod: PaymentMethod.WALLET,
-                paymentGateway: 'lunara_wallet',
-                status: PaymentStatus.SUCCESSFUL,
-                refundAmount: hostDeposit,
-                refundedAt: new Date(),
-            }, { transaction: t });
+            // ─────────────────────────────────────────────────────────────────
+            // 6. Wallet Credits — SmartWallet + WalletTransaction (IDEMPOTENT)
+            // Each credit has a unique idempotency reference so duplicate API
+            // calls / retries never double-credit the wallet.
+            // ─────────────────────────────────────────────────────────────────
+            const hostDeposit = Number(cancellationRequest.hostDepositAmount) || 99.00;
+            const joinerDeposit = Number(cancellationRequest.joinerDepositAmount) || 99.00;
 
-            const joinerId = acceptedRequest ? acceptedRequest.requesterId : cancellationRequest.recipientUserId;
-            const joinerWalletPayment = await Payment.create({
-                transactionId: `WAL_REF_${Date.now()}_JOIN_${Math.floor(1000 + Math.random() * 9000)}`,
-                bookingId: booking?.id || plan.id,
-                userId: joinerId,
-                amount: joinerDeposit,
-                currency: 'INR',
-                paymentMethod: PaymentMethod.WALLET,
-                paymentGateway: 'lunara_wallet',
-                status: PaymentStatus.SUCCESSFUL,
-                refundAmount: joinerDeposit,
-                refundedAt: new Date(),
-            }, { transaction: t });
+            const hostCreditRef  = `PARTY_PLAN_CANCEL_CREDIT_HOST_${lockedPlan.id}`;
+            const joinerCreditRef = `PARTY_PLAN_CANCEL_CREDIT_JOINER_${lockedPlan.id}_${joinerId}`;
 
-            // 5. Update Chat Subscription to READ_ONLY
+            // --- Host wallet credit ---
+            const existingHostCredit = await WalletTransaction.findOne({
+                where: { reference: hostCreditRef },
+                transaction: t,
+            });
+            let hostWalletTxId: string | null = null;
+            if (!existingHostCredit) {
+                const hostWallet = await SmartWallet.findOne({ where: { userId: lockedPlan.userId }, transaction: t });
+                if (hostWallet) {
+                    const hOld = Number(hostWallet.balance || 0);
+                    const hNew = hOld + hostDeposit;
+                    await hostWallet.update({
+                        balance: hNew,
+                        lifetimeRefunds: Number(hostWallet.lifetimeRefunds || 0) + hostDeposit,
+                    }, { transaction: t });
+                    const hostTx = await WalletTransaction.logTransaction({
+                        walletId: hostWallet.id,
+                        userId: lockedPlan.userId,
+                        partyPlanId: lockedPlan.id,
+                        amount: hostDeposit,
+                        openingBalance: hOld,
+                        closingBalance: hNew,
+                        transactionType: WalletTransactionType.DEPOSIT_UNLOCK,
+                        status: WalletTransactionStatus.SUCCESS,
+                        reference: hostCreditRef,
+                        source: 'party_plan_cancellation',
+                        metadata: {
+                            cancellationId: cancellationRequest.id,
+                            role: 'host',
+                            reason: cancellationRequest.reason,
+                            creditType: 'commitment_deposit',
+                        },
+                    }, t);
+                    hostWalletTxId = hostTx.id;
+                    // Keep User.walletBalance in sync
+                    await User.update({ walletBalance: hNew }, { where: { id: lockedPlan.userId }, transaction: t });
+                }
+            } else {
+                hostWalletTxId = existingHostCredit.id;
+                logger.info(`[CancellationApprove] Host wallet credit already exists (idempotent): ${hostCreditRef}`);
+            }
+
+            // --- Joiner wallet credit ---
+            const existingJoinerCredit = await WalletTransaction.findOne({
+                where: { reference: joinerCreditRef },
+                transaction: t,
+            });
+            let joinerWalletTxId: string | null = null;
+            if (!existingJoinerCredit) {
+                const joinerWallet = await SmartWallet.findOne({ where: { userId: joinerId }, transaction: t });
+                if (joinerWallet) {
+                    const jOld = Number(joinerWallet.balance || 0);
+                    const jNew = jOld + joinerDeposit;
+                    await joinerWallet.update({
+                        balance: jNew,
+                        lifetimeRefunds: Number(joinerWallet.lifetimeRefunds || 0) + joinerDeposit,
+                    }, { transaction: t });
+                    const joinerTx = await WalletTransaction.logTransaction({
+                        walletId: joinerWallet.id,
+                        userId: joinerId,
+                        partyPlanId: lockedPlan.id,
+                        amount: joinerDeposit,
+                        openingBalance: jOld,
+                        closingBalance: jNew,
+                        transactionType: WalletTransactionType.DEPOSIT_UNLOCK,
+                        status: WalletTransactionStatus.SUCCESS,
+                        reference: joinerCreditRef,
+                        source: 'party_plan_cancellation',
+                        metadata: {
+                            cancellationId: cancellationRequest.id,
+                            role: 'joiner',
+                            reason: cancellationRequest.reason,
+                            creditType: 'commitment_deposit',
+                        },
+                    }, t);
+                    joinerWalletTxId = joinerTx.id;
+                    await User.update({ walletBalance: jNew }, { where: { id: joinerId }, transaction: t });
+                }
+            } else {
+                joinerWalletTxId = existingJoinerCredit.id;
+                logger.info(`[CancellationApprove] Joiner wallet credit already exists (idempotent): ${joinerCreditRef}`);
+            }
+
+            // 7. Update Chat Subscription to EXPIRED (read-only for 24h)
             const conv = await Conversation.findOne({
                 where: {
                     [Op.or]: [
-                        { participantOne: plan.userId, participantTwo: joinerId },
-                        { participantOne: joinerId, participantTwo: plan.userId },
+                        { participantOne: lockedPlan.userId, participantTwo: joinerId },
+                        { participantOne: joinerId, participantTwo: lockedPlan.userId },
                     ],
                 },
                 transaction: t,
             });
-
             if (conv) {
                 const activeChatSub = await ChatSubscription.findOne({
-                    where: { conversationId: conv.id },
+                    where: { conversationId: conv.id, status: ChatSubscriptionStatus.ACTIVE },
                     transaction: t,
                 });
                 if (activeChatSub) {
-                    // Archive/read-only after 24 hours
                     const archiveDate = new Date();
                     archiveDate.setHours(archiveDate.getHours() + 24);
                     await activeChatSub.update({
@@ -437,46 +544,72 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
                 }
             }
 
-            // 6. Deduct Reliability Score (-5) for the user who initiated the cancellation request
+            // ─────────────────────────────────────────────────────────────────
+            // 8. Reliability Score — deduct ONLY from the user who INITIATED
+            //    the cancellation. The user who confirmed is not penalised.
+            //    Always log to ReliabilityHistory for full audit trail.
+            // ─────────────────────────────────────────────────────────────────
             const requesterProfile = await UserProfile.findOne({
                 where: { userId: cancellationRequest.requestedById },
                 transaction: t,
             });
-
             if (requesterProfile) {
                 const currentScore = requesterProfile.reliabilityScore ?? 100;
-                const newScore = Math.max(0, currentScore - 5);
+                const impact = cancellationRequest.reliabilityImpact || -5;
+                const newScore = Math.max(0, currentScore + impact); // impact is negative
                 await requesterProfile.update({ reliabilityScore: newScore }, { transaction: t });
+
+                // Authoritative audit trail — required by spec
+                const isInitiatorHost = cancellationRequest.requestedById === lockedPlan.userId;
+                await ReliabilityHistory.create({
+                    userId: cancellationRequest.requestedById,
+                    oldScore: currentScore,
+                    newScore,
+                    change: impact,
+                    reason: 'Confirmed Party Plan cancellation (initiator)',
+                    action: 'PARTY_PLAN_CANCELLATION',
+                    partyPlanId: lockedPlan.id,
+                    metadata: {
+                        cancellationId: cancellationRequest.id,
+                        role: isInitiatorHost ? 'host' : 'joiner',
+                        confirmedById: userId,
+                        reason: cancellationRequest.reason,
+                    },
+                }, { transaction: t });
             }
 
-            // 7. Update Cancellation Request Record
+            // 9. Update Cancellation Request Record
             await cancellationRequest.update({
                 status: CancellationRequestStatus.APPROVED,
                 respondedAt: new Date(),
                 respondedById: userId,
-                hostWalletTransactionId: hostWalletPayment.transactionId,
-                joinerWalletTransactionId: joinerWalletPayment.transactionId,
+                hostWalletTransactionId: hostWalletTxId,
+                joinerWalletTransactionId: joinerWalletTxId,
             }, { transaction: t });
 
-            // 8. Send Post-Approval Authoritative Notifications & Socket Events
+            // ─────────────────────────────────────────────────────────────────
+            // 10. Post-Approval Notifications + Socket Events (async, post-commit)
+            // idempotencyKey prevents duplicate DB notification rows on retry.
+            // ─────────────────────────────────────────────────────────────────
             setImmediate(async () => {
                 try {
-                    const hostUser = await User.findByPk(plan.userId);
+                    const hostUser = await User.findByPk(lockedPlan.userId);
                     const joinerUser = await User.findByPk(joinerId);
 
-                    const notifTitle = 'Party Plan Cancelled';
-                    const notifBody = 'Party Plan cancelled by mutual agreement. ₹499 Commitment Deposit has been credited to your Lunara Wallet.';
+                    const hostBody = `Party Plan cancelled by mutual agreement. Your ₹${hostDeposit} Commitment Deposit has been credited to your Lunara Wallet.`;
+                    const joinerBody = `Party Plan cancelled by mutual agreement. Your ₹${joinerDeposit} Commitment Deposit has been credited to your Lunara Wallet.`;
 
                     await NotificationService.dispatch({
-                        recipientUserId: plan.userId,
+                        recipientUserId: lockedPlan.userId,
                         actorUserId: userId,
                         eventType: 'party_plan_cancelled',
                         category: 'bookings',
                         entityType: 'party_plan',
-                        entityId: plan.id,
-                        title: notifTitle,
-                        body: notifBody,
-                        metadata: { planId: plan.id, walletCredited: hostDeposit },
+                        entityId: lockedPlan.id,
+                        title: 'Party Plan Cancelled',
+                        body: hostBody,
+                        metadata: { planId: lockedPlan.id, walletCredited: hostDeposit, cancellationId: cancellationRequest.id },
+                        idempotencyKey: `party_plan_cancelled_host_${lockedPlan.id}`,
                     });
 
                     await NotificationService.dispatch({
@@ -485,33 +618,50 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
                         eventType: 'party_plan_cancelled',
                         category: 'bookings',
                         entityType: 'party_plan',
-                        entityId: plan.id,
-                        title: notifTitle,
-                        body: notifBody,
-                        metadata: { planId: plan.id, walletCredited: joinerDeposit },
+                        entityId: lockedPlan.id,
+                        title: 'Party Plan Cancelled',
+                        body: joinerBody,
+                        metadata: { planId: lockedPlan.id, walletCredited: joinerDeposit, cancellationId: cancellationRequest.id },
+                        idempotencyKey: `party_plan_cancelled_joiner_${lockedPlan.id}_${joinerId}`,
                     });
 
+                    // FCM push to both
                     const tokens = [hostUser?.fcmToken, joinerUser?.fcmToken].filter(t => t && t.trim() !== '') as string[];
                     if (tokens.length > 0) {
                         await sendMulticastPushNotification(tokens, {
-                            title: 'Party Plan Cancelled 💜',
-                            body: 'Commitment Deposit of ₹499 credited to your Lunara Wallet.',
-                            data: { type: 'party_plan_cancelled', planId: plan.id },
+                            title: 'Party Plan Cancelled 💔',
+                            body: 'Commitment Deposit has been credited to your Lunara Wallet.',
+                            data: { type: 'party_plan_cancelled', planId: lockedPlan.id },
                         });
                     }
 
+                    // Socket events — live feed update
                     const { io } = require('../server');
-                    io.to(`user_${plan.userId}`).emit('party_plan_cancelled', { planId: plan.id });
-                    io.to(`user_${joinerId}`).emit('party_plan_cancelled', { planId: plan.id });
+                    io.to(`user_${lockedPlan.userId}`).emit('party_plan_cancelled', {
+                        planId: lockedPlan.id,
+                        mutualCancellation: true,
+                        walletCredited: hostDeposit,
+                    });
+                    io.to(`user_${joinerId}`).emit('party_plan_cancelled', {
+                        planId: lockedPlan.id,
+                        mutualCancellation: true,
+                        walletCredited: joinerDeposit,
+                    });
+                    // Remove from public live feed
+                    io.emit('party_plan_deleted', { planId: lockedPlan.id });
                 } catch (asyncErr: any) {
-                    logger.warn('[RespondToCancellationRequest] Async notification warning:', asyncErr.message);
+                    logger.warn('[CancellationApprove] Async notification error:', asyncErr.message);
                 }
             });
 
             return res.status(200).json({
                 success: true,
-                message: 'Party Plan cancelled by mutual agreement. Commitment deposits have been credited to both users\' Lunara Wallets.',
+                message: `Party Plan cancelled by mutual agreement. Commitment deposits have been credited to both users' Lunara Wallets.`,
                 cancellationRequest,
+                walletCredits: {
+                    host: { userId: lockedPlan.userId, amount: hostDeposit },
+                    joiner: { userId: joinerId, amount: joinerDeposit },
+                },
             });
         });
     } catch (err: any) {

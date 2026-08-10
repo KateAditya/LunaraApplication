@@ -168,13 +168,13 @@ PartyPlanCancellationRequest.init(
         hostDepositAmount: {
             type: DataTypes.DECIMAL(10, 2),
             allowNull: false,
-            defaultValue: 499.00,
+            defaultValue: 99.00,  // Commitment deposit is always ₹99
             field: 'host_deposit_amount',
         },
         joinerDepositAmount: {
             type: DataTypes.DECIMAL(10, 2),
             allowNull: false,
-            defaultValue: 499.00,
+            defaultValue: 99.00,  // Commitment deposit is always ₹99
             field: 'joiner_deposit_amount',
         },
         hostWalletTransactionId: {

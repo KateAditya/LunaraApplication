@@ -177,9 +177,13 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
             ticketCode,
             expiresAt: plan.planDateTime.toISOString(),  // Ticket is valid until party starts
             paymentType: plan.paymentType,
-            totalDeposit: 198.00,
+            totalDeposit: Number(plan.depositAmount || 99) + 99, // host deposit + joiner deposit
             generatedAt: new Date().toISOString(),
         });
+
+        const hostDeposit = Number(plan.depositAmount || 99);
+        const joinerDeposit = 99.00; // Joiner commitment deposit is always ₹99
+        const totalDeposits = hostDeposit + joinerDeposit;
 
         const booking = await Booking.create({
             userId: plan.userId,
@@ -187,8 +191,8 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
             bookingDate: bookingDate as any,
             startTime,
             numberOfGuests: 2,
-            totalAmount: 198.00,
-            depositAmount: 198.00,
+            totalAmount: totalDeposits,
+            depositAmount: totalDeposits,
             commissionAmount: 0,
             status: BookingStatus.CONFIRMED,
             paymentStatus: BookingPaymentStatus.PAID,
@@ -616,7 +620,10 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
         }
 
         // ── Generate Razorpay Order ───────────────────────────────────────────
-        const depositAmount = parsedPaymentType === PartyPlanPaymentType.SELF_PAY ? 198.00 : 99.00;
+        // Commitment deposit is always ₹99 per person, regardless of payment model.
+        // SELF_PAY only means the Host covers the party expense at the venue — it does NOT
+        // change the commitment deposit amount.
+        const depositAmount = 99.00;
         const options = {
             amount: Math.round(depositAmount * 100), // in paise
             currency: 'INR',
@@ -2508,7 +2515,8 @@ async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction
         const hostUser = await User.findByPk(plan.userId, { transaction });
         if (hostUser) {
             const hOld = Number(hostUser.walletBalance || 0);
-            const hDeposit = plan.paymentType === 'self_pay' ? 198.00 : 99.00;
+            // Refund exactly what the host paid: their commitment deposit (always ₹99)
+            const hDeposit = Number(plan.depositAmount) || 99.00;
             const hNew = hOld + hDeposit;
             await hostUser.update({ walletBalance: hNew }, { transaction });
             await WalletTransaction.logTransaction({
@@ -2548,7 +2556,9 @@ async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction
             const joinerUser = await User.findByPk(req.requesterId, { transaction });
             if (joinerUser) {
                 const jOld = Number(joinerUser.walletBalance || 0);
-                const jDeposit = plan.paymentType === 'self_pay' ? 0.00 : 99.00;
+                // Joiner commitment deposit is always ₹99 regardless of payment model.
+                // SELF_PAY only means the host covers the venue expense — joiner still paid their deposit.
+                const jDeposit = 99.00;
                 if (jDeposit > 0) {
                     const jNew = jOld + jDeposit;
                     await joinerUser.update({ walletBalance: jNew }, { transaction });
@@ -3040,7 +3050,8 @@ export const initiateHostPayment = async (req: Request, res: Response): Promise<
             return;
         }
 
-        const amount = plan.paymentType === 'self_pay' ? 198 : 99; // deposit amount
+        // Commitment deposit is always ₹99, regardless of SPLIT or SELF_PAY.
+        const amount = Number(plan.depositAmount) || 99; // host commitment deposit
         const options = {
             amount: amount * 100, // in paise
             currency: 'INR',

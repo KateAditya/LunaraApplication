@@ -899,7 +899,7 @@ export async function generateTicketForPartyPlanHelper(requestId: string): Promi
             numberOfGuests: 2,
             eventDate: plan?.planDateTime || new Date(),
             startTime: plan?.planDateTime ? new Date(plan.planDateTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '09:00 PM',
-            paymentAmount: Number(plan?.depositAmount || 198),
+            paymentAmount: Number(plan?.depositAmount || 99),
             paymentStatus: 'PAID',
         });
 
