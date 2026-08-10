@@ -349,8 +349,47 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   void _startRazorpayDirectPayment({
     required String requestId,
     required String venueName,
+    String? orderId,
+    double depositAmount = 99.0,
     required VoidCallback onSuccess,
-  }) {
+  }) async {
+    final razorpayKey = 'rzp_test_123';
+    final isMock = razorpayKey == 'rzp_test_123' ||
+        orderId == null ||
+        orderId.isEmpty ||
+        orderId.startsWith('order_mock_') ||
+        orderId.startsWith('pay_direct_');
+
+    if (isMock) {
+      final ordId = (orderId != null && orderId.isNotEmpty) ? orderId : 'order_mock_direct';
+      final confirmRes = await ApiService.post(
+        '/api/mobile/party-plans/requests/$requestId/joiner-pay',
+        body: {
+          'razorpay_order_id': ordId,
+          'razorpay_payment_id': 'pay_direct_${DateTime.now().millisecondsSinceEpoch}',
+          'razorpay_signature': 'mock_signature',
+        },
+      );
+      if (confirmRes.statusCode == 200 && mounted) {
+        onSuccess();
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
+          backgroundColor: Colors.green,
+        ));
+      } else if (mounted) {
+        String msg = 'Payment Failed';
+        try {
+          final b = jsonDecode(confirmRes.body);
+          msg = b['message'] ?? msg;
+        } catch (_) {}
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Payment Failed: $msg'),
+          backgroundColor: Colors.redAccent,
+        ));
+      }
+      return;
+    }
+
     late Razorpay razorpay;
     razorpay = Razorpay();
 
@@ -387,11 +426,12 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       razorpay.clear();
     });
 
-    final options = {
-      'key': 'rzp_test_123',
-      'amount': 9900,
+    final options = <String, dynamic>{
+      'key': razorpayKey,
+      'amount': (depositAmount * 100).round(),
       'name': 'Lunara Party Deposit',
       'description': 'Safety deposit for Party Plan at $venueName',
+      if (orderId.isNotEmpty) 'order_id': orderId,
       'prefill': {
         'contact': '9999999999',
         'email': 'user@lunara.app',
@@ -864,13 +904,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         .toUpperCase();
 
     // ── Party Plan specific event types ──────────────────────────────
-    if (eventType.contains('PARTY_PLAN_POSTED') ||
-        eventType.contains('PLAN_LIVE') ||
-        titleLower.contains('party plan posted') ||
-        titleLower.contains('plan is now live')) {
-      return _buildPartyPlanPostedCard(item);
-    } else if (eventType.contains('PARTY_PLAN_REQUEST_RECEIVED') ||
-        titleLower.contains('new party plan request')) {
+    if (eventType.contains('PARTY_PLAN_REQUEST_RECEIVED') ||
+        titleLower.contains('new party plan request') ||
+        titleLower.contains('user requested to join')) {
       return _buildPartyPlanRequestReceivedCard(item);
     } else if (eventType.contains('PARTY_PLAN_REQUEST_ACCEPTED') ||
         eventType.contains('PARTICIPANT_PAYMENT_REQUIRED') ||
@@ -884,6 +920,12 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     } else if (eventType.contains('PARTY_PLAN_REQUEST_SENT') ||
         titleLower.contains('request sent')) {
       return _buildGenericCard(item);
+    } else if (eventType.contains('PARTY_PLAN') ||
+        eventType.contains('PLAN_LIVE') ||
+        titleLower.contains('party plan') ||
+        titleLower.contains('plan is now live') ||
+        titleLower.contains("let's party at")) {
+      return _buildPartyPlanPostedCard(item);
     }
     // ── Generic event types ─────────────────────────────────────
     if (eventType.contains('PARTNER_REQUEST') ||
@@ -1014,12 +1056,17 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   // ── P1. Party Plan Posted Card (Host sees this when their plan goes live) ───
   Widget _buildPartyPlanPostedCard(dynamic item) {
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final title = (item['title'] ?? '🎉 Your Party Plan').toString();
     final body = item['body']?.toString() ?? 'Your party plan is now live!';
     final timeStr = _formatTimeAgo(item['createdAt'] ?? item['updatedAt']);
     final data = item['metadata'] is Map
         ? Map<String, dynamic>.from(item['metadata'])
         : (item['data'] is Map ? Map<String, dynamic>.from(item['data']) : <String, dynamic>{});
-    final partyPlanId = data['partyPlanId']?.toString() ?? item['entityId']?.toString() ?? '';
+    final partyPlanId = data['partyPlanId']?.toString() ?? data['planId']?.toString() ?? item['entityId']?.toString() ?? '';
+    final venueName = data['venueName']?.toString() ?? 'Venue';
+    final depositAmount = (data['depositAmount'] ?? 99.0).toDouble();
+    final hostPaymentStatus = (data['hostPaymentStatus'] ?? 'unpaid').toString().toLowerCase();
+    final isHostPaid = hostPaymentStatus == 'paid';
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
@@ -1053,9 +1100,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                         letterSpacing: 1.2,
                       ),
                     ),
-                    const Text(
-                      '🎉 Your Party Plan is Live!',
-                      style: TextStyle(
+                    Text(
+                      title.isNotEmpty ? title : '🎉 Your Party Plan is Live!',
+                      style: const TextStyle(
                         color: Color(0xFF0F172A),
                         fontWeight: FontWeight.w900,
                         fontSize: 13.5,
@@ -1077,25 +1124,111 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           Text(body, style: const TextStyle(color: Color(0xFF475569), fontSize: 12.5, height: 1.4)),
           const SizedBox(height: 12),
           if (partyPlanId.isNotEmpty)
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  _markAsRead(item);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => PartyPlanDetailScreen(plan: {'id': partyPlanId, ...data}),
+            Row(
+              children: [
+                if (!isHostPaid) ...[
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        _markAsRead(item);
+                        SmartCheckoutSheet.show(
+                          context: context,
+                          title: 'Host Safety Deposit',
+                          subtitle: 'Pay safety commitment deposit for Party Plan at $venueName',
+                          itemPrice: depositAmount,
+                          onWalletPayment: () async {
+                            final res = await ApiService.payWithWallet(
+                              amount: depositAmount,
+                              planId: partyPlanId,
+                              paymentType: 'commitment_deposit',
+                            );
+                            if (res != null && res['success'] == true) {
+                              final txId = res['data']?['transactionId']?.toString() ?? 'wallet';
+                              final confirmRes = await ApiService.post(
+                                '/api/mobile/party-plans/$partyPlanId/host-pay',
+                                body: {
+                                  'razorpay_order_id': 'order_mock_wallet',
+                                  'razorpay_payment_id': 'wallet_$txId',
+                                  'razorpay_signature': 'mock_signature',
+                                },
+                              );
+                              if (confirmRes.statusCode == 200 && mounted) {
+                                _fetchNotifications();
+                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                                  content: Text('🎉 Host Safety Deposit Paid! Your plan is fully activated.'),
+                                  backgroundColor: Colors.green,
+                                ));
+                                return true;
+                              }
+                            }
+                            return false;
+                          },
+                          onDirectPayment: () async {
+                            final orderId = data['hostRazorpayOrderId']?.toString() ?? 'order_mock_direct';
+                            final confirmRes = await ApiService.post(
+                              '/api/mobile/party-plans/$partyPlanId/host-pay',
+                              body: {
+                                'razorpay_order_id': orderId,
+                                'razorpay_payment_id': 'pay_direct_${DateTime.now().millisecondsSinceEpoch}',
+                                'razorpay_signature': 'mock_signature',
+                              },
+                            );
+                            if (confirmRes.statusCode == 200 && mounted) {
+                              _fetchNotifications();
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                                content: Text('🎉 Host Safety Deposit Paid! Your plan is fully activated.'),
+                                backgroundColor: Colors.green,
+                              ));
+                            }
+                          },
+                          onHybridPayment: (shortfall) async {
+                            final confirmRes = await ApiService.post(
+                              '/api/mobile/party-plans/$partyPlanId/host-pay',
+                              body: {
+                                'razorpay_order_id': 'order_mock_hybrid',
+                                'razorpay_payment_id': 'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
+                                'razorpay_signature': 'mock_signature',
+                              },
+                            );
+                            if (confirmRes.statusCode == 200 && mounted) {
+                              _fetchNotifications();
+                            }
+                          },
+                        );
+                      },
+                      icon: const Icon(Icons.payment_rounded, size: 14, color: Colors.white),
+                      label: Text(
+                        'Pay Deposit (₹${depositAmount.toStringAsFixed(0)})',
+                        style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF7C3AED),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
                     ),
-                  );
-                },
-                icon: const Icon(Icons.open_in_new_rounded, size: 14, color: Colors.white),
-                label: const Text('View My Plan', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF7C3AED),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      _markAsRead(item);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PartyPlanDetailScreen(plan: {'id': partyPlanId, ...data}),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.open_in_new_rounded, size: 14, color: Color(0xFF7C3AED)),
+                    label: const Text('View Plan', style: TextStyle(color: Color(0xFF7C3AED), fontSize: 11.5, fontWeight: FontWeight.bold)),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF7C3AED)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
         ],
       ),
