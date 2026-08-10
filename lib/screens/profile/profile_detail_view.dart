@@ -917,8 +917,8 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
             ? 'superlike'
             : (_currentUser.isLiked ? 'like' : null));
 
-    final isLiked = effectiveSwipedAction == 'like';
-    final isSuperLiked = effectiveSwipedAction == 'superlike';
+    final isLiked = effectiveSwipedAction == 'like' || _currentUser.isLiked;
+    final isSuperLiked = effectiveSwipedAction == 'superlike' || _currentUser.isSuperLiked;
     final isActed = isLiked || isSuperLiked; // already acted on this profile
     final likeDisabled = widget.isLikeDisabled && !isActed;
     final superLikeDisabled = widget.isSuperLikeDisabled && !isSuperLiked;
@@ -1096,6 +1096,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                   ],
                 ),
                 child: IconButton(
+                  disabledColor: Colors.white,
                   icon: Icon(
                     isLiked ? Icons.favorite : Icons.favorite_border,
                     color: Colors.white,
@@ -1104,9 +1105,21 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                   // Only allow tap if not already liked/superliked AND not limit-hit
                   onPressed: (isActed || likeDisabled)
                       ? null
-                      : () {
+                      : () async {
                           setState(() => _localSwipedAction = 'like');
-                          widget.onLike?.call();
+                          if (widget.onLike != null) {
+                            widget.onLike!.call();
+                          } else {
+                            final res = await ApiService.swipeUser(targetUserId: _currentUser.id, action: 'like');
+                            if (res != null && res['matched'] == true && mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('🎉 It\'s a Match with ${_currentUser.firstName}!'),
+                                  backgroundColor: const Color(0xFF10B981),
+                                ),
+                              );
+                            }
+                          }
                         },
                 ),
               ),
@@ -1171,15 +1184,28 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                   ],
                 ),
                 child: IconButton(
+                  disabledColor: Colors.white,
                   icon: Icon(
                     isSuperLiked ? Icons.star : Icons.star_border,
                     color: Colors.white,
                   ),
-                  onPressed: (isSuperLiked || superLikeDisabled)
+                  onPressed: (isActed || superLikeDisabled)
                       ? null
-                      : () {
+                      : () async {
                           setState(() => _localSwipedAction = 'superlike');
-                          widget.onSuper?.call();
+                          if (widget.onSuper != null) {
+                            widget.onSuper!.call();
+                          } else {
+                            final res = await ApiService.swipeUser(targetUserId: _currentUser.id, action: 'superlike');
+                            if (res != null && res['matched'] == true && mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('🎉 It\'s a Match with ${_currentUser.firstName}!'),
+                                  backgroundColor: const Color(0xFF10B981),
+                                ),
+                              );
+                            }
+                          }
                         },
                 ),
               ),
