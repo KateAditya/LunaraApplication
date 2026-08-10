@@ -3517,6 +3517,7 @@ export async function enrichPartyPlanNotificationCard(planId: string, recipientU
             hostName,
             guestName,
             planTitle,
+            venueName: p.venue?.name || 'Venue',
             venueArea,
             distance,
             date: dateStr,
@@ -3530,6 +3531,9 @@ export async function enrichPartyPlanNotificationCard(planId: string, recipientU
             countdown: countdownText,
             lastUpdated: plan.updatedAt ? plan.updatedAt.toISOString() : plan.createdAt.toISOString(),
             matchedRequestId: plan.matchedRequestId,
+            hostPaymentStatus: plan.hostPaymentStatus,
+            depositAmount: plan.depositAmount,
+            hostRazorpayOrderId: plan.hostRazorpayOrderId,
         };
     } catch (enrichErr: any) {
         logger.error(`Error enriching party plan notification card ${planId}:`, enrichErr);
