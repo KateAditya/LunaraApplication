@@ -905,7 +905,7 @@ export const getAdminCancellationDetail = async (req: Request, res: Response): P
                     model: PartyPlan,
                     as: 'plan',
                     include: [
-                        { model: (require('../models/Venue').default), as: 'venue', attributes: ['id', 'name', 'address', 'city', 'imageUrl'] },
+                        { model: (require('../models/Venue').default), as: 'venue', attributes: ['id', 'name', 'addressLine1', 'city', 'imageUrl'] },
                     ],
                 },
                 {

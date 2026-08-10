@@ -452,7 +452,7 @@ export class GroupPartyService {
     public static async enrichGroupPartyNotificationCard(partyId: string, _recipientUserId: string): Promise<any | null> {
         try {
             let gp = await GroupParty.findByPk(partyId, {
-                include: [{ model: Venue, as: 'venue', attributes: ['name', 'address', 'city'] }]
+                include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city'] }]
             });
 
             let isLargeBooking = false;
@@ -461,7 +461,7 @@ export class GroupPartyService {
             if (!gp) {
                 const Booking = (await import('../models/Booking')).default;
                 bookingRecord = await Booking.findByPk(partyId, {
-                    include: [{ model: Venue, as: 'venue', attributes: ['name', 'address', 'city'] }]
+                    include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city'] }]
                 });
                 if (!bookingRecord || !bookingRecord.isLargePartyRequest) {
                     return null;
@@ -592,7 +592,7 @@ export class GroupPartyService {
             const Booking = (await import('../models/Booking')).default;
             const Venue = (await import('../models/Venue')).default;
             const bookingRecord = await Booking.findByPk(bookingId, {
-                include: [{ model: Venue, as: 'venue', attributes: ['name', 'address', 'city'] }]
+                include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city'] }]
             });
 
             if (!bookingRecord || !bookingRecord.isLargePartyRequest) {

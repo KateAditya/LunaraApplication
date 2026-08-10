@@ -246,7 +246,7 @@ export const startPartyPlanCron = () => {
                     reminder1hSent: false,
                     planDateTime: { [Op.between]: [next45m, next75m] },
                 },
-                include: [{ model: Venue, as: 'venue', attributes: ['name', 'address'] }]
+                include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1'] }]
             });
 
             for (const plan of upcoming1hPlans) {
@@ -315,7 +315,7 @@ export const startPartyPlanCron = () => {
                     reminder30mSent: false,
                     planDateTime: { [Op.between]: [next15m, next40m] },
                 },
-                include: [{ model: Venue, as: 'venue', attributes: ['name', 'address'] }]
+                include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1'] }]
             });
 
             for (const plan of upcoming30mPlans) {

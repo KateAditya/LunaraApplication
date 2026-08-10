@@ -799,13 +799,13 @@ export class NightPartnerService {
     public static async enrichUpcomingNightNotificationCard(nightId: string, recipientUserId: string): Promise<any | null> {
         try {
             let match = await NightPartnerMatch.findByPk(nightId, {
-                include: [{ model: Venue, as: 'venue', attributes: ['name', 'address', 'city'] }]
+                include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city'] }]
             });
 
             let requestRecord: NightPartnerRequest | null = null;
             if (!match) {
                 requestRecord = await NightPartnerRequest.findByPk(nightId, {
-                    include: [{ model: Venue, as: 'venue', attributes: ['name', 'address', 'city'] }]
+                    include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city'] }]
                 });
                 if (!requestRecord) {
                     return null;

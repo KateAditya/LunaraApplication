@@ -344,7 +344,7 @@ export class VenueBookingService {
     public static async enrichVenueBookingNotificationCard(bookingId: string, _recipientUserId: string): Promise<any | null> {
         try {
             const bookingRecord = await Booking.findByPk(bookingId, {
-                include: [{ model: Venue, as: 'venue', attributes: ['name', 'address', 'city'] }]
+                include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city'] }]
             });
 
             if (!bookingRecord || bookingRecord.isLargePartyRequest || bookingRecord.isGroupBooking) {

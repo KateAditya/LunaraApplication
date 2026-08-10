@@ -3550,7 +3550,7 @@ export async function getPlanSummary(req: Request, res: Response): Promise<Respo
 
         const plan = await PartyPlan.findByPk(planId, {
             include: [
-                { model: Venue, as: 'venue', attributes: ['name', 'area', 'address'] },
+                { model: Venue, as: 'venue', attributes: ['name', 'area', 'addressLine1'] },
                 { model: User, as: 'creator', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] },
                 {
                     model: PartyPlanRequest,
