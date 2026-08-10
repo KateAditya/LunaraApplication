@@ -766,6 +766,10 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                     partyPlanId: partyPlan.id,
                     venueId: venueId,
                     hostId: userId,
+                    venueName: venue.name,
+                    depositAmount: partyPlan.depositAmount,
+                    hostPaymentStatus: partyPlan.hostPaymentStatus,
+                    hostRazorpayOrderId: partyPlan.hostRazorpayOrderId,
                 };
 
                 // 1. Authoritative DB notification for the host (plan posted)
@@ -2789,11 +2793,31 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
         } : null;
 
         // Fetch the booking record to retrieve the ticketCode and ticketUrl
-        const booking = await Booking.findOne({
-            where: { goingMode: GoingMode.PARTY_REQUEST, userId: plan.userId, venueId: plan.venueId },
+        let booking = await Booking.findOne({
+            where: {
+                goingMode: GoingMode.PARTY_REQUEST,
+                userId: plan.userId,
+                venueId: plan.venueId,
+                specialRequests: { [Op.like]: `%"planId":"${plan.id}"%` },
+            },
             order: [['createdAt', 'DESC']],
             attributes: ['id', 'ticketCode', 'ticketUrl', 'specialRequests'],
         });
+
+        if (!booking) {
+            const dateObj = new Date(plan.planDateTime);
+            const bookingDate = dateObj.toISOString().split('T')[0];
+            booking = await Booking.findOne({
+                where: {
+                    goingMode: GoingMode.PARTY_REQUEST,
+                    userId: plan.userId,
+                    venueId: plan.venueId,
+                    bookingDate: bookingDate as any,
+                },
+                order: [['createdAt', 'DESC']],
+                attributes: ['id', 'ticketCode', 'ticketUrl', 'specialRequests'],
+            });
+        }
 
         let ticketUrl = (booking as any)?.ticketUrl ?? null;
         let ticketCode = booking?.ticketCode ?? null;
@@ -3443,7 +3467,11 @@ export async function enrichPartyPlanNotificationCard(planId: string, recipientU
             }
         } else {
             if (isHost) {
-                if (hasRequests) {
+                if (!hostPaid) {
+                    currentStatusText = 'Action Required: Pay Deposit';
+                    primaryAction = 'Pay Deposit';
+                    primaryActionUrl = `/party-plans/${plan.id}/pay-host`;
+                } else if (hasRequests) {
                     currentStatusText = 'Request Received';
                     primaryAction = 'Accept';
                     secondaryAction = 'Reject';

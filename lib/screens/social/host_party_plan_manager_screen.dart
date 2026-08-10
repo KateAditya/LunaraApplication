@@ -129,7 +129,7 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
       onDirectPayment: () async {
         final orderId = plan['hostRazorpayOrderId']?.toString() ?? 'order_mock_direct';
         final confirmRes = await ApiService.post('/api/mobile/party-plans/$planId/host-pay', body: {
-          'razorpay_order_id': orderId.startsWith('order_mock_') ? orderId : 'order_mock_direct',
+          'razorpay_order_id': orderId,
           'razorpay_payment_id': 'pay_direct_${DateTime.now().millisecondsSinceEpoch}',
           'razorpay_signature': 'mock_signature',
         });
