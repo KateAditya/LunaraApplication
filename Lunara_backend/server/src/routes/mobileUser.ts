@@ -253,6 +253,7 @@ async function getUserNotifications(
                 as: 'requests',
                 required: false
             }],
+            subQuery: false,
             limit: 20
         });
         for (const plan of recentPlans) {
