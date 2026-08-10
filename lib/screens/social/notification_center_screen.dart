@@ -898,16 +898,24 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   // ── Reusable Typed Card Dispatcher ─────────────────────────────────────────
   Widget _buildTypedNotificationCard(dynamic item) {
     final title = (item['title'] ?? '').toString();
+    final body = (item['body'] ?? '').toString();
     final titleLower = title.toLowerCase();
-    final eventType = (item['eventType'] ?? item['data']?['type'] ?? '')
+    final bodyLower = body.toLowerCase();
+    final eventType = (item['eventType'] ?? item['data']?['type'] ?? item['type'] ?? item['category'] ?? '')
         .toString()
         .toUpperCase();
 
     // ── Party Plan specific event types ──────────────────────────────
     if (eventType.contains('PARTY_PLAN_REQUEST_RECEIVED') ||
         titleLower.contains('new party plan request') ||
-        titleLower.contains('user requested to join')) {
+        titleLower.contains('user requested to join') ||
+        bodyLower.contains('requested to join party plan')) {
       return _buildPartyPlanRequestReceivedCard(item);
+    } else if (eventType.contains('HOST_PAYMENT') ||
+        titleLower.contains('host payment') ||
+        bodyLower.contains('action required: pay deposit') ||
+        titleLower.contains('action required: pay deposit')) {
+      return _buildPartyPlanPostedCard(item);
     } else if (eventType.contains('PARTY_PLAN_REQUEST_ACCEPTED') ||
         eventType.contains('PARTICIPANT_PAYMENT_REQUIRED') ||
         titleLower.contains('invite accepted') ||
@@ -924,7 +932,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         eventType.contains('PLAN_LIVE') ||
         titleLower.contains('party plan') ||
         titleLower.contains('plan is now live') ||
-        titleLower.contains("let's party at")) {
+        titleLower.contains("let's party at") ||
+        bodyLower.contains('pay deposit')) {
       return _buildPartyPlanPostedCard(item);
     }
     // ── Generic event types ─────────────────────────────────────
@@ -1062,7 +1071,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     final data = item['metadata'] is Map
         ? Map<String, dynamic>.from(item['metadata'])
         : (item['data'] is Map ? Map<String, dynamic>.from(item['data']) : <String, dynamic>{});
-    final partyPlanId = data['partyPlanId']?.toString() ?? data['planId']?.toString() ?? item['entityId']?.toString() ?? '';
+    final partyPlanId = data['partyPlanId']?.toString() ??
+        data['planId']?.toString() ??
+        data['id']?.toString() ??
+        item['entityId']?.toString() ??
+        (item['id']?.toString().startsWith('party_plan_timeline_') == true
+            ? item['id'].toString().replaceFirst('party_plan_timeline_', '')
+            : item['id']?.toString()) ??
+        '';
     final venueName = data['venueName']?.toString() ?? 'Venue';
     final depositAmount = (data['depositAmount'] ?? 99.0).toDouble();
     final hostPaymentStatus = (data['hostPaymentStatus'] ?? 'unpaid').toString().toLowerCase();
