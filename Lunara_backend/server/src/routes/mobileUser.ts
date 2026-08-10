@@ -245,7 +245,7 @@ async function getUserNotifications(
             where: {
                 [Op.or]: [
                     { userId: uId },
-                    { '$requests.requesterId$': uId }
+                    { '$requests.requester_id$': uId }
                 ]
             },
             include: [{
