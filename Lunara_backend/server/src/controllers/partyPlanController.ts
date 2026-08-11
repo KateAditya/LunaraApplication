@@ -840,7 +840,13 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
 // ─────────────────────────────────────────────────────────────────────────────
 export const verifyHostPayment = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { id } = req.params;
+        let { id } = req.params;
+        if (id && id.startsWith('party_plan_timeline_')) {
+            id = id.replace('party_plan_timeline_', '');
+        }
+        if (id && id.startsWith('pp_')) {
+            id = id.replace('pp_', '');
+        }
         const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
         const plan = await PartyPlan.findByPk(id);
@@ -851,7 +857,8 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
 
         const isMockPayment = razorpay_signature === 'mock_signature' ||
                               (razorpay_order_id && (razorpay_order_id as string).startsWith('mock_')) ||
-                              (razorpay_order_id && (razorpay_order_id as string).startsWith('order_mock_'));
+                              (razorpay_order_id && (razorpay_order_id as string).startsWith('order_mock_')) ||
+                              (razorpay_order_id && (razorpay_order_id as string).startsWith('pay_direct_'));
 
         if (!isMockPayment && plan.hostRazorpayOrderId !== razorpay_order_id) {
             res.status(400).json({ success: false, message: 'Invalid order ID' });
@@ -1229,7 +1236,13 @@ export const getPlansByUser = async (req: Request, res: Response): Promise<void>
 // ─────────────────────────────────────────────────────────────────────────────
 export const getPartyPlanById = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { id } = req.params;
+        let { id } = req.params;
+        if (id && id.startsWith('party_plan_timeline_')) {
+            id = id.replace('party_plan_timeline_', '');
+        }
+        if (id && id.startsWith('pp_')) {
+            id = id.replace('pp_', '');
+        }
 
         const plan = await PartyPlan.findByPk(id, {
             include: [
@@ -2009,7 +2022,8 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
             razorpay_order_id.startsWith('order_mock_') ||
             razorpay_order_id.startsWith('mock_order_') ||
             razorpay_order_id.startsWith('pay_direct_') ||
-            razorpay_order_id === 'order_mock_wallet';
+            razorpay_order_id === 'order_mock_wallet' ||
+            razorpay_order_id === 'order_mock_hybrid';
 
         if (request.joinerRazorpayOrderId && request.joinerRazorpayOrderId !== razorpay_order_id && !isMockOrWalletOrder) {
             await transaction.rollback();
@@ -2041,6 +2055,7 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
 
             // Lifecycle guard — plan must be in a payment-accepting state
             const validPaymentStates = [
+                PartyPlanLifecycleStatus.POSTED,
                 PartyPlanLifecycleStatus.PAYMENT_PENDING,
                 PartyPlanLifecycleStatus.HOST_PAYMENT_COMPLETED,
                 PartyPlanLifecycleStatus.GUEST_PAYMENT_COMPLETED,
@@ -3034,10 +3049,17 @@ export const getJoinerRequests = async (req: Request, res: Response): Promise<vo
 // ─────────────────────────────────────────────────────────────────────────────
 export const initiateHostPayment = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { id } = req.params;
+        let { id } = req.params;
+        if (id && id.startsWith('party_plan_timeline_')) {
+            id = id.replace('party_plan_timeline_', '');
+        }
+        if (id && id.startsWith('pp_')) {
+            id = id.replace('pp_', '');
+        }
+
         const plan = await PartyPlan.findByPk(id);
         if (!plan) {
-            res.status(404).json({ success: false, message: 'Party plan not found' });
+            res.status(404).json({ success: false, message: `Party plan not found for ID ${id}` });
             return;
         }
 
@@ -3052,10 +3074,11 @@ export const initiateHostPayment = async (req: Request, res: Response): Promise<
 
         // Commitment deposit is always ₹99, regardless of SPLIT or SELF_PAY.
         const amount = Number(plan.depositAmount) || 99; // host commitment deposit
+        const shortId = plan.id.substring(0, 8);
         const options = {
             amount: amount * 100, // in paise
             currency: 'INR',
-            receipt: `receipt_host_plan_${plan.id}`,
+            receipt: `hp_${shortId}_${Date.now().toString().slice(-6)}`,
         };
 
         let order: any;
@@ -3066,8 +3089,8 @@ export const initiateHostPayment = async (req: Request, res: Response): Promise<
             try {
                 order = await razorpay.orders.create(options);
             } catch (err: any) {
-                logger.error('Razorpay host order creation failed, falling back to mock:', err);
-                order = { id: `order_mock_${Date.now()}_${Math.random().toString(36).substring(2, 10)}` };
+                logger.error('Razorpay host order creation failed. Error details:', err);
+                return res.status(500).json({ success: false, message: 'Failed to create real Razorpay order', error: err });
             }
         } else {
             order = { id: `order_mock_${Date.now()}_${Math.random().toString(36).substring(2, 10)}` };
@@ -3115,10 +3138,11 @@ export const initiateJoinerPayment = async (req: Request, res: Response): Promis
         }
 
         const amount = plan?.depositAmount ? Number(plan.depositAmount) : 99; // dynamic joiner deposit amount
+        const shortReqId = request.id.toString().substring(0, 8);
         const options = {
             amount: amount * 100, // in paise
             currency: 'INR',
-            receipt: `receipt_joiner_req_${request.id}`,
+            receipt: `jr_${shortReqId}_${Date.now().toString().slice(-6)}`,
         };
 
         let order: any;
@@ -3129,8 +3153,8 @@ export const initiateJoinerPayment = async (req: Request, res: Response): Promis
             try {
                 order = await razorpay.orders.create(options);
             } catch (err: any) {
-                logger.error('Razorpay joiner order creation failed, falling back to mock:', err);
-                order = { id: `order_mock_${Date.now()}_${Math.random().toString(36).substring(2, 10)}` };
+                logger.error('Razorpay joiner order creation failed. Error details:', err);
+                return res.status(500).json({ success: false, message: 'Failed to create real Razorpay order', error: err });
             }
         } else {
             order = { id: `order_mock_${Date.now()}_${Math.random().toString(36).substring(2, 10)}` };

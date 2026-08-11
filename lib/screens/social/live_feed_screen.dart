@@ -1,6 +1,7 @@
 // ignore_for_file: use_build_context_synchronously, unused_local_variable
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:convert';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import 'party_plan_detail_screen.dart';
@@ -767,6 +768,121 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final createdAt = _parseDateTime(n['createdAt']);
       final timeAgo = _formatTimeAgo(n['createdAt']);
 
+      // ── MANDATORY DISPATCH LOGIC FOR HOST PARTY PLAN DEPOSIT ───────────────
+      final Map<String, dynamic> notifData = n['data'] is Map
+          ? Map<String, dynamic>.from(n['data'])
+          : (n['metadata'] is Map
+              ? Map<String, dynamic>.from(n['metadata'])
+              : <String, dynamic>{});
+
+      final String notifType = (
+        n['type'] ??
+        n['eventType'] ??
+        notifData['type'] ??
+        ''
+      ).toString().trim().toLowerCase();
+
+      final String notifBody = body.trim().toLowerCase();
+
+      final String notifPrimaryAction = (
+        notifData['primaryAction'] ??
+        n['primaryAction'] ??
+        ''
+      ).toString().trim().toLowerCase();
+
+      final String notifHostStatus = (
+        notifData['hostPaymentStatus'] ??
+        n['hostPaymentStatus'] ??
+        ''
+      ).toString().trim().toLowerCase();
+
+      final String notifPartyPlanId =
+          notifData['partyPlanId']?.toString().trim() ?? '';
+
+      final bool isHostDepositRequired =
+          notifPartyPlanId.isNotEmpty &&
+          (
+            notifType == 'party_plan_timeline' ||
+            notifType.contains('party_plan_timeline')
+          ) &&
+          (
+            notifPrimaryAction == 'pay deposit' ||
+            notifBody.contains('action required: pay deposit') ||
+            notifBody.contains('pay deposit')
+          ) &&
+          notifHostStatus != 'paid' &&
+          notifHostStatus != 'completed';
+
+      if (isHostDepositRequired) {
+        debugPrint('### HOST PARTY PLAN DEPOSIT ROUTE ###');
+        debugPrint('partyPlanId=$notifPartyPlanId');
+        debugPrint('primaryAction=$notifPrimaryAction');
+        debugPrint('hostPaymentStatus=$notifHostStatus');
+
+        double depositAmount = 99.0;
+        final rawAmount = notifData['depositAmount'];
+        if (rawAmount is num) {
+          depositAmount = rawAmount.toDouble();
+        } else if (rawAmount is String) {
+          depositAmount = double.tryParse(rawAmount.trim()) ?? 99.0;
+        }
+
+        final venueName = notifData['venueName']?.toString().trim() ?? 'Venue';
+
+        final actionsList = [
+          NotificationAction(
+            label: 'Pay Deposit (${depositAmount.toStringAsFixed(0)})',
+            icon: Icons.payment_rounded,
+            isPrimary: true,
+            onTap: () async {
+              final hostRazorpayOrderId = notifData['hostRazorpayOrderId']?.toString().trim() ?? '';
+              await _startHostRazorpayDirectPaymentInLiveFeed(
+                partyPlanId: notifPartyPlanId,
+                venueName: venueName,
+                orderId: hostRazorpayOrderId,
+                depositAmount: depositAmount,
+                onSuccess: () async {
+                  _loadFeed();
+                },
+              );
+            },
+          ),
+          NotificationAction(
+            label: 'View Plan',
+            icon: Icons.open_in_new_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PartyPlanDetailScreen(
+                    plan: {'id': notifPartyPlanId, ...notifData},
+                  ),
+                ),
+              );
+            },
+          ),
+        ];
+
+        items.add(UnifiedNotificationItem(
+          id: 'pp_host_deposit_$notifPartyPlanId',
+          category: 'party_plan',
+          title: title,
+          body: body,
+          createdAt: createdAt,
+          timeAgo: timeAgo,
+          isRead: isRead,
+          badgeText: 'PARTY PLAN',
+          accentColor: const Color(0xFF8B5CF6),
+          categoryIcon: Icons.celebration_rounded,
+          avatarUrl: n['imageUrl']?.toString() ?? n['actor']?['profilePhotoUrl']?.toString(),
+          actions: actionsList,
+          rawData: n,
+        ));
+        continue;
+      }
+
       Color accentColor = const Color(0xFF6B7280);
       IconData icon = Icons.notifications_rounded;
       String? badge;
@@ -788,7 +904,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         accentColor = const Color(0xFF7C3AED);
         icon = Icons.confirmation_number_rounded;
         badge = 'BOOKING';
-      } else if (category.contains('party') || category.contains('plan')) {
+      } else if (category.contains('party') || category.contains('plan') || category.contains('events')) {
         // Skip push-notifications that are already shown as live feed items
         final notifEntityId = n['entityId']?.toString() ?? '';
         if (feedEntityIds.isNotEmpty && notifEntityId.isNotEmpty &&
@@ -1515,7 +1631,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                           plan: planMap.isNotEmpty ? planMap : item,
                         ),
                       ),
-                    ),
+                    ).then((_) => _loadFeed(showLoader: false)),
                   ),
                   NotificationAction(
                     label: 'Decline',
@@ -1603,7 +1719,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                           plan: planMap.isNotEmpty ? planMap : item,
                         ),
                       ),
-                    ),
+                    ).then((_) => _loadFeed(showLoader: false)),
                   ),
                   NotificationAction(
                     label: 'Cancel',
@@ -1784,16 +1900,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
     // Universal Entity Grouping & Deduplication so only 1 notification card is shown per plan/meet/booking
-    final Set<String> seenEntityKeys = {};
+    final Map<String, UnifiedNotificationItem> entityMap = {};
     final List<UnifiedNotificationItem> uniqueItems = [];
     for (final item in items) {
       final raw = item.rawData;
       final planData = raw['plan'] is Map ? (raw['plan'] as Map<String, dynamic>) : raw;
+      final rawData = raw['data'] is Map ? (raw['data'] as Map<String, dynamic>) : <String, dynamic>{};
 
       String groupKey = item.id;
-      final entityId = raw['entityId']?.toString() ??
-          raw['requestId']?.toString() ??
+      final entityId = rawData['partyPlanId']?.toString() ??
           raw['partyPlanId']?.toString() ??
+          raw['entityId']?.toString() ??
+          raw['requestId']?.toString() ??
           raw['strangersMeetId']?.toString() ??
           raw['bookingId']?.toString() ??
           planData['id']?.toString();
@@ -1802,9 +1920,22 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         groupKey = '${item.category}_$entityId';
       }
 
-      if (!seenEntityKeys.contains(groupKey)) {
-        seenEntityKeys.add(groupKey);
+      if (!entityMap.containsKey(groupKey)) {
+        entityMap[groupKey] = item;
         uniqueItems.add(item);
+      } else if (item.category == 'party_plan') {
+        // Active Host Pay Deposit notification takes priority over old party plan updates
+        final existingItem = entityMap[groupKey]!;
+        final isCurrentHostDeposit = item.actions?.any((a) => a.label.contains('Pay Deposit')) == true;
+        final isExistingHostDeposit = existingItem.actions?.any((a) => a.label.contains('Pay Deposit')) == true;
+
+        if (isCurrentHostDeposit && !isExistingHostDeposit) {
+          entityMap[groupKey] = item;
+          final idx = uniqueItems.indexOf(existingItem);
+          if (idx != -1) {
+            uniqueItems[idx] = item;
+          }
+        }
       }
     }
 
@@ -1884,7 +2015,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                       child: ListView.separated(
                         shrinkWrap: true,
                         itemCount: filters.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        separatorBuilder: (_, i) => const Divider(height: 1),
                         itemBuilder: (context, index) {
                           final filter = filters[index];
                           final filterId = filter['id'] as String;
@@ -2533,5 +2664,165 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ),
       ),
     );
+  }
+
+  Future<void> _startHostRazorpayDirectPaymentInLiveFeed({
+    required String partyPlanId,
+    required String venueName,
+    required String orderId,
+    required double depositAmount,
+    required Future<void> Function() onSuccess,
+  }) async {
+    String cleanPlanId = partyPlanId.trim();
+    if (cleanPlanId.startsWith('party_plan_timeline_')) {
+      cleanPlanId = cleanPlanId.replaceFirst('party_plan_timeline_', '');
+    }
+    if (cleanPlanId.startsWith('pp_')) {
+      cleanPlanId = cleanPlanId.replaceFirst('pp_', '');
+    }
+
+    debugPrint(
+      '[PAYMENT-01] Pay Deposit clicked (Live Feed): '
+      'partyPlanId=$cleanPlanId, venueName=$venueName, orderId=$orderId, depositAmount=$depositAmount',
+    );
+
+    try {
+      String currentOrderId = orderId.trim();
+      String razorpayKey = 'rzp_test_123';
+
+      if (currentOrderId.isEmpty ||
+          (!currentOrderId.startsWith('order_mock_') &&
+              !currentOrderId.startsWith('mock_') &&
+              !currentOrderId.startsWith('pay_direct_') &&
+              currentOrderId.length < 10)) {
+        debugPrint('[PAYMENT-02] Creating Razorpay order via initiateHostPayment');
+        final initRes = await ApiService.initiateHostPayment(cleanPlanId);
+        debugPrint('[PAYMENT-03] Order API response received: $initRes');
+        if (initRes != null && initRes['success'] == true) {
+          currentOrderId = (initRes['razorpayOrderId'] ?? '').toString();
+          if (initRes['razorpayKeyId'] != null &&
+              initRes['razorpayKeyId'].toString().isNotEmpty) {
+            razorpayKey = initRes['razorpayKeyId'].toString();
+          }
+        }
+      }
+
+      debugPrint(
+        '[PAYMENT-04] Razorpay order ID received: orderId=$currentOrderId, keyId=$razorpayKey',
+      );
+
+      late Razorpay razorpay;
+      razorpay = Razorpay();
+
+      razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (
+        PaymentSuccessResponse response,
+      ) async {
+        final pId = response.paymentId ?? '';
+        final oId = response.orderId ?? currentOrderId;
+        final sig = response.signature ?? '';
+
+        debugPrint(
+          '[PAYMENT-06] Razorpay success callback: '
+          'paymentId=$pId, orderId=$oId, signature=$sig',
+        );
+
+        debugPrint('[PAYMENT-08] Verifying payment with backend');
+        final confirmRes = await ApiService.post(
+          '/api/mobile/party-plans/$cleanPlanId/host-pay',
+          body: {
+            'razorpay_order_id': oId,
+            'razorpay_payment_id': pId,
+            'razorpay_signature': sig,
+          },
+        );
+
+        debugPrint(
+          '[PAYMENT-09] Verification response: statusCode=${confirmRes.statusCode}, body=${confirmRes.body}',
+        );
+
+        razorpay.clear();
+        if (confirmRes.statusCode == 200 && mounted) {
+          debugPrint('[PAYMENT-10] Deposit status updated successfully');
+          await onSuccess();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  '🎉 Host Safety Deposit Paid! Your plan is fully activated.',
+                ),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        } else if (mounted) {
+          String msg = 'Payment Confirmation Failed';
+          try {
+            final b = jsonDecode(confirmRes.body);
+            msg = b['message'] ?? b['error'] ?? msg;
+          } catch (_) {}
+          if (msg == 'Payment Failed') msg = 'Verification failed (Status ${confirmRes.statusCode})';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Payment Failed: $msg'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      });
+
+      razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (
+        PaymentFailureResponse response,
+      ) {
+        debugPrint(
+          '[PAYMENT-07] Razorpay error callback: code=${response.code}, message=${response.message}',
+        );
+        razorpay.clear();
+        if (mounted) {
+          String errText = response.message ?? 'Payment process cancelled or failed';
+          if (errText.isEmpty || errText == 'Payment Failed') {
+            if (response.code == Razorpay.PAYMENT_CANCELLED) {
+              errText = 'Payment cancelled by user';
+            } else {
+              errText = 'Payment error (code ${response.code})';
+            }
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Payment Failed: $errText'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      });
+
+      razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (
+        ExternalWalletResponse response,
+      ) {
+        razorpay.clear();
+      });
+
+      final options = <String, dynamic>{
+        'key': razorpayKey,
+        'amount': (depositAmount * 100).round(),
+        'name': 'Lunara Host Deposit',
+        'description': 'Host safety deposit for Party Plan at $venueName',
+        'currency': 'INR',
+        if (currentOrderId.isNotEmpty) 'order_id': currentOrderId,
+        'prefill': {'contact': '9999999999', 'email': 'user@lunara.app'},
+        'theme': {'color': '#7C3AED'},
+      };
+
+      debugPrint(
+        '[PAYMENT-05] Opening Razorpay checkout: key=$razorpayKey, amount=${options['amount']}, orderId=$currentOrderId',
+      );
+
+      try {
+        razorpay.open(options);
+      } catch (e) {
+        debugPrint('Error opening Razorpay for Host Payment: $e');
+      }
+    } catch (e) {
+      debugPrint('Error initiating host deposit payment: $e');
+    }
   }
 }

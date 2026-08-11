@@ -12,10 +12,9 @@ import '../../widgets/top_notification_banner.dart';
 import '../../widgets/upcoming_night_invite_dialog.dart';
 import '../../widgets/upcoming_night_host_confirm_dialog.dart';
 import 'party_plan_detail_screen.dart';
+import 'chat_screen.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
-
-
 
 class NotificationCenterScreen extends StatefulWidget {
   const NotificationCenterScreen({super.key});
@@ -121,8 +120,34 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       if (response.statusCode == 200 && mounted) {
         final bodyData = jsonDecode(response.body);
         if (bodyData != null && bodyData['data'] is List) {
+          final fetchedList = List<dynamic>.from(bodyData['data']);
+
+          debugPrint('========== NOTIFICATION API DEBUG ==========');
+          debugPrint('TOTAL NOTIFICATIONS = ${fetchedList.length}');
+          for (final n in fetchedList) {
+            if (n is Map) {
+              final data = n['data'];
+              debugPrint(
+                'NOTIFICATION: '
+                'id=${n['id']} '
+                'type=${n['type']} '
+                'title=${n['title']} '
+                'body=${n['body']} '
+                'dataType=${data.runtimeType} '
+                'data=$data',
+              );
+              if ((n['body'] ?? '')
+                  .toString()
+                  .toLowerCase()
+                  .contains('pay deposit')) {
+                debugPrint('*** PAY DEPOSIT API NOTIFICATION FOUND ***');
+                debugPrint('FULL ITEM = $n');
+              }
+            }
+          }
+
           setState(() {
-            _notifications = List<dynamic>.from(bodyData['data']);
+            _notifications = fetchedList;
             _isLoading = false;
           });
           return;
@@ -346,6 +371,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     }
   }
 
+  bool _isProcessingPayment = false;
+
   void _startRazorpayDirectPayment({
     required String requestId,
     required String venueName,
@@ -353,98 +380,329 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     double depositAmount = 99.0,
     required VoidCallback onSuccess,
   }) async {
-    final razorpayKey = 'rzp_test_123';
-    final isMock = razorpayKey == 'rzp_test_123' ||
-        orderId == null ||
-        orderId.isEmpty ||
-        orderId.startsWith('order_mock_') ||
-        orderId.startsWith('pay_direct_');
-
-    if (isMock) {
-      final ordId = (orderId != null && orderId.isNotEmpty) ? orderId : 'order_mock_direct';
-      final confirmRes = await ApiService.post(
-        '/api/mobile/party-plans/requests/$requestId/joiner-pay',
-        body: {
-          'razorpay_order_id': ordId,
-          'razorpay_payment_id': 'pay_direct_${DateTime.now().millisecondsSinceEpoch}',
-          'razorpay_signature': 'mock_signature',
-        },
-      );
-      if (confirmRes.statusCode == 200 && mounted) {
-        onSuccess();
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
-          backgroundColor: Colors.green,
-        ));
-      } else if (mounted) {
-        String msg = 'Payment Failed';
-        try {
-          final b = jsonDecode(confirmRes.body);
-          msg = b['message'] ?? msg;
-        } catch (_) {}
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Payment Failed: $msg'),
-          backgroundColor: Colors.redAccent,
-        ));
-      }
-      return;
-    }
-
-    late Razorpay razorpay;
-    razorpay = Razorpay();
-
-    razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (PaymentSuccessResponse response) async {
-      final confirmRes = await ApiService.post(
-        '/api/mobile/party-plans/requests/$requestId/joiner-pay',
-        body: {
-          'razorpay_order_id': response.orderId ?? 'order_rzp_${DateTime.now().millisecondsSinceEpoch}',
-          'razorpay_payment_id': response.paymentId ?? 'pay_${DateTime.now().millisecondsSinceEpoch}',
-          'razorpay_signature': response.signature ?? 'signature',
-        },
-      );
-      razorpay.clear();
-      if (confirmRes.statusCode == 200 && mounted) {
-        onSuccess();
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
-          backgroundColor: Colors.green,
-        ));
-      }
-    });
-
-    razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse response) {
-      razorpay.clear();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Payment Failed: ${response.message ?? 'Cancelled'}'),
-          backgroundColor: Colors.redAccent,
-        ));
-      }
-    });
-
-    razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (ExternalWalletResponse response) {
-      razorpay.clear();
-    });
-
-    final options = <String, dynamic>{
-      'key': razorpayKey,
-      'amount': (depositAmount * 100).round(),
-      'name': 'Lunara Party Deposit',
-      'description': 'Safety deposit for Party Plan at $venueName',
-      if (orderId.isNotEmpty) 'order_id': orderId,
-      'prefill': {
-        'contact': '9999999999',
-        'email': 'user@lunara.app',
-      },
-      'theme': {
-        'color': '#7C3AED',
-      }
-    };
+    if (_isProcessingPayment) return;
+    setState(() => _isProcessingPayment = true);
 
     try {
-      razorpay.open(options);
+      String currentOrderId = (orderId ?? '').trim();
+      String razorpayKey = 'rzp_test_123';
+
+      if (currentOrderId.isEmpty) {
+        final initRes = await ApiService.initiateJoinerPayment(requestId);
+        if (initRes != null && initRes['success'] == true) {
+          currentOrderId = (initRes['razorpayOrderId'] ?? '').toString();
+          if (initRes['razorpayKeyId'] != null &&
+              initRes['razorpayKeyId'].toString().isNotEmpty) {
+            razorpayKey = initRes['razorpayKeyId'].toString();
+          }
+        }
+      }
+
+      final isMock =
+          razorpayKey == 'rzp_test_123' ||
+          razorpayKey == 'your_razorpay_key_id' ||
+          currentOrderId.isEmpty ||
+          currentOrderId.startsWith('order_mock_') ||
+          currentOrderId.startsWith('mock_') ||
+          currentOrderId.startsWith('pay_direct_');
+
+      if (isMock) {
+        final ordId =
+            currentOrderId.isNotEmpty ? currentOrderId : 'order_mock_direct';
+        final confirmRes = await ApiService.post(
+          '/api/mobile/party-plans/requests/$requestId/joiner-pay',
+          body: {
+            'razorpay_order_id': ordId,
+            'razorpay_payment_id':
+                'pay_direct_${DateTime.now().millisecondsSinceEpoch}',
+            'razorpay_signature': 'mock_signature',
+          },
+        );
+        if (mounted) setState(() => _isProcessingPayment = false);
+        if (confirmRes.statusCode == 200 && mounted) {
+          onSuccess();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else if (mounted) {
+          String msg = 'Payment Verification Failed';
+          try {
+            final b = jsonDecode(confirmRes.body);
+            msg = b['message'] ?? b['error'] ?? 'Server status ${confirmRes.statusCode}';
+          } catch (_) {
+            msg = 'Server status ${confirmRes.statusCode}';
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Payment Failed: $msg'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+        return;
+      }
+
+      late Razorpay razorpay;
+      razorpay = Razorpay();
+
+      razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (
+        PaymentSuccessResponse response,
+      ) async {
+        final confirmRes = await ApiService.post(
+          '/api/mobile/party-plans/requests/$requestId/joiner-pay',
+          body: {
+            'razorpay_order_id':
+                response.orderId ??
+                (currentOrderId.isNotEmpty
+                    ? currentOrderId
+                    : 'order_rzp_${DateTime.now().millisecondsSinceEpoch}'),
+            'razorpay_payment_id':
+                response.paymentId ??
+                'pay_${DateTime.now().millisecondsSinceEpoch}',
+            'razorpay_signature': response.signature ?? 'signature',
+          },
+        );
+        razorpay.clear();
+        if (mounted) setState(() => _isProcessingPayment = false);
+        if (confirmRes.statusCode == 200 && mounted) {
+          onSuccess();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else if (mounted) {
+          String msg = 'Payment Confirmation Failed';
+          try {
+            final b = jsonDecode(confirmRes.body);
+            msg = b['message'] ?? b['error'] ?? msg;
+          } catch (_) {}
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Payment Failed: $msg'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      });
+
+      razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (
+        PaymentFailureResponse response,
+      ) {
+        razorpay.clear();
+        if (mounted) setState(() => _isProcessingPayment = false);
+        if (mounted) {
+          final errText = (response.message != null &&
+                  response.message!.isNotEmpty &&
+                  response.message != 'Payment Failed')
+              ? response.message!
+              : 'Payment process cancelled or failed';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Payment Failed: $errText'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      });
+
+      razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (
+        ExternalWalletResponse response,
+      ) {
+        razorpay.clear();
+        if (mounted) setState(() => _isProcessingPayment = false);
+      });
+
+      final options = <String, dynamic>{
+        'key': razorpayKey,
+        'amount': (depositAmount * 100).round(),
+        'name': 'Lunara Party Deposit',
+        'description': 'Safety deposit for Party Plan at $venueName',
+        if (currentOrderId.isNotEmpty) 'order_id': currentOrderId,
+        'prefill': {'contact': '9999999999', 'email': 'user@lunara.app'},
+        'theme': {'color': '#7C3AED'},
+      };
+
+      try {
+        razorpay.open(options);
+      } catch (e) {
+        debugPrint('Error opening Razorpay: $e');
+        if (mounted) setState(() => _isProcessingPayment = false);
+      }
     } catch (e) {
-      debugPrint('Error opening Razorpay: $e');
+      debugPrint('Error initiating joiner deposit payment: $e');
+      if (mounted) setState(() => _isProcessingPayment = false);
+    }
+  }
+
+  Future<void> _startHostRazorpayDirectPayment({
+    required String partyPlanId,
+    required String venueName,
+    required String orderId,
+    required double depositAmount,
+    required Future<void> Function() onSuccess,
+  }) async {
+    if (_isProcessingPayment) return;
+    setState(() => _isProcessingPayment = true);
+
+    String cleanPlanId = partyPlanId.trim();
+    if (cleanPlanId.startsWith('party_plan_timeline_')) {
+      cleanPlanId = cleanPlanId.replaceFirst('party_plan_timeline_', '');
+    }
+    if (cleanPlanId.startsWith('pp_')) {
+      cleanPlanId = cleanPlanId.replaceFirst('pp_', '');
+    }
+
+    debugPrint(
+      '[HOST_PAYMENT_START] Host Pay Deposit clicked: cleanPlanId=$cleanPlanId, venueName=$venueName, orderId=$orderId, depositAmount=$depositAmount',
+    );
+
+    try {
+      String currentOrderId = orderId.trim();
+      String razorpayKey = 'rzp_test_123';
+
+      if (currentOrderId.isEmpty ||
+          (!currentOrderId.startsWith('order_mock_') &&
+              !currentOrderId.startsWith('mock_') &&
+              !currentOrderId.startsWith('pay_direct_') &&
+              currentOrderId.length < 10)) {
+        debugPrint('[HOST_ORDER_CREATE] Creating Razorpay order via initiateHostPayment');
+        final initRes = await ApiService.initiateHostPayment(cleanPlanId);
+        debugPrint('[HOST_ORDER_RESPONSE] Order API response received: $initRes');
+        if (initRes != null && initRes['success'] == true) {
+          currentOrderId = (initRes['razorpayOrderId'] ?? '').toString();
+          if (initRes['razorpayKeyId'] != null &&
+              initRes['razorpayKeyId'].toString().isNotEmpty) {
+            razorpayKey = initRes['razorpayKeyId'].toString();
+          }
+        }
+      }
+
+      debugPrint(
+        '[HOST_ORDER_RESPONSE] Razorpay order ID received: orderId=$currentOrderId, keyId=$razorpayKey',
+      );
+
+      late Razorpay razorpay;
+      razorpay = Razorpay();
+
+      razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (
+        PaymentSuccessResponse response,
+      ) async {
+        final pId = response.paymentId ?? '';
+        final oId = response.orderId ?? currentOrderId;
+        final sig = response.signature ?? '';
+
+        debugPrint(
+          '[PAYMENT-06] Razorpay success callback: '
+          'paymentId=$pId, orderId=$oId, signature=$sig',
+        );
+
+        debugPrint('[PAYMENT-08] Verifying payment with backend');
+        final confirmRes = await ApiService.post(
+          '/api/mobile/party-plans/$cleanPlanId/host-pay',
+          body: {
+            'razorpay_order_id': oId,
+            'razorpay_payment_id': pId,
+            'razorpay_signature': sig,
+          },
+        );
+
+        debugPrint(
+          '[PAYMENT-09] Verification response: statusCode=${confirmRes.statusCode}, body=${confirmRes.body}',
+        );
+
+        razorpay.clear();
+        if (mounted) setState(() => _isProcessingPayment = false);
+        if (confirmRes.statusCode == 200 && mounted) {
+          debugPrint('[PAYMENT-10] Deposit status updated successfully');
+          await onSuccess();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  '🎉 Host Safety Deposit Paid! Your plan is fully activated.',
+                ),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        } else if (mounted) {
+          String msg = 'Payment Confirmation Failed';
+          try {
+            final b = jsonDecode(confirmRes.body);
+            msg = b['message'] ?? b['error'] ?? msg;
+          } catch (_) {}
+          if (msg == 'Payment Failed') msg = 'Verification failed (Status ${confirmRes.statusCode})';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Payment Failed: $msg'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      });
+
+      razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (
+        PaymentFailureResponse response,
+      ) {
+        debugPrint(
+          '[PAYMENT-07] Razorpay error callback: code=${response.code}, message=${response.message}',
+        );
+        razorpay.clear();
+        if (mounted) setState(() => _isProcessingPayment = false);
+        if (mounted) {
+          String errText = response.message ?? 'Payment process cancelled or failed';
+          if (errText.isEmpty || errText == 'Payment Failed') {
+            if (response.code == Razorpay.PAYMENT_CANCELLED) {
+              errText = 'Payment cancelled by user';
+            } else {
+              errText = 'Payment error (code ${response.code})';
+            }
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Payment Failed: $errText'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      });
+
+      razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (
+        ExternalWalletResponse response,
+      ) {
+        razorpay.clear();
+        if (mounted) setState(() => _isProcessingPayment = false);
+      });
+
+      final options = <String, dynamic>{
+        'key': razorpayKey,
+        'amount': (depositAmount * 100).round(),
+        'name': 'Lunara Host Deposit',
+        'description': 'Host safety deposit for Party Plan at $venueName',
+        'currency': 'INR',
+        if (currentOrderId.isNotEmpty) 'order_id': currentOrderId,
+        'prefill': {'contact': '9999999999', 'email': 'user@lunara.app'},
+        'theme': {'color': '#7C3AED'},
+      };
+
+      debugPrint(
+        '[PAYMENT-05] Opening Razorpay checkout: key=$razorpayKey, amount=${options['amount']}, orderId=$currentOrderId',
+      );
+
+      try {
+        razorpay.open(options);
+      } catch (e) {
+        debugPrint('Error opening Razorpay for Host Payment: $e');
+        if (mounted) setState(() => _isProcessingPayment = false);
+      }
+    } catch (e) {
+      debugPrint('Error initiating host deposit payment: $e');
+      if (mounted) setState(() => _isProcessingPayment = false);
     }
   }
 
@@ -453,9 +711,13 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   List<dynamic> get _filteredNotifications {
     var rawList = _notifications.where((item) {
       if (item is Map) {
-        final body = (item['body'] ?? item['currentStatus'] ?? '').toString().toLowerCase();
+        final body = (item['body'] ?? item['currentStatus'] ?? '')
+            .toString()
+            .toLowerCase();
         final title = (item['title'] ?? '').toString().toLowerCase();
-        if (body.contains('waiting other user') || title.contains('waiting other user') || body == 'waiting other user') {
+        if (body.contains('waiting other user') ||
+            title.contains('waiting other user') ||
+            body == 'waiting other user') {
           return false;
         }
       }
@@ -471,25 +733,106 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         deduplicatedList.add(item);
         continue;
       }
-      final data = item['data'] is Map ? item['data'] : (item['metadata'] is Map ? item['metadata'] : {});
+      final data = item['data'] is Map
+          ? item['data']
+          : (item['metadata'] is Map ? item['metadata'] : {});
 
       // Extract specific identifiers for grouping
-      final partyPlanId = data['partyPlanId']?.toString() ?? (item['entityType'] == 'party_plan' ? item['entityId']?.toString() : null);
-      final groupPartyId = data['groupPartyId']?.toString() ?? data['groupId']?.toString() ?? (item['entityType'] == 'group_party' ? item['entityId']?.toString() : null);
-      final meetId = data['meetId']?.toString() ?? data['strangersMeetId']?.toString() ?? (item['entityType'] == 'strangers_meet' ? item['entityId']?.toString() : null);
-      final bookingId = data['bookingId']?.toString() ?? (item['entityType'] == 'booking' ? item['entityId']?.toString() : null);
-      final requestId = data['requestId']?.toString() ?? item['entityId']?.toString();
+      final partyPlanId =
+          data['partyPlanId']?.toString() ??
+          (item['entityType'] == 'party_plan'
+              ? item['entityId']?.toString()
+              : null);
+      final groupPartyId =
+          data['groupPartyId']?.toString() ??
+          data['groupId']?.toString() ??
+          (item['entityType'] == 'group_party'
+              ? item['entityId']?.toString()
+              : null);
+      final meetId =
+          data['meetId']?.toString() ??
+          data['strangersMeetId']?.toString() ??
+          (item['entityType'] == 'strangers_meet'
+              ? item['entityId']?.toString()
+              : null);
+      final bookingId =
+          data['bookingId']?.toString() ??
+          (item['entityType'] == 'booking'
+              ? item['entityId']?.toString()
+              : null);
+      final requestId =
+          data['requestId']?.toString() ?? item['entityId']?.toString();
 
-      final groupKey = groupPartyId != null && groupPartyId.isNotEmpty ? 'group_$groupPartyId'
-          : (partyPlanId != null && partyPlanId.isNotEmpty ? 'party_$partyPlanId'
-          : (meetId != null && meetId.isNotEmpty ? 'meet_$meetId'
-          : (bookingId != null && bookingId.isNotEmpty ? 'booking_$bookingId'
-          : (requestId != null && requestId.isNotEmpty ? 'req_$requestId' : null))));
+      final groupKey = groupPartyId != null && groupPartyId.isNotEmpty
+          ? 'group_$groupPartyId'
+          : (partyPlanId != null && partyPlanId.isNotEmpty
+                ? 'party_$partyPlanId'
+                : (meetId != null && meetId.isNotEmpty
+                      ? 'meet_$meetId'
+                      : (bookingId != null && bookingId.isNotEmpty
+                            ? 'booking_$bookingId'
+                            : (requestId != null && requestId.isNotEmpty
+                                  ? 'req_$requestId'
+                                  : null))));
 
       if (groupKey != null) {
         if (!entityMap.containsKey(groupKey)) {
           entityMap[groupKey] = item;
           deduplicatedList.add(item);
+        } else if (groupKey.startsWith('party_')) {
+          // STEP 13: ACTIVE PAY DEPOSIT > OLD/EXPIRED PARTY PLAN UPDATE
+          final existingItem = entityMap[groupKey];
+          final existingData = existingItem is Map && existingItem['data'] is Map
+              ? Map<String, dynamic>.from(existingItem['data'])
+              : <String, dynamic>{};
+          final currentData = item['data'] is Map
+              ? Map<String, dynamic>.from(item['data'])
+              : <String, dynamic>{};
+
+          final currentPrimaryAction =
+              (currentData['primaryAction'] ?? '').toString().toLowerCase();
+          final currentHostStatus =
+              (currentData['hostPaymentStatus'] ?? '').toString().toLowerCase();
+          final currentJoinerStatus =
+              (currentData['joinerPaymentStatus'] ?? '').toString().toLowerCase();
+          final isCurrentPaidOrConfirmed =
+              currentPrimaryAction == 'open chat' ||
+              currentPrimaryAction == 'chat' ||
+              currentHostStatus == 'paid' ||
+              currentJoinerStatus == 'paid' ||
+              currentData['isPaid'] == true ||
+              currentData['depositPaid'] == true;
+
+          final isCurrentActivePayDeposit =
+              (currentPrimaryAction == 'pay deposit' || currentPrimaryAction == 'pay now') &&
+              !isCurrentPaidOrConfirmed;
+
+          final existingPrimaryAction =
+              (existingData['primaryAction'] ?? '').toString().toLowerCase();
+          final existingHostStatus =
+              (existingData['hostPaymentStatus'] ?? '').toString().toLowerCase();
+          final existingJoinerStatus =
+              (existingData['joinerPaymentStatus'] ?? '').toString().toLowerCase();
+          final isExistingPaidOrConfirmed =
+              existingPrimaryAction == 'open chat' ||
+              existingPrimaryAction == 'chat' ||
+              existingHostStatus == 'paid' ||
+              existingJoinerStatus == 'paid' ||
+              existingData['isPaid'] == true ||
+              existingData['depositPaid'] == true;
+
+          final isExistingActivePayDeposit =
+              (existingPrimaryAction == 'pay deposit' || existingPrimaryAction == 'pay now') &&
+              !isExistingPaidOrConfirmed;
+
+          if ((isCurrentActivePayDeposit && !isExistingActivePayDeposit) ||
+              (isCurrentPaidOrConfirmed && !isExistingPaidOrConfirmed)) {
+            entityMap[groupKey] = item;
+            final idx = deduplicatedList.indexOf(existingItem);
+            if (idx != -1) {
+              deduplicatedList[idx] = item;
+            }
+          }
         }
       } else {
         deduplicatedList.add(item);
@@ -497,6 +840,30 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     }
 
     var list = deduplicatedList;
+
+    // STEP 3: DEBUG _filteredNotifications
+    for (final n in list) {
+      if (n is Map) {
+        final data = n['data'] is Map
+            ? Map<String, dynamic>.from(n['data'])
+            : <String, dynamic>{};
+
+        if ((n['body'] ?? '')
+            .toString()
+            .toLowerCase()
+            .contains('pay deposit')) {
+          debugPrint('*** PAY DEPOSIT AFTER FILTER ***');
+          debugPrint('id=${n['id']}');
+          debugPrint('type=${n['type']}');
+          debugPrint('body=${n['body']}');
+          debugPrint('partyPlanId=${data['partyPlanId']}');
+          debugPrint('primaryAction=${data['primaryAction']}');
+          debugPrint('hostPaymentStatus=${data['hostPaymentStatus']}');
+          debugPrint('depositAmount=${data['depositAmount']}');
+          debugPrint('FULL DATA=$data');
+        }
+      }
+    }
 
     // 1. Primary Navigation Tab Filter
     if (_selectedPrimaryTab == 1) {
@@ -897,13 +1264,99 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
   // ── Reusable Typed Card Dispatcher ─────────────────────────────────────────
   Widget _buildTypedNotificationCard(dynamic item) {
+    // STEP 4: DEBUG DISPATCHER
+    debugPrint('========== CARD DISPATCHER ==========');
+    if (item is Map) {
+      debugPrint('id=${item['id']}');
+      debugPrint('title=${item['title']}');
+      debugPrint('body=${item['body']}');
+      debugPrint('type=${item['type']}');
+      debugPrint('eventType=${item['eventType']}');
+      debugPrint('data=${item['data']}');
+    }
+
+    final Map<String, dynamic> data = item['data'] is Map
+        ? Map<String, dynamic>.from(item['data'])
+        : (item['metadata'] is Map
+            ? Map<String, dynamic>.from(item['metadata'])
+            : <String, dynamic>{});
+
+    final String type = (
+      item['type'] ??
+      item['eventType'] ??
+      data['type'] ??
+      ''
+    ).toString().trim().toLowerCase();
+
+    final String primaryAction = (
+      data['primaryAction'] ??
+      item['primaryAction'] ??
+      ''
+    ).toString().trim().toLowerCase();
+
+    final String hostPaymentStatus = (
+      data['hostPaymentStatus'] ??
+      item['hostPaymentStatus'] ??
+      data['paymentStatus'] ??
+      item['paymentStatus'] ??
+      ''
+    ).toString().trim().toLowerCase();
+
+    final String bodyStr = (
+      item['body'] ??
+      ''
+    ).toString().trim().toLowerCase();
+
+    debugPrint(
+      'DISPATCH RESULT: '
+      'type=$type '
+      'primaryAction=$primaryAction '
+      'hostPaymentStatus=$hostPaymentStatus '
+      'body=$bodyStr',
+    );
+
+    // STEP 5: HOST PARTY PLAN MUST HAVE HIGHEST PRIORITY
+    final bool isHostPartyPlanPayment =
+        (type == 'party_plan_timeline' ||
+            type.contains('party_plan_timeline') ||
+            type.contains('host_payment') ||
+            type.contains('host_deposit')) &&
+        (primaryAction == 'pay deposit' || primaryAction == 'pay now') &&
+        hostPaymentStatus != 'paid' &&
+        hostPaymentStatus != 'completed';
+
+    if (isHostPartyPlanPayment) {
+      debugPrint('>>> ROUTING TO _buildPartyPlanPostedCard <<<');
+      return _buildPartyPlanPostedCard(item);
+    }
+
+    // STEP 6: ALSO SUPPORT BODY FALLBACK
+    final bool isHostPayDepositFallback =
+        bodyStr.contains('action required: pay deposit') &&
+        data['partyPlanId'] != null &&
+        (primaryAction == 'pay deposit' || primaryAction == 'pay now') &&
+        hostPaymentStatus != 'paid' &&
+        hostPaymentStatus != 'completed';
+
+    if (isHostPayDepositFallback) {
+      debugPrint('>>> ROUTING PAY DEPOSIT FALLBACK TO PARTY PLAN CARD <<<');
+      return _buildPartyPlanPostedCard(item);
+    }
+
+    final String eventType = (
+      item['eventType'] ??
+      data['eventType'] ??
+      data['type'] ??
+      item['type'] ??
+      item['actionType'] ??
+      item['category'] ??
+      ''
+    ).toString().toUpperCase();
+
     final title = (item['title'] ?? '').toString();
     final body = (item['body'] ?? '').toString();
     final titleLower = title.toLowerCase();
     final bodyLower = body.toLowerCase();
-    final eventType = (item['eventType'] ?? item['data']?['type'] ?? item['type'] ?? item['category'] ?? '')
-        .toString()
-        .toUpperCase();
 
     // ── Party Plan specific event types ──────────────────────────────
     if (eventType.contains('PARTY_PLAN_REQUEST_RECEIVED') ||
@@ -911,11 +1364,6 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         titleLower.contains('user requested to join') ||
         bodyLower.contains('requested to join party plan')) {
       return _buildPartyPlanRequestReceivedCard(item);
-    } else if (eventType.contains('HOST_PAYMENT') ||
-        titleLower.contains('host payment') ||
-        bodyLower.contains('action required: pay deposit') ||
-        titleLower.contains('action required: pay deposit')) {
-      return _buildPartyPlanPostedCard(item);
     } else if (eventType.contains('PARTY_PLAN_REQUEST_ACCEPTED') ||
         eventType.contains('PARTICIPANT_PAYMENT_REQUIRED') ||
         titleLower.contains('invite accepted') ||
@@ -932,8 +1380,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         eventType.contains('PLAN_LIVE') ||
         titleLower.contains('party plan') ||
         titleLower.contains('plan is now live') ||
-        titleLower.contains("let's party at") ||
-        bodyLower.contains('pay deposit')) {
+        titleLower.contains("let's party at")) {
       return _buildPartyPlanPostedCard(item);
     }
     // ── Generic event types ─────────────────────────────────────
@@ -1014,8 +1461,13 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   void _openUpcomingNightInvite(dynamic item) {
     final payloadData = item['data'] is Map
         ? Map<String, dynamic>.from(item['data'])
-        : (item['metadata'] is Map ? Map<String, dynamic>.from(item['metadata']) : <String, dynamic>{});
-    final requestId = payloadData['requestId']?.toString() ?? item['entityId']?.toString() ?? '';
+        : (item['metadata'] is Map
+              ? Map<String, dynamic>.from(item['metadata'])
+              : <String, dynamic>{});
+    final requestId =
+        payloadData['requestId']?.toString() ??
+        item['entityId']?.toString() ??
+        '';
     final actor = item['actor'] ?? item['sender'];
     final venueName = payloadData['venueName']?.toString() ?? 'Venue';
     final date = payloadData['eventDate']?.toString() ?? 'Tonight';
@@ -1039,11 +1491,20 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   void _openUpcomingNightHostConfirm(dynamic item) {
     final payloadData = item['data'] is Map
         ? Map<String, dynamic>.from(item['data'])
-        : (item['metadata'] is Map ? Map<String, dynamic>.from(item['metadata']) : <String, dynamic>{});
-    final matchId = payloadData['matchId']?.toString() ?? item['entityId']?.toString() ?? '';
+        : (item['metadata'] is Map
+              ? Map<String, dynamic>.from(item['metadata'])
+              : <String, dynamic>{});
+    final matchId =
+        payloadData['matchId']?.toString() ??
+        item['entityId']?.toString() ??
+        '';
     final actor = item['actor'] ?? item['sender'];
-    final partnerName = actor is Map ? (actor['firstName'] ?? actor['name'] ?? 'Partner') : 'Partner';
-    final partnerPhoto = actor is Map ? (actor['profilePhotoUrl'] ?? actor['primaryPhoto']) : null;
+    final partnerName = actor is Map
+        ? (actor['firstName'] ?? actor['name'] ?? 'Partner')
+        : 'Partner';
+    final partnerPhoto = actor is Map
+        ? (actor['profilePhotoUrl'] ?? actor['primaryPhoto'])
+        : null;
     final venueName = payloadData['venueName']?.toString() ?? 'Venue';
     final date = payloadData['eventDate']?.toString() ?? 'Tonight';
     final time = payloadData['eventTime']?.toString() ?? '20:00';
@@ -1061,28 +1522,89 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     );
   }
 
-
   // ── P1. Party Plan Posted Card (Host sees this when their plan goes live) ───
   Widget _buildPartyPlanPostedCard(dynamic item) {
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
     final title = (item['title'] ?? '🎉 Your Party Plan').toString();
     final body = item['body']?.toString() ?? 'Your party plan is now live!';
     final timeStr = _formatTimeAgo(item['createdAt'] ?? item['updatedAt']);
-    final data = item['metadata'] is Map
-        ? Map<String, dynamic>.from(item['metadata'])
-        : (item['data'] is Map ? Map<String, dynamic>.from(item['data']) : <String, dynamic>{});
-    final partyPlanId = data['partyPlanId']?.toString() ??
-        data['planId']?.toString() ??
-        data['id']?.toString() ??
-        item['entityId']?.toString() ??
-        (item['id']?.toString().startsWith('party_plan_timeline_') == true
-            ? item['id'].toString().replaceFirst('party_plan_timeline_', '')
-            : item['id']?.toString()) ??
-        '';
-    final venueName = data['venueName']?.toString() ?? 'Venue';
-    final depositAmount = (data['depositAmount'] ?? 99.0).toDouble();
-    final hostPaymentStatus = (data['hostPaymentStatus'] ?? 'unpaid').toString().toLowerCase();
-    final isHostPaid = hostPaymentStatus == 'paid';
+
+    final Map<String, dynamic> data = item['data'] is Map
+        ? Map<String, dynamic>.from(item['data'])
+        : (item['metadata'] is Map
+            ? Map<String, dynamic>.from(item['metadata'])
+            : (item is Map
+                ? Map<String, dynamic>.from(item)
+                : <String, dynamic>{}));
+
+    String partyPlanId = (
+      data['partyPlanId'] ??
+      data['planId'] ??
+      data['id'] ??
+      (item['entityType'] == 'party_plan' ? item['entityId'] : null) ??
+      item['id'] ??
+      ''
+    ).toString().trim();
+
+    if (partyPlanId.startsWith('party_plan_timeline_')) {
+      partyPlanId = partyPlanId.replaceFirst('party_plan_timeline_', '');
+    }
+    if (partyPlanId.startsWith('pp_')) {
+      partyPlanId = partyPlanId.replaceFirst('pp_', '');
+    }
+
+    final String venueName =
+        data['venueName']?.toString().trim() ?? 'Venue';
+
+    final String primaryAction =
+        data['primaryAction']?.toString().trim() ?? '';
+
+    final String hostPaymentStatus =
+        (data['hostPaymentStatus'] ?? 'unpaid')
+            .toString()
+            .trim()
+            .toLowerCase();
+
+    final String hostRazorpayOrderId =
+        data['hostRazorpayOrderId']?.toString().trim() ?? '';
+
+    double depositAmount = 99.0;
+    final dynamic rawAmount = data['depositAmount'];
+    if (rawAmount is num) {
+      depositAmount = rawAmount.toDouble();
+    } else if (rawAmount is String) {
+      depositAmount = double.tryParse(rawAmount.trim()) ?? 99.0;
+    }
+
+    final bool isHostPaid =
+        hostPaymentStatus == 'paid' || hostPaymentStatus == 'completed';
+
+    final String eventType = (
+      item['eventType'] ??
+      data['eventType'] ??
+      data['type'] ??
+      item['type'] ??
+      item['actionType'] ??
+      item['category'] ??
+      ''
+    ).toString().toUpperCase();
+
+    // STEP 16: VERIFY THE ACTUAL RENDERER
+    debugPrint('>>> PARTY PLAN POSTED CARD RENDERED <<<');
+    debugPrint('eventType=$eventType');
+    debugPrint('partyPlanId=$partyPlanId');
+    debugPrint('primaryAction=$primaryAction');
+    debugPrint('hostPaymentStatus=$hostPaymentStatus');
+    debugPrint('depositAmount=$depositAmount');
+
+    // STEP 17: VERIFY BUTTON CONDITION
+    debugPrint(
+      'BUTTON CHECK: '
+      'partyPlanId=$partyPlanId '
+      'isHostPaid=$isHostPaid '
+      'primaryAction=$primaryAction '
+      'depositAmount=$depositAmount',
+    );
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
@@ -1100,7 +1622,11 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   ),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.celebration_rounded, color: Colors.white, size: 20),
+                child: const Icon(
+                  Icons.celebration_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -1130,14 +1656,30 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(timeStr, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5)),
-                  if (isUnread) ...[const SizedBox(height: 4), _buildUnreadDot()],
+                  Text(
+                    timeStr,
+                    style: const TextStyle(
+                      color: Color(0xFF94A3B8),
+                      fontSize: 10.5,
+                    ),
+                  ),
+                  if (isUnread) ...[
+                    const SizedBox(height: 4),
+                    _buildUnreadDot(),
+                  ],
                 ],
               ),
             ],
           ),
           const SizedBox(height: 8),
-          Text(body, style: const TextStyle(color: Color(0xFF475569), fontSize: 12.5, height: 1.4)),
+          Text(
+            body,
+            style: const TextStyle(
+              color: Color(0xFF475569),
+              fontSize: 12.5,
+              height: 1.4,
+            ),
+          ),
           const SizedBox(height: 12),
           if (partyPlanId.isNotEmpty)
             Row(
@@ -1145,81 +1687,50 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 if (!isHostPaid) ...[
                   Expanded(
                     child: ElevatedButton.icon(
-                      onPressed: () {
+                      onPressed: () async {
                         _markAsRead(item);
-                        SmartCheckoutSheet.show(
-                          context: context,
-                          title: 'Host Safety Deposit',
-                          subtitle: 'Pay safety commitment deposit for Party Plan at $venueName',
-                          itemPrice: depositAmount,
-                          onWalletPayment: () async {
-                            final res = await ApiService.payWithWallet(
-                              amount: depositAmount,
-                              planId: partyPlanId,
-                              paymentType: 'commitment_deposit',
-                            );
-                            if (res != null && res['success'] == true) {
-                              final txId = res['data']?['transactionId']?.toString() ?? 'wallet';
-                              final confirmRes = await ApiService.post(
-                                '/api/mobile/party-plans/$partyPlanId/host-pay',
-                                body: {
-                                  'razorpay_order_id': 'order_mock_wallet',
-                                  'razorpay_payment_id': 'wallet_$txId',
-                                  'razorpay_signature': 'mock_signature',
-                                },
-                              );
-                              if (confirmRes.statusCode == 200 && mounted) {
-                                _fetchNotifications();
-                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                                  content: Text('🎉 Host Safety Deposit Paid! Your plan is fully activated.'),
-                                  backgroundColor: Colors.green,
-                                ));
-                                return true;
-                              }
-                            }
-                            return false;
-                          },
-                          onDirectPayment: () async {
-                            final orderId = data['hostRazorpayOrderId']?.toString() ?? 'order_mock_direct';
-                            final confirmRes = await ApiService.post(
-                              '/api/mobile/party-plans/$partyPlanId/host-pay',
-                              body: {
-                                'razorpay_order_id': orderId,
-                                'razorpay_payment_id': 'pay_direct_${DateTime.now().millisecondsSinceEpoch}',
-                                'razorpay_signature': 'mock_signature',
-                              },
-                            );
-                            if (confirmRes.statusCode == 200 && mounted) {
-                              _fetchNotifications();
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                                content: Text('🎉 Host Safety Deposit Paid! Your plan is fully activated.'),
-                                backgroundColor: Colors.green,
-                              ));
-                            }
-                          },
-                          onHybridPayment: (shortfall) async {
-                            final confirmRes = await ApiService.post(
-                              '/api/mobile/party-plans/$partyPlanId/host-pay',
-                              body: {
-                                'razorpay_order_id': 'order_mock_hybrid',
-                                'razorpay_payment_id': 'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
-                                'razorpay_signature': 'mock_signature',
-                              },
-                            );
-                            if (confirmRes.statusCode == 200 && mounted) {
-                              _fetchNotifications();
-                            }
+                        if (partyPlanId.isEmpty || depositAmount <= 0) {
+                          debugPrint(
+                            'Error: Invalid partyPlanId or depositAmount for notification payment',
+                          );
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Payment details unavailable. Please try again later.',
+                              ),
+                              backgroundColor: Colors.redAccent,
+                            ),
+                          );
+                          return;
+                        }
+                        await _startHostRazorpayDirectPayment(
+                          partyPlanId: partyPlanId,
+                          venueName: venueName,
+                          orderId: hostRazorpayOrderId,
+                          depositAmount: depositAmount,
+                          onSuccess: () async {
+                            await _fetchNotifications();
                           },
                         );
                       },
-                      icon: const Icon(Icons.payment_rounded, size: 14, color: Colors.white),
+                      icon: const Icon(
+                        Icons.payment_rounded,
+                        size: 14,
+                        color: Colors.white,
+                      ),
                       label: Text(
-                        'Pay Deposit (₹${depositAmount.toStringAsFixed(0)})',
-                        style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold),
+                        'Pay Deposit (${depositAmount.toStringAsFixed(0)})',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF7C3AED),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                     ),
                   ),
@@ -1232,15 +1743,30 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => PartyPlanDetailScreen(plan: {'id': partyPlanId, ...data}),
+                          builder: (_) => PartyPlanDetailScreen(
+                            plan: {'id': partyPlanId, ...data},
+                          ),
                         ),
                       );
                     },
-                    icon: const Icon(Icons.open_in_new_rounded, size: 14, color: Color(0xFF7C3AED)),
-                    label: const Text('View Plan', style: TextStyle(color: Color(0xFF7C3AED), fontSize: 11.5, fontWeight: FontWeight.bold)),
+                    icon: const Icon(
+                      Icons.open_in_new_rounded,
+                      size: 14,
+                      color: Color(0xFF7C3AED),
+                    ),
+                    label: const Text(
+                      'View Plan',
+                      style: TextStyle(
+                        color: Color(0xFF7C3AED),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     style: OutlinedButton.styleFrom(
                       side: const BorderSide(color: Color(0xFF7C3AED)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                 ),
@@ -1258,11 +1784,15 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     final actorName = actor is Map
         ? '${actor['firstName'] ?? ''} ${actor['lastName'] ?? ''}'.trim()
         : (item['metadata']?['requesterName']?.toString() ?? 'Someone');
-    final body = item['body']?.toString() ?? '$actorName requested to join your Party Plan.';
+    final body =
+        item['body']?.toString() ??
+        '$actorName requested to join your Party Plan.';
     final timeStr = _formatTimeAgo(item['createdAt'] ?? item['updatedAt']);
     final data = item['metadata'] is Map
         ? Map<String, dynamic>.from(item['metadata'])
-        : (item['data'] is Map ? Map<String, dynamic>.from(item['data']) : <String, dynamic>{});
+        : (item['data'] is Map
+              ? Map<String, dynamic>.from(item['data'])
+              : <String, dynamic>{});
     final partyPlanId = data['partyPlanId']?.toString() ?? '';
 
     return _buildBaseCardContainer(
@@ -1284,13 +1814,30 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   children: [
                     const Text(
                       'PARTY PLAN',
-                      style: TextStyle(color: Color(0xFF7C3AED), fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.2),
+                      style: TextStyle(
+                        color: Color(0xFF7C3AED),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.2,
+                      ),
                     ),
                     Text(
-                      actorName.isNotEmpty ? '$actorName sent a request' : 'New Party Plan Request',
-                      style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold, fontSize: 13),
+                      actorName.isNotEmpty
+                          ? '$actorName sent a request'
+                          : 'New Party Plan Request',
+                      style: const TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
                     ),
-                    Text(timeStr, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5)),
+                    Text(
+                      timeStr,
+                      style: const TextStyle(
+                        color: Color(0xFF94A3B8),
+                        fontSize: 10.5,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1298,7 +1845,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          Text(body, style: const TextStyle(color: Color(0xFF475569), fontSize: 12, height: 1.4)),
+          Text(
+            body,
+            style: const TextStyle(
+              color: Color(0xFF475569),
+              fontSize: 12,
+              height: 1.4,
+            ),
+          ),
           const SizedBox(height: 12),
           Row(
             children: [
@@ -1308,9 +1862,18 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                     onPressed: () => _openUserProfile(actor),
                     style: OutlinedButton.styleFrom(
                       side: const BorderSide(color: Color(0xFFCBD5E1)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
-                    child: const Text('View Profile', style: TextStyle(color: Color(0xFF475569), fontSize: 11.5, fontWeight: FontWeight.bold)),
+                    child: const Text(
+                      'View Profile',
+                      style: TextStyle(
+                        color: Color(0xFF475569),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
               if (actor is Map) const SizedBox(width: 8),
@@ -1322,16 +1885,27 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => PartyPlanDetailScreen(plan: {'id': partyPlanId, ...data}),
+                          builder: (_) => PartyPlanDetailScreen(
+                            plan: {'id': partyPlanId, ...data},
+                          ),
                         ),
-                      );
+                      ).then((_) => _fetchNotifications());
                     }
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF7C3AED),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
-                  child: const Text('View Plan', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
+                  child: const Text(
+                    'View Plan',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -1344,13 +1918,74 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   // ── P3. Party Plan Request Accepted — Partner pays deposit ──────────────────
   Widget _buildPartyPlanRequestAcceptedCard(dynamic item) {
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
-    final body = item['body']?.toString() ?? 'Pay the safety deposit to lock your spot!';
+    final body =
+        item['body']?.toString() ?? 'Pay the safety deposit to lock your spot!';
     final timeStr = _formatTimeAgo(item['createdAt'] ?? item['updatedAt']);
     final data = item['metadata'] is Map
         ? Map<String, dynamic>.from(item['metadata'])
-        : (item['data'] is Map ? Map<String, dynamic>.from(item['data']) : <String, dynamic>{});
-    final requestId = data['requestId']?.toString() ?? item['entityId']?.toString() ?? '';
+        : (item['data'] is Map
+              ? Map<String, dynamic>.from(item['data'])
+              : <String, dynamic>{});
+    final requestId =
+        data['requestId']?.toString() ?? item['entityId']?.toString() ?? '';
+    final partyPlanId =
+        data['partyPlanId']?.toString() ??
+        data['planId']?.toString() ??
+        item['entityId']?.toString() ??
+        '';
     final venueName = data['venueName']?.toString() ?? 'Venue';
+    double depositAmount = 99.0;
+    final rawAmount =
+        data['depositAmount'] ??
+        item['depositAmount'] ??
+        data['amount'] ??
+        item['amount'];
+    if (rawAmount is num) {
+      depositAmount = rawAmount.toDouble();
+    } else if (rawAmount is String) {
+      depositAmount = double.tryParse(rawAmount) ?? 99.0;
+    }
+
+    final String joinerPaymentStatus = (
+      data['joinerPaymentStatus'] ??
+      data['paymentStatus'] ??
+      item['joinerPaymentStatus'] ??
+      item['paymentStatus'] ??
+      ''
+    ).toString().trim().toLowerCase();
+
+    final bool isPaid =
+        data['isPaid'] == true ||
+        item['isPaid'] == true ||
+        data['depositPaid'] == true ||
+        item['depositPaid'] == true ||
+        data['guestPaid'] == true ||
+        item['guestPaid'] == true ||
+        joinerPaymentStatus == 'paid' ||
+        joinerPaymentStatus == 'completed';
+
+    final String primaryAction = (
+      data['primaryAction'] ??
+      item['primaryAction'] ??
+      ''
+    ).toString().trim().toLowerCase();
+
+    final bool isChatAction = primaryAction == 'open chat' ||
+        primaryAction == 'chat' ||
+        data['chatUnlocked'] == true ||
+        item['chatUnlocked'] == true ||
+        data['isConfirmed'] == true ||
+        item['isConfirmed'] == true;
+
+    final bool isDepositPaid = isPaid || isChatAction;
+
+    final actor = item['actor'] ?? item['sender'] ?? item['actorUser'];
+    final actorId =
+        (actor is Map ? (actor['id'] ?? actor['userId']) : null)?.toString() ??
+        '';
+    final actorName =
+        (actor is Map ? (actor['firstName'] ?? actor['name'] ?? 'Partner') : 'Partner')
+            .toString();
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
@@ -1362,23 +1997,45 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             children: [
               Container(
                 padding: const EdgeInsets.all(10),
-                decoration: const BoxDecoration(color: Color(0xFFD1FAE5), shape: BoxShape.circle),
-                child: const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 20),
+                decoration: BoxDecoration(
+                  color: isDepositPaid ? const Color(0xFFE0E7FF) : const Color(0xFFD1FAE5),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isDepositPaid ? Icons.forum_rounded : Icons.check_circle_rounded,
+                  color: isDepositPaid ? LunaraTheme.electricViolet : const Color(0xFF10B981),
+                  size: 20,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'ACTION REQUIRED',
-                      style: TextStyle(color: Color(0xFF10B981), fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.2),
+                    Text(
+                      isDepositPaid ? 'MATCH CONFIRMED' : 'ACTION REQUIRED',
+                      style: TextStyle(
+                        color: isDepositPaid ? LunaraTheme.electricViolet : const Color(0xFF10B981),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.2,
+                      ),
                     ),
-                    const Text(
-                      '✅ Invite Accepted!',
-                      style: TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.w900, fontSize: 13.5),
+                    Text(
+                      isDepositPaid ? '🎉 Party Plan Confirmed!' : '✅ Invite Accepted!',
+                      style: const TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 13.5,
+                      ),
                     ),
-                    Text(timeStr, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5)),
+                    Text(
+                      timeStr,
+                      style: const TextStyle(
+                        color: Color(0xFF94A3B8),
+                        fontSize: 10.5,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1386,90 +2043,164 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          Text(body, style: const TextStyle(color: Color(0xFF475569), fontSize: 12.5, height: 1.4)),
+          Text(
+            isDepositPaid ? 'Your safety deposit is paid! Chat is unlocked.' : body,
+            style: const TextStyle(
+              color: Color(0xFF475569),
+              fontSize: 12.5,
+              height: 1.4,
+            ),
+          ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    _markAsRead(item);
-                    if (requestId.isNotEmpty) {
-                      SmartCheckoutSheet.show(
-                        context: context,
-                        title: 'Party Plan Safety Deposit',
-                        subtitle: 'Safety commitment deposit for Party Plan at $venueName',
-                        itemPrice: 99.0,
-                        onWalletPayment: () async {
-                          final res = await ApiService.payWithWallet(
-                            amount: 99.0,
-                            planId: data['partyPlanId']?.toString(),
-                            paymentType: 'commitment_deposit',
-                          );
-                          if (res != null && res['success'] == true) {
-                            final txId = res['data']?['transactionId']?.toString() ?? 'wallet';
+          if (isDepositPaid)
+            ElevatedButton.icon(
+              onPressed: () {
+                _markAsRead(item);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ChatScreen(
+                      user: {
+                        'id': actorId,
+                        'firstName': actorName,
+                        'contextType': 'party_plan',
+                        'planId': partyPlanId,
+                      },
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(
+                Icons.chat_bubble_rounded,
+                size: 14,
+                color: Colors.white,
+              ),
+              label: const Text(
+                'Chat',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: LunaraTheme.electricViolet,
+                minimumSize: const Size(double.infinity, 38),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      _markAsRead(item);
+                      if (requestId.isNotEmpty) {
+                        SmartCheckoutSheet.show(
+                          context: context,
+                          title: 'Party Plan Safety Deposit',
+                          subtitle:
+                              'Safety commitment deposit for Party Plan at $venueName',
+                          itemPrice: 99.0,
+                          onWalletPayment: () async {
+                            final res = await ApiService.payWithWallet(
+                              amount: 99.0,
+                              planId: data['partyPlanId']?.toString(),
+                              paymentType: 'commitment_deposit',
+                            );
+                            if (res != null && res['success'] == true) {
+                              final txId =
+                                  res['data']?['transactionId']?.toString() ??
+                                  'wallet';
+                              final confirmRes = await ApiService.post(
+                                '/api/mobile/party-plans/requests/$requestId/joiner-pay',
+                                body: {
+                                  'razorpay_order_id': 'order_mock_wallet',
+                                  'razorpay_payment_id': 'wallet_$txId',
+                                  'razorpay_signature': 'mock_signature',
+                                },
+                              );
+                              if (confirmRes.statusCode == 200 && mounted) {
+                                _fetchNotifications();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      '🎉 Safety Deposit Paid! Booking Confirmed!',
+                                    ),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                                return true;
+                              }
+                            }
+                            return false;
+                          },
+                          onDirectPayment: () async {
+                            _startRazorpayDirectPayment(
+                              requestId: requestId,
+                              venueName: venueName,
+                              onSuccess: () => _fetchNotifications(),
+                            );
+                          },
+                          onHybridPayment: (shortfall) async {
                             final confirmRes = await ApiService.post(
                               '/api/mobile/party-plans/requests/$requestId/joiner-pay',
                               body: {
-                                'razorpay_order_id': 'order_mock_wallet',
-                                'razorpay_payment_id': 'wallet_$txId',
+                                'razorpay_order_id': 'order_mock_hybrid',
+                                'razorpay_payment_id':
+                                    'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
                                 'razorpay_signature': 'mock_signature',
                               },
                             );
                             if (confirmRes.statusCode == 200 && mounted) {
                               _fetchNotifications();
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                                content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
-                                backgroundColor: Colors.green,
-                              ));
-                              return true;
                             }
-                          }
-                          return false;
-                        },
-                        onDirectPayment: () async {
-                          _startRazorpayDirectPayment(
-                            requestId: requestId,
-                            venueName: venueName,
-                            onSuccess: () => _fetchNotifications(),
-                          );
-                        },
-                        onHybridPayment: (shortfall) async {
-                          final confirmRes = await ApiService.post(
-                            '/api/mobile/party-plans/requests/$requestId/joiner-pay',
-                            body: {
-                              'razorpay_order_id': 'order_mock_hybrid',
-                              'razorpay_payment_id': 'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
-                              'razorpay_signature': 'mock_signature',
-                            },
-                          );
-                          if (confirmRes.statusCode == 200 && mounted) {
-                            _fetchNotifications();
-                          }
-                        },
-                      );
-                    }
-                  },
-                  icon: const Icon(Icons.payment_rounded, size: 14, color: Colors.white),
-                  label: const Text('Pay Deposit (₹99)', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF7C3AED),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          },
+                        );
+                      }
+                    },
+                    icon: const Icon(
+                      Icons.payment_rounded,
+                      size: 14,
+                      color: Colors.white,
+                    ),
+                    label: Text(
+                      'Pay Deposit (${depositAmount.toStringAsFixed(0)})',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF7C3AED),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton(
-                onPressed: () => _handleNotificationAction(item, 'DECLINE'),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFFCBD5E1)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                const SizedBox(width: 8),
+                OutlinedButton(
+                  onPressed: () => _handleNotificationAction(item, 'DECLINE'),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFFCBD5E1)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                  child: const Icon(
+                    Icons.close,
+                    color: Color(0xFF94A3B8),
+                    size: 18,
+                  ),
                 ),
-                child: const Icon(Icons.close, color: Color(0xFF94A3B8), size: 18),
-              ),
-            ],
-          ),
+              ],
+            ),
         ],
       ),
     );
@@ -1477,7 +2208,6 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
   // ── 1. Partner Request Card Component ──────────────────────────────────────
   Widget _buildPartnerRequestCard(dynamic item) {
-
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
     final actor = item['actor'] ?? item['sender'] ?? item['actorUserId'];
     final actorName = actor is Map
