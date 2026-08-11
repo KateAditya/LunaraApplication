@@ -3090,7 +3090,8 @@ export const initiateHostPayment = async (req: Request, res: Response): Promise<
                 order = await razorpay.orders.create(options);
             } catch (err: any) {
                 logger.error('Razorpay host order creation failed. Error details:', err);
-                return res.status(500).json({ success: false, message: 'Failed to create real Razorpay order', error: err });
+                res.status(500).json({ success: false, message: 'Failed to create real Razorpay order', error: err });
+                return;
             }
         } else {
             order = { id: `order_mock_${Date.now()}_${Math.random().toString(36).substring(2, 10)}` };
@@ -3154,7 +3155,8 @@ export const initiateJoinerPayment = async (req: Request, res: Response): Promis
                 order = await razorpay.orders.create(options);
             } catch (err: any) {
                 logger.error('Razorpay joiner order creation failed. Error details:', err);
-                return res.status(500).json({ success: false, message: 'Failed to create real Razorpay order', error: err });
+                res.status(500).json({ success: false, message: 'Failed to create real Razorpay order', error: err });
+                return;
             }
         } else {
             order = { id: `order_mock_${Date.now()}_${Math.random().toString(36).substring(2, 10)}` };
