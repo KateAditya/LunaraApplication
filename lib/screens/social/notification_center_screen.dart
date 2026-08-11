@@ -12,6 +12,7 @@ import '../../widgets/top_notification_banner.dart';
 import '../../widgets/upcoming_night_invite_dialog.dart';
 import '../../widgets/upcoming_night_host_confirm_dialog.dart';
 import 'party_plan_detail_screen.dart';
+import 'chat_screen.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
@@ -370,6 +371,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     }
   }
 
+  bool _isProcessingPayment = false;
+
   void _startRazorpayDirectPayment({
     required String requestId,
     required String venueName,
@@ -377,115 +380,162 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     double depositAmount = 99.0,
     required VoidCallback onSuccess,
   }) async {
-    final razorpayKey = 'rzp_test_123';
-    final isMock =
-        razorpayKey == 'rzp_test_123' ||
-        orderId == null ||
-        orderId.isEmpty ||
-        orderId.startsWith('order_mock_') ||
-        orderId.startsWith('pay_direct_');
-
-    if (isMock) {
-      final ordId = (orderId != null && orderId.isNotEmpty)
-          ? orderId
-          : 'order_mock_direct';
-      final confirmRes = await ApiService.post(
-        '/api/mobile/party-plans/requests/$requestId/joiner-pay',
-        body: {
-          'razorpay_order_id': ordId,
-          'razorpay_payment_id':
-              'pay_direct_${DateTime.now().millisecondsSinceEpoch}',
-          'razorpay_signature': 'mock_signature',
-        },
-      );
-      if (confirmRes.statusCode == 200 && mounted) {
-        onSuccess();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else if (mounted) {
-        String msg = 'Payment Failed';
-        try {
-          final b = jsonDecode(confirmRes.body);
-          msg = b['message'] ?? msg;
-        } catch (_) {}
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Payment Failed: $msg'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-      return;
-    }
-
-    late Razorpay razorpay;
-    razorpay = Razorpay();
-
-    razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (
-      PaymentSuccessResponse response,
-    ) async {
-      final confirmRes = await ApiService.post(
-        '/api/mobile/party-plans/requests/$requestId/joiner-pay',
-        body: {
-          'razorpay_order_id':
-              response.orderId ??
-              'order_rzp_${DateTime.now().millisecondsSinceEpoch}',
-          'razorpay_payment_id':
-              response.paymentId ??
-              'pay_${DateTime.now().millisecondsSinceEpoch}',
-          'razorpay_signature': response.signature ?? 'signature',
-        },
-      );
-      razorpay.clear();
-      if (confirmRes.statusCode == 200 && mounted) {
-        onSuccess();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    });
-
-    razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (
-      PaymentFailureResponse response,
-    ) {
-      razorpay.clear();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Payment Failed: ${response.message ?? 'Cancelled'}'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-    });
-
-    razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (
-      ExternalWalletResponse response,
-    ) {
-      razorpay.clear();
-    });
-
-    final options = <String, dynamic>{
-      'key': razorpayKey,
-      'amount': (depositAmount * 100).round(),
-      'name': 'Lunara Party Deposit',
-      'description': 'Safety deposit for Party Plan at $venueName',
-      if (orderId.isNotEmpty) 'order_id': orderId,
-      'prefill': {'contact': '9999999999', 'email': 'user@lunara.app'},
-      'theme': {'color': '#7C3AED'},
-    };
+    if (_isProcessingPayment) return;
+    setState(() => _isProcessingPayment = true);
 
     try {
-      razorpay.open(options);
+      String currentOrderId = (orderId ?? '').trim();
+      String razorpayKey = 'rzp_test_123';
+
+      if (currentOrderId.isEmpty) {
+        final initRes = await ApiService.initiateJoinerPayment(requestId);
+        if (initRes != null && initRes['success'] == true) {
+          currentOrderId = (initRes['razorpayOrderId'] ?? '').toString();
+          if (initRes['razorpayKeyId'] != null &&
+              initRes['razorpayKeyId'].toString().isNotEmpty) {
+            razorpayKey = initRes['razorpayKeyId'].toString();
+          }
+        }
+      }
+
+      final isMock =
+          razorpayKey == 'rzp_test_123' ||
+          razorpayKey == 'your_razorpay_key_id' ||
+          currentOrderId.isEmpty ||
+          currentOrderId.startsWith('order_mock_') ||
+          currentOrderId.startsWith('mock_') ||
+          currentOrderId.startsWith('pay_direct_');
+
+      if (isMock) {
+        final ordId =
+            currentOrderId.isNotEmpty ? currentOrderId : 'order_mock_direct';
+        final confirmRes = await ApiService.post(
+          '/api/mobile/party-plans/requests/$requestId/joiner-pay',
+          body: {
+            'razorpay_order_id': ordId,
+            'razorpay_payment_id':
+                'pay_direct_${DateTime.now().millisecondsSinceEpoch}',
+            'razorpay_signature': 'mock_signature',
+          },
+        );
+        if (mounted) setState(() => _isProcessingPayment = false);
+        if (confirmRes.statusCode == 200 && mounted) {
+          onSuccess();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else if (mounted) {
+          String msg = 'Payment Verification Failed';
+          try {
+            final b = jsonDecode(confirmRes.body);
+            msg = b['message'] ?? b['error'] ?? 'Server status ${confirmRes.statusCode}';
+          } catch (_) {
+            msg = 'Server status ${confirmRes.statusCode}';
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Payment Failed: $msg'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+        return;
+      }
+
+      late Razorpay razorpay;
+      razorpay = Razorpay();
+
+      razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (
+        PaymentSuccessResponse response,
+      ) async {
+        final confirmRes = await ApiService.post(
+          '/api/mobile/party-plans/requests/$requestId/joiner-pay',
+          body: {
+            'razorpay_order_id':
+                response.orderId ??
+                (currentOrderId.isNotEmpty
+                    ? currentOrderId
+                    : 'order_rzp_${DateTime.now().millisecondsSinceEpoch}'),
+            'razorpay_payment_id':
+                response.paymentId ??
+                'pay_${DateTime.now().millisecondsSinceEpoch}',
+            'razorpay_signature': response.signature ?? 'signature',
+          },
+        );
+        razorpay.clear();
+        if (mounted) setState(() => _isProcessingPayment = false);
+        if (confirmRes.statusCode == 200 && mounted) {
+          onSuccess();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else if (mounted) {
+          String msg = 'Payment Confirmation Failed';
+          try {
+            final b = jsonDecode(confirmRes.body);
+            msg = b['message'] ?? b['error'] ?? msg;
+          } catch (_) {}
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Payment Failed: $msg'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      });
+
+      razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (
+        PaymentFailureResponse response,
+      ) {
+        razorpay.clear();
+        if (mounted) setState(() => _isProcessingPayment = false);
+        if (mounted) {
+          final errText = (response.message != null &&
+                  response.message!.isNotEmpty &&
+                  response.message != 'Payment Failed')
+              ? response.message!
+              : 'Payment process cancelled or failed';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Payment Failed: $errText'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      });
+
+      razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (
+        ExternalWalletResponse response,
+      ) {
+        razorpay.clear();
+        if (mounted) setState(() => _isProcessingPayment = false);
+      });
+
+      final options = <String, dynamic>{
+        'key': razorpayKey,
+        'amount': (depositAmount * 100).round(),
+        'name': 'Lunara Party Deposit',
+        'description': 'Safety deposit for Party Plan at $venueName',
+        if (currentOrderId.isNotEmpty) 'order_id': currentOrderId,
+        'prefill': {'contact': '9999999999', 'email': 'user@lunara.app'},
+        'theme': {'color': '#7C3AED'},
+      };
+
+      try {
+        razorpay.open(options);
+      } catch (e) {
+        debugPrint('Error opening Razorpay: $e');
+        if (mounted) setState(() => _isProcessingPayment = false);
+      }
     } catch (e) {
-      debugPrint('Error opening Razorpay: $e');
+      debugPrint('Error initiating joiner deposit payment: $e');
+      if (mounted) setState(() => _isProcessingPayment = false);
     }
   }
 
@@ -496,164 +546,166 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     required double depositAmount,
     required Future<void> Function() onSuccess,
   }) async {
+    if (_isProcessingPayment) return;
+    setState(() => _isProcessingPayment = true);
+
+    String cleanPlanId = partyPlanId.trim();
+    if (cleanPlanId.startsWith('party_plan_timeline_')) {
+      cleanPlanId = cleanPlanId.replaceFirst('party_plan_timeline_', '');
+    }
+    if (cleanPlanId.startsWith('pp_')) {
+      cleanPlanId = cleanPlanId.replaceFirst('pp_', '');
+    }
+
     debugPrint(
-      'PARTY PLAN HOST PAYMENT START: '
-      'partyPlanId=$partyPlanId, '
-      'venueName=$venueName, '
-      'orderId=$orderId, '
-      'depositAmount=$depositAmount',
+      '[HOST_PAYMENT_START] Host Pay Deposit clicked: cleanPlanId=$cleanPlanId, venueName=$venueName, orderId=$orderId, depositAmount=$depositAmount',
     );
 
-    final razorpayKey = 'rzp_test_123';
-    final isMock =
-        orderId.startsWith('order_mock_') ||
-        orderId.startsWith('mock_') ||
-        orderId.startsWith('pay_direct_');
-
-    if (isMock) {
-      final ordId = orderId.isNotEmpty ? orderId : 'order_mock_direct';
-      final mockPaymentId =
-          'pay_direct_${DateTime.now().millisecondsSinceEpoch}';
-      final mockSignature = 'mock_signature';
-
-      debugPrint(
-        'PARTY PLAN HOST PAYMENT MOCK SENDING: '
-        'partyPlanId=$partyPlanId, orderId=$ordId, paymentId=$mockPaymentId',
-      );
-
-      final confirmRes = await ApiService.post(
-        '/api/mobile/party-plans/$partyPlanId/host-pay',
-        body: {
-          'razorpay_order_id': ordId,
-          'razorpay_payment_id': mockPaymentId,
-          'razorpay_signature': mockSignature,
-        },
-      );
-
-      debugPrint(
-        'PARTY PLAN HOST PAYMENT MOCK API STATUS: ${confirmRes.statusCode}, body: ${confirmRes.body}',
-      );
-
-      if (confirmRes.statusCode == 200 && mounted) {
-        await onSuccess();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              '🎉 Host Safety Deposit Paid! Your plan is fully activated.',
-            ),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else if (mounted) {
-        String msg = 'Payment Failed';
-        try {
-          final b = jsonDecode(confirmRes.body);
-          msg = b['message'] ?? msg;
-        } catch (_) {}
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Payment Failed: $msg'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-      return;
-    }
-
-    late Razorpay razorpay;
-    razorpay = Razorpay();
-
-    razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (
-      PaymentSuccessResponse response,
-    ) async {
-      final pId = response.paymentId ?? '';
-      final oId = response.orderId ?? orderId;
-      final sig = response.signature ?? '';
-
-      debugPrint(
-        'PARTY PLAN HOST RAZORPAY SUCCESS: '
-        'paymentId=$pId, orderId=$oId, signature=$sig',
-      );
-
-      final confirmRes = await ApiService.post(
-        '/api/mobile/party-plans/$partyPlanId/host-pay',
-        body: {
-          'razorpay_order_id': oId,
-          'razorpay_payment_id': pId,
-          'razorpay_signature': sig,
-        },
-      );
-
-      debugPrint(
-        'PARTY PLAN HOST PAY API STATUS: ${confirmRes.statusCode}, body: ${confirmRes.body}',
-      );
-
-      razorpay.clear();
-      if (confirmRes.statusCode == 200 && mounted) {
-        await onSuccess();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              '🎉 Host Safety Deposit Paid! Your plan is fully activated.',
-            ),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else if (mounted) {
-        String msg = 'Payment Confirmation Failed';
-        try {
-          final b = jsonDecode(confirmRes.body);
-          msg = b['message'] ?? msg;
-        } catch (_) {}
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Payment Failed: $msg'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-    });
-
-    razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (
-      PaymentFailureResponse response,
-    ) {
-      debugPrint(
-        'PARTY PLAN HOST RAZORPAY ERROR: code=${response.code}, message=${response.message}',
-      );
-      razorpay.clear();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Payment Failed: ${response.message ?? 'Cancelled'}'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-    });
-
-    razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (
-      ExternalWalletResponse response,
-    ) {
-      razorpay.clear();
-    });
-
-    final options = <String, dynamic>{
-      'key': razorpayKey,
-      'amount': (depositAmount * 100).round(),
-      'name': 'Lunara Host Deposit',
-      'description': 'Host safety deposit for Party Plan at $venueName',
-      'currency': 'INR',
-      if (orderId.isNotEmpty) 'order_id': orderId,
-      'prefill': {'contact': '9999999999', 'email': 'user@lunara.app'},
-      'theme': {'color': '#7C3AED'},
-    };
-
     try {
-      razorpay.open(options);
+      String currentOrderId = orderId.trim();
+      String razorpayKey = 'rzp_test_123';
+
+      if (currentOrderId.isEmpty ||
+          (!currentOrderId.startsWith('order_mock_') &&
+              !currentOrderId.startsWith('mock_') &&
+              !currentOrderId.startsWith('pay_direct_') &&
+              currentOrderId.length < 10)) {
+        debugPrint('[HOST_ORDER_CREATE] Creating Razorpay order via initiateHostPayment');
+        final initRes = await ApiService.initiateHostPayment(cleanPlanId);
+        debugPrint('[HOST_ORDER_RESPONSE] Order API response received: $initRes');
+        if (initRes != null && initRes['success'] == true) {
+          currentOrderId = (initRes['razorpayOrderId'] ?? '').toString();
+          if (initRes['razorpayKeyId'] != null &&
+              initRes['razorpayKeyId'].toString().isNotEmpty) {
+            razorpayKey = initRes['razorpayKeyId'].toString();
+          }
+        }
+      }
+
+      debugPrint(
+        '[HOST_ORDER_RESPONSE] Razorpay order ID received: orderId=$currentOrderId, keyId=$razorpayKey',
+      );
+
+      late Razorpay razorpay;
+      razorpay = Razorpay();
+
+      razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (
+        PaymentSuccessResponse response,
+      ) async {
+        final pId = response.paymentId ?? '';
+        final oId = response.orderId ?? currentOrderId;
+        final sig = response.signature ?? '';
+
+        debugPrint(
+          '[PAYMENT-06] Razorpay success callback: '
+          'paymentId=$pId, orderId=$oId, signature=$sig',
+        );
+
+        debugPrint('[PAYMENT-08] Verifying payment with backend');
+        final confirmRes = await ApiService.post(
+          '/api/mobile/party-plans/$cleanPlanId/host-pay',
+          body: {
+            'razorpay_order_id': oId,
+            'razorpay_payment_id': pId,
+            'razorpay_signature': sig,
+          },
+        );
+
+        debugPrint(
+          '[PAYMENT-09] Verification response: statusCode=${confirmRes.statusCode}, body=${confirmRes.body}',
+        );
+
+        razorpay.clear();
+        if (mounted) setState(() => _isProcessingPayment = false);
+        if (confirmRes.statusCode == 200 && mounted) {
+          debugPrint('[PAYMENT-10] Deposit status updated successfully');
+          await onSuccess();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  '🎉 Host Safety Deposit Paid! Your plan is fully activated.',
+                ),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        } else if (mounted) {
+          String msg = 'Payment Confirmation Failed';
+          try {
+            final b = jsonDecode(confirmRes.body);
+            msg = b['message'] ?? b['error'] ?? msg;
+          } catch (_) {}
+          if (msg == 'Payment Failed') msg = 'Verification failed (Status ${confirmRes.statusCode})';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Payment Failed: $msg'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      });
+
+      razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (
+        PaymentFailureResponse response,
+      ) {
+        debugPrint(
+          '[PAYMENT-07] Razorpay error callback: code=${response.code}, message=${response.message}',
+        );
+        razorpay.clear();
+        if (mounted) setState(() => _isProcessingPayment = false);
+        if (mounted) {
+          String errText = response.message ?? 'Payment process cancelled or failed';
+          if (errText.isEmpty || errText == 'Payment Failed') {
+            if (response.code == Razorpay.PAYMENT_CANCELLED) {
+              errText = 'Payment cancelled by user';
+            } else {
+              errText = 'Payment error (code ${response.code})';
+            }
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Payment Failed: $errText'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      });
+
+      razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (
+        ExternalWalletResponse response,
+      ) {
+        razorpay.clear();
+        if (mounted) setState(() => _isProcessingPayment = false);
+      });
+
+      final options = <String, dynamic>{
+        'key': razorpayKey,
+        'amount': (depositAmount * 100).round(),
+        'name': 'Lunara Host Deposit',
+        'description': 'Host safety deposit for Party Plan at $venueName',
+        'currency': 'INR',
+        if (currentOrderId.isNotEmpty) 'order_id': currentOrderId,
+        'prefill': {'contact': '9999999999', 'email': 'user@lunara.app'},
+        'theme': {'color': '#7C3AED'},
+      };
+
+      debugPrint(
+        '[PAYMENT-05] Opening Razorpay checkout: key=$razorpayKey, amount=${options['amount']}, orderId=$currentOrderId',
+      );
+
+      try {
+        razorpay.open(options);
+      } catch (e) {
+        debugPrint('Error opening Razorpay for Host Payment: $e');
+        if (mounted) setState(() => _isProcessingPayment = false);
+      }
     } catch (e) {
-      debugPrint('Error opening Razorpay for Host Payment: $e');
+      debugPrint('Error initiating host deposit payment: $e');
+      if (mounted) setState(() => _isProcessingPayment = false);
     }
   }
+
 
   // ── Tab & Category Filter Logic ──────────────────────────────────────────────
   List<dynamic> get _filteredNotifications {
@@ -741,20 +793,40 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               (currentData['primaryAction'] ?? '').toString().toLowerCase();
           final currentHostStatus =
               (currentData['hostPaymentStatus'] ?? '').toString().toLowerCase();
-          final isCurrentActivePayDeposit = currentPrimaryAction == 'pay deposit' &&
-              currentHostStatus != 'paid' &&
-              currentHostStatus != 'completed';
+          final currentJoinerStatus =
+              (currentData['joinerPaymentStatus'] ?? '').toString().toLowerCase();
+          final isCurrentPaidOrConfirmed =
+              currentPrimaryAction == 'open chat' ||
+              currentPrimaryAction == 'chat' ||
+              currentHostStatus == 'paid' ||
+              currentJoinerStatus == 'paid' ||
+              currentData['isPaid'] == true ||
+              currentData['depositPaid'] == true;
+
+          final isCurrentActivePayDeposit =
+              (currentPrimaryAction == 'pay deposit' || currentPrimaryAction == 'pay now') &&
+              !isCurrentPaidOrConfirmed;
 
           final existingPrimaryAction =
               (existingData['primaryAction'] ?? '').toString().toLowerCase();
           final existingHostStatus =
               (existingData['hostPaymentStatus'] ?? '').toString().toLowerCase();
-          final isExistingActivePayDeposit =
-              existingPrimaryAction == 'pay deposit' &&
-                  existingHostStatus != 'paid' &&
-                  existingHostStatus != 'completed';
+          final existingJoinerStatus =
+              (existingData['joinerPaymentStatus'] ?? '').toString().toLowerCase();
+          final isExistingPaidOrConfirmed =
+              existingPrimaryAction == 'open chat' ||
+              existingPrimaryAction == 'chat' ||
+              existingHostStatus == 'paid' ||
+              existingJoinerStatus == 'paid' ||
+              existingData['isPaid'] == true ||
+              existingData['depositPaid'] == true;
 
-          if (isCurrentActivePayDeposit && !isExistingActivePayDeposit) {
+          final isExistingActivePayDeposit =
+              (existingPrimaryAction == 'pay deposit' || existingPrimaryAction == 'pay now') &&
+              !isExistingPaidOrConfirmed;
+
+          if ((isCurrentActivePayDeposit && !isExistingActivePayDeposit) ||
+              (isCurrentPaidOrConfirmed && !isExistingPaidOrConfirmed)) {
             entityMap[groupKey] = item;
             final idx = deduplicatedList.indexOf(existingItem);
             if (idx != -1) {
@@ -1249,7 +1321,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             type.contains('party_plan_timeline') ||
             type.contains('host_payment') ||
             type.contains('host_deposit')) &&
-        primaryAction == 'pay deposit' &&
+        (primaryAction == 'pay deposit' || primaryAction == 'pay now') &&
         hostPaymentStatus != 'paid' &&
         hostPaymentStatus != 'completed';
 
@@ -1262,7 +1334,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     final bool isHostPayDepositFallback =
         bodyStr.contains('action required: pay deposit') &&
         data['partyPlanId'] != null &&
-        primaryAction == 'pay deposit' &&
+        (primaryAction == 'pay deposit' || primaryAction == 'pay now') &&
         hostPaymentStatus != 'paid' &&
         hostPaymentStatus != 'completed';
 
@@ -1465,8 +1537,21 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 ? Map<String, dynamic>.from(item)
                 : <String, dynamic>{}));
 
-    final String partyPlanId =
-        data['partyPlanId']?.toString().trim() ?? '';
+    String partyPlanId = (
+      data['partyPlanId'] ??
+      data['planId'] ??
+      data['id'] ??
+      (item['entityType'] == 'party_plan' ? item['entityId'] : null) ??
+      item['id'] ??
+      ''
+    ).toString().trim();
+
+    if (partyPlanId.startsWith('party_plan_timeline_')) {
+      partyPlanId = partyPlanId.replaceFirst('party_plan_timeline_', '');
+    }
+    if (partyPlanId.startsWith('pp_')) {
+      partyPlanId = partyPlanId.replaceFirst('pp_', '');
+    }
 
     final String venueName =
         data['venueName']?.toString().trim() ?? 'Venue';
@@ -1602,7 +1687,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 if (!isHostPaid) ...[
                   Expanded(
                     child: ElevatedButton.icon(
-                      onPressed: () {
+                      onPressed: () async {
                         _markAsRead(item);
                         if (partyPlanId.isEmpty || depositAmount <= 0) {
                           debugPrint(
@@ -1618,71 +1703,13 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                           );
                           return;
                         }
-                        SmartCheckoutSheet.show(
-                          context: context,
-                          title: 'Host Safety Deposit',
-                          subtitle:
-                              'Pay safety commitment deposit for Party Plan at $venueName',
-                          itemPrice: depositAmount,
-                          onWalletPayment: () async {
-                            final res = await ApiService.payWithWallet(
-                              amount: depositAmount,
-                              planId: partyPlanId,
-                              paymentType: 'commitment_deposit',
-                            );
-                            if (res != null && res['success'] == true) {
-                              final txId =
-                                  res['data']?['transactionId']?.toString() ??
-                                  'wallet';
-                              final confirmRes = await ApiService.post(
-                                '/api/mobile/party-plans/$partyPlanId/host-pay',
-                                body: {
-                                  'razorpay_order_id': 'order_mock_wallet',
-                                  'razorpay_payment_id': 'wallet_$txId',
-                                  'razorpay_signature': 'mock_signature',
-                                },
-                              );
-                              if (confirmRes.statusCode == 200 && mounted) {
-                                await _fetchNotifications();
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        '🎉 Host Safety Deposit Paid! Your plan is fully activated.',
-                                      ),
-                                      backgroundColor: Colors.green,
-                                    ),
-                                  );
-                                }
-                                return true;
-                              }
-                            }
-                            return false;
-                          },
-                          onDirectPayment: () async {
-                            await _startHostRazorpayDirectPayment(
-                              partyPlanId: partyPlanId,
-                              venueName: venueName,
-                              orderId: hostRazorpayOrderId,
-                              depositAmount: depositAmount,
-                              onSuccess: () async {
-                                await _fetchNotifications();
-                              },
-                            );
-                          },
-                          onHybridPayment: (shortfall) async {
-                            final confirmRes = await ApiService.post(
-                              '/api/mobile/party-plans/$partyPlanId/host-pay',
-                              body: {
-                                'razorpay_order_id': 'order_mock_hybrid',
-                                'razorpay_payment_id':
-                                    'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
-                                'razorpay_signature': 'mock_signature',
-                              },
-                            );
-                            if (confirmRes.statusCode == 200 && mounted) {
-                              await _fetchNotifications();
-                            }
+                        await _startHostRazorpayDirectPayment(
+                          partyPlanId: partyPlanId,
+                          venueName: venueName,
+                          orderId: hostRazorpayOrderId,
+                          depositAmount: depositAmount,
+                          onSuccess: () async {
+                            await _fetchNotifications();
                           },
                         );
                       },
@@ -1862,7 +1889,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                             plan: {'id': partyPlanId, ...data},
                           ),
                         ),
-                      );
+                      ).then((_) => _fetchNotifications());
                     }
                   },
                   style: ElevatedButton.styleFrom(
@@ -1901,6 +1928,11 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               : <String, dynamic>{});
     final requestId =
         data['requestId']?.toString() ?? item['entityId']?.toString() ?? '';
+    final partyPlanId =
+        data['partyPlanId']?.toString() ??
+        data['planId']?.toString() ??
+        item['entityId']?.toString() ??
+        '';
     final venueName = data['venueName']?.toString() ?? 'Venue';
     double depositAmount = 99.0;
     final rawAmount =
@@ -1914,6 +1946,47 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       depositAmount = double.tryParse(rawAmount) ?? 99.0;
     }
 
+    final String joinerPaymentStatus = (
+      data['joinerPaymentStatus'] ??
+      data['paymentStatus'] ??
+      item['joinerPaymentStatus'] ??
+      item['paymentStatus'] ??
+      ''
+    ).toString().trim().toLowerCase();
+
+    final bool isPaid =
+        data['isPaid'] == true ||
+        item['isPaid'] == true ||
+        data['depositPaid'] == true ||
+        item['depositPaid'] == true ||
+        data['guestPaid'] == true ||
+        item['guestPaid'] == true ||
+        joinerPaymentStatus == 'paid' ||
+        joinerPaymentStatus == 'completed';
+
+    final String primaryAction = (
+      data['primaryAction'] ??
+      item['primaryAction'] ??
+      ''
+    ).toString().trim().toLowerCase();
+
+    final bool isChatAction = primaryAction == 'open chat' ||
+        primaryAction == 'chat' ||
+        data['chatUnlocked'] == true ||
+        item['chatUnlocked'] == true ||
+        data['isConfirmed'] == true ||
+        item['isConfirmed'] == true;
+
+    final bool isDepositPaid = isPaid || isChatAction;
+
+    final actor = item['actor'] ?? item['sender'] ?? item['actorUser'];
+    final actorId =
+        (actor is Map ? (actor['id'] ?? actor['userId']) : null)?.toString() ??
+        '';
+    final actorName =
+        (actor is Map ? (actor['firstName'] ?? actor['name'] ?? 'Partner') : 'Partner')
+            .toString();
+
     return _buildBaseCardContainer(
       isUnread: isUnread,
       onTap: () => _markAsRead(item),
@@ -1924,13 +1997,13 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             children: [
               Container(
                 padding: const EdgeInsets.all(10),
-                decoration: const BoxDecoration(
-                  color: Color(0xFFD1FAE5),
+                decoration: BoxDecoration(
+                  color: isDepositPaid ? const Color(0xFFE0E7FF) : const Color(0xFFD1FAE5),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
-                  Icons.check_circle_rounded,
-                  color: Color(0xFF10B981),
+                child: Icon(
+                  isDepositPaid ? Icons.forum_rounded : Icons.check_circle_rounded,
+                  color: isDepositPaid ? LunaraTheme.electricViolet : const Color(0xFF10B981),
                   size: 20,
                 ),
               ),
@@ -1939,18 +2012,18 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'ACTION REQUIRED',
+                    Text(
+                      isDepositPaid ? 'MATCH CONFIRMED' : 'ACTION REQUIRED',
                       style: TextStyle(
-                        color: Color(0xFF10B981),
+                        color: isDepositPaid ? LunaraTheme.electricViolet : const Color(0xFF10B981),
                         fontSize: 9,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 1.2,
                       ),
                     ),
-                    const Text(
-                      '✅ Invite Accepted!',
-                      style: TextStyle(
+                    Text(
+                      isDepositPaid ? '🎉 Party Plan Confirmed!' : '✅ Invite Accepted!',
+                      style: const TextStyle(
                         color: Color(0xFF0F172A),
                         fontWeight: FontWeight.w900,
                         fontSize: 13.5,
@@ -1971,7 +2044,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            body,
+            isDepositPaid ? 'Your safety deposit is paid! Chat is unlocked.' : body,
             style: const TextStyle(
               color: Color(0xFF475569),
               fontSize: 12.5,
@@ -1979,115 +2052,155 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    _markAsRead(item);
-                    if (requestId.isNotEmpty) {
-                      SmartCheckoutSheet.show(
-                        context: context,
-                        title: 'Party Plan Safety Deposit',
-                        subtitle:
-                            'Safety commitment deposit for Party Plan at $venueName',
-                        itemPrice: 99.0,
-                        onWalletPayment: () async {
-                          final res = await ApiService.payWithWallet(
-                            amount: 99.0,
-                            planId: data['partyPlanId']?.toString(),
-                            paymentType: 'commitment_deposit',
-                          );
-                          if (res != null && res['success'] == true) {
-                            final txId =
-                                res['data']?['transactionId']?.toString() ??
-                                'wallet';
+          if (isDepositPaid)
+            ElevatedButton.icon(
+              onPressed: () {
+                _markAsRead(item);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ChatScreen(
+                      user: {
+                        'id': actorId,
+                        'firstName': actorName,
+                        'contextType': 'party_plan',
+                        'planId': partyPlanId,
+                      },
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(
+                Icons.chat_bubble_rounded,
+                size: 14,
+                color: Colors.white,
+              ),
+              label: const Text(
+                'Chat',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: LunaraTheme.electricViolet,
+                minimumSize: const Size(double.infinity, 38),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      _markAsRead(item);
+                      if (requestId.isNotEmpty) {
+                        SmartCheckoutSheet.show(
+                          context: context,
+                          title: 'Party Plan Safety Deposit',
+                          subtitle:
+                              'Safety commitment deposit for Party Plan at $venueName',
+                          itemPrice: 99.0,
+                          onWalletPayment: () async {
+                            final res = await ApiService.payWithWallet(
+                              amount: 99.0,
+                              planId: data['partyPlanId']?.toString(),
+                              paymentType: 'commitment_deposit',
+                            );
+                            if (res != null && res['success'] == true) {
+                              final txId =
+                                  res['data']?['transactionId']?.toString() ??
+                                  'wallet';
+                              final confirmRes = await ApiService.post(
+                                '/api/mobile/party-plans/requests/$requestId/joiner-pay',
+                                body: {
+                                  'razorpay_order_id': 'order_mock_wallet',
+                                  'razorpay_payment_id': 'wallet_$txId',
+                                  'razorpay_signature': 'mock_signature',
+                                },
+                              );
+                              if (confirmRes.statusCode == 200 && mounted) {
+                                _fetchNotifications();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      '🎉 Safety Deposit Paid! Booking Confirmed!',
+                                    ),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                                return true;
+                              }
+                            }
+                            return false;
+                          },
+                          onDirectPayment: () async {
+                            _startRazorpayDirectPayment(
+                              requestId: requestId,
+                              venueName: venueName,
+                              onSuccess: () => _fetchNotifications(),
+                            );
+                          },
+                          onHybridPayment: (shortfall) async {
                             final confirmRes = await ApiService.post(
                               '/api/mobile/party-plans/requests/$requestId/joiner-pay',
                               body: {
-                                'razorpay_order_id': 'order_mock_wallet',
-                                'razorpay_payment_id': 'wallet_$txId',
+                                'razorpay_order_id': 'order_mock_hybrid',
+                                'razorpay_payment_id':
+                                    'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
                                 'razorpay_signature': 'mock_signature',
                               },
                             );
                             if (confirmRes.statusCode == 200 && mounted) {
                               _fetchNotifications();
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    '🎉 Safety Deposit Paid! Booking Confirmed!',
-                                  ),
-                                  backgroundColor: Colors.green,
-                                ),
-                              );
-                              return true;
                             }
-                          }
-                          return false;
-                        },
-                        onDirectPayment: () async {
-                          _startRazorpayDirectPayment(
-                            requestId: requestId,
-                            venueName: venueName,
-                            onSuccess: () => _fetchNotifications(),
-                          );
-                        },
-                        onHybridPayment: (shortfall) async {
-                          final confirmRes = await ApiService.post(
-                            '/api/mobile/party-plans/requests/$requestId/joiner-pay',
-                            body: {
-                              'razorpay_order_id': 'order_mock_hybrid',
-                              'razorpay_payment_id':
-                                  'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
-                              'razorpay_signature': 'mock_signature',
-                            },
-                          );
-                          if (confirmRes.statusCode == 200 && mounted) {
-                            _fetchNotifications();
-                          }
-                        },
-                      );
-                    }
-                  },
-                  icon: const Icon(
-                    Icons.payment_rounded,
-                    size: 14,
-                    color: Colors.white,
-                  ),
-                  label: Text(
-                    'Pay Deposit (${depositAmount.toStringAsFixed(0)})',
-                    style: const TextStyle(
+                          },
+                        );
+                      }
+                    },
+                    icon: const Icon(
+                      Icons.payment_rounded,
+                      size: 14,
                       color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
+                    ),
+                    label: Text(
+                      'Pay Deposit (${depositAmount.toStringAsFixed(0)})',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF7C3AED),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF7C3AED),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton(
+                  onPressed: () => _handleNotificationAction(item, 'DECLINE'),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFFCBD5E1)),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                  child: const Icon(
+                    Icons.close,
+                    color: Color(0xFF94A3B8),
+                    size: 18,
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton(
-                onPressed: () => _handleNotificationAction(item, 'DECLINE'),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFFCBD5E1)),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                ),
-                child: const Icon(
-                  Icons.close,
-                  color: Color(0xFF94A3B8),
-                  size: 18,
-                ),
-              ),
-            ],
-          ),
+              ],
+            ),
         ],
       ),
     );

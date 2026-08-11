@@ -673,44 +673,17 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   }
 
   void _startRazorpayDirectPayment(String reqId, String venueName, {String? orderId, double depositAmount = 99.0}) async {
-    final razorpayKey = 'rzp_test_123';
-    final isMock = razorpayKey == 'rzp_test_123' ||
-        orderId == null ||
-        orderId.isEmpty ||
-        orderId.startsWith('order_mock_') ||
-        orderId.startsWith('pay_direct_');
+    String currentOrderId = (orderId ?? '').trim();
+    String razorpayKey = 'rzp_test_123';
 
-    if (isMock) {
-      final ordId = (orderId != null && orderId.isNotEmpty) ? orderId : 'order_mock_direct';
-      final confirmRes = await ApiService.post('/api/mobile/party-plans/requests/$reqId/joiner-pay', body: {
-        'razorpay_order_id': ordId,
-        'razorpay_payment_id': 'pay_direct_${DateTime.now().millisecondsSinceEpoch}',
-        'razorpay_signature': 'mock_signature',
-      });
-      if (confirmRes.statusCode == 200 && mounted) {
-        setState(() {
-          _requestStatus = 'confirmed';
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else if (mounted) {
-        String msg = 'Payment Failed';
-        try {
-          final b = jsonDecode(confirmRes.body);
-          msg = b['message'] ?? msg;
-        } catch (_) {}
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Payment Failed: $msg'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
+    if (currentOrderId.isEmpty) {
+      final initRes = await ApiService.initiateJoinerPayment(reqId);
+      if (initRes != null && initRes['success'] == true) {
+        currentOrderId = (initRes['razorpayOrderId'] ?? '').toString();
+        if (initRes['razorpayKeyId'] != null && initRes['razorpayKeyId'].toString().isNotEmpty) {
+          razorpayKey = initRes['razorpayKeyId'].toString();
+        }
       }
-      return;
     }
 
     late Razorpay razorpay;
@@ -718,7 +691,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
 
     razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (PaymentSuccessResponse response) async {
       final confirmRes = await ApiService.post('/api/mobile/party-plans/requests/$reqId/joiner-pay', body: {
-        'razorpay_order_id': response.orderId ?? 'order_rzp_${DateTime.now().millisecondsSinceEpoch}',
+        'razorpay_order_id': response.orderId ?? (currentOrderId.isNotEmpty ? currentOrderId : 'order_rzp_${DateTime.now().millisecondsSinceEpoch}'),
         'razorpay_payment_id': response.paymentId ?? 'pay_${DateTime.now().millisecondsSinceEpoch}',
         'razorpay_signature': response.signature ?? 'signature',
       });
@@ -733,15 +706,30 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
             backgroundColor: Colors.green,
           ),
         );
+      } else if (mounted) {
+        String msg = 'Payment Confirmation Failed';
+        try {
+          final b = jsonDecode(confirmRes.body);
+          msg = b['message'] ?? b['error'] ?? msg;
+        } catch (_) {}
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Payment Failed: $msg'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
       }
     });
 
     razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse response) {
       razorpay.clear();
       if (mounted) {
+        final errText = (response.message != null && response.message!.isNotEmpty && response.message != 'Payment Failed')
+            ? response.message!
+            : 'Payment process cancelled or failed';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Payment Failed: ${response.message ?? 'Cancelled'}'),
+            content: Text('Payment Failed: $errText'),
             backgroundColor: Colors.redAccent,
           ),
         );
@@ -757,7 +745,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       'amount': (depositAmount * 100).round(),
       'name': 'Lunara Party Deposit',
       'description': 'Safety deposit for Party Plan at $venueName',
-      if (orderId.isNotEmpty) 'order_id': orderId,
+      if (currentOrderId.isNotEmpty) 'order_id': currentOrderId,
       'prefill': {
         'contact': '9999999999',
         'email': 'user@lunara.app',
