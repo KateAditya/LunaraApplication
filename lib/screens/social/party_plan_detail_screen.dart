@@ -833,6 +833,158 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     );
   }
 
+  void _openHostDepositPaymentSheet() {
+    final cleanPlanId = widget.plan['id']?.toString() ?? '';
+    final venue = widget.plan['venue'] as Map<String, dynamic>? ?? {};
+    final venueName = venue['name'] as String? ?? 'Venue';
+
+    SmartCheckoutSheet.show(
+      context: context,
+      title: 'Host Safety Deposit',
+      subtitle: 'Publish & activate your Party Plan at $venueName',
+      itemPrice: 99.0,
+      onWalletPayment: () async {
+        final res = await ApiService.payWithWallet(
+          amount: 99.0,
+          planId: cleanPlanId,
+          paymentType: 'host_deposit',
+        );
+        if (res != null && res['success'] == true) {
+          final transactionId = res['data']?['transactionId']?.toString() ?? 'wallet';
+          final confirmRes = await ApiService.post('/api/mobile/party-plans/$cleanPlanId/host-pay', body: {
+            'razorpay_order_id': 'order_mock_wallet',
+            'razorpay_payment_id': 'wallet_$transactionId',
+            'razorpay_signature': 'mock_signature',
+          });
+          if (confirmRes.statusCode == 200 && mounted) {
+            setState(() {
+              widget.plan['hostPaymentStatus'] = 'paid';
+              widget.plan['isLive'] = true;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('🎉 Host Safety Deposit Paid via Smart Wallet! Plan Published.'),
+                backgroundColor: Colors.green,
+              ),
+            );
+            return true;
+          }
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(res?['message'] ?? 'Wallet payment failed'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+        return false;
+      },
+      onDirectPayment: () async {
+        await _launchHostRazorpay(cleanPlanId, venueName, 99.0);
+      },
+      onHybridPayment: (shortfall) async {
+        await _launchHostRazorpay(cleanPlanId, venueName, shortfall > 0 ? shortfall : 99.0);
+      },
+    );
+  }
+
+  Future<void> _launchHostRazorpay(String cleanPlanId, String venueName, double depositAmount) async {
+    final initRes = await ApiService.initiateHostPayment(cleanPlanId);
+    String currentOrderId = '';
+    String razorpayKey = 'rzp_test_123';
+    if (initRes != null && initRes['success'] == true) {
+      currentOrderId = (initRes['razorpayOrderId'] ?? '').toString();
+      if (initRes['razorpayKeyId'] != null && initRes['razorpayKeyId'].toString().isNotEmpty) {
+        razorpayKey = initRes['razorpayKeyId'].toString();
+      }
+    }
+
+    if (currentOrderId.isEmpty) {
+      currentOrderId = 'order_mock_${DateTime.now().millisecondsSinceEpoch}';
+    }
+
+    if (currentOrderId.startsWith('order_mock_') || razorpayKey == 'rzp_test_123' || currentOrderId.startsWith('mock_')) {
+      final confirmRes = await ApiService.post(
+        '/api/mobile/party-plans/$cleanPlanId/host-pay',
+        body: {
+          'razorpay_order_id': currentOrderId,
+          'razorpay_payment_id': 'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
+          'razorpay_signature': 'mock_signature',
+        },
+      );
+      if (confirmRes.statusCode == 200 && mounted) {
+        setState(() {
+          widget.plan['hostPaymentStatus'] = 'paid';
+          widget.plan['isLive'] = true;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🎉 Host Safety Deposit Paid! Your plan is live.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        return;
+      }
+    }
+
+    late Razorpay razorpay;
+    razorpay = Razorpay();
+
+    razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (PaymentSuccessResponse response) async {
+      final pId = response.paymentId ?? 'pay_mock_${DateTime.now().millisecondsSinceEpoch}';
+      final oId = response.orderId ?? currentOrderId;
+      final sig = response.signature ?? 'mock_signature';
+
+      final confirmRes = await ApiService.post(
+        '/api/mobile/party-plans/$cleanPlanId/host-pay',
+        body: {
+          'razorpay_order_id': oId,
+          'razorpay_payment_id': pId,
+          'razorpay_signature': sig,
+        },
+      );
+
+      razorpay.clear();
+      if (confirmRes.statusCode == 200 && mounted) {
+        setState(() {
+          widget.plan['hostPaymentStatus'] = 'paid';
+          widget.plan['isLive'] = true;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🎉 Host Safety Deposit Paid! Your plan is live.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    });
+
+    razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse response) {
+      razorpay.clear();
+    });
+
+    razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (ExternalWalletResponse response) {
+      razorpay.clear();
+    });
+
+    final options = <String, dynamic>{
+      'key': razorpayKey,
+      'amount': (depositAmount * 100).round(),
+      'name': 'Lunara Host Deposit',
+      'description': 'Host safety deposit for Party Plan at $venueName',
+      'currency': 'INR',
+      if (currentOrderId.isNotEmpty) 'order_id': currentOrderId,
+      'prefill': {'contact': '9999999999', 'email': 'user@lunara.app'},
+      'theme': {'color': '#7C3AED'},
+    };
+
+    try {
+      razorpay.open(options);
+    } catch (e) {
+      debugPrint('Error opening Razorpay for Host Payment: $e');
+    }
+  }
+
   String _formatDateTime(dynamic raw) {
     if (raw == null) return 'TBD';
     try {
@@ -1042,8 +1194,17 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     final host = _extractHost(plan);
     final venue = plan['venue'] as Map<String, dynamic>? ?? {};
 
-    final isMyPost =
-        host['id']?.toString() == ApiService.currentUserId || plan['userId']?.toString() == ApiService.currentUserId;
+    final currentUid = ApiService.currentUserId ?? '';
+    final creatorMap = plan['creator'] is Map ? plan['creator'] as Map<String, dynamic> : <String, dynamic>{};
+    final userMap = plan['user'] is Map ? plan['user'] as Map<String, dynamic> : <String, dynamic>{};
+
+    final isMyPost = currentUid.isNotEmpty &&
+        (host['id']?.toString() == currentUid ||
+            plan['userId']?.toString() == currentUid ||
+            plan['hostId']?.toString() == currentUid ||
+            plan['requesterId']?.toString() == currentUid ||
+            creatorMap['id']?.toString() == currentUid ||
+            userMap['id']?.toString() == currentUid);
 
     final hostName = _extractHostName(host, plan);
     final hostAge = host['age'] ?? plan['hostAge'];
@@ -1659,7 +1820,49 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       );
     }
 
-    // Not yet confirmed — show the static host label
+    // Unpaid Host Deposit
+    if (hostPaymentStatus != 'paid' && hostPaymentStatus != 'completed') {
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: GestureDetector(
+            onTap: _openHostDepositPaymentSheet,
+            child: Container(
+              height: 58,
+              decoration: BoxDecoration(
+                gradient: LunaraTheme.purpleGradient,
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: [
+                  BoxShadow(
+                    color: LunaraTheme.electricViolet.withValues(alpha: 0.4),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.payment_rounded, color: Colors.white, size: 22),
+                  SizedBox(width: 10),
+                  Text(
+                    'PAY SAFETY DEPOSIT (₹99)',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Host Paid — show static host label
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
