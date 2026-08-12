@@ -189,7 +189,7 @@ export const createSubscriptionOrder = async (req: Request, res: Response): Prom
         });
     } catch (error: any) {
         logger.error('Error creating subscription order:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        res.status(500).json({ success: false, message: 'Server error: ' + (error?.message || error) });
     }
 };
 
@@ -219,14 +219,14 @@ export const purchaseSubscription = async (req: Request, res: Response): Promise
 
         // Determine transaction type
         const existingSub = await UserSubscription.findOne({
-            where: { userId, status: { [Op.in]: [SubscriptionStatus.ACTIVE, 'ACTIVE', 'active'] } },
+            where: { userId, status: SubscriptionStatus.ACTIVE },
         });
         const txnType = existingSub ? TransactionType.UPGRADE : TransactionType.PURCHASE;
 
         // Expire current subscriptions
         await UserSubscription.update(
             { status: SubscriptionStatus.EXPIRED },
-            { where: { userId, status: { [Op.in]: [SubscriptionStatus.ACTIVE, 'ACTIVE', 'active'] } } }
+            { where: { userId, status: SubscriptionStatus.ACTIVE } }
         );
 
         // Create new subscription
@@ -284,7 +284,7 @@ export const purchaseSubscription = async (req: Request, res: Response): Promise
         });
     } catch (error: any) {
         logger.error('Error purchasing subscription:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        res.status(500).json({ success: false, message: 'Server error: ' + (error?.message || error) });
     }
 };
 
