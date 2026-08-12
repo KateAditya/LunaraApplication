@@ -665,6 +665,21 @@ class ApiService {
         final status = plan['status']?.toString().toLowerCase();
         if (status == 'confirmed' || status == 'active' || status == 'booked') {
           final key = 'plan_${plan['id']}';
+          
+          final rawDateTime = plan['planDateTime'] ?? plan['eventDateTime'] ?? plan['planDate'] ?? plan['partyDate'] ?? plan['bookingDate'] ?? plan['eventDate'] ?? plan['date'];
+          String bDate = '';
+          String sTime = plan['eventTime'] ?? plan['time'] ?? '08:00 PM';
+          
+          if (rawDateTime != null) {
+            try {
+              final dt = DateTime.parse(rawDateTime.toString()).toLocal();
+              bDate = dt.toIso8601String().split('T')[0];
+              sTime = DateFormat('hh:mm a').format(dt);
+            } catch (_) {
+              bDate = rawDateTime.toString().split('T')[0];
+            }
+          }
+
           ticketMap[key] = {
             'id': plan['id'],
             'bookingId': plan['id'],
@@ -675,8 +690,8 @@ class ApiService {
             'bookingStatus': status,
             'numberOfGuests': (plan['selectedUserIds'] is List ? (plan['selectedUserIds'] as List).length : 2),
             'tablePackage': 'PARTY PLAN MATCH',
-            'bookingDate': plan['eventDate'] ?? plan['date'],
-            'startTime': plan['eventTime'] ?? plan['time'] ?? '08:00 PM',
+            'bookingDate': bDate,
+            'startTime': sTime,
             'totalAmount': plan['depositAmount'] ?? 198,
             'createdAt': plan['createdAt'],
             'isPartyPlan': true,
