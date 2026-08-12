@@ -1238,6 +1238,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
 
       List<NotificationAction>? actionsList;
+      final bool isMyCreatedPartyPlan = (item['userId']?.toString() == currentUserId) ||
+          (planMap['userId']?.toString() == currentUserId) ||
+          (planData['userId']?.toString() == currentUserId) ||
+          (item['type'] == 'party_plan' && item['creator']?['id']?.toString() == currentUserId);
+
       final bool isStranger = requestType.toLowerCase().contains('stranger') ||
           type.toLowerCase().contains('stranger') ||
           item['strangersMeetId'] != null ||
@@ -1247,11 +1252,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ? const Color(0xFF6366F1)
           : const Color(0xFF8B5CF6);
       String title = isStranger
-          ? '🤝 Stranger Meet Request'
-          : '🎉 Party Plan Update';
+          ? '🤝 Stranger Meet'
+          : (isMyCreatedPartyPlan ? '🎉 Your Party Plan' : '🎉 Party Plan');
       String body = isStranger
           ? '$userName requested to join Stranger Meet at $venueName'
-          : '$userName requested to join Party Plan at $venueName';
+          : (isMyCreatedPartyPlan
+              ? 'Your Party Plan at $venueName is active!'
+              : 'Party Plan at $venueName');
       String badge = isStranger
           ? 'STRANGER MEET'
           : 'PARTY PLAN';
@@ -1834,9 +1841,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
       // If current user is the host/creator of this party plan AND deposit is unpaid, enforce Action Required Pay Deposit card
       final hostPayStatus = (item['hostPaymentStatus'] ?? planMap['hostPaymentStatus'] ?? '').toString().toLowerCase();
-      final bool isMyCreatedPartyPlan = (item['userId']?.toString() == currentUserId) ||
-          (planMap['userId']?.toString() == currentUserId) ||
-          (item['type'] == 'party_plan' && item['creator']?['id']?.toString() == currentUserId);
 
       if (isMyCreatedPartyPlan && hostPayStatus != 'paid' && hostPayStatus != 'completed' && status != 'cancelled') {
         final double depositAmt = (item['depositAmount'] ?? planMap['depositAmount'] ?? 99.0) is num

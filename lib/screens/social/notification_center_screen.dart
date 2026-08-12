@@ -13,6 +13,7 @@ import '../../widgets/upcoming_night_invite_dialog.dart';
 import '../../widgets/upcoming_night_host_confirm_dialog.dart';
 import 'party_plan_detail_screen.dart';
 import 'chat_screen.dart';
+import 'party_plan_ticket_screen.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 import '../../widgets/lunara_countdown_button.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
@@ -1368,8 +1369,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     // ── Party Plan specific event types ──────────────────────────────
     if (eventType.contains('PARTY_PLAN_REQUEST_RECEIVED') ||
         titleLower.contains('new party plan request') ||
-        titleLower.contains('user requested to join') ||
-        bodyLower.contains('requested to join party plan')) {
+        titleLower.contains('party plan request received') ||
+        (bodyLower.contains('requested to join your party plan') && item['type'] == 'incoming_request')) {
       return _buildPartyPlanRequestReceivedCard(item);
     } else if (eventType.contains('PARTY_PLAN_REQUEST_ACCEPTED') ||
         eventType.contains('PARTICIPANT_PAYMENT_REQUIRED') ||
@@ -1385,6 +1386,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       return _buildGenericCard(item);
     } else if (eventType.contains('PARTY_PLAN') ||
         eventType.contains('PLAN_LIVE') ||
+        type.contains('party_plan_timeline') ||
         titleLower.contains('party plan') ||
         titleLower.contains('plan is now live') ||
         titleLower.contains("let's party at")) {
@@ -1977,6 +1979,20 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       ''
     ).toString().trim().toLowerCase();
 
+    final String lifecycleStatus = (
+      data['lifecycleStatus'] ??
+      item['lifecycleStatus'] ??
+      data['status'] ??
+      item['status'] ??
+      ''
+    ).toString().trim().toLowerCase();
+
+    final String currentStatus = (
+      data['currentStatus'] ??
+      item['currentStatus'] ??
+      ''
+    ).toString().trim().toLowerCase();
+
     final bool isChatAction = primaryAction == 'open chat' ||
         primaryAction == 'chat' ||
         data['chatUnlocked'] == true ||
@@ -1984,7 +2000,16 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         data['isConfirmed'] == true ||
         item['isConfirmed'] == true;
 
-    final bool isDepositPaid = isPaid || isChatAction;
+    final bool isDepositPaid = isPaid ||
+        isChatAction ||
+        lifecycleStatus == 'match_confirmed' ||
+        lifecycleStatus == 'chat_enabled' ||
+        lifecycleStatus == 'guest_payment_completed' ||
+        lifecycleStatus == 'completed' ||
+        lifecycleStatus == 'confirmed' ||
+        lifecycleStatus == 'paid' ||
+        currentStatus.contains('match confirmed') ||
+        currentStatus.contains('completed');
 
     final actor = item['actor'] ?? item['sender'] ?? item['actorUser'];
     final actorId =
@@ -2060,43 +2085,85 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           ),
           const SizedBox(height: 12),
           if (isDepositPaid)
-            ElevatedButton.icon(
-              onPressed: () {
-                _markAsRead(item);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ChatScreen(
-                      user: {
-                        'id': actorId,
-                        'firstName': actorName,
-                        'contextType': 'party_plan',
-                        'planId': partyPlanId,
-                      },
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      _markAsRead(item);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ChatScreen(
+                            user: {
+                              'id': actorId,
+                              'firstName': actorName,
+                              'contextType': 'party_plan',
+                              'planId': partyPlanId,
+                            },
+                          ),
+                        ),
+                      );
+                    },
+                    icon: const Icon(
+                      Icons.chat_bubble_rounded,
+                      size: 14,
+                      color: Colors.white,
+                    ),
+                    label: const Text(
+                      'Chat',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: LunaraTheme.electricViolet,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
-                );
-              },
-              icon: const Icon(
-                Icons.chat_bubble_rounded,
-                size: 14,
-                color: Colors.white,
-              ),
-              label: const Text(
-                'Chat',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
                 ),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: LunaraTheme.electricViolet,
-                minimumSize: const Size(double.infinity, 38),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      _markAsRead(item);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PartyPlanTicketScreen(
+                            request: item,
+                            plan: {'id': partyPlanId, ...data},
+                            isHost: false,
+                          ),
+                        ),
+                      );
+                    },
+                    icon: const Icon(
+                      Icons.confirmation_number_rounded,
+                      size: 14,
+                      color: Color(0xFF7C3AED),
+                    ),
+                    label: const Text(
+                      'View Ticket',
+                      style: TextStyle(
+                        color: Color(0xFF7C3AED),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF7C3AED)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+              ],
             )
           else
             Row(
@@ -2104,6 +2171,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 Expanded(
                   child: LunaraCountdownButton(
                     paymentDeadlineAt: data['paymentDeadlineAt'] ?? data['payment_deadline_at'],
+                    acceptedAt: data['acceptedAt'] ?? data['accepted_at'],
                     amount: depositAmount,
                     onTap: () {
                       _markAsRead(item);

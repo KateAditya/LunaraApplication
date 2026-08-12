@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 class LunaraCountdownButton extends StatefulWidget {
   final dynamic paymentDeadlineAt;
+  final dynamic acceptedAt;
   final double amount;
   final VoidCallback onTap;
   final Color backgroundColor;
@@ -11,6 +12,7 @@ class LunaraCountdownButton extends StatefulWidget {
   const LunaraCountdownButton({
     super.key,
     required this.paymentDeadlineAt,
+    this.acceptedAt,
     required this.amount,
     required this.onTap,
     this.backgroundColor = const Color(0xFF7C3AED),
@@ -43,7 +45,9 @@ class _LunaraCountdownButtonState extends State<LunaraCountdownButton> {
   }
 
   void _updateCountdown() {
-    if (widget.paymentDeadlineAt == null) {
+    dynamic deadlineRaw = widget.paymentDeadlineAt ?? widget.acceptedAt;
+
+    if (deadlineRaw == null) {
       if (_formattedCountdown != '30m') {
         setState(() => _formattedCountdown = '30m');
       }
@@ -51,9 +55,17 @@ class _LunaraCountdownButtonState extends State<LunaraCountdownButton> {
     }
 
     try {
-      final DateTime deadline = widget.paymentDeadlineAt is DateTime
-          ? widget.paymentDeadlineAt as DateTime
-          : DateTime.parse(widget.paymentDeadlineAt.toString()).toLocal();
+      DateTime deadline;
+      if (deadlineRaw is DateTime) {
+        deadline = deadlineRaw;
+      } else {
+        deadline = DateTime.parse(deadlineRaw.toString()).toLocal();
+      }
+
+      if (widget.paymentDeadlineAt == null && widget.acceptedAt != null) {
+        deadline = deadline.add(const Duration(minutes: 30));
+      }
+
       final Duration diff = deadline.difference(DateTime.now());
 
       if (diff.inSeconds <= 0) {
