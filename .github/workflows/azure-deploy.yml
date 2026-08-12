@@ -11,6 +11,9 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: kateaditya/lunaraapplication
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: "true"
+  NODE_TLS_REJECT_UNAUTHORIZED: "0"
+  NODE_OPTIONS: "--use-system-ca"
 
 jobs:
   build-and-push:
@@ -38,7 +41,7 @@ jobs:
           tags: type=raw,value=latest
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./Lunara_backend
           file: ./Lunara_backend/Dockerfile
@@ -47,7 +50,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Deploy to Azure Web App
-        uses: azure/webapps-deploy@v2
+        uses: azure/webapps-deploy@v3
         with:
           app-name: 'lunara-api-server'
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
