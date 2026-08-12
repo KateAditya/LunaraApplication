@@ -72,6 +72,12 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         ? Map<String, dynamic>.from(data)
         : {};
 
+    final String recipientId = (notifMap['recipientUserId'] ?? notifMap['recipientId'] ?? notifMap['userId'] ?? '').toString();
+    final String currentUid = ApiService.currentUserId ?? '';
+    if (recipientId.isNotEmpty && currentUid.isNotEmpty && recipientId != currentUid) {
+      return;
+    }
+
     TopNotificationBanner.show(
       title: notifMap['title'] ?? 'New Notification',
       body: notifMap['body'] ?? '',

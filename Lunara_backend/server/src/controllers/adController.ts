@@ -208,7 +208,6 @@ export const createAd = async (req: Request, res: Response): Promise<Response> =
                     createdAt: new Date().toISOString(),
                 };
                 io.emit('new_ad_published', broadcastPayload);
-                io.emit('notification_created', broadcastPayload);
             }
         } catch (socketErr: any) {
             logger.warn('[AdController] Socket broadcast warning:', socketErr.message);

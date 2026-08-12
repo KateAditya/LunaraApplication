@@ -1442,15 +1442,11 @@ async function relistPartyPlanInSocket(planId: string) {
             };
 
             const { io } = require('../server');
-            if (relistedPlan.visibility === 'private') {
-                io.to(`user_${relistedPlan.userId}`).emit('party_plan_created', responseData);
-                if (Array.isArray(relistedPlan.selectedUsers)) {
-                    for (const invitedUserId of relistedPlan.selectedUsers) {
-                        io.to(`user_${invitedUserId}`).emit('party_plan_created', responseData);
-                    }
+            io.to(`user_${relistedPlan.userId}`).emit('party_plan_created', responseData);
+            if (Array.isArray(relistedPlan.selectedUsers)) {
+                for (const invitedUserId of relistedPlan.selectedUsers) {
+                    io.to(`user_${invitedUserId}`).emit('party_plan_created', responseData);
                 }
-            } else {
-                io.emit('party_plan_created', responseData);
             }
         }
     } catch (socketErr) {

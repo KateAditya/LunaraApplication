@@ -658,6 +658,15 @@ class _StrangersMeetPaymentScreenState
 
                                     // Push to Ticket Screen
                                     if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            '🎉 Payment Successful! Your Stranger Meet is LIVE! 🚀',
+                                          ),
+                                          backgroundColor: Colors.green,
+                                          duration: Duration(seconds: 4),
+                                        ),
+                                      );
                                       Navigator.pushReplacement(
                                         context,
                                         MaterialPageRoute(

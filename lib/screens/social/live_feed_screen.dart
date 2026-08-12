@@ -16,6 +16,7 @@ import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'party_plan_ticket_screen.dart';
 import 'strangers_meet_requests_screen.dart';
 import '../../widgets/smart_checkout_sheet.dart';
+import '../../widgets/lunara_profile_image.dart';
 
 /// ─────────────────────────────────────────────────────────────────────────────
 /// Unified Notification Item Schema
@@ -49,6 +50,7 @@ class UnifiedNotificationItem {
   final Color accentColor;
   final IconData categoryIcon;
   final String? avatarUrl;
+  final Map<String, dynamic>? senderUser;
   final String? actionButtonText;
   final VoidCallback? onActionTap;
   final List<NotificationAction>? actions;
@@ -67,6 +69,7 @@ class UnifiedNotificationItem {
     required this.accentColor,
     required this.categoryIcon,
     this.avatarUrl,
+    this.senderUser,
     this.actionButtonText,
     this.onActionTap,
     this.actions,
@@ -206,28 +209,43 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   void _onNotificationCreated(dynamic data) {
     if (!mounted || !context.mounted) return;
-    _loadFeed(showLoader: false);
-    _loadGroupPartyBookings();
     if (data is Map) {
       final notifMap = Map<String, dynamic>.from(data);
+      final recipientId = (notifMap['recipientUserId'] ?? notifMap['recipientId'] ?? notifMap['userId'] ?? '').toString();
+      final currentUid = ApiService.currentUserId ?? '';
+      if (recipientId.isNotEmpty && currentUid.isNotEmpty && recipientId != currentUid) {
+        return;
+      }
+      _loadFeed(showLoader: false);
+      _loadGroupPartyBookings();
       TopNotificationBanner.show(
         title: notifMap['title'] ?? 'New Notification 🔔',
         body: notifMap['body'] ?? '',
         data: notifMap['data'] is Map ? Map<String, dynamic>.from(notifMap['data']) : null,
       );
+    } else {
+      _loadFeed(showLoader: false);
+      _loadGroupPartyBookings();
     }
   }
 
   void _onGroupPartyUpdated(dynamic data) {
     if (!mounted || !context.mounted) return;
-    _loadGroupPartyBookings();
     if (data is Map) {
       final notifMap = Map<String, dynamic>.from(data);
+      final recipientId = (notifMap['recipientUserId'] ?? notifMap['recipientId'] ?? notifMap['userId'] ?? '').toString();
+      final currentUid = ApiService.currentUserId ?? '';
+      if (recipientId.isNotEmpty && currentUid.isNotEmpty && recipientId != currentUid) {
+        return;
+      }
+      _loadGroupPartyBookings();
       TopNotificationBanner.show(
         title: notifMap['title'] ?? 'Group Party Updated 🎉',
         body: notifMap['body'] ?? notifMap['message'] ?? 'Your group party booking status has been updated.',
         data: notifMap['data'] is Map ? Map<String, dynamic>.from(notifMap['data']) : null,
       );
+    } else {
+      _loadGroupPartyBookings();
     }
   }
 
@@ -315,6 +333,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   Future<void> markAllNotificationsAsRead() async {
     final allItems = _buildUnifiedTimeline();
     for (final item in allItems) {
+      if (item.badgeText == 'ACTION REQUIRED' || item.badgeText == 'INVITE') {
+        continue; // Never mark active action required cards (e.g. Pay Deposit) as read/cleared!
+      }
       final rawId = item.rawData['id']?.toString() ?? item.id.replaceAll(RegExp(r'^(gp_|pp_|sm_)'), '');
       if (rawId.isNotEmpty) {
         ApiService.localReadRequestIds.add(rawId);
@@ -327,13 +348,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (mounted) {
       setState(() {
         _notifications = _notifications
-            .map((n) => {...n, 'read': true, 'isRead': true})
+            .map((n) {
+              final String primaryAction = (n['data']?['primaryAction'] ?? n['primaryAction'] ?? '').toString().toLowerCase();
+              final String hostStatus = (n['data']?['hostPaymentStatus'] ?? '').toString().toLowerCase();
+              if (primaryAction.contains('pay') || (hostStatus.isNotEmpty && hostStatus != 'paid' && hostStatus != 'completed')) {
+                return n;
+              }
+              return {...n, 'read': true, 'isRead': true};
+            })
             .toList();
       });
       widget.onCountChanged?.call();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('All notifications marked as read ✓'),
+          content: Text('Notifications marked as read ✓'),
           backgroundColor: LunaraTheme.electricViolet,
           duration: Duration(seconds: 2),
         ),
@@ -1154,6 +1182,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         }
       }
 
+      final actorMap = n['actor'] is Map
+          ? Map<String, dynamic>.from(n['actor'])
+          : (n['sender'] is Map ? Map<String, dynamic>.from(n['sender']) : null);
+
       items.add(UnifiedNotificationItem(
         id: id,
         category: category,
@@ -1165,7 +1197,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         badgeText: badge,
         accentColor: accentColor,
         categoryIcon: icon,
-        avatarUrl: n['imageUrl']?.toString() ?? n['actor']?['profilePhotoUrl']?.toString(),
+        avatarUrl: n['imageUrl']?.toString() ?? actorMap?['profilePhotoUrl']?.toString() ?? actorMap?['profileImageUrl']?.toString(),
+        senderUser: actorMap,
         actionButtonText: actionText,
         onActionTap: actionTap,
         actions: actionsList,
@@ -1192,7 +1225,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final userPhoto = user['profilePhotoUrl'] ?? user['photoUrl'] ?? user['image'];
 
       bool isExpired = false;
-      final planData = item['plan'] is Map ? item['plan'] : item;
+      final planMap = item['plan'] is Map ? item['plan'] as Map<String, dynamic> : <String, dynamic>{};
+      final planData = planMap.isNotEmpty ? planMap : item;
       final rawDateTime = planData['planDateTime'] ?? planData['eventDateTime'] ?? planData['planDate'] ?? planData['partyDate'] ?? planData['bookingDate'];
       if (rawDateTime != null) {
         try {
@@ -1299,12 +1333,41 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             // My outgoing request or my own created meetup
             final bool isHostOfMeet = requestType == 'stranger_meet';
             if (isHostOfMeet) {
+              final paymentStatus = (item['paymentStatus'] ?? '').toString().toLowerCase();
               // HOST'S OWN Created meetup request status
-              if (status == 'pending') {
-                title = '⏳ Stranger Meet Awaiting Approval';
-                body = 'Your meet request "${item['subject'] ?? ''}" at $venueName has been submitted. Awaiting admin approval.';
-                badge = 'PENDING';
-              } else if (status == 'approved') {
+              if (paymentStatus == 'paid' || status == 'paid' || status == 'confirmed') {
+                title = '🎉 Stranger Meet Confirmed & LIVE!';
+                body = 'Your Stranger Meet "${item['subject'] ?? ''}" at $venueName is live on the feed!';
+                badge = 'LIVE & CONFIRMED';
+                accent = const Color(0xFF10B981);
+                actionsList = [
+                  NotificationAction(
+                    label: 'View Ticket',
+                    icon: Icons.confirmation_number_rounded,
+                    isPrimary: true,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => StrangersMeetTicketScreen(
+                          request: StrangersMeetRequest.fromJson(item),
+                        ),
+                      ),
+                    ),
+                  ),
+                  NotificationAction(
+                    label: 'View Requests',
+                    icon: Icons.people_outline_rounded,
+                    isPrimary: false,
+                    color: Colors.grey[200],
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const StrangersMeetRequestsScreen(),
+                      ),
+                    ),
+                  ),
+                ];
+              } else if (status == 'approved' || status == 'active') {
                 title = '🎉 Stranger Meet Approved!';
                 body = 'Your meet request "${item['subject'] ?? ''}" at $venueName has been approved. Complete payment to publish it!';
                 badge = 'ACTION REQUIRED';
@@ -1325,25 +1388,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     ),
                   ),
                 ];
-              } else if (status == 'paid' || status == 'confirmed') {
-                title = '🎉 Stranger Meet Confirmed!';
-                body = 'Your meet at $venueName is confirmed and live on the feed!';
-                badge = 'CONFIRMED';
-                actionsList = [
-                  NotificationAction(
-                    label: 'View Ticket',
-                    icon: Icons.confirmation_number_rounded,
-                    isPrimary: true,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => StrangersMeetTicketScreen(
-                          request: StrangersMeetRequest.fromJson(item),
-                        ),
-                      ),
-                    ),
-                  ),
-                ];
+              } else if (status == 'pending') {
+                title = '⏳ Stranger Meet Awaiting Approval';
+                body = 'Your meet request "${item['subject'] ?? ''}" at $venueName has been submitted. Awaiting admin approval.';
+                badge = 'PENDING';
               }
             } else {
               // ─── JOINER: My request to join someone else's Stranger Meet ─────
@@ -1502,7 +1550,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           // Detect whether this `my_request` is actually a private invitation
           // sent by the HOST (plan.visibility == 'PRIVATE' &&
           // plan.selectedUsers contains current user ID) vs a voluntary request.
-          final planMap = item['plan'] is Map ? item['plan'] as Map<String, dynamic> : <String, dynamic>{};
           final planVis = planMap['visibility']?.toString().toUpperCase() ?? '';
           final selectedUsers = planMap['selectedUsers'];
           final bool isPrivateInvite = planVis == 'PRIVATE' &&
@@ -1783,6 +1830,59 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         }
       }
 
+      // If current user is the host/creator of this party plan AND deposit is unpaid, enforce Action Required Pay Deposit card
+      final hostPayStatus = (item['hostPaymentStatus'] ?? planMap['hostPaymentStatus'] ?? '').toString().toLowerCase();
+      final bool isMyCreatedPartyPlan = (item['userId']?.toString() == currentUserId) ||
+          (planMap['userId']?.toString() == currentUserId) ||
+          (item['type'] == 'party_plan' && item['creator']?['id']?.toString() == currentUserId);
+
+      if (isMyCreatedPartyPlan && hostPayStatus != 'paid' && hostPayStatus != 'completed' && status != 'cancelled') {
+        final double depositAmt = (item['depositAmount'] ?? planMap['depositAmount'] ?? 99.0) is num
+            ? (item['depositAmount'] ?? planMap['depositAmount'] ?? 99.0).toDouble()
+            : 99.0;
+        final partyPlanId = item['id']?.toString() ?? planMap['id']?.toString() ?? '';
+        final hostOrderId = item['hostRazorpayOrderId']?.toString() ?? planMap['hostRazorpayOrderId']?.toString() ?? '';
+
+        title = '⚡ Action Required: Pay Host Deposit';
+        body = 'Pay deposit of ₹${depositAmt.toStringAsFixed(0)} for your Party Plan at $venueName to publish it!';
+        badge = 'ACTION REQUIRED';
+        accent = const Color(0xFF8B5CF6);
+        actionsList = [
+          NotificationAction(
+            label: 'Pay Deposit (${depositAmt.toStringAsFixed(0)})',
+            icon: Icons.payment_rounded,
+            isPrimary: true,
+            onTap: () async {
+              await _startHostRazorpayDirectPaymentInLiveFeed(
+                partyPlanId: partyPlanId,
+                venueName: venueName,
+                orderId: hostOrderId,
+                depositAmount: depositAmt,
+                onSuccess: () async {
+                  _loadFeed();
+                },
+              );
+            },
+          ),
+          NotificationAction(
+            label: 'View Plan',
+            icon: Icons.open_in_new_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PartyPlanDetailScreen(
+                    plan: planMap.isNotEmpty ? planMap : item,
+                  ),
+                ),
+              );
+            },
+          ),
+        ];
+      }
+
       items.add(UnifiedNotificationItem(
         id: requestType == 'stranger_meet' || type == 'stranger_meet' ? 'sm_$id' : 'pp_$id',
         category: requestType == 'stranger_meet' || type == 'stranger_meet' ? 'stranger_meet' : 'party_plan',
@@ -1797,6 +1897,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             ? Icons.people_alt_rounded
             : Icons.celebration_rounded,
         avatarUrl: userPhoto,
+        senderUser: user.isNotEmpty ? user : null,
         actions: actionsList,
         rawData: item,
       ));
@@ -2512,11 +2613,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             // Avatar or Category Icon
-                            if (item.avatarUrl != null && item.avatarUrl!.isNotEmpty)
-                              CircleAvatar(
+                            if (item.senderUser != null || (item.avatarUrl != null && item.avatarUrl!.isNotEmpty))
+                              LunaraProfileImage(
+                                userData: item.senderUser ?? {
+                                  'profilePhotoUrl': item.avatarUrl,
+                                  'firstName': item.title,
+                                },
                                 radius: 18,
-                                backgroundImage: NetworkImage(item.avatarUrl!),
-                                backgroundColor: item.accentColor.withValues(alpha: 0.2),
+                                isInteractive: item.senderUser != null && item.senderUser!['id'] != null,
                               )
                             else
                               Container(

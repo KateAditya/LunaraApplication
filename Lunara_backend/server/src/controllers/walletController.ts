@@ -878,10 +878,17 @@ export const payWithWallet = async (req: Request, res: Response): Promise<void> 
                 partyPlanId: planId,
                 bookingId,
             });
+            const txnId = lockResult.txn?.id || `lock_${Date.now()}`;
             res.json({
                 success: true,
                 message: 'Commitment deposit locked in wallet successfully!',
-                data: lockResult,
+                data: {
+                    transactionId: txnId,
+                    txnId,
+                    wallet: lockResult.wallet,
+                    availableBalance: Number(lockResult.wallet.totalAvailableBalance.toFixed(2)),
+                    txn: lockResult.txn,
+                },
             });
             return;
         }
@@ -897,10 +904,22 @@ export const payWithWallet = async (req: Request, res: Response): Promise<void> 
             metadata: { paymentType },
         });
 
+        const txnId = purchaseResult.txn?.id || purchaseResult.data?.transactionId || `pay_${Date.now()}`;
+        const walletObj = purchaseResult.wallet || purchaseResult.data?.wallet;
+        const availableBal = walletObj
+            ? Number(walletObj.totalAvailableBalance.toFixed(2))
+            : (purchaseResult.data?.availableBalance || 0);
+
         res.json({
             success: true,
             message: 'Wallet booking payment successful!',
-            data: purchaseResult.data,
+            data: {
+                transactionId: txnId,
+                txnId,
+                wallet: walletObj,
+                availableBalance: availableBal,
+                txn: purchaseResult.txn || purchaseResult.data?.txn,
+            },
         });
     } catch (err: any) {
         if (err.statusCode === 402) {

@@ -372,14 +372,24 @@ class _NightInvitePartnerScreenState extends State<NightInvitePartnerScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        age != null ? '$name, $age' : name,
-                        style: const TextStyle(
-                          fontFamily: 'AllroundGothic',
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        overflow: TextOverflow.ellipsis,
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              age != null ? '$name, $age' : name,
+                              style: const TextStyle(
+                                fontFamily: 'AllroundGothic',
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (isVerified) ...[
+                            const SizedBox(width: 4),
+                            const Icon(Icons.verified, color: Colors.blue, size: 16),
+                          ],
+                        ],
                       ),
                       const SizedBox(height: 2),
                       Text(

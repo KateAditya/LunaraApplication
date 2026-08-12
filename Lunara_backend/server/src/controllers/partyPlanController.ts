@@ -736,18 +736,14 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             },
         };
 
-        // Emit socket event for real-time feed updates
+        // Emit socket event for real-time creator/invited user updates
         try {
             const { io } = require('../server');
-            if (parsedVisibility === PartyPlanVisibility.PRIVATE) {
-                io.to(`user_${userId}`).emit('party_plan_created', responseData);
-                if (Array.isArray(selectedUsers)) {
-                    for (const invitedUserId of selectedUsers) {
-                        io.to(`user_${invitedUserId}`).emit('party_plan_created', responseData);
-                    }
+            io.to(`user_${userId}`).emit('party_plan_created', responseData);
+            if (Array.isArray(selectedUsers)) {
+                for (const invitedUserId of selectedUsers) {
+                    io.to(`user_${invitedUserId}`).emit('party_plan_created', responseData);
                 }
-            } else {
-                io.emit('party_plan_created', responseData);
             }
         } catch (socketErr) {
             logger.warn('Socket emission failed for party_plan_created:', socketErr);

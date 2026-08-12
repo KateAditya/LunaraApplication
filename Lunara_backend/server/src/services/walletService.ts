@@ -337,12 +337,13 @@ export class WalletService {
             const wallet = await SmartWallet.findOne({ where: { userId }, lock: Transaction.LOCK.UPDATE, transaction: t });
             if (!wallet) throw new Error('Wallet not found');
 
-            const openingBal = wallet.totalAvailableBalance;
-            const newBalance = Math.max(0, Number(wallet.balance) - amount);
-            const newLocked = Number(wallet.lockedBalance || 0) + amount;
+            const openingBal = Math.round(wallet.totalAvailableBalance * 100) / 100;
+            const newBalance = Math.round(Math.max(0, Number(wallet.balance || 0) - amount) * 100) / 100;
+            const newLocked = Math.round((Number(wallet.lockedBalance || 0) + amount) * 100) / 100;
 
             await wallet.update({ balance: newBalance, lockedBalance: newLocked }, { transaction: t });
-            await User.update({ walletBalance: wallet.totalAvailableBalance }, { where: { id: userId }, transaction: t });
+            const updatedAvail = Math.round(wallet.totalAvailableBalance * 100) / 100;
+            await User.update({ walletBalance: updatedAvail }, { where: { id: userId }, transaction: t });
 
             const txn = await WalletTransaction.create(
                 {
@@ -350,9 +351,9 @@ export class WalletService {
                     userId,
                     partyPlanId,
                     bookingId,
-                    amount,
+                    amount: Math.round(amount * 100) / 100,
                     openingBalance: openingBal,
-                    closingBalance: wallet.totalAvailableBalance,
+                    closingBalance: updatedAvail,
                     transactionType: WalletTransactionType.COMMITMENT_DEPOSIT,
                     status: WalletTransactionStatus.LOCKED,
                     reference: reference || `DEPOSIT_LOCK_${Date.now()}`,
@@ -522,7 +523,7 @@ export class WalletService {
         bookingId?: string;
         partyPlanId?: string;
         metadata?: object;
-    }): Promise<{ success: boolean; message: string; data: any }> {
+    }): Promise<{ success: boolean; message: string; wallet?: SmartWallet; txn?: WalletTransaction; data: any }> {
         const { userId, price, transactionType, reference, bookingId, partyPlanId, metadata } = params;
 
         if (price <= 0) throw new Error('Price must be greater than zero');
@@ -542,41 +543,41 @@ export class WalletService {
             const wallet = await SmartWallet.findOne({ where: { userId }, lock: Transaction.LOCK.UPDATE, transaction: t });
             if (!wallet) throw new Error('Wallet not found');
 
-            const openingBal = wallet.totalAvailableBalance;
-            let remainingToDeduct = price;
+            const openingBal = Math.round(wallet.totalAvailableBalance * 100) / 100;
+            let remainingToDeduct = Math.round(price * 100) / 100;
 
-            let currentPromo = Number(wallet.promotionalBalance || 0);
-            let currentCashback = Number(wallet.cashbackBalance || 0);
-            let currentReward = Number(wallet.rewardBalance || 0);
-            let currentMain = Number(wallet.balance || 0);
+            let currentPromo = Math.round(Number(wallet.promotionalBalance || 0) * 100) / 100;
+            let currentCashback = Math.round(Number(wallet.cashbackBalance || 0) * 100) / 100;
+            let currentReward = Math.round(Number(wallet.rewardBalance || 0) * 100) / 100;
+            let currentMain = Math.round(Number(wallet.balance || 0) * 100) / 100;
 
             if (currentPromo > 0) {
                 const promoDeduct = Math.min(currentPromo, remainingToDeduct);
-                currentPromo -= promoDeduct;
-                remainingToDeduct -= promoDeduct;
+                currentPromo = Math.round((currentPromo - promoDeduct) * 100) / 100;
+                remainingToDeduct = Math.round((remainingToDeduct - promoDeduct) * 100) / 100;
             }
 
             if (remainingToDeduct > 0 && currentCashback > 0) {
                 const cashbackDeduct = Math.min(currentCashback, remainingToDeduct);
-                currentCashback -= cashbackDeduct;
-                remainingToDeduct -= cashbackDeduct;
+                currentCashback = Math.round((currentCashback - cashbackDeduct) * 100) / 100;
+                remainingToDeduct = Math.round((remainingToDeduct - cashbackDeduct) * 100) / 100;
             }
 
             if (remainingToDeduct > 0 && currentReward > 0) {
                 const rewardDeduct = Math.min(currentReward, remainingToDeduct);
-                currentReward -= rewardDeduct;
-                remainingToDeduct -= rewardDeduct;
+                currentReward = Math.round((currentReward - rewardDeduct) * 100) / 100;
+                remainingToDeduct = Math.round((remainingToDeduct - rewardDeduct) * 100) / 100;
             }
 
             if (remainingToDeduct > 0) {
                 if (currentMain < remainingToDeduct) {
                     throw new Error('Insufficient available balance');
                 }
-                currentMain -= remainingToDeduct;
+                currentMain = Math.round((currentMain - remainingToDeduct) * 100) / 100;
                 remainingToDeduct = 0;
             }
 
-            const newLifetimeSpent = Number(wallet.lifetimeSpent || 0) + price;
+            const newLifetimeSpent = Math.round((Number(wallet.lifetimeSpent || 0) + price) * 100) / 100;
 
             await wallet.update(
                 {
@@ -589,7 +590,8 @@ export class WalletService {
                 { transaction: t }
             );
 
-            await User.update({ walletBalance: wallet.totalAvailableBalance }, { where: { id: userId }, transaction: t });
+            const updatedAvail = Math.round(wallet.totalAvailableBalance * 100) / 100;
+            await User.update({ walletBalance: updatedAvail }, { where: { id: userId }, transaction: t });
 
             const txn = await WalletTransaction.create(
                 {
@@ -597,9 +599,9 @@ export class WalletService {
                     userId,
                     bookingId,
                     partyPlanId,
-                    amount: price,
+                    amount: Math.round(price * 100) / 100,
                     openingBalance: openingBal,
-                    closingBalance: wallet.totalAvailableBalance,
+                    closingBalance: updatedAvail,
                     transactionType,
                     status: WalletTransactionStatus.SUCCESS,
                     reference,
@@ -643,11 +645,16 @@ export class WalletService {
         return {
             success: true,
             message: 'Payment completed successfully using Smart Credit Wallet!',
+            wallet: result.wallet,
+            txn: result.txn,
             data: {
                 userId,
                 pricePaid: price,
                 remainingBalance: result.wallet.totalAvailableBalance,
+                availableBalance: Number(result.wallet.totalAvailableBalance.toFixed(2)),
                 transactionId: result.txn.id,
+                wallet: result.wallet,
+                txn: result.txn,
             },
         };
     }

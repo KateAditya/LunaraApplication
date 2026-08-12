@@ -645,8 +645,15 @@ async function getUserNotifications(
         });
     }
 
-    // Clear old cleared notifications
-    const activeNotifs = filtered.filter(n => new Date(n.createdAt).getTime() > clearedAt);
+    // Clear old cleared notifications, but ALWAYS preserve active action-required tasks (e.g. Pay Deposit)
+    const activeNotifs = filtered.filter(n => {
+        const primaryAction = (n.data?.primaryAction || n.primaryAction || '').toString().toLowerCase();
+        const hostStatus = (n.data?.hostPaymentStatus || '').toString().toLowerCase();
+        const isActionRequired = primaryAction.includes('pay') || primaryAction.includes('accept') ||
+            (hostStatus && hostStatus !== 'paid' && hostStatus !== 'completed');
+        if (isActionRequired) return true;
+        return new Date(n.createdAt).getTime() > clearedAt;
+    });
 
     // Map each notification to include its date grouping section
     return activeNotifs.map(n => ({
