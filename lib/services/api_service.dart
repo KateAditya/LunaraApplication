@@ -41,6 +41,57 @@ class ApiService {
   static final ValueNotifier<int> profileUpdateNotifier = ValueNotifier<int>(0);
   static final ValueNotifier<int> planPostedNotifier = ValueNotifier<int>(0);
 
+  // ── Synchronous Local Request Status Cache for Instant UI Rendering ────────
+  static final Set<String> _cachedRequestedPlanIds = {};
+  static final Map<String, Map<String, dynamic>> _cachedPartyPlanRequests = {};
+
+  /// Synchronously returns whether the current user has requested to join a given party plan.
+  static bool isPartyPlanRequestedSync(String planId) {
+    if (planId.isEmpty) return false;
+    return _cachedRequestedPlanIds.contains(planId);
+  }
+
+  /// Synchronously returns cached request details for a given party plan.
+  static Map<String, dynamic>? getCachedPartyPlanRequestSync(String planId) {
+    if (planId.isEmpty) return null;
+    return _cachedPartyPlanRequests[planId];
+  }
+
+  /// Synchronously returns all plan IDs current user has requested to join.
+  static Set<String> getRequestedPlanIdsSync() {
+    return Set<String>.from(_cachedRequestedPlanIds);
+  }
+
+  /// Mark a party plan as requested locally for instant UI responsiveness.
+  static void markPartyPlanAsRequestedLocal(String planId, [Map<String, dynamic>? requestData]) {
+    if (planId.isEmpty) return;
+    _cachedRequestedPlanIds.add(planId);
+    _cachedPartyPlanRequests[planId] = requestData ?? {
+      'id': 'local_$planId',
+      'planId': planId,
+      'partyPlanId': planId,
+      'status': 'pending',
+      'joinerPaymentStatus': 'unpaid',
+      'createdAt': DateTime.now().toIso8601String(),
+    };
+    _saveCachedRequestsToPrefs();
+  }
+
+  /// Mark a party plan as cancelled/declined locally.
+  static void markPartyPlanAsCancelledLocal(String planId) {
+    if (planId.isEmpty) return;
+    _cachedRequestedPlanIds.remove(planId);
+    _cachedPartyPlanRequests.remove(planId);
+    _saveCachedRequestsToPrefs();
+  }
+
+  static Future<void> _saveCachedRequestsToPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('cached_requested_plan_ids', jsonEncode(_cachedRequestedPlanIds.toList()));
+    } catch (_) {}
+  }
+
   /// Normalize any raw image path to a full URL, or return null if empty/invalid.
   static String? formatImageUrl(dynamic rawUrl) {
     if (rawUrl == null) return null;
@@ -59,6 +110,19 @@ class ApiService {
     final prefs = await SharedPreferences.getInstance();
     _authToken = prefs.getString('auth_token');
     selectedCity = prefs.getString('selected_city');
+
+    final savedRequestedPlansJson = prefs.getString('cached_requested_plan_ids');
+    if (savedRequestedPlansJson != null) {
+      try {
+        final List<dynamic> list = jsonDecode(savedRequestedPlansJson);
+        for (final item in list) {
+          if (item != null) {
+            _cachedRequestedPlanIds.add(item.toString());
+          }
+        }
+      } catch (_) {}
+    }
+
     if (_authToken != null) {
       debugPrint('Loaded persisted auth token');
       initSocket();
@@ -883,11 +947,17 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
+          final myReqs = List<Map<String, dynamic>>.from(data['myRequests'] ?? []);
+          for (final req in myReqs) {
+            final pId = req['partyPlanId']?.toString() ?? req['planId']?.toString() ?? req['plan']?['id']?.toString();
+            final reqStatus = (req['status'] ?? req['joinerPaymentStatus'] ?? 'pending').toString().toLowerCase();
+            if (pId != null && pId.isNotEmpty && reqStatus != 'cancelled' && reqStatus != 'rejected') {
+              markPartyPlanAsRequestedLocal(pId, req);
+            }
+          }
           return {
             'feed': List<Map<String, dynamic>>.from(data['data'] ?? []),
-            'myRequests': List<Map<String, dynamic>>.from(
-              data['myRequests'] ?? [],
-            ),
+            'myRequests': myReqs,
             'incomingRequests': List<Map<String, dynamic>>.from(
               data['incomingRequests'] ?? [],
             ),
@@ -919,6 +989,7 @@ class ApiService {
         body: {'userId': userId},
       );
       if (response.statusCode == 201) {
+        markPartyPlanAsRequestedLocal(planId);
         return PartyPlanRequestResult(
           success: true,
           alreadyRequested: true,
@@ -939,6 +1010,7 @@ class ApiService {
       if (msgLower.contains('already requested') ||
           msgLower.contains('already has an accepted') ||
           msgLower.contains('already pending')) {
+        markPartyPlanAsRequestedLocal(planId);
         return PartyPlanRequestResult(
           success: true,
           alreadyRequested: true,
@@ -1001,11 +1073,22 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
-          return List<Map<String, dynamic>>.from(data['data']);
+          final list = List<Map<String, dynamic>>.from(data['data']);
+          for (final req in list) {
+            final pId = req['partyPlanId']?.toString() ?? req['planId']?.toString() ?? req['plan']?['id']?.toString();
+            final reqStatus = (req['status'] ?? req['joinerPaymentStatus'] ?? 'pending').toString().toLowerCase();
+            if (pId != null && pId.isNotEmpty && reqStatus != 'cancelled' && reqStatus != 'rejected') {
+              markPartyPlanAsRequestedLocal(pId, req);
+            }
+          }
+          return list;
         }
       }
     } catch (e) {
       debugPrint('fetchMyPartyPlanRequests error: $e');
+    }
+    if (_cachedPartyPlanRequests.isNotEmpty) {
+      return _cachedPartyPlanRequests.values.toList();
     }
     return [];
   }

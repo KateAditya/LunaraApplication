@@ -130,19 +130,29 @@ export class NotificationService {
                 try {
                     const recipient = await User.findByPk(recipientUserId, { attributes: ['fcmToken'] });
                     if (recipient?.fcmToken) {
+                        const fcmData: Record<string, string> = {
+                            notificationId: String(notification.id),
+                            eventType: String(eventType),
+                            category: String(category || ''),
+                            entityType: String(entityType || ''),
+                            entityId: String(entityId || ''),
+                            deepLink: String(deepLink || ''),
+                            actionType: String(actionType || ''),
+                            imageUrl: String(resolvedImageUrl || ''),
+                        };
+
+                        if (metadata && typeof metadata === 'object') {
+                            for (const [key, value] of Object.entries(metadata)) {
+                                if (value !== undefined && value !== null) {
+                                    fcmData[key] = typeof value === 'object' ? JSON.stringify(value) : String(value);
+                                }
+                            }
+                        }
+
                         await sendPushNotification(recipient.fcmToken, {
                             title,
                             body,
-                            data: {
-                                notificationId: notification.id,
-                                eventType: String(eventType),
-                                category,
-                                entityType: entityType || '',
-                                entityId: entityId || '',
-                                deepLink: deepLink || '',
-                                actionType: actionType || '',
-                                imageUrl: resolvedImageUrl || '',
-                            },
+                            data: fcmData,
                         });
                     }
                 } catch (pushErr) {

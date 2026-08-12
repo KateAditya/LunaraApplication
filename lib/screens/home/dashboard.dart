@@ -65,6 +65,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         setState(() {
           _isInitialized = true;
         });
+        PushNotificationService.setAppReady();
       }
     }
     // Soft-ask for notifications after login if not already granted

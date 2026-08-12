@@ -35,7 +35,16 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _alreadyRequested = widget.plan['hasRequested'] == true;
+    final targetPlanId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
+    final syncRequested = ApiService.isPartyPlanRequestedSync(targetPlanId);
+    final syncReqData = ApiService.getCachedPartyPlanRequestSync(targetPlanId);
+
+    _alreadyRequested = widget.plan['hasRequested'] == true || syncRequested;
+    if (syncReqData != null) {
+      _activeRequestId = syncReqData['id']?.toString() ?? syncReqData['requestId']?.toString();
+      _requestStatus = (syncReqData['status'] ?? syncReqData['joinerPaymentStatus'] ?? 'pending').toString().toLowerCase();
+    }
+
     if (widget.plan['isInvite'] == true || widget.plan['isInvitedUser'] == true || widget.plan['type'] == 'party_plan_invitation' || widget.plan['eventType'] == 'party_plan_invitation') {
       _isInvitedUser = true;
     }

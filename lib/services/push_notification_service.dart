@@ -17,6 +17,8 @@ import '../screens/social/post_detail_screen.dart';
 import '../screens/post_booking/ticket_pocket_screen.dart';
 import '../screens/social/party_plan_requests_screen.dart';
 import '../screens/social/host_party_plan_manager_screen.dart';
+import '../screens/social/party_plan_detail_screen.dart';
+import '../screens/social/notification_center_screen.dart';
 import '../widgets/ad_announcement_dialog.dart';
 
 /// Top-level background message handler.
@@ -34,6 +36,10 @@ class PushNotificationService {
   /// Currently open conversation ID — used to suppress popups for active chat screen
   static String? activeConversationId;
 
+  /// Holds payload if notification tap occurs before main dashboard / navigator is ready
+  static Map<String, dynamic>? pendingNotificationPayload;
+  static bool isAppReady = false;
+
   static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   static final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
@@ -50,6 +56,25 @@ class PushNotificationService {
       );
 
   // ── Public API ──────────────────────────────────────────────────────────────
+
+  /// Mark the main UI app state as ready and process any pending notification tap
+  static void setAppReady() {
+    isAppReady = true;
+    debugPrint('🔔 App marked as ready for deep link navigation');
+    checkAndProcessPendingNotification();
+  }
+
+  /// Process pending notification payload if one was queued during cold start
+  static void checkAndProcessPendingNotification() {
+    if (pendingNotificationPayload != null && isAppReady) {
+      final payload = pendingNotificationPayload!;
+      pendingNotificationPayload = null;
+      debugPrint('🔔 Processing queued cold-start notification deep link...');
+      Future.delayed(const Duration(milliseconds: 400), () {
+        navigateFromPayload(payload);
+      });
+    }
+  }
 
   /// Call once after Firebase.initializeApp() and after the user is authenticated.
   static Future<void> initialize() async {
@@ -81,15 +106,17 @@ class PushNotificationService {
     ApiService.addSocketListener('new_ad_published', _onSocketAdPublished);
 
     // 8. Notification tap handler (app in background, not terminated)
-    FirebaseMessaging.onMessageOpenedApp.listen(_onNotificationTap);
+    FirebaseMessaging.onMessageOpenedApp.listen((message) {
+      debugPrint('🔔 Notification opened from background: ${message.data}');
+      _onNotificationTap(message);
+    });
 
-    // 9. Handle the case where app was opened from a terminated state
+    // 9. Handle the case where app was opened from a terminated state (cold start)
     final initialMessage = await _messaging.getInitialMessage();
     if (initialMessage != null) {
-      // Small delay to let the navigator settle
-      Future.delayed(const Duration(milliseconds: 800), () {
-        _onNotificationTap(initialMessage);
-      });
+      debugPrint('🔔 App launched from terminated notification payload: ${initialMessage.data}');
+      pendingNotificationPayload = initialMessage.data;
+      checkAndProcessPendingNotification();
     }
 
     debugPrint('🔔 PushNotificationService initialized');
@@ -305,8 +332,13 @@ class PushNotificationService {
     if (response.payload == null || response.payload!.isEmpty) return;
 
     try {
-      final data = jsonDecode(response.payload!) as Map<String, dynamic>;
-      navigateFromPayload(data);
+      final rawMap = jsonDecode(response.payload!) as Map<String, dynamic>;
+      final data = _normalizePayloadData(rawMap);
+      if (!isAppReady) {
+        pendingNotificationPayload = data;
+      } else {
+        navigateFromPayload(data);
+      }
     } catch (e) {
       debugPrint('🔔 Error parsing local notification payload: $e');
     }
@@ -315,15 +347,56 @@ class PushNotificationService {
   /// Called when a FCM notification (background) is tapped.
   static void _onNotificationTap(RemoteMessage message) {
     debugPrint('🔔 Notification tapped: ${message.data}');
-    navigateFromPayload(message.data);
+    final data = _normalizePayloadData(message.data);
+    if (!isAppReady) {
+      debugPrint('🔔 App not ready yet — queueing notification payload');
+      pendingNotificationPayload = data;
+    } else {
+      navigateFromPayload(data);
+    }
   }
 
-  // ── Navigation ──────────────────────────────────────────────────────────────
+  // ── Navigation & Deep Link Resolution ───────────────────────────────────────
 
-  static void navigateFromPayload(Map<String, dynamic> data) {
+  static Map<String, dynamic> _normalizePayloadData(Map<String, dynamic> data) {
+    final Map<String, dynamic> result = Map<String, dynamic>.from(data);
+
+    if (data['data'] is Map) {
+      result.addAll(Map<String, dynamic>.from(data['data']));
+    } else if (data['data'] is String) {
+      try {
+        final parsed = jsonDecode(data['data']);
+        if (parsed is Map) result.addAll(Map<String, dynamic>.from(parsed));
+      } catch (_) {}
+    }
+
+    if (data['metadata'] is Map) {
+      result.addAll(Map<String, dynamic>.from(data['metadata']));
+    } else if (data['metadata'] is String) {
+      try {
+        final parsed = jsonDecode(data['metadata']);
+        if (parsed is Map) result.addAll(Map<String, dynamic>.from(parsed));
+      } catch (_) {}
+    }
+
+    return result;
+  }
+
+  static bool _isValidUuid(String str) {
+    if (str.length < 32) return false;
+    final uuidRegExp = RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    );
+    return uuidRegExp.hasMatch(str);
+  }
+
+  static void navigateFromPayload(Map<String, dynamic> rawData) {
+    final data = _normalizePayloadData(rawData);
+
     final navigator = NotificationNavigator.navigator;
     if (navigator == null) {
-      debugPrint('🔔 Navigator not available yet — skipping navigation');
+      debugPrint('🔔 Navigator not available yet — queueing payload for deep link');
+      pendingNotificationPayload = data;
       return;
     }
 
@@ -335,184 +408,199 @@ class PushNotificationService {
             data['entityType'] ??
             '')
         .toString()
-        .toLowerCase();
+        .toLowerCase()
+        .trim();
 
-    switch (rawType) {
-      // ── Strangers Meet Notifications (Tab 0 in LiveFeedScreen) ─────────────
-      case 'strangers_meet_join_request':
-      case 'strangers_meet_request_accepted':
-      case 'strangers_meet_request_rejected':
-      case 'strangers_meet_payment_success':
-      case 'strangers_meet_participant_joined':
-      case 'strangers_meet_approved':
-      case 'strangers_meet_request_submitted':
-      case 'strangers_meet_settlement_paid':
-      case 'strangers_meet_published':
-      case 'strangers_meet_awaiting_payment':
-      case 'strangers_meet_starting_soon':
-      case 'stranger_meet_request':
-      case 'stranger_meet_accepted':
-      case 'stranger_meet_declined':
-      case 'stranger_meet_join_request':
-      case 'stranger_meet_matched':
-      case 'stranger_meet':
-      case 'strangers_meet':
-        final requestId = data['requestId']?.toString() ??
-            data['id']?.toString() ??
-            data['entityId']?.toString() ??
-            data['strangersMeetRequestId']?.toString() ??
-            data['meetId']?.toString();
-        if (requestId != null && requestId.isNotEmpty) {
-          _navigateToStrangersMeet(navigator, requestId);
-        } else {
-          navigator.push(
-            MaterialPageRoute(
-              builder: (_) => const LiveFeedScreen(initialTabIndex: 0), // Tab 0 = Stranger Meet
-            ),
-          );
-        }
-        break;
+    debugPrint('🔔 Navigating from notification payload (type: "$rawType", payload: $data)');
 
-      // ── Venue Offers & Details ──────────────────────────────────────────────
-      case 'offer':
-      case 'club_pub_offer':
-        _navigateToVenueDetail(navigator, data);
-        break;
+    // ── 1. Messages & Chat Notifications ────────────────────────────────────
+    final senderId = (data['senderId'] ??
+            data['actorUserId'] ??
+            data['actorId'] ??
+            data['userId'])
+        ?.toString();
 
-      // ── Messages & Chat ─────────────────────────────────────────────────────
-      case 'message':
-      case 'new_message':
-      case 'match':
-      case 'match_created':
+    if (rawType.contains('message') ||
+        rawType.contains('chat') ||
+        rawType.contains('match') ||
+        (senderId != null && senderId.isNotEmpty && rawType == '')) {
+      if (senderId != null && senderId.isNotEmpty) {
         _navigateToChat(navigator, data);
-        break;
+        return;
+      }
+    }
 
-      // ── Party Plan Notifications (Tab 1 in LiveFeedScreen) ──────────────────
-      case 'new_party_plan':
-      case 'party_plan_created':
-      case 'party_plan_approved':
-      case 'party_plan_published':
-      case 'party_plan_starting_soon':
-      case 'party_plan_joined':
-      case 'party_plan_payment_success':
-      case 'party_plan':
-      case 'party_plan_declined':
-      case 'party_safety_check':
-      case 'cooldown_expiring_soon':
-      case 'payment_window_expiring':
-      case 'lock_expired':
-      case 'reminder_24h':
-      case 'reminder_3h':
-      case 'reminder_2h':
-      case 'reminder_1h':
-      case 'reminder_30m':
-      case 'reminder_10m':
-      case 'arrival_prompt':
+    // ── 2. Party Plan Notifications ─────────────────────────────────────────
+    final partyPlanId = (data['partyPlanId'] ??
+            data['planId'] ??
+            data['entityId'] ??
+            data['id'])
+        ?.toString();
+
+    final isPartyPlanType = rawType.contains('party') ||
+        rawType.contains('plan') ||
+        rawType.contains('reminder') ||
+        rawType.contains('cooldown') ||
+        rawType.contains('arrival') ||
+        rawType.contains('safety') ||
+        rawType.contains('lock_expired') ||
+        rawType.contains('deposit');
+
+    if (isPartyPlanType) {
+      if (partyPlanId != null && partyPlanId.isNotEmpty && _isValidUuid(partyPlanId)) {
+        // Deep link directly to Party Plan Detail Screen!
         navigator.push(
           MaterialPageRoute(
-            builder: (_) => const LiveFeedScreen(initialTabIndex: 1), // Tab 1 = Party Plan
+            builder: (_) => PartyPlanDetailScreen(
+              plan: {
+                'id': partyPlanId,
+                'planId': partyPlanId,
+                ...data,
+              },
+            ),
           ),
         );
-        break;
+        return;
+      }
 
-      case 'participant_payment_required':
-      case 'party_plan_request_accepted':
-      case 'party_plan_request':
+      if (rawType.contains('request') || rawType.contains('participant')) {
         navigator.push(
-          MaterialPageRoute(
-            builder: (_) => const PartyPlanRequestsScreen(),
-          ),
+          MaterialPageRoute(builder: (_) => const PartyPlanRequestsScreen()),
         );
-        break;
+        return;
+      }
 
-      case 'host_payment_required':
-      case 'host_payment_successful':
+      if (rawType.contains('host')) {
         navigator.push(
-          MaterialPageRoute(
-            builder: (_) => const HostPartyPlanManagerScreen(),
-          ),
+          MaterialPageRoute(builder: (_) => const HostPartyPlanManagerScreen()),
         );
-        break;
+        return;
+      }
 
-      // ── Group Party Notifications (Tab 2 in LiveFeedScreen) ────────────────
-      case 'group_party_initiated':
-      case 'group_party_approved':
-      case 'group_party_rejected':
-      case 'group_party_confirmed':
-      case 'group_party_cancelled':
-      case 'group_invite_sent':
-      case 'group_invite_accepted':
-      case 'group_member_joined':
-      case 'group_full':
-      case 'group_party':
+      navigator.push(
+        MaterialPageRoute(
+          builder: (_) => const LiveFeedScreen(initialTabIndex: 1), // Tab 1 = Party Plan
+        ),
+      );
+      return;
+    }
+
+    // ── 3. Stranger Meets Notifications ─────────────────────────────────────
+    final strangersMeetId = (data['strangersMeetRequestId'] ??
+            data['strangersMeetId'] ??
+            data['requestId'] ??
+            data['meetId'] ??
+            data['entityId'] ??
+            data['id'])
+        ?.toString();
+
+    final isStrangerMeetType = rawType.contains('stranger') || rawType.contains('meet');
+
+    if (isStrangerMeetType) {
+      if (strangersMeetId != null && strangersMeetId.isNotEmpty && _isValidUuid(strangersMeetId)) {
+        _navigateToStrangersMeet(navigator, strangersMeetId, data);
+        return;
+      }
+      navigator.push(
+        MaterialPageRoute(
+          builder: (_) => const LiveFeedScreen(initialTabIndex: 0), // Tab 0 = Stranger Meet
+        ),
+      );
+      return;
+    }
+
+    // ── 4. Group Party / Large Party Bookings ───────────────────────────────
+    if (rawType.contains('group') || rawType.contains('large_party')) {
+      final status = (data['status'] ?? data['bookingStatus'] ?? '').toString().toLowerCase();
+      if (status == 'confirmed' || status == 'paid' || rawType.contains('confirmed')) {
+        navigator.push(
+          MaterialPageRoute(builder: (_) => const TicketPocketScreen()),
+        );
+      } else {
         navigator.push(
           MaterialPageRoute(
             builder: (_) => const LiveFeedScreen(initialTabIndex: 2), // Tab 2 = Group Parties
           ),
         );
-        break;
+      }
+      return;
+    }
 
-      // ── Bookings & Digital Tickets ──────────────────────────────────────────
-      case 'booking_confirmed':
-      case 'booking_pending':
-      case 'booking_cancelled':
-      case 'booking_completed':
-      case 'large_party_confirmed':
-      case 'large_party_approved':
-      case 'large_party_payment_link':
-      case 'large_party_pending':
-      case 'large_party_rejected':
-      case 'ticket_generated':
-        navigator.push(
-          MaterialPageRoute(
-            builder: (_) => const TicketPocketScreen(),
-          ),
-        );
-        break;
+    // ── 5. Venue Offers & Details ───────────────────────────────────────────
+    final venueId = (data['venueId'] ?? data['entityId'] ?? data['id'])?.toString();
+    if (rawType.contains('offer') || rawType.contains('venue') || rawType.contains('club')) {
+      if (venueId != null && venueId.isNotEmpty) {
+        _navigateToVenueDetail(navigator, data);
+        return;
+      }
+    }
 
-      // ── Subscription Notifications ──────────────────────────────────────────
-      case 'subscription_expired':
+    // ── 6. Bookings & Tickets ───────────────────────────────────────────────
+    if (rawType.contains('booking') || rawType.contains('ticket')) {
+      navigator.push(
+        MaterialPageRoute(builder: (_) => const TicketPocketScreen()),
+      );
+      return;
+    }
+
+    // ── 7. Wallet & Subscription Notifications ───────────────────────────────
+    if (rawType.contains('wallet') || rawType.contains('payment') || rawType.contains('credit')) {
+      navigator.push(
+        MaterialPageRoute(builder: (_) => const LunaraWalletScreen()),
+      );
+      return;
+    }
+
+    if (rawType.contains('subscription')) {
+      if (rawType.contains('expired')) {
         _showSubscriptionDialog(
           navigator,
           title: 'VIP Subscription Expired',
           message: 'Your VIP subscription has expired or has been terminated. Tap below to view your wallet and options.',
           buttonText: 'View Wallet',
         );
-        break;
-
-      case 'subscription_extended':
+      } else {
         _showSubscriptionDialog(
           navigator,
-          title: 'VIP Subscription Extended!',
-          message: 'Excellent news! Your VIP subscription has been extended by the administration. Tap below to check your updated status.',
+          title: 'VIP Subscription Updated!',
+          message: 'Your subscription status has been updated. Tap below to check your status.',
           buttonText: 'Check Wallet',
         );
-        break;
-
-      default:
-        // Smart fallback matcher based on payload string contents
-        if (rawType.contains('party_plan') || rawType.contains('plan')) {
-          navigator.push(
-            MaterialPageRoute(
-              builder: (_) => const LiveFeedScreen(initialTabIndex: 1), // Party Plan tab
-            ),
-          );
-        } else if (rawType.contains('stranger') || rawType.contains('meet')) {
-          navigator.push(
-            MaterialPageRoute(
-              builder: (_) => const LiveFeedScreen(initialTabIndex: 0), // Stranger Meet tab
-            ),
-          );
-        } else if (rawType.contains('group')) {
-          navigator.push(
-            MaterialPageRoute(
-              builder: (_) => const LiveFeedScreen(initialTabIndex: 2), // Group Parties tab
-            ),
-          );
-        } else {
-          debugPrint('🔔 Unknown notification type: $rawType');
-        }
+      }
+      return;
     }
+
+    // ── 8. Generic Fallbacks based on IDs ────────────────────────────────────
+    if (partyPlanId != null && partyPlanId.isNotEmpty && _isValidUuid(partyPlanId)) {
+      navigator.push(
+        MaterialPageRoute(
+          builder: (_) => PartyPlanDetailScreen(
+            plan: {'id': partyPlanId, 'planId': partyPlanId, ...data},
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (strangersMeetId != null && strangersMeetId.isNotEmpty && _isValidUuid(strangersMeetId)) {
+      _navigateToStrangersMeet(navigator, strangersMeetId, data);
+      return;
+    }
+
+    if (venueId != null && venueId.isNotEmpty && _isValidUuid(venueId)) {
+      _navigateToVenueDetail(navigator, data);
+      return;
+    }
+
+    if (senderId != null && senderId.isNotEmpty) {
+      _navigateToChat(navigator, data);
+      return;
+    }
+
+    // Fallback to Notification Center Screen
+    navigator.push(
+      MaterialPageRoute(builder: (_) => const NotificationCenterScreen()),
+    );
   }
 
   static void _showSubscriptionDialog(
@@ -589,7 +677,7 @@ class PushNotificationService {
     NavigatorState navigator,
     Map<String, dynamic> data,
   ) {
-    final venueId = data['venueId']?.toString();
+    final venueId = (data['venueId'] ?? data['entityId'] ?? data['id'])?.toString();
     final venueName = data['venueName']?.toString() ?? 'Venue';
 
     if (venueId == null || venueId.isEmpty) {
@@ -597,8 +685,6 @@ class PushNotificationService {
       return;
     }
 
-    // Build a minimal venue map that VenueDetailScreen can work with.
-    // The screen will fetch full details from the API if needed.
     final venueMap = <String, dynamic>{
       'id': venueId,
       '_id': venueId,
@@ -619,9 +705,21 @@ class PushNotificationService {
     NavigatorState navigator,
     Map<String, dynamic> data,
   ) {
-    final senderId = data['senderId']?.toString();
-    final senderName = data['senderName']?.toString() ?? 'User';
-    final senderImage = data['senderImage']?.toString();
+    final senderId = (data['senderId'] ??
+            data['actorUserId'] ??
+            data['actorId'] ??
+            data['userId'])
+        ?.toString();
+    final senderName = (data['senderName'] ??
+            data['actorName'] ??
+            data['name'] ??
+            'User')
+        .toString();
+    final senderImage = (data['senderImage'] ??
+            data['actorProfilePhotoUrl'] ??
+            data['profileImageUrl'] ??
+            data['imageUrl'])
+        ?.toString();
     final conversationId = data['conversationId']?.toString();
 
     if (senderId == null || senderId.isEmpty) {
@@ -629,7 +727,6 @@ class PushNotificationService {
       return;
     }
 
-    // Build a user map that ChatScreen expects.
     final userMap = <String, dynamic>{
       'id': senderId,
       'name': senderName,
@@ -637,6 +734,7 @@ class PushNotificationService {
       'lastName': senderName.split(' ').length > 1
           ? senderName.split(' ').sublist(1).join(' ')
           : '',
+      'profilePhotoUrl': senderImage ?? '',
       'image': senderImage ?? '',
       'conversationId': conversationId,
     };
@@ -646,13 +744,19 @@ class PushNotificationService {
     );
   }
 
-  static void _navigateToStrangersMeet(NavigatorState navigator, String requestId) {
+  static void _navigateToStrangersMeet(
+    NavigatorState navigator,
+    String requestId,
+    Map<String, dynamic> data,
+  ) {
     navigator.push(
       MaterialPageRoute(
         builder: (_) => PostDetailScreen(
           post: {
             'type': 'strangers_meet',
             'id': requestId,
+            'requestId': requestId,
+            ...data,
           },
         ),
       ),

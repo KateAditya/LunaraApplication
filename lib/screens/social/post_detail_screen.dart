@@ -35,7 +35,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handleRazorpayError);
     _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
 
-    _alreadyRequested = widget.post['hasRequested'] == true;
+    final targetPlanId = widget.post['id']?.toString() ?? '';
+    _alreadyRequested = widget.post['hasRequested'] == true || ApiService.isPartyPlanRequestedSync(targetPlanId);
 
     if (widget.post['type'] == 'strangers_meet') {
       _loadStrangersMeetDetails();
@@ -51,8 +52,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Future<void> _loadPartyPlanDetails() async {
     try {
-      final myRequests = await ApiService.fetchMyPartyPlanRequests();
       final targetPlanId = widget.post['id']?.toString() ?? '';
+      if (ApiService.isPartyPlanRequestedSync(targetPlanId)) {
+        if (mounted) {
+          setState(() {
+            _alreadyRequested = true;
+          });
+        }
+      }
+      final myRequests = await ApiService.fetchMyPartyPlanRequests();
       bool requested = false;
       for (final req in myRequests) {
         final planId =
@@ -64,7 +72,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       }
       if (mounted) {
         setState(() {
-          _alreadyRequested = requested;
+          _alreadyRequested = requested || ApiService.isPartyPlanRequestedSync(targetPlanId);
         });
       }
     } catch (e) {

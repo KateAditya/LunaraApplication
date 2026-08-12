@@ -1620,8 +1620,8 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
         return status == 'active';
       }).toList();
 
-      // Collect plan IDs that current user has already requested to join
-      final requestedIds = <String>{};
+      // Collect plan IDs that current user has already requested to join (combining sync cache + server response)
+      final requestedIds = ApiService.getRequestedPlanIdsSync();
       for (final req in myRequests) {
         final planId =
             req['partyPlanId']?.toString() ?? req['planId']?.toString();
