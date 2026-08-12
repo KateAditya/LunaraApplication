@@ -871,7 +871,7 @@ export const payWithWallet = async (req: Request, res: Response): Promise<void> 
             return;
         }
 
-        if (paymentType === 'commitment_deposit') {
+        if (paymentType === 'commitment_deposit' || paymentType === 'host_deposit') {
             const lockResult = await WalletService.lockDeposit({
                 userId,
                 amount: requiredAmount,

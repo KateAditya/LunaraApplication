@@ -1259,9 +1259,9 @@ class ApiService {
           'paymentType': paymentType,
         },
       );
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) return data;
+      if (response.body.isNotEmpty) {
+        final Map<String, dynamic> decoded = jsonDecode(response.body);
+        return decoded;
       }
     } catch (e) {
       debugPrint('payWithWallet error: $e');

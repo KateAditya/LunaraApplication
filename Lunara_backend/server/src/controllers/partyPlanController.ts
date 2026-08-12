@@ -660,7 +660,7 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                     depositAmount: depositAmount,
                     hostPaymentStatus: PartyPlanPaymentStatus.UNPAID,
                     hostRazorpayOrderId: order.id,
-                    isLive: parsedVisibility === PartyPlanVisibility.PRIVATE ? false : true, // Private plans are not shown in public feed, both and public are
+                    isLive: false, // Unpaid plans must not appear in public feed until host deposit is paid
                     expiresAt: partyDate,
                     paymentStatus: 'pending',
                     foodPreference: foodPreference || 'Both',
@@ -1008,34 +1008,33 @@ export const getAllPartyPlans = async (req: Request, res: Response): Promise<voi
         if (venueId) where.venueId = venueId;
 
         if (requesterId) {
-            where[Op.or] = [
-                { visibility: PartyPlanVisibility.PUBLIC },
-                { userId: requesterId },
+            where[Op.and] = [
                 {
-                    visibility: PartyPlanVisibility.PRIVATE,
-                    selectedUsers: {
-                        [Op.contains]: [requesterId],
-                    },
-                },
-                {
-                    visibility: PartyPlanVisibility.BOTH,
                     [Op.or]: [
-                        { selectedUsers: { [Op.contains]: [requesterId] } },
-                        // In both, everyone can see it theoretically, but let's just make it public effectively
-                    ]
-                }
+                        { userId: requesterId }, // Host can see their own plan (to pay deposit)
+                        {
+                            hostPaymentStatus: PartyPlanPaymentStatus.PAID,
+                            isLive: true,
+                            [Op.or]: [
+                                { visibility: PartyPlanVisibility.PUBLIC },
+                                { visibility: PartyPlanVisibility.BOTH },
+                                {
+                                    visibility: PartyPlanVisibility.PRIVATE,
+                                    selectedUsers: { [Op.contains]: [requesterId] },
+                                },
+                            ],
+                        },
+                    ],
+                },
             ];
-            // Fix: 'both' effectively means public + targeted invites.
-            // If it's both, we treat it as public for the general feed.
-            where[Op.or].push({ visibility: PartyPlanVisibility.BOTH });
         } else {
+            where.hostPaymentStatus = PartyPlanPaymentStatus.PAID;
+            where.isLive = true;
             where[Op.or] = [
                 { visibility: PartyPlanVisibility.PUBLIC },
                 { visibility: PartyPlanVisibility.BOTH },
             ];
         }
-
-        where.isLive = true; // Only show live plans
 
         const pageNum = Math.max(1, parseInt(page as string));
         const limitNum = Math.min(100, Math.max(1, parseInt(limit as string)));
