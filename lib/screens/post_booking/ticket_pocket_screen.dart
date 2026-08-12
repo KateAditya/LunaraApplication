@@ -152,24 +152,13 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
   }
 
   String _formatBookingDateTime(String bookingDateStr, String startTimeStr) {
+    if (bookingDateStr.trim().isEmpty) {
+      return '• $startTimeStr';
+    }
     try {
       final date = DateTime.parse(bookingDateStr).toLocal();
-      final timeParts = startTimeStr.split(':');
-      final hour = int.parse(timeParts[0]);
-      final minute = int.parse(timeParts[1]);
-
-      final fullDateTime = DateTime(
-        date.year,
-        date.month,
-        date.day,
-        hour,
-        minute,
-      );
-      final formattedDate = DateFormat(
-        'EEE, MMM d',
-      ).format(fullDateTime).toUpperCase();
-      final formattedTime = DateFormat('h:mm a').format(fullDateTime);
-      return '$formattedDate • $formattedTime';
+      final formattedDate = DateFormat('MMM d, yyyy').format(date).toUpperCase();
+      return '$formattedDate • $startTimeStr';
     } catch (_) {
       return '$bookingDateStr • $startTimeStr';
     }
