@@ -219,14 +219,14 @@ export const purchaseSubscription = async (req: Request, res: Response): Promise
 
         // Determine transaction type
         const existingSub = await UserSubscription.findOne({
-            where: { userId, status: { [Op.in]: [SubscriptionStatus.ACTIVE, 'ACTIVE', 'active'] } },
+            where: { userId, status: SubscriptionStatus.ACTIVE },
         });
         const txnType = existingSub ? TransactionType.UPGRADE : TransactionType.PURCHASE;
 
         // Expire current subscriptions
         await UserSubscription.update(
             { status: SubscriptionStatus.EXPIRED },
-            { where: { userId, status: { [Op.in]: [SubscriptionStatus.ACTIVE, 'ACTIVE', 'active'] } } }
+            { where: { userId, status: SubscriptionStatus.ACTIVE } }
         );
 
         // Create new subscription

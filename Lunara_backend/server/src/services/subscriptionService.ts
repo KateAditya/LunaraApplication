@@ -84,11 +84,10 @@ export class SubscriptionService {
     }
 
     private static async buildCache(userId: string): Promise<CacheEntry> {
-        // Get active subscription
         const subscription = await UserSubscription.findOne({
             where: {
                 userId,
-                status: { [Op.in]: [SubscriptionStatus.ACTIVE, 'ACTIVE', 'active'] },
+                status: SubscriptionStatus.ACTIVE,
                 endDate: { [Op.gt]: new Date() },
             },
             include: [{ model: SubscriptionPackage, as: 'package' }],
@@ -359,7 +358,7 @@ export class SubscriptionService {
             const subscription = await UserSubscription.findOne({
                 where: {
                     userId,
-                    status: { [Op.in]: [SubscriptionStatus.ACTIVE, 'ACTIVE', 'active'] },
+                    status: SubscriptionStatus.ACTIVE,
                     endDate: { [Op.gt]: new Date() },
                 },
                 order: [['createdAt', 'DESC']],
