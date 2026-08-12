@@ -102,7 +102,7 @@ export const getCurrentSubscription = async (req: Request, res: Response): Promi
         const subscription = await UserSubscription.findOne({
             where: {
                 userId,
-                status: { [Op.in]: [SubscriptionStatus.ACTIVE, 'ACTIVE', 'active'] },
+                status: SubscriptionStatus.ACTIVE,
                 endDate: { [Op.gt]: new Date() },
             },
             include: [{ model: SubscriptionPackage, as: 'package' }],
@@ -682,7 +682,7 @@ export const useBoost = async (req: Request, res: Response): Promise<void> => {
         const userId = (req as any).user.id;
 
         const sub = await UserSubscription.findOne({
-            where: { userId, status: { [Op.in]: [SubscriptionStatus.ACTIVE, 'ACTIVE', 'active'] } },
+            where: { userId, status: SubscriptionStatus.ACTIVE },
             order: [['createdAt', 'DESC']],
         });
 
