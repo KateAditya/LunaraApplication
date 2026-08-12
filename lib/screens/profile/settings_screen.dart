@@ -10,6 +10,7 @@ import '../../services/biometric_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'edit_profile_screen.dart';
 import '../../widgets/subscription_limit_dialog.dart';
+import '../../services/subscription_provider.dart';
 import '../../models/user.dart';
 import '../../services/onboarding_service.dart';
 import '../onboarding/welcome_carousel.dart';
@@ -316,10 +317,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildHideProfileTile() {
-    final isProUser = _currentUser?.isPro ?? false;
+    final hasHideProfile = SubscriptionProvider.instance.hasVipFeature(VipFeature.hideProfile);
 
     return _buildSwitchTile('Hide Profile', _hideProfile, (v) async {
-      if (!isProUser) {
+      if (!hasHideProfile) {
         showSubscriptionLimitDialog(
           context,
           feature: SubLimitFeature.hideProfile,

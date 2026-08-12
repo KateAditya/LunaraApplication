@@ -13,6 +13,16 @@ import 'package:flutter/material.dart';
 import '../models/plan_status.dart';
 import 'api_service.dart';
 
+enum VipFeature {
+  hideProfile,
+  priorityVisibility,
+  trustBadge,
+  seeWhoLikedMe,
+  seeWhoViewedMe,
+  partyCreation,
+  strangerMeet,
+}
+
 class SubscriptionProvider extends ChangeNotifier {
   // ── Singleton ──────────────────────────────────────────────────────────────
   static final SubscriptionProvider _instance = SubscriptionProvider._();
@@ -126,6 +136,29 @@ class SubscriptionProvider extends ChangeNotifier {
     final feat = _status.features[key];
     if (feat == null) return 0;
     return feat['limit'];
+  }
+
+  /// Centralized VIP Feature entitlement check.
+  /// Returns true only if the subscription is active and the specific feature is granted.
+  bool hasVipFeature(VipFeature feature) {
+    if (!_status.isActive) return false;
+
+    switch (feature) {
+      case VipFeature.hideProfile:
+        // Hide profile is available to PLUS, PRO, and ELITE
+        return _status.isPlus || _status.isPro || _status.isElite;
+      case VipFeature.priorityVisibility:
+        return _status.hasPriorityVisibility;
+      case VipFeature.trustBadge:
+        return _status.hasTrustBadge;
+      case VipFeature.seeWhoLikedMe:
+      case VipFeature.seeWhoViewedMe:
+        return _status.canSeeWhoLiked;
+      case VipFeature.partyCreation:
+        return isFeatureEnabled('party_creation');
+      case VipFeature.strangerMeet:
+        return isFeatureEnabled('stranger_meet');
+    }
   }
 }
 
