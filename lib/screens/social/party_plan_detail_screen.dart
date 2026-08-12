@@ -82,7 +82,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
           children: [
             Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 24),
             SizedBox(width: 10),
-            Text('Request Cancellation?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+            Text('CANCEL THIS PLAN?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 17)),
           ],
         ),
         content: const Column(
@@ -90,8 +90,13 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'This will send a cancellation request to the other participant. The Party Plan will only be cancelled after both participants agree.',
+              'This action will notify the other participant. Both participants must confirm the cancellation before the Party Plan is cancelled.',
               style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+            ),
+            SizedBox(height: 12),
+            Text(
+              'Frequent cancellations may affect your Commitment Deposit / Reliability Score.',
+              style: TextStyle(color: Colors.amberAccent, fontSize: 12, fontWeight: FontWeight.w600, height: 1.3),
             ),
             SizedBox(height: 14),
             Text('If approved:', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
@@ -100,15 +105,13 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
             SizedBox(height: 4),
             Text('• Chat will become read-only (archived after 24h).', style: TextStyle(color: Colors.white60, fontSize: 12)),
             SizedBox(height: 4),
-            Text('• Reliability Score may decrease (-5 pts).', style: TextStyle(color: Colors.white60, fontSize: 12)),
-            SizedBox(height: 4),
-            Text('• Both users will receive notifications.', style: TextStyle(color: Colors.white60, fontSize: 12)),
+            Text('• Reliability Score may decrease for initiator (-5 pts).', style: TextStyle(color: Colors.white60, fontSize: 12)),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Keep Plan', style: TextStyle(color: Colors.white60, fontWeight: FontWeight.bold)),
+            child: const Text('KEEP PLAN', style: TextStyle(color: Colors.white60, fontWeight: FontWeight.bold)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -119,7 +122,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
               backgroundColor: Colors.redAccent,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            child: const Text('Send Cancellation Request', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+            child: const Text('REQUEST CANCELLATION', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
           ),
         ],
       ),
@@ -418,7 +421,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                         side: const BorderSide(color: Colors.white30),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
-                      child: const Text('Keep Booking', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 12)),
+                      child: const Text('KEEP PLAN', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 12)),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -426,10 +429,10 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                     child: ElevatedButton(
                       onPressed: _isLoadingCancellation ? null : () => _respondToCancellation(reqId, 'approve'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
+                        backgroundColor: Colors.redAccent,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
-                      child: const Text('Approve Cancellation', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
+                      child: const Text('CONFIRM CANCELLATION', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
                     ),
                   ),
                 ],

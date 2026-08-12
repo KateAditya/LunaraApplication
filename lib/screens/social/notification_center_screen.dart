@@ -1366,6 +1366,15 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     final titleLower = title.toLowerCase();
     final bodyLower = body.toLowerCase();
 
+    // ── Cancellation event routing ────────────────────────────────────
+    if (eventType.contains('CANCELLATION') ||
+        titleLower.contains('cancellation') ||
+        titleLower.contains('cancelled') ||
+        bodyLower.contains('cancelled') ||
+        bodyLower.contains('wants to cancel')) {
+      return _buildPartyPlanCancellationCard(item);
+    }
+
     // ── Party Plan specific event types ──────────────────────────────
     if (eventType.contains('PARTY_PLAN_REQUEST_RECEIVED') ||
         titleLower.contains('new party plan request') ||
@@ -2252,6 +2261,150 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   ),
                 ),
               ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPartyPlanCancellationCard(dynamic item) {
+    final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final data = item['metadata'] is Map
+        ? item['metadata'] as Map<String, dynamic>
+        : (item['data'] is Map ? item['data'] as Map<String, dynamic> : <String, dynamic>{});
+
+    final String planId = (data['planId'] ?? item['entityId'] ?? '').toString();
+    final String requestId = (data['requestId'] ?? '').toString();
+    final String title = (item['title'] ?? 'Party Plan Cancellation').toString();
+    final String body = (item['body'] ?? '').toString();
+    final String timeStr = _formatTimeAgo(item['createdAt']);
+
+    final String reqStatus = (data['status'] ?? item['cancellationStatus'] ?? 'pending').toString().toLowerCase();
+    final String requestedById = (data['requestedById'] ?? item['requestedById'] ?? '').toString();
+    final bool isRecipient = ApiService.currentUserId != null && requestedById.isNotEmpty && requestedById != ApiService.currentUserId;
+    final bool isCancelled = reqStatus == 'approved' || reqStatus == 'completed' || reqStatus == 'cancelled' || body.toLowerCase().contains('cancelled');
+
+    return _buildBaseCardContainer(
+      isUnread: isUnread,
+      onTap: () => _markAsRead(item),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: isCancelled ? Colors.red.withValues(alpha: 0.15) : Colors.orange.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  isCancelled ? 'CANCELLED' : 'CANCELLATION REQUESTED',
+                  style: TextStyle(
+                    color: isCancelled ? Colors.redAccent : Colors.orangeAccent,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                timeStr,
+                style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5),
+              ),
+              if (isUnread) ...[const SizedBox(width: 6), _buildUnreadDot()],
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            title,
+            style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.w900, fontSize: 13.5),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            body,
+            style: const TextStyle(color: Color(0xFF475569), fontSize: 12.5, height: 1.4),
+          ),
+          const SizedBox(height: 12),
+          if (isCancelled)
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  _markAsRead(item);
+                  Navigator.pushNamed(context, '/wallet');
+                },
+                icon: const Icon(Icons.account_balance_wallet_rounded, size: 14, color: Colors.white),
+                label: const Text('View Wallet', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF10B981),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            )
+          else if (isRecipient && requestId.isNotEmpty && planId.isNotEmpty)
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () async {
+                      _markAsRead(item);
+                      final res = await ApiService.respondToPartyPlanCancellationRequest(
+                        planId: planId,
+                        requestId: requestId,
+                        action: 'reject',
+                      );
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(res['message'] ?? 'Cancellation request declined. Party Plan remains active.'),
+                            backgroundColor: Colors.grey.shade800,
+                          ),
+                        );
+                        _fetchNotifications();
+                      }
+                    },
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFFCBD5E1)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('KEEP PLAN', style: TextStyle(color: Color(0xFF475569), fontSize: 11.5, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      _markAsRead(item);
+                      final res = await ApiService.respondToPartyPlanCancellationRequest(
+                        planId: planId,
+                        requestId: requestId,
+                        action: 'approve',
+                      );
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(res['message'] ?? 'Party Plan cancelled. Commitment deposits credited to wallets!'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                        _fetchNotifications();
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('CONFIRM CANCELLATION', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            )
+          else
+            const Text(
+              'Waiting for participant confirmation.',
+              style: TextStyle(color: Colors.orangeAccent, fontSize: 11.5, fontWeight: FontWeight.w600),
             ),
         ],
       ),

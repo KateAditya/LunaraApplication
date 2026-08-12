@@ -84,6 +84,34 @@ export const createCancellationRequest = async (req: Request, res: Response): Pr
             return res.status(400).json({ success: false, message: 'Party Plan is already cancelled' });
         }
 
+        // Plan Type Guard — Cancellation system applies ONLY to Party Plan
+        const planType = (plan.planType || plan.type || 'party_plan').toString().toLowerCase();
+        if (planType !== 'party_plan' && planType !== 'partyplan') {
+            return res.status(400).json({ success: false, message: 'This cancellation system applies exclusively to Party Plans.' });
+        }
+
+        // Protected Arrival / Completion State Guard
+        const protectedStates: string[] = [
+            PartyPlanLifecycleStatus.ARRIVAL_PENDING,
+            PartyPlanLifecycleStatus.ARRIVAL_CONFIRMATION,
+            PartyPlanLifecycleStatus.ARRIVAL_VERIFIED,
+            PartyPlanLifecycleStatus.TEN_MIN_CONFIRMATION,
+            PartyPlanLifecycleStatus.COMPLETED,
+            'arrival_pending',
+            'arrival_confirmation',
+            'arrival_verified',
+            'arrived',
+            'completed',
+            'no_show',
+        ];
+        if (protectedStates.includes(plan.lifecycleStatus) || protectedStates.includes(plan.status)) {
+            return res.status(400).json({
+                success: false,
+                isWindowClosed: true,
+                message: 'This Party Plan cannot be cancelled because the event has already started or entered completion phase.',
+            });
+        }
+
         const acceptedRequest = plan.requests && plan.requests.length > 0 ? plan.requests[0] : null;
         if (!acceptedRequest) {
             return res.status(400).json({ success: false, message: 'Cancellation system applies only to confirmed Party Plans with an accepted participant.' });

@@ -99,6 +99,14 @@ export const startPartyPlanCron = () => {
                 }
             }
 
+            // 1.5 Check for expired or auto-approved cancellation requests
+            try {
+                const { checkExpiredOrAutoApprovedRequests } = require('../controllers/cancellationController');
+                await checkExpiredOrAutoApprovedRequests();
+            } catch (cancelCronErr: any) {
+                logger.warn('[Cron] checkExpiredOrAutoApprovedRequests warning:', cancelCronErr.message);
+            }
+
 
             // ── 2. Event Countdown Engine (24h, 3h, 1h, 30m Reminders) ─────────
             try {

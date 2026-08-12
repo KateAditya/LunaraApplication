@@ -1889,6 +1889,35 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ];
       }
 
+      // Handle CANCELLED state for Party Plan cards
+      final String planStatus = (item['status'] ?? planMap['status'] ?? '').toString().toLowerCase();
+      final String lifecycleStatus = (item['lifecycleStatus'] ?? planMap['lifecycleStatus'] ?? '').toString().toLowerCase();
+
+      if (planStatus == 'cancelled' || lifecycleStatus == 'cancelled') {
+        title = '❌ Party Plan Cancelled';
+        body = 'This Party Plan at $venueName was cancelled by mutual agreement.';
+        badge = 'CANCELLED';
+        accent = Colors.redAccent;
+        actionsList = [
+          NotificationAction(
+            label: 'View Details',
+            icon: Icons.info_outline_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PartyPlanDetailScreen(
+                    plan: planMap.isNotEmpty ? planMap : item,
+                  ),
+                ),
+              );
+            },
+          ),
+        ];
+      }
+
       // Hide unpaid party plans created by OTHER users from live feed
       if (!isStranger && !isMyCreatedPartyPlan && hostPayStatus.isNotEmpty && hostPayStatus != 'paid' && hostPayStatus != 'completed') {
         continue;
