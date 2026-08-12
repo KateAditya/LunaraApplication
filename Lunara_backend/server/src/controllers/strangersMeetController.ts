@@ -1462,13 +1462,31 @@ export const handleJoinRequest = async (req: Request, res: Response): Promise<vo
         } else {
             await joiner.update({ status: 'rejected' as any });
 
+            // Fetch host details for notification card profile name & image
+            const hostUser = await User.findByPk(request.userId);
+            const declinerName = hostUser ? `${hostUser.firstName} ${hostUser.lastName}`.trim() : 'the host';
+            const declinerPhoto = hostUser ? ((hostUser as any).profileImageUrl || (hostUser as any).profilePhotoUrl || ((hostUser as any).photos && (hostUser as any).photos[0] ? (hostUser as any).photos[0].url : null)) : null;
+
             // Multi-channel notification engine for rejected joiner
             await StrangersMeetService.emitNotification({
                 recipientUserId: joiner.userId,
                 eventType: 'strangers_meet_request_rejected',
                 title: 'Declined Request ❌',
-                body: `Your request to join "${request.subject}" was declined by the host.`,
-                entityId: request.id
+                body: `Your request to join "${request.subject}" was declined by ${declinerName}.`,
+                entityId: request.id,
+                metadata: {
+                    planId: request.id,
+                    actorUserId: hostUser?.id,
+                    actorName: declinerName,
+                    actorProfilePhotoUrl: declinerPhoto,
+                    actor: hostUser ? {
+                        id: hostUser.id,
+                        firstName: hostUser.firstName,
+                        lastName: hostUser.lastName,
+                        profilePhotoUrl: declinerPhoto,
+                        profileImageUrl: declinerPhoto,
+                    } : null
+                }
             });
 
             // Emit socket event for real-time slots updates

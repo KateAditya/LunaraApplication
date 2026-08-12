@@ -1962,6 +1962,10 @@ export const rejectPartyPlanRequest = async (req: Request, res: Response): Promi
                     if (venue) venueName = venue.name;
                 }
 
+                const hostUser = await User.findByPk(plan.userId);
+                const declinerName = hostUser ? `${hostUser.firstName} ${hostUser.lastName}`.trim() : 'the host';
+                const declinerPhoto = hostUser ? ((hostUser as any).profileImageUrl || (hostUser as any).profilePhotoUrl || ((hostUser as any).photos && (hostUser as any).photos[0] ? (hostUser as any).photos[0].url : null)) : null;
+
                 await NotificationService.dispatch({
                     recipientUserId: request.requesterId,
                     actorUserId: plan.userId,
@@ -1969,9 +1973,22 @@ export const rejectPartyPlanRequest = async (req: Request, res: Response): Promi
                     category: 'requests',
                     entityType: 'party_plan_request',
                     entityId: request.id,
-                    title: '🔴 Request Declined',
-                    body: `Your request to join the Party Plan at ${venueName} was declined.`,
-                    metadata: { planId: plan.id, requestId: request.id },
+                    title: 'Declined Request ❌',
+                    body: `Your request to join the Party Plan at ${venueName} was declined by ${declinerName}.`,
+                    metadata: {
+                        planId: plan.id,
+                        requestId: request.id,
+                        actorUserId: hostUser?.id,
+                        actorName: declinerName,
+                        actorProfilePhotoUrl: declinerPhoto,
+                        actor: hostUser ? {
+                            id: hostUser.id,
+                            firstName: hostUser.firstName,
+                            lastName: hostUser.lastName,
+                            profilePhotoUrl: declinerPhoto,
+                            profileImageUrl: declinerPhoto,
+                        } : null
+                    },
                     idempotencyKey: `request_rejected_${request.id}`,
                 });
 

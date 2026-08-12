@@ -1375,6 +1375,13 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       return _buildPartyPlanCancellationCard(item);
     }
 
+    if (eventType.contains('REJECTED') ||
+        eventType.contains('DECLINED') ||
+        titleLower.contains('declined') ||
+        bodyLower.contains('was declined')) {
+      return _buildDeclinedRequestCard(item);
+    }
+
     if (eventType.contains('PARTY_PLAN_INVITATION') ||
         eventType.contains('PARTY_PLAN_INVITE') ||
         titleLower.contains('party plan invitation') ||
@@ -2568,6 +2575,129 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 ),
               ],
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeclinedRequestCard(dynamic item) {
+    final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final title = item['title']?.toString() ?? 'Declined Request ❌';
+    String body = item['body']?.toString() ?? 'Your request was declined.';
+    final timeStr = _formatTimeAgo(item['createdAt']);
+
+    final data = item['metadata'] is Map
+        ? item['metadata'] as Map<String, dynamic>
+        : (item['data'] is Map ? item['data'] as Map<String, dynamic> : <String, dynamic>{});
+
+    final actor = item['actor'] ?? item['sender'] ?? data['actor'];
+    final actorMap = actor is Map ? Map<String, dynamic>.from(actor) : <String, dynamic>{};
+
+    final String declinerName = actorMap['firstName'] != null
+        ? '${actorMap['firstName']} ${actorMap['lastName'] ?? ''}'.trim()
+        : (actorMap['name'] ?? data['actorName'] ?? 'the host').toString();
+
+    final String declinerPhoto = (actorMap['profilePhotoUrl'] ??
+            actorMap['profileImageUrl'] ??
+            actorMap['photoUrl'] ??
+            data['actorProfilePhotoUrl'] ??
+            '')
+        .toString();
+
+    // Replace generic "by the host" with actual decliner name if available
+    if (declinerName.isNotEmpty && declinerName != 'the host' && body.contains('by the host.')) {
+      body = body.replaceAll('by the host.', 'by $declinerName.');
+    } else if (declinerName.isNotEmpty && declinerName != 'the host' && body.contains('by the host')) {
+      body = body.replaceAll('by the host', 'by $declinerName');
+    }
+
+    final userData = {
+      ...actorMap,
+      'firstName': declinerName,
+      'profilePhotoUrl': declinerPhoto,
+      'profileImageUrl': declinerPhoto,
+    };
+
+    return _buildBaseCardContainer(
+      isUnread: isUnread,
+      onTap: () => _markAsRead(item),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GestureDetector(
+            onTap: () => _openUserProfile(userData),
+            child: declinerPhoto.isNotEmpty
+                ? LunaraProfileImage(
+                    userData: userData,
+                    radius: 22,
+                  )
+                : Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+                    ),
+                    child: const Icon(
+                      Icons.cancel_rounded,
+                      color: Colors.redAccent,
+                      size: 22,
+                    ),
+                  ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text(
+                        'DECLINED',
+                        style: TextStyle(
+                          color: Colors.redAccent,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      timeStr,
+                      style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5),
+                    ),
+                    if (isUnread) ...[const SizedBox(width: 6), _buildUnreadDot()],
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  body,
+                  style: const TextStyle(
+                    color: Color(0xFF475569),
+                    fontSize: 12.5,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
