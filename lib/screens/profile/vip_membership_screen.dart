@@ -5,6 +5,17 @@ import '../../services/api_service.dart';
 import '../../services/subscription_provider.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 
+enum VIPPaymentState {
+  initial,
+  paymentPending,
+  paymentSuccess,
+  paymentFailed,
+  verificationPending,
+  verificationFailed,
+  subscriptionActive,
+  subscriptionActivationFailed,
+}
+
 class VIPMembershipScreen extends StatefulWidget {
   const VIPMembershipScreen({super.key});
 
@@ -19,6 +30,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
 
   bool _isLoading = true;
   bool _isProcessing = false;
+  VIPPaymentState _paymentState = VIPPaymentState.initial;
 
   List<dynamic> _allPackages = [];
   String? _activePackageId;
@@ -147,6 +159,15 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
   }
 
   void _handleRazorpaySuccess(PaymentSuccessResponse response) {
+    debugPrint('[VIP] Razorpay payment success');
+    debugPrint('[VIP] Payment ID received: ${response.paymentId}');
+    debugPrint('[VIP] Order ID received: ${response.orderId}');
+    debugPrint('[VIP] Signature received: ${response.signature != null}');
+
+    setState(() {
+      _paymentState = VIPPaymentState.paymentSuccess;
+    });
+
     if (_tabController.index == 0) {
       // Package Purchase
       final pkg = _selectedPackage;
@@ -175,7 +196,11 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
   }
 
   void _handleRazorpayError(PaymentFailureResponse response) {
-    setState(() => _isProcessing = false);
+    debugPrint('[VIP] Razorpay payment failed: ${response.message}');
+    setState(() {
+      _isProcessing = false;
+      _paymentState = VIPPaymentState.paymentFailed;
+    });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Payment failed: ${response.message}'),
@@ -185,14 +210,23 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
   }
 
   void _handleExternalWallet(ExternalWalletResponse response) {
-    setState(() => _isProcessing = false);
+    setState(() {
+      _isProcessing = false;
+      _paymentState = VIPPaymentState.paymentFailed;
+    });
   }
 
   Future<void> _initiatePurchase() async {
     final pkg = _selectedPackage;
     if (pkg == null) return;
 
-    setState(() => _isProcessing = true);
+    debugPrint('[VIP] Selected plan: ${pkg['name']}');
+    debugPrint('[VIP] Creating Razorpay order/subscription');
+
+    setState(() {
+      _isProcessing = true;
+      _paymentState = VIPPaymentState.paymentPending;
+    });
 
     // Call the backend to create a real Razorpay Order!
     final orderData = await ApiService.createSubscriptionOrder(pkg['id']);
@@ -225,6 +259,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
 
     bool razorpayOpened = false;
     try {
+      debugPrint('[VIP] Razorpay checkout opened');
       _razorpay.open(options);
       razorpayOpened = true;
     } catch (e) {
@@ -368,7 +403,12 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     String paymentId,
     String signature,
   ) async {
-    final data = await ApiService.purchaseSubscription(
+    debugPrint('[VIP] Calling payment verification API');
+    setState(() {
+      _paymentState = VIPPaymentState.verificationPending;
+    });
+
+    final response = await ApiService.purchaseSubscription(
       packageId: packageId,
       gatewayOrderId: orderId,
       gatewayPaymentId: paymentId,
@@ -377,21 +417,33 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
 
     setState(() => _isProcessing = false);
 
-    if (data != null) {
+    if (response['success'] == true) {
+      debugPrint('[VIP] Subscription activation result: success');
+      debugPrint('[VIP] Refreshing subscription');
+      setState(() => _paymentState = VIPPaymentState.subscriptionActive);
+      debugPrint('[VIP] Subscription ACTIVE');
+      
       SubscriptionProvider.instance.refreshAfterPurchase();
       _showSuccessDialog(
         'Subscription Activated!',
-        'You have successfully upgraded your tier.',
+        response['message'] ?? 'You have successfully upgraded your tier.',
       );
       _loadData();
     } else {
+      debugPrint('[VIP] Payment verification failed');
+      debugPrint('[VIP] HTTP status: ${response['statusCode']}');
+      debugPrint('[VIP] Response: ${response['message']}');
+      
+      setState(() => _paymentState = VIPPaymentState.subscriptionActivationFailed);
+      
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
-            'Failed to activate subscription. Please contact support.',
+            'Payment successful, but subscription activation is still processing.\nReason: ${response['message']}\nPlease wait a moment and refresh.',
           ),
-          backgroundColor: Colors.red,
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 5),
         ),
       );
     }
@@ -403,7 +455,12 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     String paymentId,
     String signature,
   ) async {
-    final data = await ApiService.purchaseBoost(
+    debugPrint('[VIP] Calling boost payment verification API');
+    setState(() {
+      _paymentState = VIPPaymentState.verificationPending;
+    });
+
+    final response = await ApiService.purchaseBoost(
       boostCount: boostCount,
       gatewayOrderId: orderId,
       gatewayPaymentId: paymentId,
@@ -412,19 +469,28 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
 
     setState(() => _isProcessing = false);
 
-    if (data != null) {
+    if (response['success'] == true) {
+      debugPrint('[VIP] Boost activation result: success');
+      setState(() => _paymentState = VIPPaymentState.subscriptionActive);
+      
       SubscriptionProvider.instance.refreshAfterPurchase();
       _showSuccessDialog(
         'Boosts Credited!',
-        '$boostCount profile boosts have been added to your account.',
+        '${response['message'] ?? '$boostCount profile boosts have been added to your account.'}',
       );
       _loadData();
     } else {
+      debugPrint('[VIP] Boost verification failed');
+      setState(() => _paymentState = VIPPaymentState.subscriptionActivationFailed);
+      
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Failed to purchase boosts. Please contact support.'),
-          backgroundColor: Colors.red,
+        SnackBar(
+          content: Text(
+            'Payment successful, but boost activation is still processing.\nReason: ${response['message']}\nPlease wait a moment and refresh.',
+          ),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 5),
         ),
       );
     }

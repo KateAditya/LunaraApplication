@@ -3395,7 +3395,7 @@ class ApiService {
     return null;
   }
 
-  static Future<Map<String, dynamic>?> purchaseSubscription({
+  static Future<Map<String, dynamic>> purchaseSubscription({
     required String packageId,
     required String gatewayOrderId,
     required String gatewayPaymentId,
@@ -3413,16 +3413,22 @@ class ApiService {
           'paymentMethod': paymentMethod,
         },
       );
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          return Map<String, dynamic>.from(data['data']);
-        }
-      }
+      
+      final data = jsonDecode(response.body);
+      return {
+        'success': response.statusCode == 200 || response.statusCode == 201 ? (data['success'] ?? true) : false,
+        'message': data['message'] ?? 'Failed to activate subscription.',
+        'data': data['data'] ?? data,
+        'statusCode': response.statusCode,
+      };
     } catch (e) {
       debugPrint('purchaseSubscription error: $e');
+      return {
+        'success': false,
+        'message': 'Network error occurred while verifying payment: $e',
+        'statusCode': 500,
+      };
     }
-    return null;
   }
 
   static Future<Map<String, dynamic>?> createBoostOrder(int boostCount) async {
@@ -3443,7 +3449,7 @@ class ApiService {
     return null;
   }
 
-  static Future<Map<String, dynamic>?> purchaseBoost({
+  static Future<Map<String, dynamic>> purchaseBoost({
     required int boostCount,
     required String gatewayOrderId,
     required String gatewayPaymentId,
@@ -3459,16 +3465,22 @@ class ApiService {
           'razorpay_signature': razorpaySignature,
         },
       );
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          return Map<String, dynamic>.from(data);
-        }
-      }
+      
+      final data = jsonDecode(response.body);
+      return {
+        'success': response.statusCode == 200 || response.statusCode == 201 ? (data['success'] ?? true) : false,
+        'message': data['message'] ?? 'Failed to purchase boosts.',
+        'data': data['data'] ?? data,
+        'statusCode': response.statusCode,
+      };
     } catch (e) {
       debugPrint('purchaseBoost error: $e');
+      return {
+        'success': false,
+        'message': 'Network error occurred while verifying payment: $e',
+        'statusCode': 500,
+      };
     }
-    return null;
   }
 
   static Future<Map<String, dynamic>?> useBoost() async {
