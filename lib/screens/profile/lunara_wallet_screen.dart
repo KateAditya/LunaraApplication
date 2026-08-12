@@ -455,12 +455,8 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
                       children: [
                         if (availableBalance < 100) _buildLowBalanceBanner(),
                         _buildMasterBalanceCard(availableBalance, isFrozen),
-                        const SizedBox(height: 20),
-                        _buildQuickActionsGrid(),
                         const SizedBox(height: 16),
                         _buildActiveMembershipCard(),
-                        const SizedBox(height: 16),
-                        _buildUseWalletForBar(),
                         const SizedBox(height: 20),
                         _buildTransactionsSectionHeader(),
                         const SizedBox(height: 12),
@@ -733,70 +729,6 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
     );
   }
 
-  Widget _buildQuickActionsGrid() {
-    final actions = [
-      {'icon': Icons.account_balance_wallet_rounded, 'label': 'Recharge', 'color': LunaraTheme.electricViolet, 'onTap': () => _openRechargeSheet()},
-      {'icon': Icons.workspace_premium_rounded, 'label': 'Membership', 'color': const Color(0xFFE100FF), 'onTap': () => Navigator.pushNamed(context, '/subscriptions')},
-      {'icon': Icons.star_rounded, 'label': 'Super Likes', 'color': const Color(0xFFF59E0B), 'onTap': () => _showQuickFeatureModal('Super Likes')},
-      {'icon': Icons.bolt_rounded, 'label': 'Boost', 'color': const Color(0xFF3B82F6), 'onTap': () => _showQuickFeatureModal('Profile Boost')},
-      {'icon': Icons.history_rounded, 'label': 'History', 'color': const Color(0xFF10B981), 'onTap': () => _filterTabController.animateTo(0)},
-    ];
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20),
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.grey.withValues(alpha: 0.1)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: actions.map((act) {
-          final color = act['color'] as Color;
-          return Expanded(
-            child: InkWell(
-              onTap: act['onTap'] as void Function()?,
-              borderRadius: BorderRadius.circular(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(act['icon'] as IconData, color: color, size: 22),
-                  ),
-                  const SizedBox(height: 6),
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(
-                      act['label'] as String,
-                      style: const TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.black87,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-
   Widget _buildActiveMembershipCard() {
     final Map<String, dynamic> sub = _walletData['currentMembership'] ?? {};
     final String tier = (sub['tier'] ?? 'FREE').toString().toUpperCase();
@@ -858,38 +790,6 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildUseWalletForBar() {
-    final features = ['✓ VIP Membership', '✓ Super Likes', '✓ Profile Boost', '✓ Premium Features'];
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20),
-      height: 36,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: features.length,
-        separatorBuilder: (_, index) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.purple.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.purple.withValues(alpha: 0.12)),
-            ),
-            child: Text(
-              features[index],
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                color: LunaraTheme.electricViolet,
-              ),
-            ),
-          );
-        },
       ),
     );
   }
@@ -1117,45 +1017,4 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
     );
   }
 
-  void _showQuickFeatureModal(String featureName) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-      builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                featureName.toUpperCase(),
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: 1),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Use your Smart Credit Wallet balance to instantly purchase $featureName.',
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 12, color: Colors.black54),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _openRechargeSheet();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: LunaraTheme.electricViolet,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
-                  child: const Text('Recharge Wallet Balance', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
 }

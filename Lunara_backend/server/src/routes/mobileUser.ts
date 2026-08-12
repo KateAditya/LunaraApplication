@@ -708,18 +708,33 @@ router.patch('/notifications/:id/read', async (req, res) => {
     }
 
     try {
-        if (id.startsWith('party_plan_timeline_')) {
-            const planId = id.replace('party_plan_timeline_', '');
-            await Notification.update(
-                { isRead: true, readAt: new Date() },
-                { where: { recipientUserId: userId, entityType: 'party_plan', entityId: planId } }
-            );
-        } else {
+        const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+        
+        if (uuidRegex.test(id)) {
             const notification = await Notification.findByPk(id);
             if (notification) {
                 notification.isRead = true;
                 notification.readAt = new Date();
                 await notification.save();
+            }
+        } else {
+            // Extract UUID pattern from composite string ID like 'upcoming_night_timeline_<uuid>' or 'sm_<uuid>'
+            const match = id.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
+            if (match) {
+                const extractedId = match[0];
+                // First try finding by PK using extracted UUID
+                const notifByPk = await Notification.findByPk(extractedId);
+                if (notifByPk) {
+                    notifByPk.isRead = true;
+                    notifByPk.readAt = new Date();
+                    await notifByPk.save();
+                } else if (userId) {
+                    // Update by entityId & recipientUserId
+                    await Notification.update(
+                        { isRead: true, readAt: new Date() },
+                        { where: { recipientUserId: userId, entityId: extractedId } }
+                    );
+                }
             }
         }
     } catch (dbErr: any) {
