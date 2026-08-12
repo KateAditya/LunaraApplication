@@ -24,6 +24,12 @@ function generateInvoiceNumber(): string {
     return `LUN-${ts}-${rand}`;
 }
 
+function getTierRank(tier: string | undefined): number {
+    if (!tier) return -1;
+    const order = ['FREE', 'CORE', 'PLUS', 'PRO', 'ELITE'];
+    return order.indexOf(tier.toUpperCase());
+}
+
 // ─── Plan Listing ─────────────────────────────────────────────────────────────
 
 // @route GET /api/mobile/subscriptions/packages
@@ -150,6 +156,23 @@ export const createSubscriptionOrder = async (req: Request, res: Response): Prom
         if (!pkg || !pkg.isActive) {
             res.status(404).json({ success: false, message: 'Package not found or inactive' });
             return;
+        }
+
+        // Validate VIP hierarchy (can only purchase higher rank)
+        const activeSub = await UserSubscription.findOne({
+            where: { userId, status: SubscriptionStatus.ACTIVE },
+            include: [{ model: SubscriptionPackage, as: 'package' }]
+        });
+
+        if (activeSub) {
+            const activePkg = (activeSub as any).package;
+            const currentRank = getTierRank(activePkg?.tier);
+            const requestedRank = getTierRank(pkg.tier);
+
+            if (currentRank >= 0 && requestedRank <= currentRank) {
+                res.status(403).json({ success: false, message: 'You already have a higher or equal VIP plan active.' });
+                return;
+            }
         }
 
         const amount = Math.round(pkg.price * 100); // in paise

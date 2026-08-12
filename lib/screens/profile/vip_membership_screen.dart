@@ -220,6 +220,19 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     final pkg = _selectedPackage;
     if (pkg == null) return;
 
+    final int currentRank = _getTierRank(_activePackageTier);
+    final int selectedRank = _getTierRank(pkg['tier']);
+
+    if (currentRank >= 0 && selectedRank <= currentRank) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You already have a higher or equal VIP plan active.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     debugPrint('[VIP] Selected plan: ${pkg['name']}');
     debugPrint('[VIP] Creating Razorpay order/subscription');
 
@@ -280,9 +293,13 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
   }
 
   int _getTierRank(String? t) {
-    if (t == null) return -1;
-    const order = ['CORE', 'PLUS', 'PRO', 'ELITE'];
-    return order.indexOf(t.toUpperCase());
+    if (t == null || t.isEmpty) return -1;
+    const order = ['FREE', 'CORE', 'PLUS', 'PRO', 'ELITE', 'ELITE VIP'];
+    final upperT = t.toUpperCase();
+    for (int i = 0; i < order.length; i++) {
+      if (upperT.contains(order[i])) return i;
+    }
+    return -1;
   }
 
   Future<void> _confirmPlanAction(
@@ -664,13 +681,17 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     final int selectedRank = _getTierRank(tier);
 
     String actionText = 'GET PLAN';
+    bool canPurchase = true;
+
     if (currentRank >= 0) {
       if (selectedRank > currentRank) {
         actionText = 'UPGRADE';
-      } else if (selectedRank < currentRank) {
-        actionText = 'DOWNGRADE';
+      } else if (selectedRank == currentRank) {
+        actionText = 'CURRENT PLAN';
+        canPurchase = false;
       } else {
-        actionText = 'SWITCH PLAN';
+        actionText = 'LOWER PLAN';
+        canPurchase = false;
       }
     }
 
@@ -736,13 +757,13 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
             width: double.infinity,
             height: 56,
             child: ElevatedButton(
-              onPressed: _isProcessing
+              onPressed: _isProcessing || !canPurchase
                   ? null
                   : (isActive
                         ? null
                         : () => _confirmPlanAction(actionText, pkg, price)),
               style: ElevatedButton.styleFrom(
-                backgroundColor: isActive
+                backgroundColor: !canPurchase || isActive
                     ? Colors.grey[800]
                     : _getPlanThemeColor(pkg),
                 shape: RoundedRectangleBorder(
@@ -752,13 +773,13 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
               child: _isProcessing
                   ? const CircularProgressIndicator(color: Colors.white)
                   : Text(
-                      isActive
-                          ? 'CURRENT PLAN'
+                      !canPurchase || isActive
+                          ? actionText
                           : '$actionText FOR ₹${price.toStringAsFixed(0)}',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: tier == 'ELITE' && !isActive
+                        color: tier == 'ELITE' && canPurchase && !isActive
                             ? Colors.black
                             : Colors.white,
                         letterSpacing: 1,
