@@ -33,10 +33,26 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
   VIPPaymentState _paymentState = VIPPaymentState.initial;
 
   List<dynamic> _allPackages = [];
-  String? _activePackageId;
-  int _activeRemainingDays = 0;
-  String? _activePackageTier;
-  int _boostsRemaining = 0;
+  
+  String? get _activePackageId {
+    final status = SubscriptionProvider.instance.status;
+    return status.isActive ? status.packageId : null;
+  }
+  
+  int get _activeRemainingDays {
+    final status = SubscriptionProvider.instance.status;
+    return status.isActive ? status.remainingDays : 0;
+  }
+  
+  String? get _activePackageTier {
+    final status = SubscriptionProvider.instance.status;
+    return status.isActive ? status.tier : null;
+  }
+  
+  int get _boostsRemaining {
+    final status = SubscriptionProvider.instance.status;
+    return status.boostsRemaining;
+  }
 
   // Selected Options
   int _selectedPlanIndex = 0; // 0: Core, 1: Plus, 2: Pro, 3: Elite
@@ -80,26 +96,6 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
 
       setState(() {
         _allPackages = packages;
-        final sub = currentSub['subscription'];
-        if (sub != null) {
-          final packageData = sub['package'];
-          final tier = packageData != null ? packageData['tier'] : null;
-          if (tier == 'FREE') {
-            _activePackageId = null;
-            _activeRemainingDays = 0;
-            _activePackageTier = null;
-          } else {
-            _activePackageId = sub['packageId'];
-            _activeRemainingDays = currentSub['remainingDays'] ?? 0;
-            _activePackageTier = tier;
-          }
-          _boostsRemaining = sub['boostsRemaining'] ?? 0;
-        } else {
-          _activePackageId = null;
-          _activeRemainingDays = 0;
-          _activePackageTier = null;
-          _boostsRemaining = 0;
-        }
         _isLoading = false;
       });
     } catch (e) {

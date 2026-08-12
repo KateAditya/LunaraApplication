@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
 import '../../core/theme.dart';
 import '../../models/user.dart';
 import '../../services/api_service.dart';
+import '../../services/subscription_provider.dart';
 import '../../widgets/subscription_limit_dialog.dart';
 
 class EditProfileScreen extends StatefulWidget {
@@ -792,10 +794,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Widget _buildHideProfileOption() {
-    final isProUser = widget.user.isPro;
+    final hasHideProfile = SubscriptionProvider.instance.hasVipFeature(VipFeature.hideProfile);
 
     return _buildSwitch('Hide Profile', _invisibleMode, (v) {
-      if (!isProUser) {
+      if (!hasHideProfile) {
         showSubscriptionLimitDialog(
           context,
           feature: SubLimitFeature.hideProfile,
