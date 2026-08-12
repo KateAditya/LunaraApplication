@@ -22,6 +22,8 @@ class PartyPlanDetailScreen extends StatefulWidget {
 class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   bool _isJoining = false;
   bool _alreadyRequested = false;
+  bool _isInvitedUser = false;
+  bool _isAcceptingInvite = false;
   String? _requestStatus;
   String? _activeRequestId;
   String? _fetchedVenueImageUrl;
@@ -34,6 +36,13 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   void initState() {
     super.initState();
     _alreadyRequested = widget.plan['hasRequested'] == true;
+    if (widget.plan['isInvite'] == true || widget.plan['isInvitedUser'] == true || widget.plan['type'] == 'party_plan_invitation' || widget.plan['eventType'] == 'party_plan_invitation') {
+      _isInvitedUser = true;
+    }
+    if (widget.plan['requestId'] != null || widget.plan['activeRequestId'] != null) {
+      _activeRequestId = (widget.plan['requestId'] ?? widget.plan['activeRequestId']).toString();
+      _alreadyRequested = true;
+    }
     _checkRequestStatus();
     _loadVenueDetailsIfNeeded();
     _fetchCurrentUserAndCancellationState();
@@ -675,6 +684,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       if (targetPlanId.isEmpty) return;
       
       bool requested = false;
+      bool isInvited = _isInvitedUser;
       String? reqStatus;
       String? reqId;
 
@@ -684,18 +694,70 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
           requested = true;
           reqId = req['id']?.toString();
           reqStatus = (req['status'] ?? req['joinerPaymentStatus'] ?? 'pending').toString().toLowerCase();
+
+          final reqIsInvite = req['isPrivateInvite'] == true ||
+              req['invitedBy'] != null ||
+              req['type'] == 'invitation' ||
+              (req['plan'] != null && (req['plan']['visibility'] == 'private' || req['plan']['visibility'] == 'both'));
+          if (reqIsInvite) {
+            isInvited = true;
+          }
           break;
         }
       }
+
+      final planData = widget.plan;
+      final visibility = (planData['visibility'] ?? '').toString().toLowerCase();
+      final currentUserId = ApiService.currentUserId;
+      final hostId = (planData['userId'] ?? planData['hostId'] ?? '').toString();
+      if ((visibility == 'private' || visibility == 'both') && currentUserId != null && currentUserId != hostId && requested) {
+        isInvited = true;
+      }
+
       if (mounted) {
         setState(() {
           _alreadyRequested = requested;
-          _activeRequestId = reqId;
+          _isInvitedUser = isInvited;
+          _activeRequestId = reqId ?? _activeRequestId;
           _requestStatus = reqStatus;
         });
       }
     } catch (e) {
       debugPrint('Error checking request status in PartyPlanDetailScreen: $e');
+    }
+  }
+
+  Future<void> _handleAcceptInvite() async {
+    if (_activeRequestId == null || _activeRequestId!.isEmpty) return;
+    setState(() => _isAcceptingInvite = true);
+    try {
+      final res = await ApiService.acceptPartyPlanInvite(_activeRequestId!);
+      if (!mounted) return;
+      setState(() => _isAcceptingInvite = false);
+
+      if (res != null && res['success'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🎉 Invite Accepted! Party Plan confirmed.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _checkRequestStatus();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res?['message'] ?? 'Failed to accept invite'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isAcceptingInvite = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error accepting invite: $e'), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
@@ -1647,6 +1709,53 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                       ),
                     ],
                   )
+                : (_alreadyRequested && _isInvitedUser && (_requestStatus == 'pending' || _requestStatus == 'invited'))
+                    ? GestureDetector(
+                        onTap: _isAcceptingInvite ? null : _handleAcceptInvite,
+                        child: Container(
+                          height: 58,
+                          decoration: BoxDecoration(
+                            gradient: _isAcceptingInvite ? null : LunaraTheme.purpleGradient,
+                            color: _isAcceptingInvite ? Colors.grey.withValues(alpha: 0.3) : null,
+                            borderRadius: BorderRadius.circular(18),
+                            boxShadow: _isAcceptingInvite
+                                ? null
+                                : [
+                                    BoxShadow(
+                                      color: LunaraTheme.electricViolet.withValues(alpha: 0.4),
+                                      blurRadius: 20,
+                                      offset: const Offset(0, 10),
+                                    ),
+                                  ],
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              if (_isAcceptingInvite)
+                                const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              else
+                                const Icon(Icons.check_circle_rounded, color: Colors.white, size: 22),
+                              const SizedBox(width: 10),
+                              Text(
+                                _isAcceptingInvite ? 'ACCEPTING INVITE...' : 'ACCEPT INVITE',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 1,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
                 : _alreadyRequested
                     ? Container(
                         height: 58,

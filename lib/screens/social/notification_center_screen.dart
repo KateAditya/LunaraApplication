@@ -1375,6 +1375,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       return _buildPartyPlanCancellationCard(item);
     }
 
+    if (eventType.contains('PARTY_PLAN_INVITATION') ||
+        eventType.contains('PARTY_PLAN_INVITE') ||
+        titleLower.contains('party plan invitation') ||
+        titleLower.contains('invited you') ||
+        bodyLower.contains('invited you to join')) {
+      return _buildPartyPlanInvitationCard(item);
+    }
+
     // ── Party Plan specific event types ──────────────────────────────
     if (eventType.contains('PARTY_PLAN_REQUEST_RECEIVED') ||
         titleLower.contains('new party plan request') ||
@@ -2405,6 +2413,160 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             const Text(
               'Waiting for participant confirmation.',
               style: TextStyle(color: Colors.orangeAccent, fontSize: 11.5, fontWeight: FontWeight.w600),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPartyPlanInvitationCard(dynamic item) {
+    final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final data = item['metadata'] is Map
+        ? item['metadata'] as Map<String, dynamic>
+        : (item['data'] is Map ? item['data'] as Map<String, dynamic> : <String, dynamic>{});
+
+    final String planId = (data['planId'] ?? item['entityId'] ?? '').toString();
+    final String requestId = (data['requestId'] ?? '').toString();
+    final String title = (item['title'] ?? '🎉 Party Plan Invitation').toString();
+    final String body = (item['body'] ?? 'You have been invited to join a Party Plan!').toString();
+    final String timeStr = _formatTimeAgo(item['createdAt']);
+
+    final String reqStatus = (data['status'] ?? item['status'] ?? 'pending').toString().toLowerCase();
+    final bool isAccepted = reqStatus == 'accepted' || reqStatus == 'payment_pending' || reqStatus == 'confirmed' || reqStatus == 'paid';
+
+    return _buildBaseCardContainer(
+      isUnread: isUnread,
+      onTap: () => _markAsRead(item),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: isAccepted ? Colors.green.withValues(alpha: 0.15) : const Color(0xFF8B5CF6).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  isAccepted ? 'INVITE ACCEPTED' : 'PRIVATE INVITATION',
+                  style: TextStyle(
+                    color: isAccepted ? Colors.green : const Color(0xFF8B5CF6),
+                    fontSize: 9,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                timeStr,
+                style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5),
+              ),
+              if (isUnread) ...[const SizedBox(width: 6), _buildUnreadDot()],
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            title,
+            style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.w900, fontSize: 13.5),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            body,
+            style: const TextStyle(color: Color(0xFF475569), fontSize: 12.5, height: 1.4),
+          ),
+          const SizedBox(height: 12),
+          if (isAccepted)
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  _markAsRead(item);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PartyPlanDetailScreen(
+                        plan: {'id': planId, 'isInvite': true},
+                      ),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.payment_rounded, size: 14, color: Colors.white),
+                label: const Text('View Plan Details', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF8B5CF6),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      _markAsRead(item);
+                      if (requestId.isNotEmpty) {
+                        final res = await ApiService.acceptPartyPlanInvite(requestId);
+                        if (mounted) {
+                          if (res != null && res['success'] == true) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('🎉 Invite Accepted! Party Plan confirmed.'),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                            _fetchNotifications();
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(res?['message'] ?? 'Failed to accept invite'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      } else {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => PartyPlanDetailScreen(
+                              plan: {'id': planId, 'isInvite': true},
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF8B5CF6),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('ACCEPT INVITE', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () {
+                      _markAsRead(item);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PartyPlanDetailScreen(
+                            plan: {'id': planId, 'isInvite': true},
+                          ),
+                        ),
+                      );
+                    },
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFFCBD5E1)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('VIEW DETAILS', style: TextStyle(color: Color(0xFF475569), fontSize: 11.5, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
             ),
         ],
       ),
