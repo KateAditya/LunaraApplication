@@ -189,7 +189,7 @@ export const createSubscriptionOrder = async (req: Request, res: Response): Prom
         });
     } catch (error: any) {
         logger.error('Error creating subscription order:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        res.status(500).json({ success: false, message: 'Server error: ' + (error?.message || error) });
     }
 };
 
@@ -284,7 +284,7 @@ export const purchaseSubscription = async (req: Request, res: Response): Promise
         });
     } catch (error: any) {
         logger.error('Error purchasing subscription:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        res.status(500).json({ success: false, message: 'Server error: ' + (error?.message || error) });
     }
 };
 
