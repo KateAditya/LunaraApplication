@@ -1666,9 +1666,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 title = '✅ Invite Accepted!';
                 badge = 'ACTION REQUIRED';
                 body = 'You accepted $hostName\'s invite at $venueName. Pay the safety deposit to lock your spot!';
+                final countdownLabel = _calculateCountdownLabel(item, planMap);
                 actionsList = [
                   NotificationAction(
-                    label: 'Pay Deposit (30m)',
+                    label: countdownLabel,
                     icon: Icons.payment_rounded,
                     isPrimary: true,
                     onTap: () => Navigator.push(
@@ -1754,9 +1755,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 title = '👤 Request Accepted!';
                 body = 'Your Party Plan request at $venueName was accepted! Pay safety deposit within 30 mins to unlock chat.';
                 badge = 'ACTION REQUIRED';
+                final countdownLabel = _calculateCountdownLabel(item, planMap);
                 actionsList = [
                   NotificationAction(
-                    label: 'Pay Deposit (30m)',
+                    label: countdownLabel,
                     icon: Icons.payment_rounded,
                     isPrimary: true,
                     onTap: () => Navigator.push(
@@ -2998,5 +3000,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     } catch (e) {
       debugPrint('Error opening Razorpay for Host Payment: $e');
     }
+  }
+
+  String _calculateCountdownLabel(Map<String, dynamic> item, Map<String, dynamic> planMap) {
+    final rawDeadline = item['paymentDeadlineAt'] ?? item['payment_deadline_at'] ?? planMap['paymentDeadlineAt'] ?? planMap['payment_deadline_at'];
+    if (rawDeadline != null) {
+      try {
+        final deadline = DateTime.parse(rawDeadline.toString()).toLocal();
+        final diff = deadline.difference(DateTime.now());
+        if (diff.inSeconds <= 0) {
+          return 'Pay Deposit (Expired)';
+        }
+        final mins = diff.inMinutes;
+        final secs = diff.inSeconds % 60;
+        final secStr = secs < 10 ? '0$secs' : '$secs';
+        return 'Pay Deposit (${mins}m ${secStr}s)';
+      } catch (_) {}
+    }
+    return 'Pay Deposit (30m)';
   }
 }

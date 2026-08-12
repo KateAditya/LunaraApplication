@@ -14,6 +14,7 @@ import '../../widgets/upcoming_night_host_confirm_dialog.dart';
 import 'party_plan_detail_screen.dart';
 import 'chat_screen.dart';
 import '../../widgets/smart_checkout_sheet.dart';
+import '../../widgets/lunara_countdown_button.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 class NotificationCenterScreen extends StatefulWidget {
@@ -2101,26 +2102,25 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             Row(
               children: [
                 Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () {
+                  child: LunaraCountdownButton(
+                    paymentDeadlineAt: data['paymentDeadlineAt'] ?? data['payment_deadline_at'],
+                    amount: depositAmount,
+                    onTap: () {
                       _markAsRead(item);
                       if (requestId.isNotEmpty) {
                         SmartCheckoutSheet.show(
                           context: context,
                           title: 'Party Plan Safety Deposit',
-                          subtitle:
-                              'Safety commitment deposit for Party Plan at $venueName',
-                          itemPrice: 99.0,
+                          subtitle: 'Safety commitment deposit for Party Plan at $venueName',
+                          itemPrice: depositAmount,
                           onWalletPayment: () async {
                             final res = await ApiService.payWithWallet(
-                              amount: 99.0,
+                              amount: depositAmount,
                               planId: data['partyPlanId']?.toString(),
                               paymentType: 'commitment_deposit',
                             );
                             if (res != null && res['success'] == true) {
-                              final txId =
-                                  res['data']?['transactionId']?.toString() ??
-                                  'wallet';
+                              final txId = res['data']?['transactionId']?.toString() ?? 'wallet';
                               final confirmRes = await ApiService.post(
                                 '/api/mobile/party-plans/requests/$requestId/joiner-pay',
                                 body: {
@@ -2133,9 +2133,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                                 _fetchNotifications();
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text(
-                                      '🎉 Safety Deposit Paid! Booking Confirmed!',
-                                    ),
+                                    content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
                                     backgroundColor: Colors.green,
                                   ),
                                 );
@@ -2156,8 +2154,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                               '/api/mobile/party-plans/requests/$requestId/joiner-pay',
                               body: {
                                 'razorpay_order_id': 'order_mock_hybrid',
-                                'razorpay_payment_id':
-                                    'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
+                                'razorpay_payment_id': 'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
                                 'razorpay_signature': 'mock_signature',
                               },
                             );
@@ -2168,25 +2165,6 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                         );
                       }
                     },
-                    icon: const Icon(
-                      Icons.payment_rounded,
-                      size: 14,
-                      color: Colors.white,
-                    ),
-                    label: Text(
-                      'Pay Deposit (${depositAmount.toStringAsFixed(0)})',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF7C3AED),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
                   ),
                 ),
                 const SizedBox(width: 8),

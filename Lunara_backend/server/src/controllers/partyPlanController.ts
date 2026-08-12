@@ -3563,9 +3563,15 @@ export async function enrichPartyPlanNotificationCard(planId: string, recipientU
             countdown: countdownText,
             lastUpdated: plan.updatedAt ? plan.updatedAt.toISOString() : plan.createdAt.toISOString(),
             matchedRequestId: plan.matchedRequestId,
+            requestId: matchedRequest?.id || null,
             hostPaymentStatus: plan.hostPaymentStatus,
             depositAmount: plan.depositAmount,
             hostRazorpayOrderId: plan.hostRazorpayOrderId,
+            joinerPaymentStatus: matchedRequest?.joinerPaymentStatus || 'unpaid',
+            joinerRazorpayOrderId: matchedRequest?.joinerRazorpayOrderId || null,
+            acceptedAt: plan.acceptedAt ? plan.acceptedAt.toISOString() : null,
+            paymentDeadlineAt: plan.paymentDeadlineAt ? plan.paymentDeadlineAt.toISOString() : null,
+            serverTime: new Date().toISOString(),
         };
     } catch (enrichErr: any) {
         logger.error(`Error enriching party plan notification card ${planId}:`, enrichErr);
