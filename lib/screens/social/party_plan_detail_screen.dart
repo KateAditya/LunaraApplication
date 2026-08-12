@@ -297,6 +297,30 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     final status = widget.plan['status']?.toString();
     final isCancelled = status == 'cancelled';
 
+    if (_isExpired) {
+      return Container(
+        margin: const EdgeInsets.only(top: 16),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.grey.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.timer_off_rounded, color: Colors.grey, size: 20),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'This Party Plan has expired. No further actions or join requests can be made.',
+                style: TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     if (isCancelled) {
       return Container(
         margin: const EdgeInsets.only(top: 16),
@@ -1384,9 +1408,9 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                   Row(
                     children: [
                       _chip(
-                        icon: Icons.circle,
-                        label: status,
-                        color: status == 'ACTIVE' ? Colors.green : Colors.grey,
+                        icon: _isExpired ? Icons.timer_off_rounded : Icons.circle,
+                        label: _isExpired ? 'EXPIRED' : status,
+                        color: _isExpired ? Colors.grey : (status == 'ACTIVE' ? Colors.green : Colors.grey),
                       ),
                       const SizedBox(width: 8),
                       _chip(
@@ -1498,39 +1522,200 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       ),
 
       // ── Bottom CTA ───────────────────────────────────────────────────────
-      bottomNavigationBar: isMyPost
-          ? _myPlanBanner()
-          : SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                child: (_alreadyRequested && (_requestStatus == 'accepted' || _requestStatus == 'payment_pending'))
-                    ? GestureDetector(
-                        onTap: _openDepositPaymentSheet,
+      bottomNavigationBar: _buildBottomCTA(isMyPost),
+    );
+  }
+
+  Widget? _buildBottomCTA(bool isMyPost) {
+    if (_isExpired) {
+      return _expiredBanner();
+    }
+    if (isMyPost) {
+      return _myPlanBanner();
+    }
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        child: (_alreadyRequested && (_requestStatus == 'accepted' || _requestStatus == 'payment_pending'))
+            ? GestureDetector(
+                onTap: _openDepositPaymentSheet,
+                child: Container(
+                  height: 58,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF00C853), Color(0xFF69F0AE)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF00C853).withValues(alpha: 0.4),
+                        blurRadius: 20,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.payment_rounded, color: Colors.white, size: 22),
+                      SizedBox(width: 10),
+                      Text(
+                        'PAY SAFETY DEPOSIT (₹99)',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            : (_alreadyRequested && (_requestStatus == 'confirmed' || _requestStatus == 'paid'))
+                ? Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            final host = _extractHost(widget.plan);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ChatScreen(user: {
+                                  ...host,
+                                  'contextType': 'party_plan',
+                                  'planId': widget.plan['id']?.toString(),
+                                }),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            height: 54,
+                            decoration: BoxDecoration(
+                              gradient: LunaraTheme.purpleGradient,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 18),
+                                SizedBox(width: 6),
+                                Text(
+                                  'OPEN CHAT',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: _isLoadingCancellation ? null : _showCancellationStep1Dialog,
+                          child: Container(
+                            height: 54,
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
+                            ),
+                            child: const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 18),
+                                SizedBox(width: 6),
+                                Text(
+                                  'CANCEL PLAN',
+                                  style: TextStyle(
+                                    color: Colors.redAccent,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : _alreadyRequested
+                    ? Container(
+                        height: 58,
+                        decoration: BoxDecoration(
+                          color: Colors.green.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: Colors.green.withValues(alpha: 0.4),
+                          ),
+                        ),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.check_circle_rounded, color: Colors.green),
+                                const SizedBox(width: 10),
+                                const Text(
+                                  'REQUEST SENT — AWAITING HOST APPROVAL',
+                                  style: TextStyle(
+                                    color: Colors.green,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      )
+                    : GestureDetector(
+                        onTap: (_isJoining || _alreadyRequested) ? null : _sendJoinRequest,
                         child: Container(
                           height: 58,
                           decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF00C853), Color(0xFF69F0AE)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
+                            gradient: _isJoining ? null : LunaraTheme.purpleGradient,
+                            color: _isJoining ? Colors.grey.withValues(alpha: 0.3) : null,
                             borderRadius: BorderRadius.circular(18),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFF00C853).withValues(alpha: 0.4),
-                                blurRadius: 20,
-                                offset: const Offset(0, 10),
-                              ),
-                            ],
+                            boxShadow: _isJoining
+                                ? null
+                                : [
+                                    BoxShadow(
+                                      color: LunaraTheme.electricViolet.withValues(alpha: 0.4),
+                                      blurRadius: 20,
+                                      offset: const Offset(0, 10),
+                                    ),
+                                  ],
                           ),
-                          child: const Row(
+                          child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.payment_rounded, color: Colors.white, size: 22),
-                              SizedBox(width: 10),
+                              if (_isJoining)
+                                const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              else
+                                const Icon(Icons.bolt_rounded, color: Colors.white, size: 22),
+                              const SizedBox(width: 10),
                               Text(
-                                'PAY SAFETY DEPOSIT (₹99)',
-                                style: TextStyle(
+                                _isJoining ? 'SENDING REQUEST...' : 'REQUEST TO JOIN THE VIBE',
+                                style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 14,
                                   fontWeight: FontWeight.bold,
@@ -1540,161 +1725,8 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                             ],
                           ),
                         ),
-                      )
-                    : (_alreadyRequested && (_requestStatus == 'confirmed' || _requestStatus == 'paid'))
-                        ? Row(
-                            children: [
-                              Expanded(
-                                child: GestureDetector(
-                                  onTap: () {
-                                    final host = _extractHost(widget.plan);
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => ChatScreen(user: {
-                                          ...host,
-                                          'contextType': 'party_plan',
-                                          'planId': widget.plan['id']?.toString(),
-                                        }),
-                                      ),
-                                    );
-                                  },
-                                  child: Container(
-                                    height: 54,
-                                    decoration: BoxDecoration(
-                                      gradient: LunaraTheme.purpleGradient,
-                                      borderRadius: BorderRadius.circular(16),
-                                    ),
-                                    child: const Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 18),
-                                        SizedBox(width: 6),
-                                        Text(
-                                          'OPEN CHAT',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: GestureDetector(
-                                  onTap: _isLoadingCancellation ? null : _showCancellationStep1Dialog,
-                                  child: Container(
-                                    height: 54,
-                                    decoration: BoxDecoration(
-                                      color: Colors.redAccent.withValues(alpha: 0.2),
-                                      borderRadius: BorderRadius.circular(16),
-                                      border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
-                                    ),
-                                    child: const Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 18),
-                                        SizedBox(width: 6),
-                                        Text(
-                                          'CANCEL PLAN',
-                                          style: TextStyle(
-                                            color: Colors.redAccent,
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          )
-                        : _alreadyRequested
-                            ? Container(
-                                height: 58,
-                                decoration: BoxDecoration(
-                                  color: Colors.green.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(18),
-                                  border: Border.all(
-                                    color: Colors.green.withValues(alpha: 0.4),
-                                  ),
-                                ),
-                                child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        const Icon(Icons.check_circle_rounded, color: Colors.green),
-                                        const SizedBox(width: 10),
-                                        const Text(
-                                          'REQUEST SENT — AWAITING HOST APPROVAL',
-                                          style: TextStyle(
-                                            color: Colors.green,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 12,
-                                            letterSpacing: 0.5,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              )
-                            : GestureDetector(
-                                onTap: (_isJoining || _alreadyRequested) ? null : _sendJoinRequest,
-                                child: Container(
-                                  height: 58,
-                                  decoration: BoxDecoration(
-                                    gradient: _isJoining ? null : LunaraTheme.purpleGradient,
-                                    color: _isJoining ? Colors.grey.withValues(alpha: 0.3) : null,
-                                    borderRadius: BorderRadius.circular(18),
-                                    boxShadow: _isJoining
-                                        ? null
-                                        : [
-                                            BoxShadow(
-                                              color: LunaraTheme.electricViolet.withValues(alpha: 0.4),
-                                              blurRadius: 20,
-                                              offset: const Offset(0, 10),
-                                            ),
-                                          ],
-                                  ),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      if (_isJoining)
-                                        const SizedBox(
-                                          width: 20,
-                                          height: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Colors.white,
-                                          ),
-                                        )
-                                      else
-                                        const Icon(Icons.bolt_rounded, color: Colors.white, size: 22),
-                                      const SizedBox(width: 10),
-                                      Text(
-                                        _isJoining ? 'SENDING REQUEST...' : 'REQUEST TO JOIN THE VIBE',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.bold,
-                                          letterSpacing: 1,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-              ),
-            ),
+                      ),
+      ),
     );
   }
 
@@ -1887,6 +1919,62 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                 'YOUR PARTY PLAN',
                 style: TextStyle(
                   color: LunaraTheme.electricViolet,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  letterSpacing: 1,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  bool get _isExpired {
+    final plan = widget.plan;
+    final status = (plan['status'] ?? '').toString().toLowerCase();
+    final lifecycleStatus = (plan['lifecycleStatus'] ?? plan['lifecycle_status'] ?? '').toString().toLowerCase();
+
+    if (status == 'expired' || lifecycleStatus == 'expired') return true;
+
+    final rawDateTime = plan['planDateTime'] ??
+        plan['eventDateTime'] ??
+        plan['planDate'] ??
+        plan['partyDate'] ??
+        plan['bookingDate'];
+
+    if (rawDateTime != null) {
+      try {
+        final planTime = DateTime.parse(rawDateTime.toString()).toLocal();
+        if (planTime.isBefore(DateTime.now())) {
+          return true;
+        }
+      } catch (_) {}
+    }
+    return false;
+  }
+
+  Widget _expiredBanner() {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        child: Container(
+          height: 58,
+          decoration: BoxDecoration(
+            color: Colors.grey.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+          ),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.timer_off_rounded, color: Colors.grey, size: 20),
+              SizedBox(width: 10),
+              Text(
+                'THIS EVENT HAS EXPIRED',
+                style: TextStyle(
+                  color: Colors.grey,
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
                   letterSpacing: 1,
