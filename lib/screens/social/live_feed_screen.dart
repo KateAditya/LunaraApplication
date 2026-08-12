@@ -1222,7 +1222,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final venue = (item['venue'] ?? item['venueMap']) as Map<String, dynamic>? ?? {};
       final venueName = venue['name'] ?? item['venueName'] ?? 'Venue';
       final userName = '${user['firstName'] ?? 'User'} ${user['lastName'] ?? ''}'.trim();
-      final userPhoto = user['profilePhotoUrl'] ?? user['photoUrl'] ?? user['image'];
+      // profileImageUrl is the key the backend sends; also check photoUrl and image as fallbacks
+      final userPhoto = (user['profileImageUrl']?.toString().isNotEmpty == true ? user['profileImageUrl'] : null)
+          ?? (user['profilePhotoUrl']?.toString().isNotEmpty == true ? user['profilePhotoUrl'] : null)
+          ?? (user['photoUrl']?.toString().isNotEmpty == true ? user['photoUrl'] : null)
+          ?? user['image'];
 
       bool isExpired = false;
       final planMap = item['plan'] is Map ? item['plan'] as Map<String, dynamic> : <String, dynamic>{};
@@ -1262,6 +1266,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       String badge = isStranger
           ? 'STRANGER MEET'
           : 'PARTY PLAN';
+
+      // Declare at loop scope so item builder can access for declined card avatars
+      Map<String, dynamic> hostCreator = <String, dynamic>{};
+      String? hostPhoto;
 
       if (isExpired) {
         accent = const Color(0xFF9CA3AF);
@@ -1563,10 +1571,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               selectedUsers is List &&
               selectedUsers.any((u) => u?.toString() == currentUserId);
 
-          // Host user info from plan.creator
-          final hostCreator = planMap['creator'] is Map ? planMap['creator'] as Map<String, dynamic> : <String, dynamic>{};
+          // Host user info from plan.creator (assigned to loop-level vars for use in item builder)
+          hostCreator = planMap['creator'] is Map ? planMap['creator'] as Map<String, dynamic> : <String, dynamic>{};
           final hostName = '${hostCreator['firstName'] ?? user['firstName'] ?? 'Host'} ${hostCreator['lastName'] ?? user['lastName'] ?? ''}'.trim();
-          final hostPhoto = hostCreator['profileImageUrl'] ?? userPhoto;
+          hostPhoto = (hostCreator['profileImageUrl']?.toString().isNotEmpty == true
+                  ? hostCreator['profileImageUrl'] as String
+                  : null) ??
+              (hostCreator['profilePhotoUrl']?.toString().isNotEmpty == true
+                  ? hostCreator['profilePhotoUrl'] as String
+                  : null) ??
+              userPhoto?.toString();
 
           if (type == 'incoming_request') {
             // ─── HOST VIEW: someone requested to join my plan ──────────────
@@ -1739,10 +1753,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   ),
                 ];
               } else if (status == 'rejected' || status == 'cancelled') {
-                title = '❌ Invite Declined';
+                title = '\u274c Invite Declined';
                 badge = 'DECLINED';
                 body = 'You declined the invite from $hostName at $venueName.';
-                accent = Colors.grey;
+                accent = const Color(0xFF9CA3AF);
+                // Show host's avatar on declined invite cards
+                // (avatarUrl/senderUser is set below using hostCreator info)
               }
             } else {
               // ─── VOLUNTARY JOIN REQUEST sent by current user ──────────
@@ -1829,10 +1845,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   ),
                 ];
               } else if (status == 'rejected' || status == 'cancelled') {
-                title = '❌ Request Rejected';
-                badge = 'REJECTED';
-                body = 'Your Party Plan request at $venueName was declined.';
-                accent = Colors.grey;
+                title = '\u274c Request Declined';
+                badge = 'DECLINED';
+                body = 'Your Party Plan request at $venueName was declined by $hostName.';
+                accent = const Color(0xFF9CA3AF);
               }
             }
           }
@@ -1923,25 +1939,42 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         continue;
       }
 
-      items.add(UnifiedNotificationItem(
-        id: requestType == 'stranger_meet' || type == 'stranger_meet' ? 'sm_$id' : 'pp_$id',
-        category: requestType == 'stranger_meet' || type == 'stranger_meet' ? 'stranger_meet' : 'party_plan',
-        title: title,
-        body: body,
-        createdAt: createdAt,
-        timeAgo: timeAgo,
-        isRead: isRead,
-        badgeText: badge,
-        accentColor: accent,
-        categoryIcon: requestType == 'stranger_meet' || type == 'stranger_meet'
-            ? Icons.people_alt_rounded
-            : Icons.celebration_rounded,
-        avatarUrl: userPhoto,
-        senderUser: user.isNotEmpty ? user : null,
-        actions: actionsList,
-        rawData: item,
-      ));
-    }
+        // For declined party plan cards, show the host/creator's avatar (the person who declined)
+        final bool isDeclined = badge == 'DECLINED' || badge == 'REJECTED';
+        final String? resolvedAvatarUrl = isDeclined && !isStranger
+            ? ((hostCreator['profileImageUrl']?.toString().isNotEmpty == true
+                    ? hostCreator['profileImageUrl']
+                    : null) ??
+                (hostCreator['profilePhotoUrl']?.toString().isNotEmpty == true
+                    ? hostCreator['profilePhotoUrl']
+                    : null) ??
+                (hostPhoto?.isNotEmpty == true ? hostPhoto : null) ??
+                userPhoto?.toString())
+            : userPhoto?.toString();
+        final Map<String, dynamic>? resolvedSenderUser = isDeclined && !isStranger && hostCreator.isNotEmpty
+            ? hostCreator
+            : (user.isNotEmpty ? user : null);
+
+        items.add(UnifiedNotificationItem(
+          id: requestType == 'stranger_meet' || type == 'stranger_meet' ? 'sm_$id' : 'pp_$id',
+          category: requestType == 'stranger_meet' || type == 'stranger_meet' ? 'stranger_meet' : 'party_plan',
+          title: title,
+          body: body,
+          createdAt: createdAt,
+          timeAgo: timeAgo,
+          isRead: isRead,
+          badgeText: badge,
+          accentColor: accent,
+          categoryIcon: requestType == 'stranger_meet' || type == 'stranger_meet'
+              ? Icons.people_alt_rounded
+              : Icons.celebration_rounded,
+          avatarUrl: resolvedAvatarUrl,
+          senderUser: resolvedSenderUser,
+          actions: actionsList,
+          rawData: item,
+        ));
+      }
+
 
     // 3. Process Large Party / Group Party Bookings from `_largePartyBookings`
     for (final booking in _largePartyBookings) {

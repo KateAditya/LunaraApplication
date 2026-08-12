@@ -1915,7 +1915,7 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
 export const rejectPartyPlanRequest = async (req: Request, res: Response): Promise<void> => {
     try {
         const { reqId } = req.params;
-        const { userId } = req.body; // Host's userId
+        const { userId } = req.body; // Host's OR invited user's userId
 
         const request = await PartyPlanRequest.findByPk(reqId, {
             include: [{ model: PartyPlan, as: 'plan' }]
@@ -1926,8 +1926,21 @@ export const rejectPartyPlanRequest = async (req: Request, res: Response): Promi
         }
 
         const plan = (request as any).plan as PartyPlan;
-        if (!plan || plan.userId !== userId) {
-            res.status(403).json({ success: false, message: 'Only the host can reject requests' });
+
+        // Determine caller role:
+        //  - HOST:    can reject any request on their plan
+        //  - INVITEE: can decline only if they are the requesterId on a private invite
+        const isHost = plan && plan.userId === userId;
+        const isInvitee = request.requesterId === userId;
+        const isPrivateInvite = !!(plan?.selectedUsers && plan.selectedUsers.includes(request.requesterId));
+
+        if (!isHost && !isInvitee) {
+            res.status(403).json({ success: false, message: 'Only the host or the invited user can decline this request' });
+            return;
+        }
+
+        if (isInvitee && !isHost && !isPrivateInvite) {
+            res.status(403).json({ success: false, message: 'Only the host can reject voluntary requests' });
             return;
         }
 
@@ -1936,13 +1949,13 @@ export const rejectPartyPlanRequest = async (req: Request, res: Response): Promi
             return;
         }
 
-        const isMatchedRequest = plan.matchedRequestId === request.id;
+        const isMatchedRequest = isHost && plan.matchedRequestId === request.id;
 
         if (isMatchedRequest) {
-            // Reopen the plan & reactivate WAITING requests (reopenPlan handles transaction & states)
+            // Host is revoking a matched/accepted request: reopen the plan
             await reopenPlan(plan, request.id, 'cancelled');
         } else {
-            // Just reject this specific request
+            // HOST rejects pending request  OR  INVITEE declines their own invite
             const transaction = await sequelize.transaction();
             try {
                 await request.update({ status: PartyPlanRequestStatus.REJECTED }, { transaction });
@@ -1953,7 +1966,7 @@ export const rejectPartyPlanRequest = async (req: Request, res: Response): Promi
             }
         }
 
-        // Authoritative notification to the requester
+        // ── Authoritative notifications ──────────────────────────────────────────
         setImmediate(async () => {
             try {
                 let venueName = 'Venue';
@@ -1962,46 +1975,97 @@ export const rejectPartyPlanRequest = async (req: Request, res: Response): Promi
                     if (venue) venueName = venue.name;
                 }
 
-                const hostUser = await User.findByPk(plan.userId);
-                const declinerName = hostUser ? `${hostUser.firstName} ${hostUser.lastName}`.trim() : 'the host';
-                const declinerPhoto = hostUser ? ((hostUser as any).profileImageUrl || (hostUser as any).profilePhotoUrl || ((hostUser as any).photos && (hostUser as any).photos[0] ? (hostUser as any).photos[0].url : null)) : null;
+                // Helper: fetch user with their primary photo
+                const fetchActorWithPhoto = async (actorId: string) => {
+                    const actor = await User.findByPk(actorId, {
+                        attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'],
+                        include: [{
+                            model: UserPhoto,
+                            as: 'photos',
+                            where: { isPrimary: true },
+                            required: false,
+                            attributes: ['filePath'],
+                        }],
+                    });
+                    if (!actor) return { user: null, photo: null, name: 'Unknown' };
+                    const rawPhoto = (actor as any).profileImageUrl ||
+                        ((actor as any).photos?.[0]?.filePath
+                            ? '/' + (actor as any).photos[0].filePath.replace(/\\/g, '/')
+                            : null);
+                    const name = `${actor.firstName} ${actor.lastName}`.trim();
+                    return { user: actor, photo: rawPhoto || null, name };
+                };
 
-                await NotificationService.dispatch({
-                    recipientUserId: request.requesterId,
-                    actorUserId: plan.userId,
-                    eventType: 'party_plan_request_rejected',
-                    category: 'requests',
-                    entityType: 'party_plan_request',
-                    entityId: request.id,
-                    title: 'Declined Request ❌',
-                    body: `Your request to join the Party Plan at ${venueName} was declined by ${declinerName}.`,
-                    metadata: {
-                        planId: plan.id,
-                        requestId: request.id,
-                        actorUserId: hostUser?.id,
-                        actorName: declinerName,
-                        actorProfilePhotoUrl: declinerPhoto,
-                        actor: hostUser ? {
-                            id: hostUser.id,
-                            firstName: hostUser.firstName,
-                            lastName: hostUser.lastName,
-                            profilePhotoUrl: declinerPhoto,
-                            profileImageUrl: declinerPhoto,
-                        } : null
-                    },
-                    idempotencyKey: `request_rejected_${request.id}`,
-                });
+                if (isHost) {
+                    // HOST rejected a joiner → notify the JOINER
+                    const { user: hostUser, photo: hostPhoto, name: hostName } = await fetchActorWithPhoto(plan.userId);
+
+                    await NotificationService.dispatch({
+                        recipientUserId: request.requesterId,
+                        actorUserId: plan.userId,
+                        eventType: 'party_plan_request_rejected',
+                        category: 'requests',
+                        entityType: 'party_plan_request',
+                        entityId: request.id,
+                        title: 'Declined Request ❌',
+                        body: `Your request to join the Party Plan at ${venueName} was declined by ${hostName}.`,
+                        metadata: {
+                            planId: plan.id,
+                            requestId: request.id,
+                            actorUserId: hostUser?.id,
+                            actorName: hostName,
+                            actorProfilePhotoUrl: hostPhoto,
+                            actor: hostUser ? {
+                                id: hostUser.id,
+                                firstName: hostUser.firstName,
+                                lastName: hostUser.lastName,
+                                profilePhotoUrl: hostPhoto,
+                                profileImageUrl: hostPhoto,
+                            } : null,
+                        },
+                        idempotencyKey: `request_rejected_${request.id}`,
+                    });
+                } else {
+                    // INVITEE declined → notify the HOST
+                    const { user: inviteeUser, photo: inviteePhoto, name: inviteeName } = await fetchActorWithPhoto(request.requesterId);
+
+                    await NotificationService.dispatch({
+                        recipientUserId: plan.userId,
+                        actorUserId: request.requesterId,
+                        eventType: 'party_plan_invite_declined',
+                        category: 'requests',
+                        entityType: 'party_plan_request',
+                        entityId: request.id,
+                        title: 'Invite Declined ❌',
+                        body: `${inviteeName} declined your private Party Plan invite at ${venueName}.`,
+                        metadata: {
+                            planId: plan.id,
+                            requestId: request.id,
+                            actorUserId: request.requesterId,
+                            actorName: inviteeName,
+                            actorProfilePhotoUrl: inviteePhoto,
+                            actor: inviteeUser ? {
+                                id: inviteeUser.id,
+                                firstName: inviteeUser.firstName,
+                                lastName: inviteeUser.lastName,
+                                profilePhotoUrl: inviteePhoto,
+                                profileImageUrl: inviteePhoto,
+                            } : null,
+                        },
+                        idempotencyKey: `invite_declined_${request.id}`,
+                    });
+                }
 
                 const { io } = require('../server');
                 io.to(`user_${request.requesterId}`).emit('plan_unavailable', {
                     planId: plan.id, requestId: request.id,
                 });
             } catch (err: any) {
-                logger.warn('Failed to send rejection notifications:', err.message);
+                logger.warn('Failed to send rejection/decline notifications:', err.message);
             }
         });
 
-        res.json({ success: true, message: 'Request rejected successfully' });
+        res.json({ success: true, message: isHost ? 'Request rejected successfully' : 'Invite declined successfully' });
     } catch (err: any) {
         logger.error('rejectPartyPlanRequest error:', err);
         res.status(500).json({ success: false, message: 'Failed to reject request', error: err.message });

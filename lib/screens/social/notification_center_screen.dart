@@ -1377,8 +1377,10 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     if (eventType.contains('REJECTED') ||
         eventType.contains('DECLINED') ||
+        eventType.contains('INVITE_DECLINED') ||
         titleLower.contains('declined') ||
-        bodyLower.contains('was declined')) {
+        bodyLower.contains('was declined') ||
+        bodyLower.contains('declined your private')) {
       return _buildDeclinedRequestCard(item);
     }
 
@@ -2582,33 +2584,57 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
   Widget _buildDeclinedRequestCard(dynamic item) {
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
-    final title = item['title']?.toString() ?? 'Declined Request ❌';
+    final String title = item['title']?.toString() ?? 'Declined Request ❌';
     String body = item['body']?.toString() ?? 'Your request was declined.';
     final timeStr = _formatTimeAgo(item['createdAt']);
 
+    // Resolve metadata — check both 'metadata' and 'data' keys
     final data = item['metadata'] is Map
         ? item['metadata'] as Map<String, dynamic>
         : (item['data'] is Map ? item['data'] as Map<String, dynamic> : <String, dynamic>{});
 
-    final actor = item['actor'] ?? item['sender'] ?? data['actor'];
-    final actorMap = actor is Map ? Map<String, dynamic>.from(actor) : <String, dynamic>{};
+    // Merge actor data: DB-joined actor takes priority but metadata actor fills gaps
+    final dbActor = item['actor'] ?? item['sender'];
+    final metaActor = data['actor'];
+    final dbActorMap = dbActor is Map ? Map<String, dynamic>.from(dbActor) : <String, dynamic>{};
+    final metaActorMap = metaActor is Map ? Map<String, dynamic>.from(metaActor) : <String, dynamic>{};
+    // Merged: metadata actor fills in fields not present in DB actor
+    final actorMap = {...metaActorMap, ...dbActorMap};
 
-    final String declinerName = actorMap['firstName'] != null
-        ? '${actorMap['firstName']} ${actorMap['lastName'] ?? ''}'.trim()
-        : (actorMap['name'] ?? data['actorName'] ?? 'the host').toString();
+    // Resolve name: prefer DB actor firstName, fall back to metadata
+    final String declinerName = (() {
+      final firstName = (actorMap['firstName'] ?? '').toString().trim();
+      final lastName = (actorMap['lastName'] ?? '').toString().trim();
+      if (firstName.isNotEmpty) {
+        return '$firstName $lastName'.trim();
+      }
+      return (data['actorName'] ?? 'the host').toString().trim();
+    })();
 
-    final String declinerPhoto = (actorMap['profilePhotoUrl'] ??
-            actorMap['profileImageUrl'] ??
-            actorMap['photoUrl'] ??
-            data['actorProfilePhotoUrl'] ??
-            '')
-        .toString();
+    // Resolve photo URL — guard against empty strings
+    String _pickNonEmpty(List<String?> candidates) {
+      for (final c in candidates) {
+        if (c != null && c.trim().isNotEmpty) return c.trim();
+      }
+      return '';
+    }
 
-    // Replace generic "by the host" with actual decliner name if available
-    if (declinerName.isNotEmpty && declinerName != 'the host' && body.contains('by the host.')) {
-      body = body.replaceAll('by the host.', 'by $declinerName.');
-    } else if (declinerName.isNotEmpty && declinerName != 'the host' && body.contains('by the host')) {
-      body = body.replaceAll('by the host', 'by $declinerName');
+    final String declinerPhoto = _pickNonEmpty([
+      actorMap['profilePhotoUrl']?.toString(),
+      actorMap['profileImageUrl']?.toString(),
+      actorMap['photoUrl']?.toString(),
+      metaActorMap['profilePhotoUrl']?.toString(),
+      metaActorMap['profileImageUrl']?.toString(),
+      data['actorProfilePhotoUrl']?.toString(),
+    ]);
+
+    // Replace generic "by the host" with actual decliner name if body hasn't been personalised yet
+    if (declinerName.isNotEmpty && declinerName != 'the host') {
+      if (body.contains('by the host.')) {
+        body = body.replaceAll('by the host.', 'by $declinerName.');
+      } else if (body.contains('by the host')) {
+        body = body.replaceAll('by the host', 'by $declinerName');
+      }
     }
 
     final userData = {
