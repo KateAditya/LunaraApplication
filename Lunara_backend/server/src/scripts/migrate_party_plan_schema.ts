@@ -97,6 +97,11 @@ async function runMigration() {
         await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS lat_lang_check_in            BOOLEAN NOT NULL DEFAULT FALSE`);
         await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_arrival_confirmed      BOOLEAN NOT NULL DEFAULT FALSE`);
         await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_arrival_time           TIMESTAMP`);
+        await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancelled_at                 TIMESTAMP`);
+        await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancelled_by                 UUID`);
+        await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancellation_reason          VARCHAR(100)`);
+        await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS previous_status              VARCHAR(50)`);
+        await sequelize.query(`CREATE INDEX IF NOT EXISTS idx_party_plan_requests_cancelled_by ON party_plan_requests(cancelled_by)`);
         console.log('✅ party_plan_requests\n');
 
         // ─────────────────────────────────────────────────────────────────────

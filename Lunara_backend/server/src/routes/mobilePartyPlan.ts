@@ -23,6 +23,9 @@ import {
     confirmArrival,
     submitPartyReview,
     rejectPartyPlanRequest,
+    cancelPartyPlanRequest,
+    withdrawPartyPlanRequest,
+    revokePartyPlanAcceptance,
     getPlanSummary,
 } from '../controllers/partyPlanController';
 
@@ -74,6 +77,7 @@ router.post(
     '/:id/host-pay',
     [
         param('id').isUUID().withMessage('id must be a valid UUID'),
+        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         body('razorpay_order_id').notEmpty().withMessage('razorpay_order_id is required'),
         body('razorpay_payment_id').notEmpty().withMessage('razorpay_payment_id is required'),
         body('razorpay_signature').notEmpty().withMessage('razorpay_signature is required'),
@@ -221,6 +225,40 @@ router.post(
     acceptPartyPlanRequest
 );
 
+// Requester cancellation is valid only before acceptance.
+router.post(
+    '/requests/:reqId/cancel',
+    [
+        param('reqId').isUUID().withMessage('reqId must be a valid UUID'),
+        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
+        body('reason').optional().isString().isLength({ max: 500 }),
+        validate,
+    ],
+    cancelPartyPlanRequest
+);
+
+// These are distinct pre-payment actions. They never cancel a confirmed plan.
+router.post(
+    '/requests/:reqId/withdraw',
+    [
+        param('reqId').isUUID().withMessage('reqId must be a valid UUID'),
+        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
+        body('reason').optional().isString().isLength({ max: 500 }),
+        validate,
+    ],
+    withdrawPartyPlanRequest
+);
+router.post(
+    '/requests/:reqId/revoke',
+    [
+        param('reqId').isUUID().withMessage('reqId must be a valid UUID'),
+        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
+        body('reason').optional().isString().isLength({ max: 500 }),
+        validate,
+    ],
+    revokePartyPlanAcceptance
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/mobile/party-plans/requests/:reqId/accept-invite
 // Accept an invite from the host
@@ -270,6 +308,7 @@ router.post(
     '/requests/:reqId/joiner-pay',
     [
         param('reqId').isUUID().withMessage('reqId must be a valid UUID'),
+        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         body('razorpay_order_id').notEmpty().withMessage('razorpay_order_id is required'),
         body('razorpay_payment_id').notEmpty().withMessage('razorpay_payment_id is required'),
         body('razorpay_signature').notEmpty().withMessage('razorpay_signature is required'),

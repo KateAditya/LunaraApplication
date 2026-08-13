@@ -44,6 +44,25 @@ class ApiService {
   // ── Synchronous Local Request Status Cache for Instant UI Rendering ────────
   static final Set<String> _cachedRequestedPlanIds = {};
   static final Map<String, Map<String, dynamic>> _cachedPartyPlanRequests = {};
+  static String? _localStateUserId;
+
+  /// Changes to the signed-in account must never reuse device-local activity
+  /// state from the previous account. Server data remains the source of truth.
+  static final ValueNotifier<int> authSessionNotifier = ValueNotifier<int>(0);
+
+  static String _userPreferenceKey(String base, String userId) => '$base.$userId';
+
+  static void _ensureLocalStateForCurrentUser() {
+    final userId = currentUserId;
+    if (_localStateUserId == userId) return;
+
+    _localStateUserId = userId;
+    _cachedRequestedPlanIds.clear();
+    _cachedPartyPlanRequests.clear();
+    localReadNotificationIds.clear();
+    localReadRequestIds.clear();
+    _readIdsLoaded = false;
+  }
 
   /// Synchronously returns whether the current user has requested to join a given party plan.
   static bool isPartyPlanRequestedSync(String planId) {
@@ -64,6 +83,7 @@ class ApiService {
 
   /// Mark a party plan as requested locally for instant UI responsiveness.
   static void markPartyPlanAsRequestedLocal(String planId, [Map<String, dynamic>? requestData]) {
+    _ensureLocalStateForCurrentUser();
     if (planId.isEmpty) return;
     _cachedRequestedPlanIds.add(planId);
     _cachedPartyPlanRequests[planId] = requestData ?? {
@@ -79,6 +99,7 @@ class ApiService {
 
   /// Mark a party plan as cancelled/declined locally.
   static void markPartyPlanAsCancelledLocal(String planId) {
+    _ensureLocalStateForCurrentUser();
     if (planId.isEmpty) return;
     _cachedRequestedPlanIds.remove(planId);
     _cachedPartyPlanRequests.remove(planId);
@@ -87,8 +108,13 @@ class ApiService {
 
   static Future<void> _saveCachedRequestsToPrefs() async {
     try {
+      final userId = currentUserId;
+      if (userId == null || userId.isEmpty) return;
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('cached_requested_plan_ids', jsonEncode(_cachedRequestedPlanIds.toList()));
+      await prefs.setString(
+        _userPreferenceKey('cached_requested_plan_ids', userId),
+        jsonEncode(_cachedRequestedPlanIds.toList()),
+      );
     } catch (_) {}
   }
 
@@ -111,7 +137,11 @@ class ApiService {
     _authToken = prefs.getString('auth_token');
     selectedCity = prefs.getString('selected_city');
 
-    final savedRequestedPlansJson = prefs.getString('cached_requested_plan_ids');
+    _ensureLocalStateForCurrentUser();
+    final userId = currentUserId;
+    final savedRequestedPlansJson = userId == null
+        ? null
+        : prefs.getString(_userPreferenceKey('cached_requested_plan_ids', userId));
     if (savedRequestedPlansJson != null) {
       try {
         final List<dynamic> list = jsonDecode(savedRequestedPlansJson);
@@ -154,10 +184,8 @@ class ApiService {
   static void initSocket() {
     final userId = currentUserId;
     if (userId == null) return;
-
-    if (socket != null && socket!.connected) {
-      socket!.disconnect();
-    }
+    _ensureLocalStateForCurrentUser();
+    disconnectSocket();
 
     socket = socket_io.io(
       baseUrl,
@@ -189,20 +217,23 @@ class ApiService {
   static void disconnectSocket() {
     if (socket != null) {
       socket!.disconnect();
+      socket!.dispose();
       socket = null;
     }
   }
 
   static Future<void> setAuthToken(String? token) async {
+    final previousUserId = currentUserId;
+    disconnectSocket();
     _authToken = token;
     cachedCurrentUser = null;
-    localReadNotificationIds.clear();
-    localReadRequestIds.clear();
-    _readIdsLoaded = false;
+    _ensureLocalStateForCurrentUser();
+    if (previousUserId != currentUserId) authSessionNotifier.value++;
 
     final prefs = await SharedPreferences.getInstance();
     if (token != null && token.trim().isNotEmpty) {
       await prefs.setString('auth_token', token.trim());
+      await loadLocalReadIds();
       initSocket();
     } else {
       await prefs.remove('auth_token');
@@ -211,20 +242,21 @@ class ApiService {
   }
 
   static Future<void> clearAuthToken() async {
+    final previousUserId = currentUserId;
+    disconnectSocket();
     _authToken = null;
     cachedCurrentUser = null;
     selectedCity = null;
-    localReadNotificationIds.clear();
-    localReadRequestIds.clear();
-    _readIdsLoaded = false;
-
-    _socketListeners.clear();
-    disconnectSocket();
+    _ensureLocalStateForCurrentUser();
+    if (previousUserId != null) authSessionNotifier.value++;
 
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('auth_token');
       await prefs.remove('selected_city');
+      // Remove obsolete device-wide keys. Account-scoped values are retained
+      // and are only ever loaded for the matching authenticated account.
+      await prefs.remove('cached_requested_plan_ids');
       await prefs.remove('localReadNotificationIds');
       await prefs.remove('localReadRequestIds');
       await prefs.remove('biometric_enabled');
@@ -1162,6 +1194,54 @@ class ApiService {
     return null;
   }
 
+  /// Cancels only the caller's unaccepted Party Plan request.
+  static Future<bool> cancelPartyPlanRequest(String reqId, {String? reason}) async {
+    final userId = currentUserId;
+    if (userId == null) return false;
+    try {
+      final response = await post(
+        '/api/mobile/party-plans/requests/$reqId/cancel',
+        body: {'userId': userId, if (reason != null) 'reason': reason},
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('cancelPartyPlanRequest error: $e');
+      return false;
+    }
+  }
+
+  /// Withdraws the caller's accepted request before their payment completes.
+  static Future<bool> withdrawPartyPlanRequest(String reqId, {String? reason}) async {
+    final userId = currentUserId;
+    if (userId == null) return false;
+    try {
+      final response = await post(
+        '/api/mobile/party-plans/requests/$reqId/withdraw',
+        body: {'userId': userId, if (reason != null) 'reason': reason},
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('withdrawPartyPlanRequest error: $e');
+      return false;
+    }
+  }
+
+  /// Host-only: withdraws an acceptance while the participant remains unpaid.
+  static Future<bool> revokePartyPlanAcceptance(String reqId, {String? reason}) async {
+    final userId = currentUserId;
+    if (userId == null) return false;
+    try {
+      final response = await post(
+        '/api/mobile/party-plans/requests/$reqId/revoke',
+        body: {'userId': userId, if (reason != null) 'reason': reason},
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('revokePartyPlanAcceptance error: $e');
+      return false;
+    }
+  }
+
   static Future<bool> confirmSelfPaidJoin(String reqId) async {
     final userId = currentUserId;
     if (userId == null) return false;
@@ -1185,10 +1265,13 @@ class ApiService {
     String paymentId,
     String signature,
   ) async {
+    final userId = currentUserId;
+    if (userId == null) return false;
     try {
       final response = await post(
         '/api/mobile/party-plans/requests/$reqId/joiner-pay',
         body: {
+          'userId': userId,
           'razorpay_order_id': orderId,
           'razorpay_payment_id': paymentId,
           'razorpay_signature': signature,
@@ -1209,10 +1292,13 @@ class ApiService {
     String paymentId,
     String signature,
   ) async {
+    final userId = currentUserId;
+    if (userId == null) return false;
     try {
       final response = await post(
         '/api/mobile/party-plans/$planId/host-pay',
         body: {
+          'userId': userId,
           'razorpay_order_id': orderId,
           'razorpay_payment_id': paymentId,
           'razorpay_signature': signature,
@@ -2538,11 +2624,20 @@ class ApiService {
   static bool _readIdsLoaded = false;
 
   static Future<void> loadLocalReadIds() async {
+    _ensureLocalStateForCurrentUser();
     if (_readIdsLoaded) return;
     try {
+      final userId = currentUserId;
+      if (userId == null || userId.isEmpty) return;
       final prefs = await SharedPreferences.getInstance();
-      final reqs = prefs.getStringList('localReadRequestIds') ?? [];
-      final notifs = prefs.getStringList('localReadNotificationIds') ?? [];
+      final reqs = prefs.getStringList(
+            _userPreferenceKey('localReadRequestIds', userId),
+          ) ??
+          [];
+      final notifs = prefs.getStringList(
+            _userPreferenceKey('localReadNotificationIds', userId),
+          ) ??
+          [];
       localReadRequestIds.clear();
       localReadRequestIds.addAll(reqs);
       localReadNotificationIds.clear();
@@ -2555,8 +2650,14 @@ class ApiService {
 
   static Future<void> saveLocalReadRequestIds() async {
     try {
+      _ensureLocalStateForCurrentUser();
+      final userId = currentUserId;
+      if (userId == null || userId.isEmpty) return;
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList('localReadRequestIds', localReadRequestIds.toList());
+      await prefs.setStringList(
+        _userPreferenceKey('localReadRequestIds', userId),
+        localReadRequestIds.toList(),
+      );
     } catch (e) {
       debugPrint('Error saving local read request IDs: $e');
     }
@@ -2564,8 +2665,14 @@ class ApiService {
 
   static Future<void> saveLocalReadNotificationIds() async {
     try {
+      _ensureLocalStateForCurrentUser();
+      final userId = currentUserId;
+      if (userId == null || userId.isEmpty) return;
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList('localReadNotificationIds', localReadNotificationIds.toList());
+      await prefs.setStringList(
+        _userPreferenceKey('localReadNotificationIds', userId),
+        localReadNotificationIds.toList(),
+      );
     } catch (e) {
       debugPrint('Error saving local read notification IDs: $e');
     }

@@ -3,18 +3,22 @@ import 'package:flutter/material.dart';
 
 class LunaraCountdownButton extends StatefulWidget {
   final dynamic paymentDeadlineAt;
+  final dynamic serverTime;
   final dynamic acceptedAt;
   final double amount;
   final VoidCallback onTap;
+  final VoidCallback? onExpired;
   final Color backgroundColor;
   final TextStyle? textStyle;
 
   const LunaraCountdownButton({
     super.key,
     required this.paymentDeadlineAt,
+    this.serverTime,
     this.acceptedAt,
     required this.amount,
     required this.onTap,
+    this.onExpired,
     this.backgroundColor = const Color(0xFF7C3AED),
     this.textStyle,
   });
@@ -25,11 +29,14 @@ class LunaraCountdownButton extends StatefulWidget {
 
 class _LunaraCountdownButtonState extends State<LunaraCountdownButton> {
   Timer? _timer;
-  String _formattedCountdown = '30m';
+  String _formattedCountdown = 'Unavailable';
+  Duration _serverClockOffset = Duration.zero;
+  bool _hasExpired = false;
 
   @override
   void initState() {
     super.initState();
+    _syncServerClock();
     _updateCountdown();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) {
@@ -44,12 +51,32 @@ class _LunaraCountdownButtonState extends State<LunaraCountdownButton> {
     super.dispose();
   }
 
+  @override
+  void didUpdateWidget(covariant LunaraCountdownButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.serverTime != widget.serverTime) {
+      _syncServerClock();
+      _hasExpired = false;
+    }
+  }
+
+  void _syncServerClock() {
+    try {
+      if (widget.serverTime != null) {
+        final serverNow = DateTime.parse(widget.serverTime.toString()).toUtc();
+        _serverClockOffset = serverNow.difference(DateTime.now().toUtc());
+      }
+    } catch (_) {
+      _serverClockOffset = Duration.zero;
+    }
+  }
+
   void _updateCountdown() {
-    dynamic deadlineRaw = widget.paymentDeadlineAt ?? widget.acceptedAt;
+    final deadlineRaw = widget.paymentDeadlineAt;
 
     if (deadlineRaw == null) {
-      if (_formattedCountdown != '30m') {
-        setState(() => _formattedCountdown = '30m');
+      if (_formattedCountdown != 'Unavailable') {
+        setState(() => _formattedCountdown = 'Unavailable');
       }
       return;
     }
@@ -59,18 +86,18 @@ class _LunaraCountdownButtonState extends State<LunaraCountdownButton> {
       if (deadlineRaw is DateTime) {
         deadline = deadlineRaw;
       } else {
-        deadline = DateTime.parse(deadlineRaw.toString()).toLocal();
+        deadline = DateTime.parse(deadlineRaw.toString()).toUtc();
       }
 
-      if (widget.paymentDeadlineAt == null && widget.acceptedAt != null) {
-        deadline = deadline.add(const Duration(minutes: 30));
-      }
-
-      final Duration diff = deadline.difference(DateTime.now());
+      final Duration diff = deadline.difference(DateTime.now().toUtc().add(_serverClockOffset));
 
       if (diff.inSeconds <= 0) {
         if (_formattedCountdown != 'Expired') {
           setState(() => _formattedCountdown = 'Expired');
+        }
+        if (!_hasExpired) {
+          _hasExpired = true;
+          widget.onExpired?.call();
         }
         return;
       }
@@ -84,8 +111,8 @@ class _LunaraCountdownButtonState extends State<LunaraCountdownButton> {
         setState(() => _formattedCountdown = formatted);
       }
     } catch (_) {
-      if (_formattedCountdown != '30m') {
-        setState(() => _formattedCountdown = '30m');
+      if (_formattedCountdown != 'Unavailable') {
+        setState(() => _formattedCountdown = 'Unavailable');
       }
     }
   }
@@ -93,10 +120,14 @@ class _LunaraCountdownButtonState extends State<LunaraCountdownButton> {
   @override
   Widget build(BuildContext context) {
     final String amountStr = widget.amount > 0 ? ' (₹${widget.amount.toStringAsFixed(0)})' : '';
-    final String label = 'Pay Deposit ($_formattedCountdown)$amountStr';
+    final isUnavailable = _formattedCountdown == 'Unavailable';
+    final isExpired = _formattedCountdown == 'Expired';
+    final String label = isUnavailable
+        ? 'Payment status unavailable$amountStr'
+        : 'Pay Deposit ($_formattedCountdown)$amountStr';
 
     return ElevatedButton.icon(
-      onPressed: widget.onTap,
+      onPressed: isUnavailable || isExpired ? null : widget.onTap,
       icon: const Icon(Icons.payment_rounded, size: 14, color: Colors.white),
       label: Text(
         label,

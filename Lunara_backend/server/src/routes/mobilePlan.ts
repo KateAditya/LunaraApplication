@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { body, param } from 'express-validator';
 import { validate } from '../middleware/validate';
+import { optionalAuth } from '../middleware/auth';
 import ctrl from '../controllers/mobilePlanController';
 
 const router = Router();
@@ -28,7 +29,7 @@ router.get('/my-joins', ctrl.getMyJoins);
  * Returns all active plans (optionally filtered by venueId, date).
  * Query: ?viewerId=<uuid>&venueId=<uuid>&date=YYYY-MM-DD
  */
-router.get('/live-feed', ctrl.getLiveFeed);
+router.get('/live-feed', optionalAuth, ctrl.getLiveFeed);
 
 // ─── Post a Plan ─────────────────────────────────────────────────────────────
 

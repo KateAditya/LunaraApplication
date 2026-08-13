@@ -102,6 +102,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   List<Map<String, dynamic>> _largePartyBookings = [];
   bool _isLoading = true;
   Timer? _pollingTimer;
+  String? _sessionUserId;
 
   // Selected Category Filter for Bottom Sheet
   String _selectedCategoryFilter = 'ALL';
@@ -143,6 +144,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   @override
   void initState() {
     super.initState();
+    _sessionUserId = ApiService.currentUserId;
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
@@ -166,12 +168,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     ApiService.planPostedNotifier.addListener(_onPlanPostedNotify);
     ApiService.profileUpdateNotifier.addListener(_onProfileUpdateNotify);
+    ApiService.authSessionNotifier.addListener(_onAuthSessionChanged);
   }
 
   @override
   void dispose() {
     ApiService.planPostedNotifier.removeListener(_onPlanPostedNotify);
     ApiService.profileUpdateNotifier.removeListener(_onProfileUpdateNotify);
+    ApiService.authSessionNotifier.removeListener(_onAuthSessionChanged);
     _disposeSocketListeners();
     _pollingTimer?.cancel();
     _pulseController.dispose();
@@ -285,9 +289,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   Future<void> _loadGroupPartyBookings() async {
+    final requestUserId = _sessionUserId;
     try {
       final list = await ApiService.fetchMyLargePartyBookings();
-      if (mounted) {
+      if (mounted && requestUserId == ApiService.currentUserId && requestUserId == _sessionUserId) {
         setState(() {
           _largePartyBookings = list;
         });
@@ -298,6 +303,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   Future<void> _loadFeed({bool showLoader = true}) async {
+    final requestUserId = _sessionUserId;
     if (showLoader) setState(() => _isLoading = true);
     try {
       await ApiService.loadLocalReadIds();
@@ -310,7 +316,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ...List<Map<String, dynamic>>.from(data['incomingRequests'] ?? []),
       ];
 
-      if (mounted) {
+      if (mounted && requestUserId == ApiService.currentUserId && requestUserId == _sessionUserId) {
         setState(() {
           _feedItems = combined;
           _notifications = notifs.map((n) {
@@ -326,7 +332,21 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     } catch (e) {
       debugPrint('Error loading live feed: $e');
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted && requestUserId == _sessionUserId) setState(() => _isLoading = false);
+    }
+  }
+
+  void _onAuthSessionChanged() {
+    if (!mounted) return;
+    _sessionUserId = ApiService.currentUserId;
+    setState(() {
+      _feedItems = [];
+      _notifications = [];
+      _largePartyBookings = [];
+      _isLoading = _sessionUserId != null;
+    });
+    if (_sessionUserId != null) {
+      refreshFeed();
     }
   }
 
@@ -3072,8 +3092,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final rawDeadline = item['paymentDeadlineAt'] ?? item['payment_deadline_at'] ?? planMap['paymentDeadlineAt'] ?? planMap['payment_deadline_at'];
     if (rawDeadline != null) {
       try {
-        final deadline = DateTime.parse(rawDeadline.toString()).toLocal();
-        final diff = deadline.difference(DateTime.now());
+        final deadline = DateTime.parse(rawDeadline.toString()).toUtc();
+        final rawServerTime = item['serverTime'] ?? planMap['serverTime'];
+        final serverNow = rawServerTime == null
+            ? DateTime.now().toUtc()
+            : DateTime.parse(rawServerTime.toString()).toUtc();
+        final clockOffset = serverNow.difference(DateTime.now().toUtc());
+        final diff = deadline.difference(DateTime.now().toUtc().add(clockOffset));
         if (diff.inSeconds <= 0) {
           return 'Pay Deposit (Expired)';
         }
@@ -3083,6 +3108,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         return 'Pay Deposit (${mins}m ${secStr}s)';
       } catch (_) {}
     }
-    return 'Pay Deposit (30m)';
+    return 'Payment status unavailable';
   }
 }

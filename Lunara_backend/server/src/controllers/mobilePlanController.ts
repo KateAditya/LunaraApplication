@@ -191,12 +191,25 @@ export const postPlan = async (req: Request, res: Response) => {
 // ─── GET /live-feed — List active plans ──────────────────────────────────────
 export const getLiveFeed = async (req: Request, res: Response) => {
     try {
-        const { viewerId, venueId, date } = req.query;
+        const { viewerId: requestedViewerId, venueId, date } = req.query;
+        const authenticatedUserId = req.user?.id;
+
+        // Public browsing is allowed without a viewer identity. Any request for
+        // personalised records must be bound to the authenticated account,
+        // never to a caller-controlled query parameter.
+        if (requestedViewerId && !authenticatedUserId) {
+            return res.status(401).json({ success: false, message: 'Authentication is required for a personalised Live Feed.' });
+        }
+        if (requestedViewerId && authenticatedUserId && requestedViewerId !== authenticatedUserId) {
+            return res.status(403).json({ success: false, message: 'You cannot access another user\'s Live Feed.' });
+        }
+        const viewerId = authenticatedUserId || undefined;
 
         let myRequests: any[] = [];
         let incomingRequests: any[] = [];
 
         const now = new Date();
+        const serverTime = now.toISOString();
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
@@ -480,6 +493,8 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                     status: r.status,
                     createdAt: r.createdAt,
                     paymentTimeoutAt: r.paymentTimeoutAt,
+                    paymentDeadlineAt: r.paymentTimeoutAt,
+                    serverTime,
                     joinerPaymentStatus: r.joinerPaymentStatus,
                     joinerRazorpayOrderId: r.joinerRazorpayOrderId,
                     plan: r.plan ? {
@@ -647,6 +662,8 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                         status: r.status,
                         createdAt: r.createdAt,
                         paymentTimeoutAt: r.paymentTimeoutAt,
+                        paymentDeadlineAt: r.paymentTimeoutAt,
+                        serverTime,
                         joinerPaymentStatus: r.joinerPaymentStatus,
                         joinerRazorpayOrderId: r.joinerRazorpayOrderId,
                         requester: { ...reqUser?.toJSON(), profileImageUrl },

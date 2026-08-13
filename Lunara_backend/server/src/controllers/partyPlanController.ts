@@ -23,6 +23,7 @@ import Booking, { BookingStatus, GoingMode, PaymentStatus as BookingPaymentStatu
 import Payment, { PaymentMethod, PaymentStatus } from '../models/Payment';
 import { generateTicketForBookingHelper } from '../services/ticketService';
 import { NotificationService } from '../services/NotificationService';
+import AuditLog from '../models/AuditLog';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // autoOpenChat — ONLY called after MATCH_CONFIRMED. Guarded by lifecycleStatus.
@@ -531,6 +532,63 @@ const VENUE_ATTRS = ['id', 'name', 'addressLine1', 'area', 'city', 'category', '
 const USER_ATTRS = ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'];
 const PROFILE_ATTRS = ['bio', 'occupation', 'city', 'gender'];
 
+/** Records lifecycle changes server-side.  Clients never supply audit data. */
+async function auditRequestTransition(params: {
+    plan: PartyPlan;
+    request: PartyPlanRequest;
+    actorUserId: string;
+    action: string;
+    previousStatus: string;
+    newStatus: string;
+    reason?: string;
+}) {
+    await AuditLog.logAction({
+        userId: params.actorUserId,
+        partyPlanId: params.plan.id,
+        action: params.action,
+        metadata: {
+            requestId: params.request.id,
+            actorUserId: params.actorUserId,
+            targetUserId: params.request.requesterId,
+            previousState: params.previousStatus,
+            newState: params.newStatus,
+            reason: params.reason || null,
+            source: 'party_plan_api',
+        },
+    });
+}
+
+async function notifyRequestLifecycleChange(params: {
+    plan: PartyPlan;
+    request: PartyPlanRequest;
+    recipientUserId: string;
+    actorUserId: string;
+    eventType: string;
+    title: string;
+    body: string;
+}) {
+    await NotificationService.dispatch({
+        recipientUserId: params.recipientUserId,
+        actorUserId: params.actorUserId,
+        eventType: params.eventType,
+        category: 'requests',
+        entityType: 'party_plan',
+        entityId: params.plan.id,
+        title: params.title,
+        body: params.body,
+        metadata: { planId: params.plan.id, requestId: params.request.id },
+        idempotencyKey: `${params.eventType}_${params.request.id}`,
+    });
+
+    const { io } = require('../server');
+    io.to(`user_${params.plan.userId}`).emit('party_plan_request_updated', {
+        planId: params.plan.id, requestId: params.request.id,
+    });
+    io.to(`user_${params.request.requesterId}`).emit('party_plan_request_updated', {
+        planId: params.plan.id, requestId: params.request.id,
+    });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/mobile/party-plans
 // Create & post a party plan
@@ -843,11 +901,15 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
         if (id && id.startsWith('pp_')) {
             id = id.replace('pp_', '');
         }
-        const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+        const { userId, razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
         const plan = await PartyPlan.findByPk(id);
         if (!plan) {
             res.status(404).json({ success: false, message: 'Party plan not found' });
+            return;
+        }
+        if (plan.userId !== userId) {
+            res.status(403).json({ success: false, message: 'Only the host can verify this payment' });
             return;
         }
 
@@ -1908,6 +1970,174 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
     }
 };
 
+/**
+ * Cancels a request before host acceptance. The plan and other requests stay
+ * untouched, so a requester cannot accidentally cancel a host's party plan.
+ */
+export const cancelPartyPlanRequest = async (req: Request, res: Response): Promise<void> => {
+    const transaction = await sequelize.transaction();
+    try {
+        const { reqId } = req.params;
+        const { userId, reason } = req.body;
+        const request = await PartyPlanRequest.findByPk(reqId, { transaction });
+        if (!request) {
+            await transaction.rollback();
+            res.status(404).json({ success: false, message: 'Request not found' });
+            return;
+        }
+        if (request.requesterId !== userId) {
+            await transaction.rollback();
+            res.status(403).json({ success: false, message: 'You can only cancel your own request' });
+            return;
+        }
+        if (request.status === PartyPlanRequestStatus.CANCELLED && request.cancelledBy === userId) {
+            await transaction.rollback();
+            res.json({ success: true, message: 'Request was already cancelled', data: request });
+            return;
+        }
+        if (request.status !== PartyPlanRequestStatus.PENDING) {
+            await transaction.rollback();
+            res.status(409).json({ success: false, message: 'Only a pending request can be cancelled. Use the appropriate next-step flow for an accepted request.' });
+            return;
+        }
+        // Always lock plan first, then request. Payment verification follows
+        // this same order, preventing a payment/revocation deadlock.
+        const plan = await PartyPlan.findByPk(request.planId, { transaction, lock: transaction.LOCK.UPDATE });
+        if (!plan) {
+            await transaction.rollback();
+            res.status(404).json({ success: false, message: 'Party plan not found' });
+            return;
+        }
+        await request.reload({ transaction, lock: transaction.LOCK.UPDATE });
+        if (request.status !== PartyPlanRequestStatus.PENDING) {
+            await transaction.rollback();
+            res.status(409).json({ success: false, message: 'This request is no longer pending.' });
+            return;
+        }
+
+        await request.update({
+            status: PartyPlanRequestStatus.CANCELLED,
+            previousStatus: request.status,
+            cancelledAt: new Date(),
+            cancelledBy: userId,
+            cancellationReason: reason || 'cancelled_by_requester',
+        }, { transaction });
+        await transaction.commit();
+
+        await auditRequestTransition({
+            plan, request, actorUserId: userId, action: 'REQUEST_CANCELLED_BY_USER',
+            previousStatus: PartyPlanRequestStatus.PENDING, newStatus: PartyPlanRequestStatus.CANCELLED,
+            reason: reason || 'cancelled_by_requester',
+        });
+        setImmediate(() => notifyRequestLifecycleChange({
+            plan, request, recipientUserId: plan.userId, actorUserId: userId,
+            eventType: 'party_plan_request_cancelled', title: 'Request Cancelled',
+            body: 'The participant cancelled their Party Plan request.',
+        }).catch((err: any) => logger.warn('Request cancellation notification failed:', err.message)));
+
+        res.json({ success: true, message: 'Request cancelled', data: request });
+    } catch (err: any) {
+        await transaction.rollback();
+        logger.error('cancelPartyPlanRequest error:', err);
+        res.status(500).json({ success: false, message: 'Failed to cancel request', error: err.message });
+    }
+};
+
+/** Shared atomic transition for requester withdrawal and host revocation. */
+async function endPrePaymentMatch(req: Request, res: Response, actor: 'requester' | 'host'): Promise<void> {
+    const transaction = await sequelize.transaction();
+    try {
+        const { reqId } = req.params;
+        const { userId, reason } = req.body;
+        const request = await PartyPlanRequest.findByPk(reqId, { transaction });
+        if (!request) {
+            await transaction.rollback();
+            res.status(404).json({ success: false, message: 'Request not found' });
+            return;
+        }
+        // Keep lock ordering identical to payment verification: plan -> request.
+        const plan = await PartyPlan.findByPk(request.planId, { transaction, lock: transaction.LOCK.UPDATE });
+        if (!plan) {
+            await transaction.rollback();
+            res.status(404).json({ success: false, message: 'Party plan not found' });
+            return;
+        }
+        await request.reload({ transaction, lock: transaction.LOCK.UPDATE });
+        const permitted = actor === 'host' ? plan.userId === userId : request.requesterId === userId;
+        if (!permitted) {
+            await transaction.rollback();
+            res.status(403).json({ success: false, message: actor === 'host' ? 'Only the host can revoke this acceptance' : 'You can only withdraw your own accepted request' });
+            return;
+        }
+        if (plan.matchedRequestId !== request.id || ![PartyPlanRequestStatus.PAYMENT_PENDING, PartyPlanRequestStatus.ACCEPTED].includes(request.status)) {
+            await transaction.rollback();
+            res.status(409).json({ success: false, message: 'This request is not an active pre-payment acceptance' });
+            return;
+        }
+        if (request.joinerRazorpayPaymentId || plan.lifecycleStatus === PartyPlanLifecycleStatus.MATCH_CONFIRMED || plan.lifecycleStatus === PartyPlanLifecycleStatus.CHAT_ENABLED) {
+            await transaction.rollback();
+            res.status(409).json({ success: false, message: 'Payment has completed or is being confirmed. Use the confirmed Party Plan cancellation workflow.' });
+            return;
+        }
+
+        const previousStatus = request.status;
+        const cancellationReason = reason || (actor === 'host' ? 'revoked_by_host' : 'withdrawn_by_requester');
+        await request.update({
+            status: PartyPlanRequestStatus.CANCELLED,
+            previousStatus,
+            cancelledAt: new Date(),
+            cancelledBy: userId,
+            cancellationReason,
+            paymentTimeoutAt: null,
+        }, { transaction });
+        await PartyPlanRequest.update(
+            { status: PartyPlanRequestStatus.PENDING },
+            { where: { planId: plan.id, status: PartyPlanRequestStatus.WAITING }, transaction }
+        );
+        const pendingCount = await PartyPlanRequest.count({
+            where: { planId: plan.id, status: PartyPlanRequestStatus.PENDING }, transaction,
+        });
+        await plan.update({
+            lifecycleStatus: pendingCount ? PartyPlanLifecycleStatus.REQUEST_RECEIVED : PartyPlanLifecycleStatus.POSTED,
+            status: PartyPlanStatus.ACTIVE,
+            isLive: plan.visibility !== PartyPlanVisibility.PRIVATE,
+            matchedRequestId: null,
+            acceptedAt: null,
+            paymentDeadlineAt: null,
+            paymentStatus: plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID ? 'Awaiting Participant Payment' : 'pending',
+        }, { transaction });
+        await transaction.commit();
+
+        await auditRequestTransition({
+            plan, request, actorUserId: userId,
+            action: actor === 'host' ? 'REQUEST_REVOKED_BY_HOST' : 'REQUEST_WITHDRAWN_BY_USER',
+            previousStatus, newStatus: PartyPlanRequestStatus.CANCELLED, reason: cancellationReason,
+        });
+        setImmediate(() => notifyRequestLifecycleChange({
+            plan, request,
+            recipientUserId: actor === 'host' ? request.requesterId : plan.userId,
+            actorUserId: userId,
+            eventType: actor === 'host' ? 'party_plan_acceptance_revoked' : 'party_plan_request_withdrawn',
+            title: actor === 'host' ? 'Acceptance Withdrawn' : 'Participant Withdrew',
+            body: actor === 'host' ? 'The host withdrew the acceptance for this Party Plan.' : 'The participant withdrew from the Party Plan before payment.',
+        }).catch((err: any) => logger.warn('Pre-payment match notification failed:', err.message)));
+        try {
+            const { io } = require('../server');
+            if (plan.visibility !== PartyPlanVisibility.PRIVATE) io.emit('party_plan_relisted', { planId: plan.id });
+        } catch (socketErr: any) {
+            logger.warn('Pre-payment match relist socket failed:', socketErr.message);
+        }
+        res.json({ success: true, message: actor === 'host' ? 'Acceptance revoked and payment window closed' : 'Request withdrawn and payment window closed', data: request });
+    } catch (err: any) {
+        await transaction.rollback();
+        logger.error('endPrePaymentMatch error:', err);
+        res.status(500).json({ success: false, message: 'Failed to update request', error: err.message });
+    }
+}
+
+export const withdrawPartyPlanRequest = (req: Request, res: Response) => endPrePaymentMatch(req, res, 'requester');
+export const revokePartyPlanAcceptance = (req: Request, res: Response) => endPrePaymentMatch(req, res, 'host');
+
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/mobile/party-plans/requests/:reqId/reject
 // Reject request
@@ -2081,7 +2311,7 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
     const transaction = await sequelize.transaction();
     try {
         const { reqId } = req.params;
-        const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+        const { userId, razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
         const request = await PartyPlanRequest.findByPk(reqId, {
             include: [{ model: PartyPlan, as: 'plan' }],
@@ -2090,6 +2320,11 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
         if (!request) {
             await transaction.rollback();
             res.status(404).json({ success: false, message: 'Request not found' });
+            return;
+        }
+        if (request.requesterId !== userId) {
+            await transaction.rollback();
+            res.status(403).json({ success: false, message: 'Only the requesting participant can verify this payment' });
             return;
         }
 
@@ -2126,8 +2361,22 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
                 return;
             }
 
-            // Acquire transactional row update lock on the party plan FIRST
+            // Acquire locks in the same plan -> request order used by revocation.
+            // This makes a payment/revocation race deterministic: exactly one
+            // transition can commit.
             await plan.reload({ lock: transaction.LOCK.UPDATE, transaction });
+            await request.reload({ lock: transaction.LOCK.UPDATE, transaction });
+
+            if (plan.matchedRequestId !== request.id || request.status !== PartyPlanRequestStatus.PAYMENT_PENDING) {
+                await transaction.rollback();
+                res.status(409).json({ success: false, message: 'This payment window is no longer active.' });
+                return;
+            }
+            if (request.paymentTimeoutAt && new Date(request.paymentTimeoutAt).getTime() <= Date.now()) {
+                await transaction.rollback();
+                res.status(409).json({ success: false, message: 'The payment window has expired.' });
+                return;
+            }
 
             // Lifecycle guard — plan must be in a payment-accepting state
             const validPaymentStates = [
@@ -2136,7 +2385,7 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
                 PartyPlanLifecycleStatus.HOST_PAYMENT_COMPLETED,
                 PartyPlanLifecycleStatus.GUEST_PAYMENT_COMPLETED,
             ];
-            if (!validPaymentStates.includes(plan.lifecycleStatus) && plan.status !== PartyPlanStatus.ACTIVE) {
+            if (!validPaymentStates.includes(plan.lifecycleStatus) || plan.status !== PartyPlanStatus.ACTIVE) {
                 await transaction.rollback();
                 res.status(400).json({ success: false, message: `This plan is not in a payment-accepting state (${plan.lifecycleStatus}).` });
                 return;
@@ -3397,6 +3646,9 @@ export async function enrichPartyPlanNotificationCard(planId: string, recipientU
         const matchedRequest = plan.matchedRequestId 
             ? p.requests?.find((r: any) => r.id === plan.matchedRequestId)
             : p.requests?.find((r: any) => r.status === 'accepted' || r.status === 'payment_pending');
+        const viewerRequest = isHost
+            ? matchedRequest
+            : p.requests?.find((r: any) => r.requesterId === recipientUserId);
 
         const counterpartUser = isHost
             ? (matchedRequest ? matchedRequest.requester : null)
@@ -3535,8 +3787,39 @@ export async function enrichPartyPlanNotificationCard(planId: string, recipientU
         let primaryActionUrl: string | null = null;
         let secondaryActionUrl: string | null = null;
         let currentStatusText = 'Active';
+        const permittedActions: Array<{ key: string; requestId?: string }> = [];
 
-        if (status === PartyPlanLifecycleStatus.CANCELLED) {
+        if (!isHost && viewerRequest?.status === PartyPlanRequestStatus.CANCELLED) {
+            const cancellationReason = viewerRequest.cancellationReason || '';
+            currentStatusText = cancellationReason === 'revoked_by_host'
+                ? 'Acceptance withdrawn by host'
+                : cancellationReason === 'withdrawn_by_requester'
+                    ? 'Request withdrawn'
+                    : 'Request cancelled';
+        } else if (!isHost && viewerRequest?.status === PartyPlanRequestStatus.REJECTED) {
+            currentStatusText = 'Request declined';
+        }
+
+        if (viewerRequest?.status === PartyPlanRequestStatus.PENDING && !isHost) {
+            currentStatusText = 'Request Sent';
+            primaryAction = 'Cancel Request';
+            primaryActionUrl = '/party-plans/requests/' + viewerRequest.id + '/cancel';
+            permittedActions.push({ key: 'cancel_request', requestId: viewerRequest.id });
+        } else if (!isHost && viewerRequest && [PartyPlanRequestStatus.PAYMENT_PENDING, PartyPlanRequestStatus.ACCEPTED].includes(viewerRequest.status) && !viewerRequest.joinerRazorpayPaymentId && !viewerRequest.cancelledAt) {
+            currentStatusText = 'Action Required: Pay Deposit';
+            primaryAction = 'Pay Now';
+            primaryActionUrl = '/party-plans/' + plan.id + '/pay-joiner/' + viewerRequest.id;
+            secondaryAction = 'Withdraw';
+            secondaryActionUrl = '/party-plans/requests/' + viewerRequest.id + '/withdraw';
+            permittedActions.push({ key: 'pay_deposit', requestId: viewerRequest.id }, { key: 'withdraw_request', requestId: viewerRequest.id });
+        } else if (isHost && matchedRequest && [PartyPlanRequestStatus.PAYMENT_PENDING, PartyPlanRequestStatus.ACCEPTED].includes(matchedRequest.status) && !matchedRequest.joinerRazorpayPaymentId && !matchedRequest.cancelledAt) {
+            permittedActions.push({ key: 'revoke_acceptance', requestId: matchedRequest.id });
+            if (plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID) {
+                currentStatusText = 'Participant payment pending';
+                primaryAction = 'Revoke Acceptance';
+                primaryActionUrl = '/party-plans/requests/' + matchedRequest.id + '/revoke';
+            }
+        } else if (status === PartyPlanLifecycleStatus.CANCELLED) {
             currentStatusText = 'Cancelled';
         } else if (status === PartyPlanLifecycleStatus.EXPIRED) {
             currentStatusText = 'Expired';
@@ -3650,6 +3933,9 @@ export async function enrichPartyPlanNotificationCard(planId: string, recipientU
             hostRazorpayOrderId: plan.hostRazorpayOrderId,
             joinerPaymentStatus: matchedRequest?.joinerPaymentStatus || 'unpaid',
             joinerRazorpayOrderId: matchedRequest?.joinerRazorpayOrderId || null,
+            requestStatus: viewerRequest?.status || null,
+            permittedActions,
+            cancellationReason: viewerRequest?.cancellationReason || null,
             acceptedAt: plan.acceptedAt ? plan.acceptedAt.toISOString() : null,
             paymentDeadlineAt: plan.paymentDeadlineAt ? plan.paymentDeadlineAt.toISOString() : null,
             serverTime: new Date().toISOString(),

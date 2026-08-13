@@ -17,6 +17,7 @@ import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import { generateTicketForStrangersMeetHelper } from '../services/ticketService';
 import { StrangersMeetService } from '../services/StrangersMeetService';
+import sequelize from '../config/database';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -158,14 +159,10 @@ function formatRequest(r: StrangersMeetRequest) {
         ticketId: r.ticketId ?? null,
         ticketUrl: r.ticketUrl ?? null,
         settlementStatus: r.settlementStatus || 'none',
-        bankDetails: r.bankDetails ?? null,
-        // v2 structured bank fields
-        bankName: r.bankName ?? null,
-        accountNumber: r.accountNumber ?? null,
-        accountHolderName: r.accountHolderName ?? null,
-        ifscCode: r.ifscCode ?? null,
-        upiId: r.upiId ?? null,
-        upiNumber: r.upiNumber ?? null,
+        // Settlement/bank fields are deliberately never sent through the
+        // general mobile formatter. This formatter backs public discovery,
+        // notification cards, and meet detail reads, so returning them here
+        // would disclose host payment information to unrelated users.
         platformChargePerSeat: r.platformChargePerSeat ? Number(r.platformChargePerSeat) : null,
         settlementTransactionId: r.settlementTransactionId ?? null,
         settlementAmount: r.settlementAmount ? Number(r.settlementAmount) : null,
@@ -978,7 +975,7 @@ export const confirmJoinPayment = async (req: Request, res: Response): Promise<v
         }
 
         if (joiner.paymentStatus === StrangersMeetJoinerPaymentStatus.PAID) {
-            res.status(400).json({ success: false, message: 'Already joined' });
+            res.json({ success: true, message: 'Already joined', data: { id: request.id, slotsFilled: request.slotsFilled, numberOfPersons: request.numberOfPersons } });
             return;
         }
 
@@ -1005,14 +1002,47 @@ export const confirmJoinPayment = async (req: Request, res: Response): Promise<v
             }
         }
 
-        await joiner.update({
-            status: 'paid' as any,
-            paymentStatus: StrangersMeetJoinerPaymentStatus.PAID,
-            razorpayPaymentId: razorpay_payment_id || 'free_or_mock',
-            razorpaySignature: razorpay_signature || 'free_or_mock',
-        });
+        // One transaction owns the capacity check and payment transition.
+        // This prevents two successful gateway callbacks from overselling a
+        // meet or confirming a joiner after their request was withdrawn.
+        const transaction = await sequelize.transaction();
+        try {
+            await request.reload({ transaction, lock: transaction.LOCK.UPDATE });
+            await joiner.reload({ transaction, lock: transaction.LOCK.UPDATE });
+            if (request.status !== StrangersMeetStatus.APPROVED ||
+                request.paymentStatus !== StrangersMeetPaymentStatus.PAID ||
+                new Date(request.eventDateTime).getTime() <= Date.now()) {
+                await transaction.rollback();
+                res.status(409).json({ success: false, message: 'This Strangers Meet is no longer available for payment.' });
+                return;
+            }
+            if (joiner.status !== 'accepted' || joiner.paymentStatus !== StrangersMeetJoinerPaymentStatus.PENDING) {
+                await transaction.rollback();
+                res.status(409).json({ success: false, message: 'This join request is not eligible for payment.' });
+                return;
+            }
+            const paidCount = await StrangersMeetJoiner.count({
+                where: { strangersMeetRequestId: request.id, paymentStatus: StrangersMeetJoinerPaymentStatus.PAID },
+                transaction,
+            });
+            if (paidCount >= request.numberOfPersons) {
+                await transaction.rollback();
+                res.status(409).json({ success: false, message: 'This Strangers Meet is already full.' });
+                return;
+            }
 
-        await request.increment('slotsFilled', { by: 1 });
+            await joiner.update({
+                status: 'paid' as any,
+                paymentStatus: StrangersMeetJoinerPaymentStatus.PAID,
+                razorpayPaymentId: razorpay_payment_id || 'free_or_mock',
+                razorpaySignature: razorpay_signature || 'free_or_mock',
+            }, { transaction });
+            await request.increment('slotsFilled', { by: 1, transaction });
+            await transaction.commit();
+        } catch (err) {
+            await transaction.rollback();
+            throw err;
+        }
         await request.reload();
 
         // Send notifications via push and socket
@@ -1430,7 +1460,49 @@ export const handleJoinRequest = async (req: Request, res: Response): Promise<vo
         }
 
         if (action === 'accept') {
-            await joiner.update({ status: 'accepted' as any });
+            // Lock the meet before its joiner. This makes concurrent host
+            // actions deterministic and prevents accepting an already-full
+            // or no-longer-pending request.
+            const transaction = await sequelize.transaction();
+            try {
+                await request.reload({ transaction, lock: transaction.LOCK.UPDATE });
+                await joiner.reload({ transaction, lock: transaction.LOCK.UPDATE });
+
+                if (request.status !== StrangersMeetStatus.APPROVED ||
+                    request.paymentStatus !== StrangersMeetPaymentStatus.PAID ||
+                    new Date(request.eventDateTime).getTime() <= Date.now()) {
+                    await transaction.rollback();
+                    res.status(409).json({ success: false, message: 'This Strangers Meet is no longer accepting participants.' });
+                    return;
+                }
+                if (joiner.status !== 'pending' || joiner.paymentStatus === StrangersMeetJoinerPaymentStatus.PAID) {
+                    await transaction.rollback();
+                    res.status(409).json({ success: false, message: 'This join request has already been handled.' });
+                    return;
+                }
+
+                const paidCount = await StrangersMeetJoiner.count({
+                    where: {
+                        strangersMeetRequestId: request.id,
+                        [Op.or]: [
+                            { status: 'paid' as any },
+                            { paymentStatus: StrangersMeetJoinerPaymentStatus.PAID },
+                        ],
+                    },
+                    transaction,
+                });
+                if (paidCount >= request.numberOfPersons) {
+                    await transaction.rollback();
+                    res.status(409).json({ success: false, message: 'This Strangers Meet is already full.' });
+                    return;
+                }
+
+                await joiner.update({ status: 'accepted' as any }, { transaction });
+                await transaction.commit();
+            } catch (err) {
+                await transaction.rollback();
+                throw err;
+            }
 
             // Multi-channel notification engine for accepted joiner
             await StrangersMeetService.emitNotification({
@@ -1460,6 +1532,10 @@ export const handleJoinRequest = async (req: Request, res: Response): Promise<vo
 
             res.json({ success: true, message: 'Join request accepted!', data: joiner });
         } else {
+            if (joiner.status !== 'pending') {
+                res.status(409).json({ success: false, message: 'This join request has already been handled.' });
+                return;
+            }
             await joiner.update({ status: 'rejected' as any });
 
             // Fetch host details for notification card profile name & image

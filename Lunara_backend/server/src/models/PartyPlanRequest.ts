@@ -26,7 +26,16 @@ export interface PartyPlanRequestAttributes {
     joinerPaymentStatus: PartyPlanJoinerPaymentStatus;
     joinerRazorpayOrderId?: string;
     joinerRazorpayPaymentId?: string;
-    paymentTimeoutAt?: Date;
+    paymentTimeoutAt?: Date | null;
+    /**
+     * Request cancellation is intentionally represented separately from the
+     * plan lifecycle.  `status = cancelled` remains backwards compatible;
+     * these fields explain whether the requester withdrew or the host revoked.
+     */
+    cancelledAt?: Date | null;
+    cancelledBy?: string | null;
+    cancellationReason?: string | null;
+    previousStatus?: string | null;
     latLangCheckIn: boolean;
     guestArrivalConfirmed?: boolean;
     guestArrivalTime?: Date | null;
@@ -37,7 +46,7 @@ export interface PartyPlanRequestAttributes {
 export interface PartyPlanRequestCreationAttributes
     extends Optional<
         PartyPlanRequestAttributes,
-        'id' | 'status' | 'joinerPaymentStatus' | 'latLangCheckIn' | 'createdAt' | 'updatedAt' | 'guestArrivalConfirmed' | 'guestArrivalTime'
+        'id' | 'status' | 'joinerPaymentStatus' | 'latLangCheckIn' | 'createdAt' | 'updatedAt' | 'guestArrivalConfirmed' | 'guestArrivalTime' | 'cancelledAt' | 'cancelledBy' | 'cancellationReason' | 'previousStatus'
     > {}
 
 class PartyPlanRequest
@@ -50,7 +59,11 @@ class PartyPlanRequest
     public joinerPaymentStatus!: PartyPlanJoinerPaymentStatus;
     public joinerRazorpayOrderId?: string;
     public joinerRazorpayPaymentId?: string;
-    public paymentTimeoutAt?: Date;
+    public paymentTimeoutAt?: Date | null;
+    public cancelledAt?: Date | null;
+    public cancelledBy?: string | null;
+    public cancellationReason?: string | null;
+    public previousStatus?: string | null;
     public latLangCheckIn!: boolean;
     public guestArrivalConfirmed!: boolean;
     public guestArrivalTime?: Date | null;
@@ -104,6 +117,26 @@ PartyPlanRequest.init(
             type: DataTypes.DATE,
             allowNull: true,
             field: 'payment_timeout_at',
+        },
+        cancelledAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'cancelled_at',
+        },
+        cancelledBy: {
+            type: DataTypes.UUID,
+            allowNull: true,
+            field: 'cancelled_by',
+        },
+        cancellationReason: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'cancellation_reason',
+        },
+        previousStatus: {
+            type: DataTypes.STRING(50),
+            allowNull: true,
+            field: 'previous_status',
         },
         latLangCheckIn: {
             type: DataTypes.BOOLEAN,

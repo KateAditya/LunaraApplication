@@ -353,6 +353,35 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
     }
   }
 
+  Future<void> _onRevokeAcceptance(String reqId) async {
+    if (_isProcessing) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Revoke acceptance?'),
+        content: const Text('The participant has not completed payment. Revoking closes their payment window and reopens eligible requests.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('KEEP ACCEPTANCE')),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            child: const Text('REVOKE'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => _isProcessing = true);
+    final success = await ApiService.revokePartyPlanAcceptance(reqId);
+    if (!mounted) return;
+    setState(() => _isProcessing = false);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(success ? 'Acceptance revoked. Payment window closed.' : 'Unable to revoke acceptance. Refresh and try again.'),
+      backgroundColor: success ? Colors.green : Colors.red,
+    ));
+    if (success) await _loadData();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -676,6 +705,13 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                               child: _isProcessing
                                   ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                                   : Text(hasActiveReservation ? 'LOCKED (30M)' : 'ACCEPT', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                            ),
+                          if ((status.toString().toLowerCase() == 'payment_pending' || status.toString().toLowerCase() == 'accepted') &&
+                              req['joinerRazorpayPaymentId'] == null)
+                            TextButton(
+                              onPressed: _isProcessing ? null : () => _onRevokeAcceptance(req['id'].toString()),
+                              style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+                              child: const Text('REVOKE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                             ),
                           if ((status.toString().toLowerCase() == 'payment_pending' || status.toString().toLowerCase() == 'accepted') && !hostPaid)
                             ElevatedButton(

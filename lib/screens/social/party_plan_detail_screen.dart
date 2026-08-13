@@ -770,6 +770,44 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     }
   }
 
+  Future<void> _confirmRequestExit({required bool withdraw}) async {
+    if (_activeRequestId == null || _activeRequestId!.isEmpty) return;
+    final label = withdraw ? 'Withdraw request' : 'Cancel request';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('$label?'),
+        content: Text(withdraw
+            ? 'Your payment has not been completed. This closes your payment window.'
+            : 'You can cancel this request before the host accepts it.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('KEEP REQUEST')),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            child: Text(withdraw ? 'WITHDRAW' : 'CANCEL REQUEST'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _isLoadingCancellation = true);
+    final success = withdraw
+        ? await ApiService.withdrawPartyPlanRequest(_activeRequestId!)
+        : await ApiService.cancelPartyPlanRequest(_activeRequestId!);
+    if (!mounted) return;
+    setState(() {
+      _isLoadingCancellation = false;
+      if (success) _requestStatus = 'cancelled';
+    });
+    final action = withdraw ? 'withdrawn' : 'cancelled';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(success ? 'Request ' + action : 'Unable to update this request. Please refresh and try again.'),
+      backgroundColor: success ? Colors.green : Colors.red,
+    ));
+  }
+
   void _startRazorpayDirectPayment(String reqId, String venueName, {String? orderId, double depositAmount = 99.0}) async {
     String currentOrderId = (orderId ?? '').trim();
     String razorpayKey = 'rzp_test_123';
@@ -1607,10 +1645,23 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-        child: (_alreadyRequested && (_requestStatus == 'accepted' || _requestStatus == 'payment_pending'))
-            ? GestureDetector(
-                onTap: _openDepositPaymentSheet,
-                child: Container(
+        child: (_alreadyRequested && _requestStatus == 'pending' && !_isInvitedUser)
+            ? SizedBox(
+                height: 58,
+                child: OutlinedButton.icon(
+                  onPressed: _isLoadingCancellation ? null : () => _confirmRequestExit(withdraw: false),
+                  icon: const Icon(Icons.cancel_outlined),
+                  label: const Text('CANCEL REQUEST', style: TextStyle(fontWeight: FontWeight.bold)),
+                  style: OutlinedButton.styleFrom(foregroundColor: Colors.redAccent),
+                ),
+              )
+            : (_alreadyRequested && (_requestStatus == 'accepted' || _requestStatus == 'payment_pending'))
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  GestureDetector(
+                    onTap: _openDepositPaymentSheet,
+                    child: Container(
                   height: 58,
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
@@ -1643,7 +1694,13 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                       ),
                     ],
                   ),
-                ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _isLoadingCancellation ? null : () => _confirmRequestExit(withdraw: true),
+                    child: const Text('WITHDRAW REQUEST', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                  ),
+                ],
               )
             : (_alreadyRequested && (_requestStatus == 'confirmed' || _requestStatus == 'paid'))
                 ? Row(

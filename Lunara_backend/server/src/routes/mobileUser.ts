@@ -7,7 +7,7 @@ import mobileUserController from '../controllers/mobileUserController';
 import { User, UserMatch, Payment, PartyPlanRequest, PlanJoinRequest, Conversation, Message, Plan, PartyPlan, Venue, StrangersMeetRequest, StrangersMeetJoiner, SafetyCheck, Booking, GroupParty } from '../models';
 import Notification from '../models/Notification';
 import { Op } from 'sequelize';
-import { optionalAuth } from '../middleware/auth';
+import { authenticate, optionalAuth } from '../middleware/auth';
 import { NotificationActionController } from '../controllers/NotificationActionController';
 import { enrichPartyPlanNotificationCard } from '../controllers/partyPlanController';
 
@@ -666,12 +666,14 @@ async function getUserNotifications(
  * GET /api/mobile/user/notifications
  * Returns a list of notifications for the user
  */
-router.get('/notifications', async (req, res) => {
+router.get('/notifications', authenticate, async (req, res) => {
     try {
         const { userId, readNotificationIds, filter, search } = req.query;
-        if (!userId) return res.status(400).json({ success: false, message: 'userId required' });
+        const uId = req.user!.id;
+        if (userId && userId !== uId) {
+            return res.status(403).json({ success: false, message: 'You cannot access another user\'s notifications.' });
+        }
 
-        const uId = userId as string;
         const filterStr = (filter as string) || 'all';
         const searchStr = (search as string) || '';
 
@@ -699,13 +701,14 @@ router.get('/notifications', async (req, res) => {
 /**
  * PATCH /api/mobile/user/notifications/:id/read
  */
-router.patch('/notifications/:id/read', async (req, res) => {
+router.patch('/notifications/:id/read', authenticate, async (req, res) => {
     const { id } = req.params;
-    const userId = (req.query.userId as string) || (req.body?.userId as string);
-    
-    if (userId) {
-        getReadNotificationIds(userId).add(id);
+    const suppliedUserId = (req.query.userId as string) || (req.body?.userId as string);
+    const userId = req.user!.id;
+    if (suppliedUserId && suppliedUserId !== userId) {
+        return res.status(403).json({ success: false, message: 'You cannot modify another user\'s notifications.' });
     }
+    getReadNotificationIds(userId).add(id);
 
     try {
         const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -713,6 +716,9 @@ router.patch('/notifications/:id/read', async (req, res) => {
         if (uuidRegex.test(id)) {
             const notification = await Notification.findByPk(id);
             if (notification) {
+                if (notification.recipientUserId !== userId) {
+                    return res.status(403).json({ success: false, message: 'You cannot modify another user\'s notifications.' });
+                }
                 notification.isRead = true;
                 notification.readAt = new Date();
                 await notification.save();
@@ -725,6 +731,9 @@ router.patch('/notifications/:id/read', async (req, res) => {
                 // First try finding by PK using extracted UUID
                 const notifByPk = await Notification.findByPk(extractedId);
                 if (notifByPk) {
+                    if (notifByPk.recipientUserId !== userId) {
+                        return res.status(403).json({ success: false, message: 'You cannot modify another user\'s notifications.' });
+                    }
                     notifByPk.isRead = true;
                     notifByPk.readAt = new Date();
                     await notifByPk.save();
@@ -747,10 +756,13 @@ router.patch('/notifications/:id/read', async (req, res) => {
 /**
  * POST /api/mobile/user/notifications/clear-all
  */
-router.post('/notifications/clear-all', async (req, res) => {
+router.post('/notifications/clear-all', authenticate, async (req, res) => {
     try {
-        const { userId } = req.body;
-        if (!userId) return res.status(400).json({ success: false, message: 'userId required' });
+        const suppliedUserId = req.body?.userId;
+        const userId = req.user!.id;
+        if (suppliedUserId && suppliedUserId !== userId) {
+            return res.status(403).json({ success: false, message: 'You cannot clear another user\'s notifications.' });
+        }
 
         const user = await User.findByPk(userId);
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
@@ -768,39 +780,42 @@ router.post('/notifications/clear-all', async (req, res) => {
 /**
  * POST /api/mobile/user/notifications/:id/action
  */
-router.post('/notifications/:id/action', NotificationActionController.handleAction);
+router.post('/notifications/:id/action', authenticate, NotificationActionController.handleAction);
 
 /**
  * POST /api/mobile/user/notifications/mark-all-read
  */
-router.post('/notifications/mark-all-read', NotificationActionController.markAllAsRead);
+router.post('/notifications/mark-all-read', authenticate, NotificationActionController.markAllAsRead);
 
 /**
  * GET /api/mobile/user/notifications/unread-count
  */
-router.get('/notifications/unread-count', NotificationActionController.getUnreadCount);
+router.get('/notifications/unread-count', authenticate, NotificationActionController.getUnreadCount);
 
 /**
  * PATCH /api/mobile/user/requests/:id/read
  */
-router.patch('/requests/:id/read', async (req, res) => {
+router.patch('/requests/:id/read', authenticate, async (req, res) => {
     const { id } = req.params;
-    const userId = (req.query.userId as string) || (req.body?.userId as string);
-    if (userId) {
-        getReadRequestIds(userId).add(id);
+    const suppliedUserId = (req.query.userId as string) || (req.body?.userId as string);
+    const userId = req.user!.id;
+    if (suppliedUserId && suppliedUserId !== userId) {
+        return res.status(403).json({ success: false, message: 'You cannot modify another user\'s request read state.' });
     }
+    getReadRequestIds(userId).add(id);
     return res.json({ success: true, message: 'Request marked as read' });
 });
 
 /**
  * GET /api/mobile/user/badge-counts
  */
-router.get('/badge-counts', async (req, res) => {
+router.get('/badge-counts', authenticate, async (req, res) => {
     try {
         const { userId, readRequestIds: clientReadReqIds, readNotificationIds: clientReadNotifIds } = req.query;
-        if (!userId) return res.status(400).json({ success: false, message: 'userId required' });
-
-        const uId = userId as string;
+        const uId = req.user!.id;
+        if (userId && userId !== uId) {
+            return res.status(403).json({ success: false, message: 'You cannot access another user\'s badge counts.' });
+        }
 
         const activeReadRequestIds = new Set<string>(
             typeof clientReadReqIds === 'string'
