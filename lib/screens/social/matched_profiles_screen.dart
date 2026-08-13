@@ -286,10 +286,14 @@ class _MatchedProfileDetailScreen extends StatelessWidget {
                 ? Image.asset(
                     profile['image'] ?? '',
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
+                    errorBuilder: (_, _, _) => Container(
                       color: Colors.grey[900],
                       child: const Center(
-                        child: Icon(Icons.person, color: Colors.white54, size: 64),
+                        child: Icon(
+                          Icons.person,
+                          color: Colors.white54,
+                          size: 64,
+                        ),
                       ),
                     ),
                   )

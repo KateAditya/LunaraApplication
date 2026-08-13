@@ -84,12 +84,20 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         ? Map<String, dynamic>.from(data)
         : {};
 
-    final String recipientId = (notifMap['recipientUserId'] ?? notifMap['recipientId'] ?? notifMap['userId'] ?? '').toString();
+    final String recipientId =
+        (notifMap['recipientUserId'] ??
+                notifMap['recipientId'] ??
+                notifMap['userId'] ??
+                '')
+            .toString();
     final String currentUid = ApiService.currentUserId ?? '';
     // A notification without an explicit recipient is not safe to render on a
     // shared device. The next server refresh will provide the current user's
     // authoritative list.
-    if (recipientId.isEmpty || currentUid.isEmpty || recipientId != currentUid || currentUid != _sessionUserId) {
+    if (recipientId.isEmpty ||
+        currentUid.isEmpty ||
+        recipientId != currentUid ||
+        currentUid != _sessionUserId) {
       return;
     }
 
@@ -117,8 +125,15 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     final notification = updatedNotif['notification'] is Map
         ? Map<String, dynamic>.from(updatedNotif['notification'])
         : updatedNotif;
-    final recipientId = (notification['recipientUserId'] ?? notification['recipientId'] ?? notification['userId'] ?? '').toString();
-    if (recipientId.isEmpty || recipientId != ApiService.currentUserId || ApiService.currentUserId != _sessionUserId) {
+    final recipientId =
+        (notification['recipientUserId'] ??
+                notification['recipientId'] ??
+                notification['userId'] ??
+                '')
+            .toString();
+    if (recipientId.isEmpty ||
+        recipientId != ApiService.currentUserId ||
+        ApiService.currentUserId != _sessionUserId) {
       return;
     }
     final id =
@@ -145,7 +160,10 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       final response = await ApiService.get(
         '/api/mobile/user/notifications?userId=$currentUid',
       );
-      if (response.statusCode == 200 && mounted && currentUid == ApiService.currentUserId && currentUid == _sessionUserId) {
+      if (response.statusCode == 200 &&
+          mounted &&
+          currentUid == ApiService.currentUserId &&
+          currentUid == _sessionUserId) {
         final bodyData = jsonDecode(response.body);
         if (bodyData != null && bodyData['data'] is List) {
           final fetchedList = List<dynamic>.from(bodyData['data']);
@@ -164,10 +182,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 'dataType=${data.runtimeType} '
                 'data=$data',
               );
-              if ((n['body'] ?? '')
-                  .toString()
-                  .toLowerCase()
-                  .contains('pay deposit')) {
+              if ((n['body'] ?? '').toString().toLowerCase().contains(
+                'pay deposit',
+              )) {
                 debugPrint('*** PAY DEPOSIT API NOTIFICATION FOUND ***');
                 debugPrint('FULL ITEM = $n');
               }
@@ -447,8 +464,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           currentOrderId.startsWith('pay_direct_');
 
       if (isMock) {
-        final ordId =
-            currentOrderId.isNotEmpty ? currentOrderId : 'order_mock_direct';
+        final ordId = currentOrderId.isNotEmpty
+            ? currentOrderId
+            : 'order_mock_direct';
         final confirmRes = await ApiService.post(
           '/api/mobile/party-plans/requests/$requestId/joiner-pay',
           body: {
@@ -471,7 +489,10 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           String msg = 'Payment Verification Failed';
           try {
             final b = jsonDecode(confirmRes.body);
-            msg = b['message'] ?? b['error'] ?? 'Server status ${confirmRes.statusCode}';
+            msg =
+                b['message'] ??
+                b['error'] ??
+                'Server status ${confirmRes.statusCode}';
           } catch (_) {
             msg = 'Server status ${confirmRes.statusCode}';
           }
@@ -483,7 +504,6 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           );
         }
         return;
-
       }
 
       late Razorpay razorpay;
@@ -537,7 +557,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         razorpay.clear();
         if (mounted) setState(() => _isProcessingPayment = false);
         if (mounted) {
-          final errText = (response.message != null &&
+          final errText =
+              (response.message != null &&
                   response.message!.isNotEmpty &&
                   response.message != 'Payment Failed')
               ? response.message!
@@ -611,9 +632,13 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               !currentOrderId.startsWith('mock_') &&
               !currentOrderId.startsWith('pay_direct_') &&
               currentOrderId.length < 10)) {
-        debugPrint('[HOST_ORDER_CREATE] Creating Razorpay order via initiateHostPayment');
+        debugPrint(
+          '[HOST_ORDER_CREATE] Creating Razorpay order via initiateHostPayment',
+        );
         final initRes = await ApiService.initiateHostPayment(cleanPlanId);
-        debugPrint('[HOST_ORDER_RESPONSE] Order API response received: $initRes');
+        debugPrint(
+          '[HOST_ORDER_RESPONSE] Order API response received: $initRes',
+        );
         if (initRes != null && initRes['success'] == true) {
           currentOrderId = (initRes['razorpayOrderId'] ?? '').toString();
           if (initRes['razorpayKeyId'] != null &&
@@ -677,7 +702,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             final b = jsonDecode(confirmRes.body);
             msg = b['message'] ?? b['error'] ?? msg;
           } catch (_) {}
-          if (msg == 'Payment Failed') msg = 'Verification failed (Status ${confirmRes.statusCode})';
+          if (msg == 'Payment Failed')
+            msg = 'Verification failed (Status ${confirmRes.statusCode})';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Payment Failed: $msg'),
@@ -696,7 +722,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         razorpay.clear();
         if (mounted) setState(() => _isProcessingPayment = false);
         if (mounted) {
-          String errText = response.message ?? 'Payment process cancelled or failed';
+          String errText =
+              response.message ?? 'Payment process cancelled or failed';
           if (errText.isEmpty || errText == 'Payment Failed') {
             if (response.code == Razorpay.PAYMENT_CANCELLED) {
               errText = 'Payment cancelled by user';
@@ -746,7 +773,6 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       if (mounted) setState(() => _isProcessingPayment = false);
     }
   }
-
 
   // ── Tab & Category Filter Logic ──────────────────────────────────────────────
   List<dynamic> get _filteredNotifications {
@@ -823,19 +849,23 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         } else if (groupKey.startsWith('party_')) {
           // STEP 13: ACTIVE PAY DEPOSIT > OLD/EXPIRED PARTY PLAN UPDATE
           final existingItem = entityMap[groupKey];
-          final existingData = existingItem is Map && existingItem['data'] is Map
+          final existingData =
+              existingItem is Map && existingItem['data'] is Map
               ? Map<String, dynamic>.from(existingItem['data'])
               : <String, dynamic>{};
           final currentData = item['data'] is Map
               ? Map<String, dynamic>.from(item['data'])
               : <String, dynamic>{};
 
-          final currentPrimaryAction =
-              (currentData['primaryAction'] ?? '').toString().toLowerCase();
-          final currentHostStatus =
-              (currentData['hostPaymentStatus'] ?? '').toString().toLowerCase();
-          final currentJoinerStatus =
-              (currentData['joinerPaymentStatus'] ?? '').toString().toLowerCase();
+          final currentPrimaryAction = (currentData['primaryAction'] ?? '')
+              .toString()
+              .toLowerCase();
+          final currentHostStatus = (currentData['hostPaymentStatus'] ?? '')
+              .toString()
+              .toLowerCase();
+          final currentJoinerStatus = (currentData['joinerPaymentStatus'] ?? '')
+              .toString()
+              .toLowerCase();
           final isCurrentPaidOrConfirmed =
               currentPrimaryAction == 'open chat' ||
               currentPrimaryAction == 'chat' ||
@@ -845,15 +875,20 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               currentData['depositPaid'] == true;
 
           final isCurrentActivePayDeposit =
-              (currentPrimaryAction == 'pay deposit' || currentPrimaryAction == 'pay now') &&
+              (currentPrimaryAction == 'pay deposit' ||
+                  currentPrimaryAction == 'pay now') &&
               !isCurrentPaidOrConfirmed;
 
-          final existingPrimaryAction =
-              (existingData['primaryAction'] ?? '').toString().toLowerCase();
-          final existingHostStatus =
-              (existingData['hostPaymentStatus'] ?? '').toString().toLowerCase();
+          final existingPrimaryAction = (existingData['primaryAction'] ?? '')
+              .toString()
+              .toLowerCase();
+          final existingHostStatus = (existingData['hostPaymentStatus'] ?? '')
+              .toString()
+              .toLowerCase();
           final existingJoinerStatus =
-              (existingData['joinerPaymentStatus'] ?? '').toString().toLowerCase();
+              (existingData['joinerPaymentStatus'] ?? '')
+                  .toString()
+                  .toLowerCase();
           final isExistingPaidOrConfirmed =
               existingPrimaryAction == 'open chat' ||
               existingPrimaryAction == 'chat' ||
@@ -863,7 +898,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               existingData['depositPaid'] == true;
 
           final isExistingActivePayDeposit =
-              (existingPrimaryAction == 'pay deposit' || existingPrimaryAction == 'pay now') &&
+              (existingPrimaryAction == 'pay deposit' ||
+                  existingPrimaryAction == 'pay now') &&
               !isExistingPaidOrConfirmed;
 
           if ((isCurrentActivePayDeposit && !isExistingActivePayDeposit) ||
@@ -889,10 +925,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             ? Map<String, dynamic>.from(n['data'])
             : <String, dynamic>{};
 
-        if ((n['body'] ?? '')
-            .toString()
-            .toLowerCase()
-            .contains('pay deposit')) {
+        if ((n['body'] ?? '').toString().toLowerCase().contains(
+          'pay deposit',
+        )) {
           debugPrint('*** PAY DEPOSIT AFTER FILTER ***');
           debugPrint('id=${n['id']}');
           debugPrint('type=${n['type']}');
@@ -1319,34 +1354,32 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     final Map<String, dynamic> data = item['data'] is Map
         ? Map<String, dynamic>.from(item['data'])
         : (item['metadata'] is Map
-            ? Map<String, dynamic>.from(item['metadata'])
-            : <String, dynamic>{});
+              ? Map<String, dynamic>.from(item['metadata'])
+              : <String, dynamic>{});
 
-    final String type = (
-      item['type'] ??
-      item['eventType'] ??
-      data['type'] ??
-      ''
-    ).toString().trim().toLowerCase();
+    final String type =
+        (item['type'] ?? item['eventType'] ?? data['type'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
 
-    final String primaryAction = (
-      data['primaryAction'] ??
-      item['primaryAction'] ??
-      ''
-    ).toString().trim().toLowerCase();
+    final String primaryAction =
+        (data['primaryAction'] ?? item['primaryAction'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
 
-    final String hostPaymentStatus = (
-      data['hostPaymentStatus'] ??
-      item['hostPaymentStatus'] ??
-      data['paymentStatus'] ??
-      item['paymentStatus'] ??
-      ''
-    ).toString().trim().toLowerCase();
+    final String hostPaymentStatus =
+        (data['hostPaymentStatus'] ??
+                item['hostPaymentStatus'] ??
+                data['paymentStatus'] ??
+                item['paymentStatus'] ??
+                '')
+            .toString()
+            .trim()
+            .toLowerCase();
 
-    final String bodyStr = (
-      item['body'] ??
-      ''
-    ).toString().trim().toLowerCase();
+    final String bodyStr = (item['body'] ?? '').toString().trim().toLowerCase();
 
     debugPrint(
       'DISPATCH RESULT: '
@@ -1384,15 +1417,16 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       return _buildPartyPlanPostedCard(item);
     }
 
-    final String eventType = (
-      item['eventType'] ??
-      data['eventType'] ??
-      data['type'] ??
-      item['type'] ??
-      item['actionType'] ??
-      item['category'] ??
-      ''
-    ).toString().toUpperCase();
+    final String eventType =
+        (item['eventType'] ??
+                data['eventType'] ??
+                data['type'] ??
+                item['type'] ??
+                item['actionType'] ??
+                item['category'] ??
+                '')
+            .toString()
+            .toUpperCase();
 
     final title = (item['title'] ?? '').toString();
     final body = (item['body'] ?? '').toString();
@@ -1429,7 +1463,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     if (eventType.contains('PARTY_PLAN_REQUEST_RECEIVED') ||
         titleLower.contains('new party plan request') ||
         titleLower.contains('party plan request received') ||
-        (bodyLower.contains('requested to join your party plan') && item['type'] == 'incoming_request')) {
+        (bodyLower.contains('requested to join your party plan') &&
+            item['type'] == 'incoming_request')) {
       return _buildPartyPlanRequestReceivedCard(item);
     } else if (eventType.contains('PARTY_PLAN_REQUEST_ACCEPTED') ||
         eventType.contains('PARTICIPANT_PAYMENT_REQUIRED') ||
@@ -1600,19 +1635,22 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     final Map<String, dynamic> data = item['data'] is Map
         ? Map<String, dynamic>.from(item['data'])
         : (item['metadata'] is Map
-            ? Map<String, dynamic>.from(item['metadata'])
-            : (item is Map
-                ? Map<String, dynamic>.from(item)
-                : <String, dynamic>{}));
+              ? Map<String, dynamic>.from(item['metadata'])
+              : (item is Map
+                    ? Map<String, dynamic>.from(item)
+                    : <String, dynamic>{}));
 
-    String partyPlanId = (
-      data['partyPlanId'] ??
-      data['planId'] ??
-      data['id'] ??
-      (item['entityType'] == 'party_plan' ? item['entityId'] : null) ??
-      item['id'] ??
-      ''
-    ).toString().trim();
+    String partyPlanId =
+        (data['partyPlanId'] ??
+                data['planId'] ??
+                data['id'] ??
+                (item['entityType'] == 'party_plan'
+                    ? item['entityId']
+                    : null) ??
+                item['id'] ??
+                '')
+            .toString()
+            .trim();
 
     if (partyPlanId.startsWith('party_plan_timeline_')) {
       partyPlanId = partyPlanId.replaceFirst('party_plan_timeline_', '');
@@ -1621,17 +1659,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       partyPlanId = partyPlanId.replaceFirst('pp_', '');
     }
 
-    final String venueName =
-        data['venueName']?.toString().trim() ?? 'Venue';
+    final String venueName = data['venueName']?.toString().trim() ?? 'Venue';
 
-    final String primaryAction =
-        data['primaryAction']?.toString().trim() ?? '';
+    final String primaryAction = data['primaryAction']?.toString().trim() ?? '';
 
-    final String hostPaymentStatus =
-        (data['hostPaymentStatus'] ?? 'unpaid')
-            .toString()
-            .trim()
-            .toLowerCase();
+    final String hostPaymentStatus = (data['hostPaymentStatus'] ?? 'unpaid')
+        .toString()
+        .trim()
+        .toLowerCase();
 
     final String hostRazorpayOrderId =
         data['hostRazorpayOrderId']?.toString().trim() ?? '';
@@ -1647,15 +1682,16 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     final bool isHostPaid =
         hostPaymentStatus == 'paid' || hostPaymentStatus == 'completed';
 
-    final String eventType = (
-      item['eventType'] ??
-      data['eventType'] ??
-      data['type'] ??
-      item['type'] ??
-      item['actionType'] ??
-      item['category'] ??
-      ''
-    ).toString().toUpperCase();
+    final String eventType =
+        (item['eventType'] ??
+                data['eventType'] ??
+                data['type'] ??
+                item['type'] ??
+                item['actionType'] ??
+                item['category'] ??
+                '')
+            .toString()
+            .toUpperCase();
 
     // STEP 16: VERIFY THE ACTUAL RENDERER
     debugPrint('>>> PARTY PLAN POSTED CARD RENDERED <<<');
@@ -2014,13 +2050,15 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       depositAmount = double.tryParse(rawAmount) ?? 99.0;
     }
 
-    final String joinerPaymentStatus = (
-      data['joinerPaymentStatus'] ??
-      data['paymentStatus'] ??
-      item['joinerPaymentStatus'] ??
-      item['paymentStatus'] ??
-      ''
-    ).toString().trim().toLowerCase();
+    final String joinerPaymentStatus =
+        (data['joinerPaymentStatus'] ??
+                data['paymentStatus'] ??
+                item['joinerPaymentStatus'] ??
+                item['paymentStatus'] ??
+                '')
+            .toString()
+            .trim()
+            .toLowerCase();
 
     final bool isPaid =
         data['isPaid'] == true ||
@@ -2032,34 +2070,38 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         joinerPaymentStatus == 'paid' ||
         joinerPaymentStatus == 'completed';
 
-    final String primaryAction = (
-      data['primaryAction'] ??
-      item['primaryAction'] ??
-      ''
-    ).toString().trim().toLowerCase();
+    final String primaryAction =
+        (data['primaryAction'] ?? item['primaryAction'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
 
-    final String lifecycleStatus = (
-      data['lifecycleStatus'] ??
-      item['lifecycleStatus'] ??
-      data['status'] ??
-      item['status'] ??
-      ''
-    ).toString().trim().toLowerCase();
+    final String lifecycleStatus =
+        (data['lifecycleStatus'] ??
+                item['lifecycleStatus'] ??
+                data['status'] ??
+                item['status'] ??
+                '')
+            .toString()
+            .trim()
+            .toLowerCase();
 
-    final String currentStatus = (
-      data['currentStatus'] ??
-      item['currentStatus'] ??
-      ''
-    ).toString().trim().toLowerCase();
+    final String currentStatus =
+        (data['currentStatus'] ?? item['currentStatus'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
 
-    final bool isChatAction = primaryAction == 'open chat' ||
+    final bool isChatAction =
+        primaryAction == 'open chat' ||
         primaryAction == 'chat' ||
         data['chatUnlocked'] == true ||
         item['chatUnlocked'] == true ||
         data['isConfirmed'] == true ||
         item['isConfirmed'] == true;
 
-    final bool isDepositPaid = isPaid ||
+    final bool isDepositPaid =
+        isPaid ||
         isChatAction ||
         lifecycleStatus == 'match_confirmed' ||
         lifecycleStatus == 'chat_enabled' ||
@@ -2075,7 +2117,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         (actor is Map ? (actor['id'] ?? actor['userId']) : null)?.toString() ??
         '';
     final actorName =
-        (actor is Map ? (actor['firstName'] ?? actor['name'] ?? 'Partner') : 'Partner')
+        (actor is Map
+                ? (actor['firstName'] ?? actor['name'] ?? 'Partner')
+                : 'Partner')
             .toString();
 
     return _buildBaseCardContainer(
@@ -2089,12 +2133,18 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: isDepositPaid ? const Color(0xFFE0E7FF) : const Color(0xFFD1FAE5),
+                  color: isDepositPaid
+                      ? const Color(0xFFE0E7FF)
+                      : const Color(0xFFD1FAE5),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
-                  isDepositPaid ? Icons.forum_rounded : Icons.check_circle_rounded,
-                  color: isDepositPaid ? LunaraTheme.electricViolet : const Color(0xFF10B981),
+                  isDepositPaid
+                      ? Icons.forum_rounded
+                      : Icons.check_circle_rounded,
+                  color: isDepositPaid
+                      ? LunaraTheme.electricViolet
+                      : const Color(0xFF10B981),
                   size: 20,
                 ),
               ),
@@ -2106,14 +2156,18 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                     Text(
                       isDepositPaid ? 'MATCH CONFIRMED' : 'ACTION REQUIRED',
                       style: TextStyle(
-                        color: isDepositPaid ? LunaraTheme.electricViolet : const Color(0xFF10B981),
+                        color: isDepositPaid
+                            ? LunaraTheme.electricViolet
+                            : const Color(0xFF10B981),
                         fontSize: 9,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 1.2,
                       ),
                     ),
                     Text(
-                      isDepositPaid ? '🎉 Party Plan Confirmed!' : '✅ Invite Accepted!',
+                      isDepositPaid
+                          ? '🎉 Party Plan Confirmed!'
+                          : '✅ Invite Accepted!',
                       style: const TextStyle(
                         color: Color(0xFF0F172A),
                         fontWeight: FontWeight.w900,
@@ -2135,7 +2189,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            isDepositPaid ? 'Your safety deposit is paid! Chat is unlocked.' : body,
+            isDepositPaid
+                ? 'Your safety deposit is paid! Chat is unlocked.'
+                : body,
             style: const TextStyle(
               color: Color(0xFF475569),
               fontSize: 12.5,
@@ -2229,7 +2285,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               children: [
                 Expanded(
                   child: LunaraCountdownButton(
-                    paymentDeadlineAt: data['paymentDeadlineAt'] ??
+                    paymentDeadlineAt:
+                        data['paymentDeadlineAt'] ??
                         data['payment_deadline_at'],
                     serverTime: data['serverTime'] ?? data['server_time'],
                     amount: depositAmount,
@@ -2240,7 +2297,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                         SmartCheckoutSheet.show(
                           context: context,
                           title: 'Party Plan Safety Deposit',
-                          subtitle: 'Safety commitment deposit for Party Plan at $venueName',
+                          subtitle:
+                              'Safety commitment deposit for Party Plan at $venueName',
                           itemPrice: depositAmount,
                           onWalletPayment: () async {
                             final res = await ApiService.payWithWallet(
@@ -2249,7 +2307,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                               paymentType: 'commitment_deposit',
                             );
                             if (res != null && res['success'] == true) {
-                              final txId = res['data']?['transactionId']?.toString() ?? 'wallet';
+                              final txId =
+                                  res['data']?['transactionId']?.toString() ??
+                                  'wallet';
                               final confirmRes = await ApiService.post(
                                 '/api/mobile/party-plans/requests/$requestId/joiner-pay',
                                 body: {
@@ -2263,9 +2323,12 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                                 setState(() {
                                   if (item is Map) {
                                     if (item['data'] is Map) {
-                                      (item['data'] as Map)['joinerPaymentStatus'] = 'paid';
+                                      (item['data']
+                                              as Map)['joinerPaymentStatus'] =
+                                          'paid';
                                       (item['data'] as Map)['isPaid'] = true;
-                                      (item['data'] as Map)['primaryAction'] = 'open chat';
+                                      (item['data'] as Map)['primaryAction'] =
+                                          'open chat';
                                     }
                                     item['joinerPaymentStatus'] = 'paid';
                                     item['isPaid'] = true;
@@ -2274,7 +2337,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                                 _fetchNotifications();
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
+                                    content: Text(
+                                      '🎉 Safety Deposit Paid! Booking Confirmed!',
+                                    ),
                                     backgroundColor: Colors.green,
                                   ),
                                 );
@@ -2293,9 +2358,12 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                                   setState(() {
                                     if (item is Map) {
                                       if (item['data'] is Map) {
-                                        (item['data'] as Map)['joinerPaymentStatus'] = 'paid';
+                                        (item['data']
+                                                as Map)['joinerPaymentStatus'] =
+                                            'paid';
                                         (item['data'] as Map)['isPaid'] = true;
-                                        (item['data'] as Map)['primaryAction'] = 'open chat';
+                                        (item['data'] as Map)['primaryAction'] =
+                                            'open chat';
                                       }
                                       item['joinerPaymentStatus'] = 'paid';
                                       item['isPaid'] = true;
@@ -2311,7 +2379,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                               '/api/mobile/party-plans/requests/$requestId/joiner-pay',
                               body: {
                                 'razorpay_order_id': 'order_mock_hybrid',
-                                'razorpay_payment_id': 'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
+                                'razorpay_payment_id':
+                                    'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
                                 'razorpay_signature': 'mock_signature',
                               },
                             );
@@ -2320,9 +2389,12 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                               setState(() {
                                 if (item is Map) {
                                   if (item['data'] is Map) {
-                                    (item['data'] as Map)['joinerPaymentStatus'] = 'paid';
+                                    (item['data']
+                                            as Map)['joinerPaymentStatus'] =
+                                        'paid';
                                     (item['data'] as Map)['isPaid'] = true;
-                                    (item['data'] as Map)['primaryAction'] = 'open chat';
+                                    (item['data'] as Map)['primaryAction'] =
+                                        'open chat';
                                   }
                                   item['joinerPaymentStatus'] = 'paid';
                                   item['isPaid'] = true;
@@ -2363,18 +2435,32 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
     final data = item['metadata'] is Map
         ? item['metadata'] as Map<String, dynamic>
-        : (item['data'] is Map ? item['data'] as Map<String, dynamic> : <String, dynamic>{});
+        : (item['data'] is Map
+              ? item['data'] as Map<String, dynamic>
+              : <String, dynamic>{});
 
     final String planId = (data['planId'] ?? item['entityId'] ?? '').toString();
     final String requestId = (data['requestId'] ?? '').toString();
-    final String title = (item['title'] ?? 'Party Plan Cancellation').toString();
+    final String title = (item['title'] ?? 'Party Plan Cancellation')
+        .toString();
     final String body = (item['body'] ?? '').toString();
     final String timeStr = _formatTimeAgo(item['createdAt']);
 
-    final String reqStatus = (data['status'] ?? item['cancellationStatus'] ?? 'pending').toString().toLowerCase();
-    final String requestedById = (data['requestedById'] ?? item['requestedById'] ?? '').toString();
-    final bool isRecipient = ApiService.currentUserId != null && requestedById.isNotEmpty && requestedById != ApiService.currentUserId;
-    final bool isCancelled = reqStatus == 'approved' || reqStatus == 'completed' || reqStatus == 'cancelled' || body.toLowerCase().contains('cancelled');
+    final String reqStatus =
+        (data['status'] ?? item['cancellationStatus'] ?? 'pending')
+            .toString()
+            .toLowerCase();
+    final String requestedById =
+        (data['requestedById'] ?? item['requestedById'] ?? '').toString();
+    final bool isRecipient =
+        ApiService.currentUserId != null &&
+        requestedById.isNotEmpty &&
+        requestedById != ApiService.currentUserId;
+    final bool isCancelled =
+        reqStatus == 'approved' ||
+        reqStatus == 'completed' ||
+        reqStatus == 'cancelled' ||
+        body.toLowerCase().contains('cancelled');
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
@@ -2387,7 +2473,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: isCancelled ? Colors.red.withValues(alpha: 0.15) : Colors.orange.withValues(alpha: 0.15),
+                  color: isCancelled
+                      ? Colors.red.withValues(alpha: 0.15)
+                      : Colors.orange.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
@@ -2403,7 +2491,10 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               const Spacer(),
               Text(
                 timeStr,
-                style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5),
+                style: const TextStyle(
+                  color: Color(0xFF94A3B8),
+                  fontSize: 10.5,
+                ),
               ),
               if (isUnread) ...[const SizedBox(width: 6), _buildUnreadDot()],
             ],
@@ -2411,12 +2502,20 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           const SizedBox(height: 8),
           Text(
             title,
-            style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.w900, fontSize: 13.5),
+            style: const TextStyle(
+              color: Color(0xFF0F172A),
+              fontWeight: FontWeight.w900,
+              fontSize: 13.5,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
             body,
-            style: const TextStyle(color: Color(0xFF475569), fontSize: 12.5, height: 1.4),
+            style: const TextStyle(
+              color: Color(0xFF475569),
+              fontSize: 12.5,
+              height: 1.4,
+            ),
           ),
           const SizedBox(height: 12),
           if (isCancelled)
@@ -2427,11 +2526,24 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   _markAsRead(item);
                   Navigator.pushNamed(context, '/wallet');
                 },
-                icon: const Icon(Icons.account_balance_wallet_rounded, size: 14, color: Colors.white),
-                label: const Text('View Wallet', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                icon: const Icon(
+                  Icons.account_balance_wallet_rounded,
+                  size: 14,
+                  color: Colors.white,
+                ),
+                label: const Text(
+                  'View Wallet',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF10B981),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
             )
@@ -2442,15 +2554,19 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   child: OutlinedButton(
                     onPressed: () async {
                       _markAsRead(item);
-                      final res = await ApiService.respondToPartyPlanCancellationRequest(
-                        planId: planId,
-                        requestId: requestId,
-                        action: 'reject',
-                      );
+                      final res =
+                          await ApiService.respondToPartyPlanCancellationRequest(
+                            planId: planId,
+                            requestId: requestId,
+                            action: 'reject',
+                          );
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text(res['message'] ?? 'Cancellation request declined. Party Plan remains active.'),
+                            content: Text(
+                              res['message'] ??
+                                  'Cancellation request declined. Party Plan remains active.',
+                            ),
                             backgroundColor: Colors.grey.shade800,
                           ),
                         );
@@ -2459,9 +2575,18 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                     },
                     style: OutlinedButton.styleFrom(
                       side: const BorderSide(color: Color(0xFFCBD5E1)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
-                    child: const Text('KEEP PLAN', style: TextStyle(color: Color(0xFF475569), fontSize: 11.5, fontWeight: FontWeight.bold)),
+                    child: const Text(
+                      'KEEP PLAN',
+                      style: TextStyle(
+                        color: Color(0xFF475569),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -2469,15 +2594,19 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   child: ElevatedButton(
                     onPressed: () async {
                       _markAsRead(item);
-                      final res = await ApiService.respondToPartyPlanCancellationRequest(
-                        planId: planId,
-                        requestId: requestId,
-                        action: 'approve',
-                      );
+                      final res =
+                          await ApiService.respondToPartyPlanCancellationRequest(
+                            planId: planId,
+                            requestId: requestId,
+                            action: 'approve',
+                          );
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text(res['message'] ?? 'Party Plan cancelled. Commitment deposits credited to wallets!'),
+                            content: Text(
+                              res['message'] ??
+                                  'Party Plan cancelled. Commitment deposits credited to wallets!',
+                            ),
                             backgroundColor: Colors.green,
                           ),
                         );
@@ -2486,9 +2615,18 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.redAccent,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
-                    child: const Text('CONFIRM CANCELLATION', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                    child: const Text(
+                      'CONFIRM CANCELLATION',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -2496,7 +2634,11 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           else
             const Text(
               'Waiting for participant confirmation.',
-              style: TextStyle(color: Colors.orangeAccent, fontSize: 11.5, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: Colors.orangeAccent,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+              ),
             ),
         ],
       ),
@@ -2507,16 +2649,27 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
     final data = item['metadata'] is Map
         ? item['metadata'] as Map<String, dynamic>
-        : (item['data'] is Map ? item['data'] as Map<String, dynamic> : <String, dynamic>{});
+        : (item['data'] is Map
+              ? item['data'] as Map<String, dynamic>
+              : <String, dynamic>{});
 
     final String planId = (data['planId'] ?? item['entityId'] ?? '').toString();
     final String requestId = (data['requestId'] ?? '').toString();
-    final String title = (item['title'] ?? '🎉 Party Plan Invitation').toString();
-    final String body = (item['body'] ?? 'You have been invited to join a Party Plan!').toString();
+    final String title = (item['title'] ?? '🎉 Party Plan Invitation')
+        .toString();
+    final String body =
+        (item['body'] ?? 'You have been invited to join a Party Plan!')
+            .toString();
     final String timeStr = _formatTimeAgo(item['createdAt']);
 
-    final String reqStatus = (data['status'] ?? item['status'] ?? 'pending').toString().toLowerCase();
-    final bool isAccepted = reqStatus == 'accepted' || reqStatus == 'payment_pending' || reqStatus == 'confirmed' || reqStatus == 'paid';
+    final String reqStatus = (data['status'] ?? item['status'] ?? 'pending')
+        .toString()
+        .toLowerCase();
+    final bool isAccepted =
+        reqStatus == 'accepted' ||
+        reqStatus == 'payment_pending' ||
+        reqStatus == 'confirmed' ||
+        reqStatus == 'paid';
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
@@ -2529,7 +2682,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: isAccepted ? Colors.green.withValues(alpha: 0.15) : const Color(0xFF8B5CF6).withValues(alpha: 0.15),
+                  color: isAccepted
+                      ? Colors.green.withValues(alpha: 0.15)
+                      : const Color(0xFF8B5CF6).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
@@ -2545,7 +2700,10 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               const Spacer(),
               Text(
                 timeStr,
-                style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5),
+                style: const TextStyle(
+                  color: Color(0xFF94A3B8),
+                  fontSize: 10.5,
+                ),
               ),
               if (isUnread) ...[const SizedBox(width: 6), _buildUnreadDot()],
             ],
@@ -2553,12 +2711,20 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           const SizedBox(height: 8),
           Text(
             title,
-            style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.w900, fontSize: 13.5),
+            style: const TextStyle(
+              color: Color(0xFF0F172A),
+              fontWeight: FontWeight.w900,
+              fontSize: 13.5,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
             body,
-            style: const TextStyle(color: Color(0xFF475569), fontSize: 12.5, height: 1.4),
+            style: const TextStyle(
+              color: Color(0xFF475569),
+              fontSize: 12.5,
+              height: 1.4,
+            ),
           ),
           const SizedBox(height: 12),
           if (isAccepted)
@@ -2576,11 +2742,24 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                     ),
                   );
                 },
-                icon: const Icon(Icons.payment_rounded, size: 14, color: Colors.white),
-                label: const Text('View Plan Details', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                icon: const Icon(
+                  Icons.payment_rounded,
+                  size: 14,
+                  color: Colors.white,
+                ),
+                label: const Text(
+                  'View Plan Details',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF8B5CF6),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
             )
@@ -2592,12 +2771,16 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                     onPressed: () async {
                       _markAsRead(item);
                       if (requestId.isNotEmpty) {
-                        final res = await ApiService.acceptPartyPlanInvite(requestId);
+                        final res = await ApiService.acceptPartyPlanInvite(
+                          requestId,
+                        );
                         if (mounted) {
                           if (res != null && res['success'] == true) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content: Text('🎉 Invite Accepted! Party Plan confirmed.'),
+                                content: Text(
+                                  '🎉 Invite Accepted! Party Plan confirmed.',
+                                ),
                                 backgroundColor: Colors.green,
                               ),
                             );
@@ -2605,7 +2788,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                           } else {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text(res?['message'] ?? 'Failed to accept invite'),
+                                content: Text(
+                                  res?['message'] ?? 'Failed to accept invite',
+                                ),
                                 backgroundColor: Colors.red,
                               ),
                             );
@@ -2624,9 +2809,18 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF8B5CF6),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
-                    child: const Text('ACCEPT INVITE', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
+                    child: const Text(
+                      'ACCEPT INVITE',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -2645,9 +2839,18 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                     },
                     style: OutlinedButton.styleFrom(
                       side: const BorderSide(color: Color(0xFFCBD5E1)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
-                    child: const Text('VIEW DETAILS', style: TextStyle(color: Color(0xFF475569), fontSize: 11.5, fontWeight: FontWeight.bold)),
+                    child: const Text(
+                      'VIEW DETAILS',
+                      style: TextStyle(
+                        color: Color(0xFF475569),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -2666,13 +2869,19 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     // Resolve metadata — check both 'metadata' and 'data' keys
     final data = item['metadata'] is Map
         ? item['metadata'] as Map<String, dynamic>
-        : (item['data'] is Map ? item['data'] as Map<String, dynamic> : <String, dynamic>{});
+        : (item['data'] is Map
+              ? item['data'] as Map<String, dynamic>
+              : <String, dynamic>{});
 
     // Merge actor data: DB-joined actor takes priority but metadata actor fills gaps
     final dbActor = item['actor'] ?? item['sender'];
     final metaActor = data['actor'];
-    final dbActorMap = dbActor is Map ? Map<String, dynamic>.from(dbActor) : <String, dynamic>{};
-    final metaActorMap = metaActor is Map ? Map<String, dynamic>.from(metaActor) : <String, dynamic>{};
+    final dbActorMap = dbActor is Map
+        ? Map<String, dynamic>.from(dbActor)
+        : <String, dynamic>{};
+    final metaActorMap = metaActor is Map
+        ? Map<String, dynamic>.from(metaActor)
+        : <String, dynamic>{};
     // Merged: metadata actor fills in fields not present in DB actor
     final actorMap = {...metaActorMap, ...dbActorMap};
 
@@ -2687,14 +2896,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     })();
 
     // Resolve photo URL — guard against empty strings
-    String _pickNonEmpty(List<String?> candidates) {
+    String pickNonEmpty(List<String?> candidates) {
       for (final c in candidates) {
         if (c != null && c.trim().isNotEmpty) return c.trim();
       }
       return '';
     }
 
-    final String declinerPhoto = _pickNonEmpty([
+    final String declinerPhoto = pickNonEmpty([
       actorMap['profilePhotoUrl']?.toString(),
       actorMap['profileImageUrl']?.toString(),
       actorMap['photoUrl']?.toString(),
@@ -2728,17 +2937,16 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           GestureDetector(
             onTap: () => _openUserProfile(userData),
             child: declinerPhoto.isNotEmpty
-                ? LunaraProfileImage(
-                    userData: userData,
-                    radius: 22,
-                  )
+                ? LunaraProfileImage(userData: userData, radius: 22)
                 : Container(
                     width: 44,
                     height: 44,
                     decoration: BoxDecoration(
                       color: Colors.redAccent.withValues(alpha: 0.15),
                       shape: BoxShape.circle,
-                      border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+                      border: Border.all(
+                        color: Colors.redAccent.withValues(alpha: 0.3),
+                      ),
                     ),
                     child: const Icon(
                       Icons.cancel_rounded,
@@ -2755,7 +2963,10 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.red.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(6),
@@ -2773,9 +2984,15 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                     const Spacer(),
                     Text(
                       timeStr,
-                      style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5),
+                      style: const TextStyle(
+                        color: Color(0xFF94A3B8),
+                        fontSize: 10.5,
+                      ),
                     ),
-                    if (isUnread) ...[const SizedBox(width: 6), _buildUnreadDot()],
+                    if (isUnread) ...[
+                      const SizedBox(width: 6),
+                      _buildUnreadDot(),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 6),

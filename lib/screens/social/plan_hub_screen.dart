@@ -21,7 +21,6 @@ import '../../services/google_places_service.dart';
 import '../../widgets/venue_cover_charge_notice.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 
-
 class PlanHubScreen extends StatefulWidget {
   final bool autoShowCreatePlan;
   final bool autoShowStrangersMeet;
@@ -647,15 +646,19 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             ? Image.asset(
                                 night['image']!,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Container(
+                                errorBuilder: (_, _, _) => Container(
                                   color: Colors.purple.shade900,
                                   child: const Center(
-                                    child: Icon(Icons.nightlife, color: Colors.white),
+                                    child: Icon(
+                                      Icons.nightlife,
+                                      color: Colors.white,
+                                    ),
                                   ),
                                 ),
                               )
                             : Image.network(
-                                ApiService.formatImageUrl(night['image']) ?? night['image']!,
+                                ApiService.formatImageUrl(night['image']) ??
+                                    night['image']!,
                                 fit: BoxFit.cover,
                                 errorBuilder: (context, error, stackTrace) =>
                                     Container(
@@ -2655,14 +2658,14 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       const SizedBox(height: 4),
                       Text(
                         'Control which sensitive plan details are visible on the public feed before join requests are approved.',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.grey[600],
-                        ),
+                        style: TextStyle(fontSize: 10, color: Colors.grey[600]),
                       ),
                       const SizedBox(height: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.grey[50],
                           borderRadius: BorderRadius.circular(16),
@@ -2676,22 +2679,34 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               children: [
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       const Row(
                                         children: [
-                                          Icon(Icons.lock_outline_rounded, size: 13, color: LunaraTheme.electricViolet),
+                                          Icon(
+                                            Icons.lock_outline_rounded,
+                                            size: 13,
+                                            color: LunaraTheme.electricViolet,
+                                          ),
                                           SizedBox(width: 5),
                                           Text(
                                             'Secret Venue',
-                                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87),
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.black87,
+                                            ),
                                           ),
                                         ],
                                       ),
                                       const SizedBox(height: 2),
                                       Text(
                                         'Hide venue name & address from public feed until request is approved.',
-                                        style: TextStyle(fontSize: 9.5, color: Colors.grey[600]),
+                                        style: TextStyle(
+                                          fontSize: 9.5,
+                                          color: Colors.grey[600],
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -3776,7 +3791,10 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                       if (!mounted) return;
                                       setSheetState(() {
                                         isPosting = false;
-                                        sheetErrorMsg = e.toString().replaceAll('Exception: ', '');
+                                        sheetErrorMsg = e.toString().replaceAll(
+                                          'Exception: ',
+                                          '',
+                                        );
                                       });
                                     }
                                     return;
@@ -3822,11 +3840,20 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                       // before the user is sent to the Live Feed.
                                       // Tracks deposit state internally for future analytics
                                       try {
-                                        final resData = jsonDecode(response.body);
-                                        final planData = resData['data'] ?? resData;
-                                        final planId = planData['id']?.toString() ?? '';
-                                        final depositAmount = (planData['depositAmount'] ?? 99.0).toDouble();
-                                        final razorpayOrderId = planData['hostRazorpayOrderId']?.toString() ?? '';
+                                        final resData = jsonDecode(
+                                          response.body,
+                                        );
+                                        final planData =
+                                            resData['data'] ?? resData;
+                                        final planId =
+                                            planData['id']?.toString() ?? '';
+                                        final depositAmount =
+                                            (planData['depositAmount'] ?? 99.0)
+                                                .toDouble();
+                                        final razorpayOrderId =
+                                            planData['hostRazorpayOrderId']
+                                                ?.toString() ??
+                                            '';
 
                                         if (planId.isNotEmpty) {
                                           // Close the create-plan bottom sheet first
@@ -3834,36 +3861,61 @@ class _PlanHubScreenState extends State<PlanHubScreen>
 
                                           // ─── Helper: launch Razorpay gateway for host deposit ───────────────────────
                                           // Returns true if payment was successfully verified with backend.
-                                          Future<bool> launchRazorpayForHostDeposit({
+                                          Future<bool>
+                                          launchRazorpayForHostDeposit({
                                             required double amount,
                                             required String venueName,
                                             String? existingOrderId,
                                           }) async {
-                                            final Completer<bool> completer = Completer<bool>();
+                                            final Completer<bool> completer =
+                                                Completer<bool>();
 
                                             // 1. Fetch or reuse Razorpay order from backend
-                                            String currentOrderId = existingOrderId?.trim() ?? '';
+                                            String currentOrderId =
+                                                existingOrderId?.trim() ?? '';
                                             String razorpayKey = 'rzp_test_123';
 
-                                            final bool needsNewOrder = currentOrderId.isEmpty ||
-                                                currentOrderId.startsWith('order_mock_') ||
-                                                currentOrderId.startsWith('mock_') ||
+                                            final bool needsNewOrder =
+                                                currentOrderId.isEmpty ||
+                                                currentOrderId.startsWith(
+                                                  'order_mock_',
+                                                ) ||
+                                                currentOrderId.startsWith(
+                                                  'mock_',
+                                                ) ||
                                                 currentOrderId.length < 10;
 
                                             if (needsNewOrder) {
-                                              final initRes = await ApiService.initiateHostPayment(planId);
-                                              if (initRes != null && initRes['success'] == true) {
-                                                currentOrderId = (initRes['razorpayOrderId'] ?? '').toString();
-                                                if (initRes['razorpayKeyId'] != null &&
-                                                    initRes['razorpayKeyId'].toString().isNotEmpty) {
-                                                  razorpayKey = initRes['razorpayKeyId'].toString();
+                                              final initRes =
+                                                  await ApiService.initiateHostPayment(
+                                                    planId,
+                                                  );
+                                              if (initRes != null &&
+                                                  initRes['success'] == true) {
+                                                currentOrderId =
+                                                    (initRes['razorpayOrderId'] ??
+                                                            '')
+                                                        .toString();
+                                                if (initRes['razorpayKeyId'] !=
+                                                        null &&
+                                                    initRes['razorpayKeyId']
+                                                        .toString()
+                                                        .isNotEmpty) {
+                                                  razorpayKey =
+                                                      initRes['razorpayKeyId']
+                                                          .toString();
                                                 }
                                               } else {
                                                 if (mounted) {
-                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
                                                     const SnackBar(
-                                                      content: Text('Failed to create payment order. Please try again.'),
-                                                      backgroundColor: Colors.redAccent,
+                                                      content: Text(
+                                                        'Failed to create payment order. Please try again.',
+                                                      ),
+                                                      backgroundColor:
+                                                          Colors.redAccent,
                                                     ),
                                                   );
                                                 }
@@ -3871,109 +3923,188 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                               }
                                             } else {
                                               // Use existing order ID — fetch key from env
-                                              final initRes = await ApiService.initiateHostPayment(planId);
-                                              if (initRes != null && initRes['razorpayKeyId'] != null) {
-                                                razorpayKey = initRes['razorpayKeyId'].toString();
+                                              final initRes =
+                                                  await ApiService.initiateHostPayment(
+                                                    planId,
+                                                  );
+                                              if (initRes != null &&
+                                                  initRes['razorpayKeyId'] !=
+                                                      null) {
+                                                razorpayKey =
+                                                    initRes['razorpayKeyId']
+                                                        .toString();
                                               }
                                             }
 
-                                            debugPrint('[HOST_DEPOSIT] Launching Razorpay: orderId=$currentOrderId, key=$razorpayKey, amount=${(amount * 100).round()}');
+                                            debugPrint(
+                                              '[HOST_DEPOSIT] Launching Razorpay: orderId=$currentOrderId, key=$razorpayKey, amount=${(amount * 100).round()}',
+                                            );
 
                                             // 2. Open Razorpay checkout
                                             late Razorpay razorpay;
                                             razorpay = Razorpay();
 
-                                            razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (PaymentSuccessResponse response) async {
-                                              final pId = response.paymentId ?? '';
-                                              final oId = response.orderId ?? currentOrderId;
-                                              final sig = response.signature ?? '';
+                                            razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (
+                                              PaymentSuccessResponse response,
+                                            ) async {
+                                              final pId =
+                                                  response.paymentId ?? '';
+                                              final oId =
+                                                  response.orderId ??
+                                                  currentOrderId;
+                                              final sig =
+                                                  response.signature ?? '';
 
-                                              debugPrint('[HOST_DEPOSIT] Razorpay success: paymentId=$pId, orderId=$oId');
+                                              debugPrint(
+                                                '[HOST_DEPOSIT] Razorpay success: paymentId=$pId, orderId=$oId',
+                                              );
 
                                               try {
                                                 // 3. Verify with backend — real signature, NOT mock
-                                                final confirmRes = await ApiService.post(
-                                                  '/api/mobile/party-plans/$planId/host-pay',
-                                                  body: {
-                                                    'razorpay_order_id': oId,
-                                                    'razorpay_payment_id': pId,
-                                                    'razorpay_signature': sig,
-                                                  },
-                                                );
+                                                final confirmRes =
+                                                    await ApiService.post(
+                                                      '/api/mobile/party-plans/$planId/host-pay',
+                                                      body: {
+                                                        'razorpay_order_id':
+                                                            oId,
+                                                        'razorpay_payment_id':
+                                                            pId,
+                                                        'razorpay_signature':
+                                                            sig,
+                                                      },
+                                                    );
 
                                                 razorpay.clear();
 
-                                                if (confirmRes.statusCode == 200) {
+                                                if (confirmRes.statusCode ==
+                                                    200) {
                                                   if (mounted) {
-                                                    ScaffoldMessenger.of(context).showSnackBar(
+                                                    ScaffoldMessenger.of(
+                                                      context,
+                                                    ).showSnackBar(
                                                       const SnackBar(
-                                                        content: Text('🎉 Deposit Paid! Your plan is now LIVE!'),
-                                                        backgroundColor: Colors.green,
+                                                        content: Text(
+                                                          '🎉 Deposit Paid! Your plan is now LIVE!',
+                                                        ),
+                                                        backgroundColor:
+                                                            Colors.green,
                                                       ),
                                                     );
                                                   }
-                                                  if (!completer.isCompleted) completer.complete(true);
+                                                  if (!completer.isCompleted)
+                                                    completer.complete(true);
                                                 } else {
-                                                  String msg = 'Payment verification failed.';
+                                                  String msg =
+                                                      'Payment verification failed.';
                                                   try {
-                                                    final b = jsonDecode(confirmRes.body);
-                                                    msg = b['message'] ?? b['error'] ?? msg;
+                                                    final b = jsonDecode(
+                                                      confirmRes.body,
+                                                    );
+                                                    msg =
+                                                        b['message'] ??
+                                                        b['error'] ??
+                                                        msg;
                                                   } catch (_) {}
                                                   if (mounted) {
-                                                    ScaffoldMessenger.of(context).showSnackBar(
+                                                    ScaffoldMessenger.of(
+                                                      context,
+                                                    ).showSnackBar(
                                                       SnackBar(
-                                                        content: Text('Payment Failed: $msg'),
-                                                        backgroundColor: Colors.redAccent,
+                                                        content: Text(
+                                                          'Payment Failed: $msg',
+                                                        ),
+                                                        backgroundColor:
+                                                            Colors.redAccent,
                                                       ),
                                                     );
                                                   }
-                                                  if (!completer.isCompleted) completer.complete(false);
+                                                  if (!completer.isCompleted)
+                                                    completer.complete(false);
                                                 }
                                               } catch (e) {
                                                 razorpay.clear();
-                                                debugPrint('[HOST_DEPOSIT] Verification error: $e');
-                                                if (!completer.isCompleted) completer.complete(false);
-                                              }
-                                            });
-
-                                            razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse response) {
-                                              debugPrint('[HOST_DEPOSIT] Razorpay error: code=${response.code}, msg=${response.message}');
-                                              razorpay.clear();
-                                              String errText;
-                                              if (response.code == Razorpay.PAYMENT_CANCELLED) {
-                                                errText = 'Payment was cancelled. You can pay later from Manage Plans.';
-                                              } else {
-                                                errText = response.message?.isNotEmpty == true
-                                                    ? response.message!
-                                                    : 'Payment failed (code ${response.code}). Please try again.';
-                                              }
-                                              if (mounted) {
-                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                  SnackBar(
-                                                    content: Text(errText),
-                                                    backgroundColor: Colors.redAccent,
-                                                  ),
+                                                debugPrint(
+                                                  '[HOST_DEPOSIT] Verification error: $e',
                                                 );
+                                                if (!completer.isCompleted)
+                                                  completer.complete(false);
                                               }
-                                              if (!completer.isCompleted) completer.complete(false);
                                             });
 
-                                            razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (ExternalWalletResponse response) {
-                                              razorpay.clear();
-                                              if (!completer.isCompleted) completer.complete(false);
-                                            });
+                                            razorpay.on(
+                                              Razorpay.EVENT_PAYMENT_ERROR,
+                                              (
+                                                PaymentFailureResponse response,
+                                              ) {
+                                                debugPrint(
+                                                  '[HOST_DEPOSIT] Razorpay error: code=${response.code}, msg=${response.message}',
+                                                );
+                                                razorpay.clear();
+                                                String errText;
+                                                if (response.code ==
+                                                    Razorpay
+                                                        .PAYMENT_CANCELLED) {
+                                                  errText =
+                                                      'Payment was cancelled. You can pay later from Manage Plans.';
+                                                } else {
+                                                  errText =
+                                                      response
+                                                              .message
+                                                              ?.isNotEmpty ==
+                                                          true
+                                                      ? response.message!
+                                                      : 'Payment failed (code ${response.code}). Please try again.';
+                                                }
+                                                if (mounted) {
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(errText),
+                                                      backgroundColor:
+                                                          Colors.redAccent,
+                                                    ),
+                                                  );
+                                                }
+                                                if (!completer.isCompleted)
+                                                  completer.complete(false);
+                                              },
+                                            );
+
+                                            razorpay.on(
+                                              Razorpay.EVENT_EXTERNAL_WALLET,
+                                              (
+                                                ExternalWalletResponse response,
+                                              ) {
+                                                razorpay.clear();
+                                                if (!completer.isCompleted)
+                                                  completer.complete(false);
+                                              },
+                                            );
 
                                             final options = <String, dynamic>{
                                               'key': razorpayKey,
                                               'amount': (amount * 100).round(),
                                               'name': 'Lunara Host Deposit',
-                                              'description': 'Host safety deposit for Party Plan at $venueName',
+                                              'description':
+                                                  'Host safety deposit for Party Plan at $venueName',
                                               'currency': 'INR',
-                                              if (currentOrderId.isNotEmpty && !currentOrderId.startsWith('order_mock_'))
+                                              if (currentOrderId.isNotEmpty &&
+                                                  !currentOrderId.startsWith(
+                                                    'order_mock_',
+                                                  ))
                                                 'order_id': currentOrderId,
                                               'prefill': {
-                                                'contact': ApiService.cachedCurrentUser?.phone ?? '9999999999',
-                                                'email': ApiService.cachedCurrentUser?.email ?? 'user@lunara.app',
+                                                'contact':
+                                                    ApiService
+                                                        .cachedCurrentUser
+                                                        ?.phone ??
+                                                    '9999999999',
+                                                'email':
+                                                    ApiService
+                                                        .cachedCurrentUser
+                                                        ?.email ??
+                                                    'user@lunara.app',
                                               },
                                               'theme': {'color': '#7C3AED'},
                                             };
@@ -3981,68 +4112,117 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                             try {
                                               razorpay.open(options);
                                             } catch (e) {
-                                              debugPrint('[HOST_DEPOSIT] Error opening Razorpay: $e');
+                                              debugPrint(
+                                                '[HOST_DEPOSIT] Error opening Razorpay: $e',
+                                              );
                                               razorpay.clear();
                                               if (mounted) {
-                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                ScaffoldMessenger.of(
+                                                  context,
+                                                ).showSnackBar(
                                                   const SnackBar(
-                                                    content: Text('Could not open payment gateway. Please try again.'),
-                                                    backgroundColor: Colors.redAccent,
+                                                    content: Text(
+                                                      'Could not open payment gateway. Please try again.',
+                                                    ),
+                                                    backgroundColor:
+                                                        Colors.redAccent,
                                                   ),
                                                 );
                                               }
-                                              if (!completer.isCompleted) completer.complete(false);
+                                              if (!completer.isCompleted)
+                                                completer.complete(false);
                                             }
 
                                             return completer.future;
                                           }
                                           // ────────────────────────────────────────────────────────────────────────────
 
-                                          final selectedVenueName = selectedVenue?.name ?? 'Venue';
+                                          final selectedVenueName =
+                                              selectedVenue?.name ?? 'Venue';
 
                                           await SmartCheckoutSheet.show(
                                             context: context,
-                                            title: '🎉 Plan Created! Pay Safety Deposit',
-                                            subtitle: 'Your safety deposit (₹${depositAmount.toStringAsFixed(0)}) is required to activate your plan and make it visible in the Live Feed.',
+                                            title:
+                                                '🎉 Plan Created! Pay Safety Deposit',
+                                            subtitle:
+                                                'Your safety deposit (₹${depositAmount.toStringAsFixed(0)}) is required to activate your plan and make it visible in the Live Feed.',
                                             itemPrice: depositAmount,
                                             onWalletPayment: () async {
                                               // Wallet payment: deduct from Smart Credit Wallet then verify with backend
-                                              final payRes = await ApiService.payWithWallet(
-                                                amount: depositAmount,
-                                                planId: planId,
-                                                paymentType: 'commitment_deposit',
-                                              );
-                                              if (payRes != null && payRes['success'] == true) {
-                                                final transactionId = payRes['data']?['transactionId']?.toString() ?? 'wallet';
-                                                final confirmRes = await ApiService.post('/api/mobile/party-plans/$planId/host-pay', body: {
-                                                  'razorpay_order_id': 'order_mock_wallet',
-                                                  'razorpay_payment_id': 'wallet_$transactionId',
-                                                  'razorpay_signature': 'mock_signature',
-                                                });
-                                                if (confirmRes.statusCode == 200 && mounted) {
-                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                              final payRes =
+                                                  await ApiService.payWithWallet(
+                                                    amount: depositAmount,
+                                                    planId: planId,
+                                                    paymentType:
+                                                        'commitment_deposit',
+                                                  );
+                                              if (payRes != null &&
+                                                  payRes['success'] == true) {
+                                                final transactionId =
+                                                    payRes['data']?['transactionId']
+                                                        ?.toString() ??
+                                                    'wallet';
+                                                final confirmRes =
+                                                    await ApiService.post(
+                                                      '/api/mobile/party-plans/$planId/host-pay',
+                                                      body: {
+                                                        'razorpay_order_id':
+                                                            'order_mock_wallet',
+                                                        'razorpay_payment_id':
+                                                            'wallet_$transactionId',
+                                                        'razorpay_signature':
+                                                            'mock_signature',
+                                                      },
+                                                    );
+                                                if (confirmRes.statusCode ==
+                                                        200 &&
+                                                    mounted) {
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
                                                     const SnackBar(
-                                                      content: Text('🎉 Deposit Paid via Wallet! Your plan is now LIVE!'),
-                                                      backgroundColor: Colors.green,
+                                                      content: Text(
+                                                        '🎉 Deposit Paid via Wallet! Your plan is now LIVE!',
+                                                      ),
+                                                      backgroundColor:
+                                                          Colors.green,
                                                     ),
                                                   );
                                                   return true;
                                                 } else {
-                                                  String errMsg = 'Deposit confirmation failed. Please pay again from Manage Plans.';
+                                                  String errMsg =
+                                                      'Deposit confirmation failed. Please pay again from Manage Plans.';
                                                   try {
-                                                    final b = jsonDecode(confirmRes.body);
-                                                    errMsg = b['message'] ?? errMsg;
+                                                    final b = jsonDecode(
+                                                      confirmRes.body,
+                                                    );
+                                                    errMsg =
+                                                        b['message'] ?? errMsg;
                                                   } catch (_) {}
                                                   if (mounted) {
-                                                    ScaffoldMessenger.of(context).showSnackBar(
-                                                      SnackBar(content: Text(errMsg), backgroundColor: Colors.orange),
+                                                    ScaffoldMessenger.of(
+                                                      context,
+                                                    ).showSnackBar(
+                                                      SnackBar(
+                                                        content: Text(errMsg),
+                                                        backgroundColor:
+                                                            Colors.orange,
+                                                      ),
                                                     );
                                                   }
                                                 }
                                               } else if (mounted) {
-                                                final failMsg = payRes?['message'] ?? 'Wallet payment failed. Please try direct payment.';
-                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                  SnackBar(content: Text(failMsg), backgroundColor: Colors.redAccent),
+                                                final failMsg =
+                                                    payRes?['message'] ??
+                                                    'Wallet payment failed. Please try direct payment.';
+                                                ScaffoldMessenger.of(
+                                                  context,
+                                                ).showSnackBar(
+                                                  SnackBar(
+                                                    content: Text(failMsg),
+                                                    backgroundColor:
+                                                        Colors.redAccent,
+                                                  ),
                                                 );
                                               }
                                               return false;
@@ -4052,36 +4232,52 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                               await launchRazorpayForHostDeposit(
                                                 amount: depositAmount,
                                                 venueName: selectedVenueName,
-                                                existingOrderId: razorpayOrderId,
+                                                existingOrderId:
+                                                    razorpayOrderId,
                                               );
                                             },
                                             onHybridPayment: (shortfall) async {
                                               // Hybrid: wallet covers partial amount, Razorpay covers shortfall.
                                               // Step 1: Apply wallet balance first
-                                              final walletBalance = depositAmount - shortfall;
+                                              final walletBalance =
+                                                  depositAmount - shortfall;
                                               bool walletApplied = false;
                                               if (walletBalance > 0) {
-                                                final payRes = await ApiService.payWithWallet(
-                                                  amount: walletBalance,
-                                                  planId: planId,
-                                                  paymentType: 'commitment_deposit_partial',
-                                                );
-                                                walletApplied = payRes != null && payRes['success'] == true;
+                                                final payRes =
+                                                    await ApiService.payWithWallet(
+                                                      amount: walletBalance,
+                                                      planId: planId,
+                                                      paymentType:
+                                                          'commitment_deposit_partial',
+                                                    );
+                                                walletApplied =
+                                                    payRes != null &&
+                                                    payRes['success'] == true;
                                                 if (!walletApplied && mounted) {
-                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
                                                     SnackBar(
-                                                      content: Text(payRes?['message'] ?? 'Wallet deduction failed. Paying full amount via gateway.'),
-                                                      backgroundColor: Colors.orange,
+                                                      content: Text(
+                                                        payRes?['message'] ??
+                                                            'Wallet deduction failed. Paying full amount via gateway.',
+                                                      ),
+                                                      backgroundColor:
+                                                          Colors.orange,
                                                     ),
                                                   );
                                                 }
                                               }
                                               // Step 2: Collect shortfall (or full amount if wallet failed) via Razorpay
-                                              final amountToCollect = walletApplied ? shortfall : depositAmount;
+                                              final amountToCollect =
+                                                  walletApplied
+                                                  ? shortfall
+                                                  : depositAmount;
                                               await launchRazorpayForHostDeposit(
                                                 amount: amountToCollect,
                                                 venueName: selectedVenueName,
-                                                existingOrderId: null, // always create a fresh order for hybrid
+                                                existingOrderId:
+                                                    null, // always create a fresh order for hybrid
                                               );
                                             },
                                           );
@@ -4089,7 +4285,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                           Navigator.pop(context);
                                         }
                                       } catch (e) {
-                                        debugPrint('Error during host deposit: $e');
+                                        debugPrint(
+                                          'Error during host deposit: $e',
+                                        );
                                         if (mounted) Navigator.pop(context);
                                       }
 
@@ -4098,8 +4296,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (_) =>
-                                              const LiveFeedScreen(initialTabIndex: 1),
+                                          builder: (_) => const LiveFeedScreen(
+                                            initialTabIndex: 1,
+                                          ),
                                         ),
                                       );
                                     } else {
@@ -5721,7 +5920,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     bankName: selectedPaymentOption == 'bank'
                                         ? bankNameCtrl.text.trim()
                                         : null,
-                                    accountNumber: selectedPaymentOption == 'bank'
+                                    accountNumber:
+                                        selectedPaymentOption == 'bank'
                                         ? accountNumberCtrl.text.trim()
                                         : null,
                                     accountHolderName:
@@ -5764,9 +5964,10 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               if (context.mounted) {
                                 Navigator.pop(context); // Close loading dialog
                                 setSheetState(() {
-                                  sheetErrorMsg = e
-                                      .toString()
-                                      .replaceAll('Exception: ', '');
+                                  sheetErrorMsg = e.toString().replaceAll(
+                                    'Exception: ',
+                                    '',
+                                  );
                                 });
                               }
                             }

@@ -95,7 +95,7 @@ class _LoginHubState extends State<LoginHub> {
                   child: Image.asset(
                     LunaraTheme.logoIcon,
                     height: 120,
-                    errorBuilder: (_, __, ___) => Container(
+                    errorBuilder: (_, _, _) => Container(
                       height: 90,
                       width: 90,
                       decoration: const BoxDecoration(
@@ -211,7 +211,11 @@ class _LoginHubState extends State<LoginHub> {
                   height: 52,
                   child: ElevatedButton.icon(
                     onPressed: _isLoading ? null : _handleFacebookLogin,
-                    icon: const Icon(Icons.facebook, color: Colors.white, size: 24),
+                    icon: const Icon(
+                      Icons.facebook,
+                      color: Colors.white,
+                      size: 24,
+                    ),
                     label: const Text(
                       'CONTINUE WITH FACEBOOK',
                       style: TextStyle(
