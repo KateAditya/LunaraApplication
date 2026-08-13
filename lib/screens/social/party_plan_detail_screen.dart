@@ -533,7 +533,9 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       }
     }
 
-    // Default: Show subtle red outline "Cancel Party Plan" button if participant
+    // Default: Show subtle red outline "Cancel Party Plan" button — HOST ONLY
+    if (!_isHostPlan(widget.plan)) return const SizedBox.shrink();
+
     return Container(
       margin: const EdgeInsets.only(top: 16),
       width: double.infinity,
@@ -859,6 +861,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
 
     razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (PaymentSuccessResponse response) async {
       final confirmRes = await ApiService.post('/api/mobile/party-plans/requests/$reqId/joiner-pay', body: {
+        'userId': ApiService.currentUserId ?? '',
         'razorpay_order_id': response.orderId ?? (currentOrderId.isNotEmpty ? currentOrderId : 'order_rzp_${DateTime.now().millisecondsSinceEpoch}'),
         'razorpay_payment_id': response.paymentId ?? 'pay_${DateTime.now().millisecondsSinceEpoch}',
         'razorpay_signature': response.signature ?? 'signature',
@@ -951,6 +954,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         if (res != null && res['success'] == true) {
           final transactionId = res['data']?['transactionId']?.toString() ?? 'wallet';
           final confirmRes = await ApiService.post('/api/mobile/party-plans/requests/$reqId/joiner-pay', body: {
+            'userId': ApiService.currentUserId ?? '',
             'razorpay_order_id': 'order_mock_wallet',
             'razorpay_payment_id': 'wallet_$transactionId',
             'razorpay_signature': 'mock_signature',
@@ -982,6 +986,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       },
       onHybridPayment: (shortfall) async {
         final res = await ApiService.post('/api/mobile/party-plans/requests/$reqId/joiner-pay', body: {
+          'userId': ApiService.currentUserId ?? '',
           'razorpay_order_id': 'order_mock_hybrid',
           'razorpay_payment_id': 'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
           'razorpay_signature': 'mock_signature',

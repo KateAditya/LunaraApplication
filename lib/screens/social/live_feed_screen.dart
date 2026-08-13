@@ -1,4 +1,4 @@
-// ignore_for_file: use_build_context_synchronously, unused_local_variable
+﻿// ignore_for_file: use_build_context_synchronously, unused_local_variable
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -592,7 +592,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Request cancelled / declined.'),
+            content: Text('Request declined.'),
             backgroundColor: Colors.grey,
           ),
         );
@@ -600,7 +600,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Failed to update request.'),
+            content: Text('Failed to decline request.'),
             backgroundColor: Colors.red,
           ),
         );
@@ -608,6 +608,40 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     } catch (e) {
       Navigator.pop(context);
       debugPrint('Error rejecting request: $e');
+    }
+  }
+
+  /// Cancels the CURRENT USER's own pending join request (joiner cancels their own request).
+  Future<void> _handleCancelMyRequest(String reqId) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+      ),
+    );
+    try {
+      final success = await ApiService.cancelPartyPlanRequest(reqId);
+      Navigator.pop(context);
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Request cancelled successfully.'),
+            backgroundColor: Colors.grey,
+          ),
+        );
+        _loadFeed();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to cancel request. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      Navigator.pop(context);
+      debugPrint('Error cancelling request: $e');
     }
   }
 
@@ -1777,8 +1811,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 badge = 'DECLINED';
                 body = 'You declined the invite from $hostName at $venueName.';
                 accent = const Color(0xFF9CA3AF);
-                // Show host's avatar on declined invite cards
-                // (avatarUrl/senderUser is set below using hostCreator info)
               }
             } else {
               // ─── VOLUNTARY JOIN REQUEST sent by current user ──────────
@@ -1791,7 +1823,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     icon: Icons.cancel_rounded,
                     isPrimary: false,
                     color: Colors.grey[200],
-                    onTap: () => _handleRejectPartyPlan(id),
+                    onTap: () => _handleCancelMyRequest(id),
                   ),
                 ];
               } else if (status == 'accepted' || status == 'payment_pending') {
@@ -1818,7 +1850,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     icon: Icons.cancel_rounded,
                     isPrimary: false,
                     color: Colors.grey[200],
-                    onTap: () => _handleRejectPartyPlan(id),
+                    onTap: () => _handleCancelMyRequest(id),
                   ),
                 ];
               } else if (status == 'paid' || status == 'confirmed') {
@@ -3113,3 +3145,4 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     return 'Payment status unavailable';
   }
 }
+

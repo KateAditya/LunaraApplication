@@ -1659,6 +1659,20 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             .toString()
             .toUpperCase();
 
+    // Guard: hide global discovery notifications that belong to another user's
+    // party plan with no personal relationship to the current viewer.
+    final String planHostId =
+        (data['userId'] ?? data['hostId'] ?? '').toString().trim();
+    final String currentUid = ApiService.currentUserId ?? '';
+    if (planHostId.isNotEmpty &&
+        currentUid.isNotEmpty &&
+        planHostId != currentUid) {
+      final bool hasPersonalAction = primaryAction.isNotEmpty &&
+          primaryAction != 'view plan' &&
+          primaryAction != 'view';
+      if (!hasPersonalAction) return const SizedBox.shrink();
+    }
+
     // STEP 16: VERIFY THE ACTUAL RENDERER
     debugPrint('>>> PARTY PLAN POSTED CARD RENDERED <<<');
     debugPrint('eventType=$eventType');
