@@ -498,7 +498,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
     final cleanHostName = hostUser != null ? '${hostUser.firstName} ${hostUser.lastName}'.trim() : 'Guest User';
     final hostUsername = hostUser != null ? '@${hostUser.firstName.toLowerCase()}.${hostUser.lastName.toLowerCase()}' : '@guest';
 
-    final double amountPaid = double.tryParse((widget.totalPrice ?? '0').replaceAll(RegExp(r'[^0-9.]'), '')) ?? 199.0;
+    final double amountPaid = double.tryParse((widget.totalPrice ?? '').replaceAll(RegExp(r'[^0-9.]'), '')) ?? 199.0;
 
     final latVal = widget.venue?['latitude'];
     final lngVal = widget.venue?['longitude'];

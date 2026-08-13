@@ -3991,8 +3991,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                                       ),
                                                     );
                                                   }
-                                                  if (!completer.isCompleted)
+                                                  if (!completer.isCompleted) {
                                                     completer.complete(true);
+                                                  }
                                                 } else {
                                                   String msg =
                                                       'Payment verification failed.';
@@ -4018,16 +4019,18 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                                       ),
                                                     );
                                                   }
-                                                  if (!completer.isCompleted)
+                                                  if (!completer.isCompleted) {
                                                     completer.complete(false);
+                                                  }
                                                 }
                                               } catch (e) {
                                                 razorpay.clear();
                                                 debugPrint(
                                                   '[HOST_DEPOSIT] Verification error: $e',
                                                 );
-                                                if (!completer.isCompleted)
+                                                if (!completer.isCompleted) {
                                                   completer.complete(false);
+                                                }
                                               }
                                             });
 
@@ -4066,8 +4069,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                                     ),
                                                   );
                                                 }
-                                                if (!completer.isCompleted)
+                                                if (!completer.isCompleted) {
                                                   completer.complete(false);
+                                                }
                                               },
                                             );
 
@@ -4077,8 +4081,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                                 ExternalWalletResponse response,
                                               ) {
                                                 razorpay.clear();
-                                                if (!completer.isCompleted)
+                                                if (!completer.isCompleted) {
                                                   completer.complete(false);
+                                                }
                                               },
                                             );
 
@@ -4129,8 +4134,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                                   ),
                                                 );
                                               }
-                                              if (!completer.isCompleted)
+                                              if (!completer.isCompleted) {
                                                 completer.complete(false);
+                                              }
                                             }
 
                                             return completer.future;

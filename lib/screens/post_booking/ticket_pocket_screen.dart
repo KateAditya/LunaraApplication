@@ -503,6 +503,12 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     final table = _formatTablePackage(booking['tablePackage']?.toString());
     final guests = booking['numberOfGuests'] ?? 1;
 
+    final String totalPriceStr = booking['totalAmount']?.toString() ??
+        booking['paymentAmount']?.toString() ??
+        '';
+    final double amountPaid = double.tryParse(totalPriceStr.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0.0;
+    final String displayAmount = amountPaid > 0 ? '₹${amountPaid.toStringAsFixed(0)}' : 'FREE';
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 20),
       child: GestureDetector(
@@ -643,8 +649,18 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        _infoChip(Icons.table_bar_outlined, table),
-                        _infoChip(Icons.group_outlined, '$guests GUESTS'),
+                        Expanded(
+                          child: Row(
+                            children: [
+                              _infoChip(Icons.table_bar_outlined, table, flex: 2),
+                              const SizedBox(width: 4),
+                              _infoChip(Icons.group_outlined, '$guests', flex: 1),
+                              const SizedBox(width: 4),
+                              _infoChip(Icons.payments_outlined, displayAmount, flex: 1),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 14,
@@ -679,8 +695,9 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     );
   }
 
-  Widget _infoChip(IconData icon, String label) {
+  Widget _infoChip(IconData icon, String label, {int flex = 1}) {
     return Flexible(
+      flex: flex,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

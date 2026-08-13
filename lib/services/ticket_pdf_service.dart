@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'dart:ui' as ui;
 import 'api_service.dart';
 
 class TicketPdfService {
@@ -45,7 +46,30 @@ class TicketPdfService {
           debugPrint('Downloaded Bytes: ${response.bodyBytes.length}');
           
           if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
-            venueImage = pw.MemoryImage(response.bodyBytes);
+            Uint8List finalBytes = response.bodyBytes;
+            final contentType = response.headers['content-type'] ?? '';
+            
+            // The PDF library does not support WebP, so we convert it to PNG natively via dart:ui
+            if (contentType.contains('webp') || imageUrl.toLowerCase().endsWith('.webp')) {
+              debugPrint('WebP format detected! Converting to PNG...');
+              try {
+                final codec = await ui.instantiateImageCodec(finalBytes);
+                final frame = await codec.getNextFrame();
+                final image = frame.image;
+                final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+                
+                if (byteData != null) {
+                  finalBytes = byteData.buffer.asUint8List();
+                  debugPrint('Successfully converted WebP to PNG. New bytes length: ${finalBytes.length}');
+                } else {
+                  debugPrint('Error: Failed to extract PNG byte data from ui.Image');
+                }
+              } catch (e) {
+                debugPrint('WebP conversion error: $e');
+              }
+            }
+            
+            venueImage = pw.MemoryImage(finalBytes);
           } else if (response.statusCode != 200) {
             debugPrint('VENUE IMAGE NOT AVAILABLE FROM API (HTTP ${response.statusCode})');
           }
