@@ -8,6 +8,7 @@ import '../../services/google_places_service.dart';
 import '../../widgets/action_button.dart';
 import '../../widgets/lunara_profile_image.dart';
 import '../../services/api_service.dart';
+import '../../services/ticket_pdf_service.dart';
 import '../home/dashboard.dart';
 
 class DigitalTicketScreen extends StatefulWidget {
@@ -20,6 +21,7 @@ class DigitalTicketScreen extends StatefulWidget {
   final String? totalPrice;
   final String? ticketId;
   final String? ticketUrl;
+  final String? status;
 
   const DigitalTicketScreen({
     super.key,
@@ -32,6 +34,7 @@ class DigitalTicketScreen extends StatefulWidget {
     this.totalPrice,
     this.ticketId,
     this.ticketUrl,
+    this.status,
   });
 
   @override
@@ -43,6 +46,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
   StreamSubscription<Position>? _positionStreamSubscription;
   Timer? _countdownTimer;
   Duration _timeRemaining = Duration.zero;
+  bool _isGeneratingPdf = false;
 
   @override
   void initState() {
@@ -283,6 +287,9 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
     }
     if (venue['photoUrl'] != null && venue['photoUrl'].toString().trim().isNotEmpty) {
       return normalize(venue['photoUrl'].toString());
+    }
+    if (venue['profilePhotoUrl'] != null && venue['profilePhotoUrl'].toString().trim().isNotEmpty) {
+      return normalize(venue['profilePhotoUrl'].toString());
     }
     if (venue['filePath'] != null && venue['filePath'].toString().trim().isNotEmpty) {
       return normalize(venue['filePath'].toString());
@@ -1092,6 +1099,77 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
     );
   }
 
+  Future<void> _downloadLocalTicket(BuildContext context) async {
+    setState(() {
+      _isGeneratingPdf = true;
+    });
+
+    try {
+      final venueName = widget.venue?['name']?.toString() ?? 'ELARA VELVET';
+      final venueCity = widget.venue?['city']?.toString() ?? 'Unknown City';
+      final venueArea = widget.venue?['area']?.toString() ?? '';
+      final venueAddress = widget.venue?['address']?.toString() ?? '${venueArea.isNotEmpty ? "$venueArea, " : ""}$venueCity';
+      final imageUrl = _getVenueImageUrl();
+
+      final hostUser = ApiService.cachedCurrentUser;
+      final cleanHostName = hostUser != null ? '${hostUser.firstName} ${hostUser.lastName}'.trim() : 'Guest User';
+
+      String displayDate = widget.date ?? 'SAT, OCT 24';
+      String displayTime = widget.time ?? '10:30 PM';
+      if (displayDate.contains('•')) {
+        final parts = displayDate.split('•');
+        displayDate = parts[0].trim();
+        displayTime = parts.length > 1 ? parts[1].trim() : displayTime;
+      }
+
+      final pdfBytes = await TicketPdfService.generateTicketBytes(
+        venueName: venueName,
+        venueAddress: venueAddress,
+        dateStr: displayDate,
+        timeStr: displayTime,
+        table: widget.table ?? 'VIP V1',
+        guests: widget.guests != null ? '${widget.guests} GUESTS' : '6 GUESTS',
+        ticketId: widget.ticketId ?? 'TICKET',
+        status: widget.status ?? (_isTicketExpired() ? 'EXPIRED' : 'CONFIRMED'),
+        hostName: cleanHostName,
+        imageUrl: imageUrl,
+      );
+
+      if (mounted) {
+        if (pdfBytes != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Ticket downloaded successfully.')),
+          );
+          String sanitizedTicketId = widget.ticketId?.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_') ?? '';
+          if (sanitizedTicketId.isEmpty) {
+            String sanitizedVenue = venueName.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+            sanitizedTicketId = '${sanitizedVenue}_${DateTime.now().millisecondsSinceEpoch}';
+          }
+          final fileName = 'Lunara_Ticket_$sanitizedTicketId.pdf';
+          
+          // ignore: deprecated_member_use
+          Share.shareXFiles([XFile.fromData(pdfBytes, name: fileName, mimeType: 'application/pdf')], subject: 'My Lunara Ticket');
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to generate PDF.')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error downloading ticket.')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isGeneratingPdf = false;
+        });
+      }
+    }
+  }
+
   Widget _buildFooter(BuildContext context) {
     final hasPdf = widget.ticketUrl != null && widget.ticketUrl!.isNotEmpty;
     return Padding(
@@ -1099,9 +1177,19 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          _isGeneratingPdf 
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+                )
+              : LunaraActionButton(
+                  text: 'DOWNLOAD TICKET',
+                  onPressed: () => _downloadLocalTicket(context),
+                ),
+          const SizedBox(height: 12),
           if (hasPdf) ...[
             LunaraActionButton(
-              text: 'DOWNLOAD PDF TICKET',
+              text: 'VIEW TICKET LINK',
               onPressed: () async {
                 final pdfUri = Uri.parse(widget.ticketUrl!);
                 if (await canLaunchUrl(pdfUri)) {
