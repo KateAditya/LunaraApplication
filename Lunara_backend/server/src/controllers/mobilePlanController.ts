@@ -11,6 +11,7 @@ import Booking, { BookingStatus, PaymentStatus, GoingMode, BookingPaymentMode } 
 import Payment, { PaymentMethod, PaymentStatus as TxnStatus } from '../models/Payment';
 import User from '../models/User';
 import Venue from '../models/Venue';
+import VenueImage from '../models/VenueImage';
 import UserProfile from '../models/UserProfile';
 import PartyPlan, { PartyPlanStatus } from '../models/PartyPlan';
 import PartyPlanRequest, { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
@@ -248,6 +249,13 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                     model: Venue,
                     as: 'venue',
                     attributes: ['id', 'name', 'addressLine1', 'area', 'city'],
+                    include: [{
+                        model: VenueImage,
+                        as: 'images',
+                        attributes: ['filePath', 'imageType', 'isPrimary', 'displayOrder'],
+                        required: false,
+                        where: { isPrimary: true },
+                    }],
                 },
             ],
             order: [['createdAt', 'DESC']],
@@ -323,6 +331,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                     profileImageUrl: host?.profileImageUrl ?? (host?.photos?.[0]?.filePath ? '/' + host.photos[0].filePath.replace(/\\/g, '/') : null),
                 },
                 venue: (p as any).venue,
+                venueImageUrl: (p as any).venue?.images?.[0]?.filePath ?? null,
                 planDate: p.planDate,
                 startTime: p.startTime,
                 tablePackage: p.tablePackage,
@@ -351,6 +360,11 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 planId: p.id,
                 id: p.id,
                 type: 'party_plan',
+                // The card role is resolved on the server.  The client uses it
+                // only to choose presentation; payment authorization remains
+                // validated by the payment endpoint.
+                userId: p.userId,
+                role: viewerId && p.userId === viewerId ? 'host' : 'viewer',
                 host: {
                     id: creator?.id,
                     name: creator ? `${creator.firstName} ${creator.lastName?.charAt(0) ?? ''}.` : 'Unknown',
@@ -359,6 +373,8 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                     bio: creator?.profile?.bio,
                     profileImageUrl: creator?.profileImageUrl ?? (creator?.photos?.[0]?.filePath ? '/' + creator.photos[0].filePath.replace(/\\/g, '/') : null),
                 },
+                hostName: creator ? `${creator.firstName} ${creator.lastName ?? ''}`.trim() : 'Party Host',
+                hostProfilePhotoUrl: creator?.profileImageUrl ?? (creator?.photos?.[0]?.filePath ? '/' + creator.photos[0].filePath.replace(/\\/g, '/') : null),
                 venue: (p as any).venue,
                 planDate: p.planDateTime,
                 planDateTime: p.planDateTime,

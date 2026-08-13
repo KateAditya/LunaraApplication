@@ -9,6 +9,25 @@ import 'chat_screen.dart';
 import 'party_plan_ticket_screen.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
+class _VenueImageFallback extends StatelessWidget {
+  const _VenueImageFallback();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF2D0060), Color(0xFF0D001C)],
+        ),
+      ),
+      child: const Center(
+        child: Icon(Icons.nightlife_rounded, color: Colors.white24, size: 72),
+      ),
+    );
+  }
+}
 
 class PartyPlanDetailScreen extends StatefulWidget {
   final Map<String, dynamic> plan;
@@ -75,13 +94,14 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
 
       if (targetPlanId.isNotEmpty) {
         final res = await ApiService.getPartyPlanCancellationRequest(targetPlanId);
-        if (mounted && res != null) {
+        if (mounted) {
+          final cancelReq = res?['cancellationRequest'];
           setState(() {
             _currentUserId = uid;
-            if (res['isWindowClosed'] == true) _isWindowClosed = true;
-            _cancellationRequest = res['cancellationRequest'] is Map<String, dynamic>
-                ? res['cancellationRequest']
-                : null;
+            if (res?['isWindowClosed'] == true) _isWindowClosed = true;
+            _cancellationRequest = cancelReq is Map<String, dynamic>
+                ? cancelReq
+                : (cancelReq is Map ? Map<String, dynamic>.from(cancelReq) : null);
           });
         }
       }
@@ -689,11 +709,17 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     if (formatted != null && formatted.isNotEmpty) {
       return formatted;
     }
-    return 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=1200&auto=format&fit=crop&q=80';
+    // Do not mask a missing venue image with a generic club photo. Returning
+    // null lets the detail page load the selected venue and, only if it has no
+    // image, render the branded gradient fallback.
+    return null;
   }
 
   Future<void> _checkRequestStatus() async {
     try {
+      // The host has no join request for their own plan. Avoid deriving the
+      // host CTA from participant request cache/state.
+      if (_isHostPlan(widget.plan)) return;
       final myRequests = await ApiService.fetchMyPartyPlanRequests();
       final targetPlanId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
       if (targetPlanId.isEmpty) return;
@@ -809,7 +835,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     });
     final action = withdraw ? 'withdrawn' : 'cancelled';
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(success ? 'Request ' + action : 'Unable to update this request. Please refresh and try again.'),
+      content: Text(success ? 'Request $action' : 'Unable to update this request. Please refresh and try again.'),
       backgroundColor: success ? Colors.green : Colors.red,
     ));
   }
@@ -993,12 +1019,13 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         );
         if (res != null && res['success'] == true) {
           final transactionId = res['data']?['transactionId']?.toString() ?? 'wallet';
-          final confirmRes = await ApiService.post('/api/mobile/party-plans/$cleanPlanId/host-pay', body: {
-            'razorpay_order_id': 'order_mock_wallet',
-            'razorpay_payment_id': 'wallet_$transactionId',
-            'razorpay_signature': 'mock_signature',
-          });
-          if (confirmRes.statusCode == 200 && mounted) {
+          final paymentConfirmed = await ApiService.verifyHostPayment(
+            cleanPlanId,
+            'order_mock_wallet',
+            'wallet_$transactionId',
+            'mock_signature',
+          );
+          if (paymentConfirmed && mounted) {
             setState(() {
               widget.plan['hostPaymentStatus'] = 'paid';
               widget.plan['isLive'] = true;
@@ -1046,15 +1073,13 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     }
 
     if (currentOrderId.startsWith('order_mock_') || razorpayKey == 'rzp_test_123' || currentOrderId.startsWith('mock_')) {
-      final confirmRes = await ApiService.post(
-        '/api/mobile/party-plans/$cleanPlanId/host-pay',
-        body: {
-          'razorpay_order_id': currentOrderId,
-          'razorpay_payment_id': 'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
-          'razorpay_signature': 'mock_signature',
-        },
+      final paymentConfirmed = await ApiService.verifyHostPayment(
+        cleanPlanId,
+        currentOrderId,
+        'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
+        'mock_signature',
       );
-      if (confirmRes.statusCode == 200 && mounted) {
+      if (paymentConfirmed && mounted) {
         setState(() {
           widget.plan['hostPaymentStatus'] = 'paid';
           widget.plan['isLive'] = true;
@@ -1077,17 +1102,15 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       final oId = response.orderId ?? currentOrderId;
       final sig = response.signature ?? 'mock_signature';
 
-      final confirmRes = await ApiService.post(
-        '/api/mobile/party-plans/$cleanPlanId/host-pay',
-        body: {
-          'razorpay_order_id': oId,
-          'razorpay_payment_id': pId,
-          'razorpay_signature': sig,
-        },
+      final paymentConfirmed = await ApiService.verifyHostPayment(
+        cleanPlanId,
+        oId,
+        pId,
+        sig,
       );
 
       razorpay.clear();
-      if (confirmRes.statusCode == 200 && mounted) {
+      if (paymentConfirmed && mounted) {
         setState(() {
           widget.plan['hostPaymentStatus'] = 'paid';
           widget.plan['isLive'] = true;
@@ -1319,6 +1342,25 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     };
   }
 
+  bool _isHostPlan(Map<String, dynamic> plan) {
+    final currentUid = ApiService.currentUserId ?? _currentUserId ?? '';
+    if (currentUid.isEmpty) return false;
+
+    final role = (plan['role'] ?? plan['viewerRole'] ?? '').toString().toLowerCase();
+    if (role == 'host' || role == 'creator') return true;
+
+    final host = _extractHost(plan);
+    final creator = plan['creator'] is Map ? plan['creator'] as Map : const <String, dynamic>{};
+    final user = plan['user'] is Map ? plan['user'] as Map : const <String, dynamic>{};
+    return [
+      host['id'],
+      plan['userId'],
+      plan['hostId'],
+      creator['id'],
+      user['id'],
+    ].any((id) => id?.toString() == currentUid);
+  }
+
   String _extractHostName(Map<String, dynamic> host, Map<String, dynamic> plan) {
     final name = host['name'] ?? host['fullName'];
     if (name != null && name.toString().trim().isNotEmpty && name.toString().trim() != 'Unknown') {
@@ -1341,17 +1383,9 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     final host = _extractHost(plan);
     final venue = plan['venue'] as Map<String, dynamic>? ?? {};
 
-    final currentUid = ApiService.currentUserId ?? '';
-    final creatorMap = plan['creator'] is Map ? plan['creator'] as Map<String, dynamic> : <String, dynamic>{};
-    final userMap = plan['user'] is Map ? plan['user'] as Map<String, dynamic> : <String, dynamic>{};
-
-    final isMyPost = currentUid.isNotEmpty &&
-        (host['id']?.toString() == currentUid ||
-            plan['userId']?.toString() == currentUid ||
-            plan['hostId']?.toString() == currentUid ||
-            plan['requesterId']?.toString() == currentUid ||
-            creatorMap['id']?.toString() == currentUid ||
-            userMap['id']?.toString() == currentUid);
+    // `requesterId` is deliberately not treated as host ownership. It belongs
+    // to a participant request and previously made role inference ambiguous.
+    final isMyPost = _isHostPlan(plan);
 
     final hostName = _extractHostName(host, plan);
     final hostAge = host['age'] ?? plan['hostAge'];
@@ -1422,11 +1456,10 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                     Image.network(
                       venueImageUrl,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => Image.network(
-                        'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=1200&auto=format&fit=crop&q=80',
-                        fit: BoxFit.cover,
-                      ),
-                    ),
+                      errorBuilder: (_, _, _) => const _VenueImageFallback(),
+                    )
+                  else
+                    const _VenueImageFallback(),
                   // Dark overlay gradient for contrast
                   Container(
                     decoration: BoxDecoration(
