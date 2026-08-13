@@ -18,14 +18,21 @@ class MatchCard extends StatelessWidget {
                 ? Image.asset(
                     profile['image'],
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
+                    errorBuilder: (_, _, _) => Container(
                       color: Colors.grey[900],
                       child: const Center(
-                        child: Icon(Icons.person, color: Colors.white54, size: 48),
+                        child: Icon(
+                          Icons.person,
+                          color: Colors.white54,
+                          size: 48,
+                        ),
                       ),
                     ),
                   )
-                : Image.network(profile['image'] ?? 'https://picsum.photos/400/600', fit: BoxFit.cover),
+                : Image.network(
+                    profile['image'] ?? 'https://picsum.photos/400/600',
+                    fit: BoxFit.cover,
+                  ),
           ),
           Positioned.fill(
             child: Container(
@@ -33,7 +40,10 @@ class MatchCard extends StatelessWidget {
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Colors.black.withValues(alpha: 0.8)],
+                  colors: [
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.8),
+                  ],
                 ),
               ),
             ),
@@ -47,7 +57,11 @@ class MatchCard extends StatelessWidget {
               children: [
                 Text(
                   '${profile['name']}, ${profile['age']}',
-                  style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -59,12 +73,17 @@ class MatchCard extends StatelessWidget {
                   spacing: 8,
                   children: (profile['interests'] as List<dynamic>? ?? [])
                       .take(3)
-                      .map((interest) => Chip(
-                            label: Text(interest.toString(), style: const TextStyle(fontSize: 10)),
-                            backgroundColor: Colors.white.withValues(alpha: 0.2),
-                            labelStyle: const TextStyle(color: Colors.white),
-                            padding: EdgeInsets.zero,
-                          ))
+                      .map(
+                        (interest) => Chip(
+                          label: Text(
+                            interest.toString(),
+                            style: const TextStyle(fontSize: 10),
+                          ),
+                          backgroundColor: Colors.white.withValues(alpha: 0.2),
+                          labelStyle: const TextStyle(color: Colors.white),
+                          padding: EdgeInsets.zero,
+                        ),
+                      )
                       .toList(),
                 ),
               ],

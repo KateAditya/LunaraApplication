@@ -11,6 +11,7 @@ import 'night_partner_discovery_screen.dart';
 import 'night_invite_partner_screen.dart';
 import '../../widgets/venue_cover_charge_notice.dart';
 import '../../widgets/time_lock_modal.dart';
+
 class BookingProcessScreen extends StatefulWidget {
   final Map<dynamic, dynamic> venue;
   final bool isUpcomingNight;
@@ -332,7 +333,8 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
   void _updateDateControllerText() {
     if (_selectedTime != null) {
       final formattedTime = _formatTimeOfBooking(_selectedTime);
-      _dateController.text = "${DateFormat('MMM dd, yyyy').format(_selectedDate)} at $formattedTime";
+      _dateController.text =
+          "${DateFormat('MMM dd, yyyy').format(_selectedDate)} at $formattedTime";
     } else {
       _dateController.text = DateFormat('MMM dd, yyyy').format(_selectedDate);
     }
@@ -344,7 +346,10 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
     if (_selectedTime != null) {
       final parts = _selectedTime!.split(':');
       if (parts.length >= 2) {
-        time = TimeOfDay(hour: int.tryParse(parts[0]) ?? 20, minute: int.tryParse(parts[1]) ?? 0);
+        time = TimeOfDay(
+          hour: int.tryParse(parts[0]) ?? 20,
+          minute: int.tryParse(parts[1]) ?? 0,
+        );
       }
     }
     time ??= const TimeOfDay(hour: 20, minute: 0);
@@ -1236,10 +1241,7 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                 controller: _dateController,
                 decoration: InputDecoration(
                   hintText: 'Selected Date & Time *',
-                  hintStyle: TextStyle(
-                    color: Colors.grey[400],
-                    fontSize: 13,
-                  ),
+                  hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
                   prefixIcon: const Icon(
                     Icons.calendar_today_rounded,
                     color: LunaraTheme.electricViolet,
@@ -1319,7 +1321,9 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                 ) ??
                 0.0;
             final double discountAmount = (subtotal * discountPercent) / 100;
-            final double totalPrice = (subtotal - discountAmount) < 0 ? 0.0 : (subtotal - discountAmount);
+            final double totalPrice = (subtotal - discountAmount) < 0
+                ? 0.0
+                : (subtotal - discountAmount);
             final bool isFreeBooking = totalPrice <= 0;
 
             return Container(
@@ -1731,11 +1735,15 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                           ),
                                         ),
                                         Text(
-                                          isFreeBooking ? 'FREE (₹0)' : '₹ ${totalPrice.toStringAsFixed(0)}',
+                                          isFreeBooking
+                                              ? 'FREE (₹0)'
+                                              : '₹ ${totalPrice.toStringAsFixed(0)}',
                                           style: TextStyle(
                                             fontWeight: FontWeight.bold,
                                             fontSize: 16,
-                                            color: isFreeBooking ? Colors.teal : LunaraTheme.electricViolet,
+                                            color: isFreeBooking
+                                                ? Colors.teal
+                                                : LunaraTheme.electricViolet,
                                           ),
                                         ),
                                       ],
@@ -1750,8 +1758,8 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                               text: isLargeParty
                                   ? 'SUBMIT REQUEST'
                                   : (isFreeBooking
-                                      ? 'BOOK NOW — IT\'S FREE!'
-                                      : 'PROCEED TO PAYMENT'),
+                                        ? 'BOOK NOW — IT\'S FREE!'
+                                        : 'PROCEED TO PAYMENT'),
                               onPressed: () async {
                                 if (isLargeParty) {
                                   if (_partySubjectController.text
@@ -1892,25 +1900,44 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                       ? _partyOptMobileController.text.trim()
                                       : null,
                                 );
-                                if (bookingRes != null && bookingRes['success'] == true) {
+                                if (bookingRes != null &&
+                                    bookingRes['success'] == true) {
                                   final data = bookingRes['data'];
                                   if (data != null) {
-                                    createdBookingId = (data['id'] ?? data['bookingId'])?.toString();
+                                    createdBookingId =
+                                        (data['id'] ?? data['bookingId'])
+                                            ?.toString();
                                   }
-                                  createdBookingId ??= bookingRes['bookingId']?.toString();
-                                } else if (bookingRes != null && (bookingRes['reasonCode'] == 'TIME_LOCK_ACTIVE' || bookingRes['code'] == 'PLAN_TIME_LOCK_ACTIVE')) {
+                                  createdBookingId ??= bookingRes['bookingId']
+                                      ?.toString();
+                                } else if (bookingRes != null &&
+                                    (bookingRes['reasonCode'] ==
+                                            'TIME_LOCK_ACTIVE' ||
+                                        bookingRes['code'] ==
+                                            'PLAN_TIME_LOCK_ACTIVE')) {
                                   if (!outerContext.mounted) return;
                                   TimeLockModal.show(
                                     context: outerContext,
-                                    reasonCode: bookingRes['reasonCode'] ?? bookingRes['code'],
-                                    message: bookingRes['message'] ?? 'Please wait before booking again.',
-                                    remainingSeconds: bookingRes['remainingSeconds'] ?? bookingRes['lock']?['remainingSeconds'] ?? 60,
+                                    reasonCode:
+                                        bookingRes['reasonCode'] ??
+                                        bookingRes['code'],
+                                    message:
+                                        bookingRes['message'] ??
+                                        'Please wait before booking again.',
+                                    remainingSeconds:
+                                        bookingRes['remainingSeconds'] ??
+                                        bookingRes['lock']?['remainingSeconds'] ??
+                                        60,
                                   );
                                   return;
                                 } else {
                                   if (!outerContext.mounted) return;
-                                  final errMsg = bookingRes?['message']?.toString() ?? 'Failed to create booking.';
-                                  ScaffoldMessenger.of(outerContext).showSnackBar(
+                                  final errMsg =
+                                      bookingRes?['message']?.toString() ??
+                                      'Failed to create booking.';
+                                  ScaffoldMessenger.of(
+                                    outerContext,
+                                  ).showSnackBar(
                                     SnackBar(content: Text(errMsg)),
                                   );
                                   return;
@@ -1928,13 +1955,16 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                         date:
                                             '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
                                         package: 'Free Entry Ticket',
-                                        time: _formatTimeOfBooking(_selectedTime),
+                                        time: _formatTimeOfBooking(
+                                          _selectedTime,
+                                        ),
                                         table: 'Standard Table',
                                         guests: isSolo
                                             ? '1 Guest'
                                             : '$guests Guests',
                                         totalPrice: 'FREE (₹0)',
-                                        ticketId: createdBookingId ?? 'FREE_TICKET',
+                                        ticketId:
+                                            createdBookingId ?? 'FREE_TICKET',
                                       ),
                                     ),
                                   );
@@ -1957,9 +1987,14 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                           : '$guests Guests',
                                       totalPrice: '₹$chargesStr',
                                       showSplitBill: false,
-                                      razorpayOrderId: bookingRes?['razorpayOrderId']?.toString(),
-                                      razorpayKeyId: bookingRes?['razorpayKeyId']?.toString(),
-                                      razorpayAmount: (bookingRes?['amount'] as num?)?.toInt(),
+                                      razorpayOrderId:
+                                          bookingRes['razorpayOrderId']
+                                              ?.toString(),
+                                      razorpayKeyId: bookingRes['razorpayKeyId']
+                                          ?.toString(),
+                                      razorpayAmount:
+                                          (bookingRes['amount'] as num?)
+                                              ?.toInt(),
                                     ),
                                   ),
                                 );
