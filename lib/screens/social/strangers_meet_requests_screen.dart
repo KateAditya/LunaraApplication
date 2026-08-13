@@ -37,6 +37,15 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
   }
 
   void _onProceedToPayment(StrangersMeetRequest req) {
+    if (req.eventDateTime.isBefore(DateTime.now())) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This Stranger Meet has expired and can no longer be paid for.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
     if (req.paymentAmount == null) return;
     Navigator.push(
       context,
@@ -223,7 +232,7 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  _buildStatusBadge(req.status, req.paymentStatus),
+                  _buildStatusBadge(req.status, req.paymentStatus, eventPassed),
                 ],
               ),
               const SizedBox(height: 8),
@@ -266,7 +275,30 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
               ],
   
               // Actions
-              if (isApproved && !isPaid) ...[
+              if (eventPassed) ...[
+                const SizedBox(height: 16),
+                const Divider(),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.event_busy_rounded, color: Colors.grey, size: 18),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'This Stranger Meet has expired. Payment and publishing are no longer available.',
+                          style: TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else if (isApproved && !isPaid) ...[
                 const SizedBox(height: 16),
                 const Divider(),
                 const SizedBox(height: 8),
@@ -626,12 +658,16 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
   }
 
 
-  Widget _buildStatusBadge(String status, String paymentStatus) {
+  Widget _buildStatusBadge(String status, String paymentStatus, bool isExpired) {
     Color bg;
     Color text;
     String label = status.toUpperCase();
 
-    if (status == 'pending') {
+    if (isExpired) {
+      bg = Colors.grey.withValues(alpha: 0.18);
+      text = Colors.grey[700]!;
+      label = 'EXPIRED';
+    } else if (status == 'pending') {
       bg = Colors.orange.withValues(alpha: 0.15);
       text = Colors.orange[800]!;
       label = 'PENDING APPROVAL';

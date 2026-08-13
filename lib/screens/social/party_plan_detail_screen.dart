@@ -73,6 +73,23 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     }
     _checkRequestStatus();
     _loadVenueDetailsIfNeeded();
+    _refreshPlanDetails();
+    _fetchCurrentUserAndCancellationState();
+  }
+
+  Future<void> _refreshPlanDetails() async {
+    final planId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
+    if (planId.isEmpty) return;
+
+    final plan = await ApiService.fetchPartyPlanDetail(planId);
+    if (!mounted || plan == null) return;
+    setState(() {
+      // Preserve notification-only metadata (requestId, invitation state) while
+      // replacing stale or partial card data with the server-authoritative plan.
+      widget.plan.addAll(plan);
+      widget.plan['planId'] = planId;
+    });
+    _checkRequestStatus();
     _fetchCurrentUserAndCancellationState();
   }
 

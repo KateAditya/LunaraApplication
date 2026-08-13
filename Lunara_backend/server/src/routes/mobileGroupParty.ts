@@ -23,18 +23,9 @@ router.post(
     [
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         body('venueId').notEmpty().isUUID().withMessage('venueId must be a valid UUID'),
-        // The service routes 1–20 people to GroupParty and larger groups to
-        // the admin-approved large-party Booking workflow.
-        body('numberOfFriends').isInt({ min: 1, max: 500 }).withMessage('numberOfFriends must be between 1 and 500'),
+        body('numberOfFriends').isInt({ min: 1, max: 20 }).withMessage('numberOfFriends must be between 1 and 20'),
         body('partyDate').isISO8601().withMessage('partyDate must be a valid date'),
-        body('startTime').optional({ nullable: true, checkFalsy: true }).isString().trim().isLength({ max: 20 }).withMessage('startTime is invalid'),
-        body('mobileNumber').isString().trim().matches(/^\d{10}$/).withMessage('mobileNumber must be a valid 10-digit number'),
-        body('optionalMobileNumber').optional({ nullable: true, checkFalsy: true }).isString().trim().matches(/^\d{10}$/).withMessage('optionalMobileNumber must be a valid 10-digit number'),
-        body('foodPreference').optional({ nullable: true, checkFalsy: true }).isString().trim().isLength({ max: 100 }),
-        body('drinkPreference').optional({ nullable: true, checkFalsy: true }).isString().trim().isLength({ max: 100 }),
-        body('partySubject').optional({ nullable: true, checkFalsy: true }).isString().trim().isLength({ max: 200 }),
-        body('partyRequirement').optional({ nullable: true, checkFalsy: true }).isString().trim().isLength({ max: 2000 }),
-        body('partyDescription').optional({ nullable: true, checkFalsy: true }).isString().trim().isLength({ max: 5000 }),
+        body('mobileNumber').notEmpty().withMessage('mobileNumber is required'),
         validate,
     ],
     createGroupParty

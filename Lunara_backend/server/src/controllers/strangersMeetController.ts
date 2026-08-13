@@ -401,6 +401,10 @@ export const initiatePayment = async (req: Request, res: Response): Promise<void
             res.status(400).json({ success: false, message: 'Request has not been approved yet' });
             return;
         }
+        if (new Date(request.eventDateTime).getTime() <= Date.now()) {
+            res.status(409).json({ success: false, message: 'This Stranger Meet has expired and can no longer be paid for.' });
+            return;
+        }
         if (request.paymentStatus === StrangersMeetPaymentStatus.PAID) {
             res.status(400).json({ success: false, message: 'Payment already completed' });
             return;
@@ -468,6 +472,10 @@ export const confirmPayment = async (req: Request, res: Response): Promise<void>
         if (request.userId !== userId) { res.status(403).json({ success: false, message: 'Unauthorized' }); return; }
         if (request.status !== StrangersMeetStatus.APPROVED) {
             res.status(400).json({ success: false, message: 'Request has not been approved yet' });
+            return;
+        }
+        if (new Date(request.eventDateTime).getTime() <= Date.now()) {
+            res.status(409).json({ success: false, message: 'This Stranger Meet has expired and can no longer be paid for.' });
             return;
         }
         if (request.paymentStatus === StrangersMeetPaymentStatus.PAID) {
@@ -869,6 +877,10 @@ export const initiateJoinPayment = async (req: Request, res: Response): Promise<
 
         if (request.status !== StrangersMeetStatus.APPROVED || request.paymentStatus !== StrangersMeetPaymentStatus.PAID) {
             res.status(400).json({ success: false, message: 'This strangers meet is not active' });
+            return;
+        }
+        if (new Date(request.eventDateTime).getTime() <= Date.now()) {
+            res.status(409).json({ success: false, message: 'This Stranger Meet has expired and is no longer available for payment.' });
             return;
         }
 

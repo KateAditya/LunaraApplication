@@ -71,9 +71,25 @@ class _StrangersMeetPaymentScreenState
   }
 
   Future<void> _handlePayment() async {
+    // The card may have been opened before the event expired. Always refresh
+    // the authoritative event time before opening a checkout flow.
+    final latestRequest = await ApiService.fetchStrangersMeetRequestById(
+      widget.request.id,
+    );
+    if (!mounted) return;
+    if (latestRequest == null || latestRequest.eventDateTime.isBefore(DateTime.now())) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This Stranger Meet has expired and can no longer be paid for.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     final double amount = widget.isJoinPayment
-        ? widget.request.chargesPerHead
-        : (widget.request.paymentAmount ?? 99.0);
+        ? latestRequest.chargesPerHead
+        : (latestRequest.paymentAmount ?? 99.0);
 
     SmartCheckoutSheet.show(
       context: context,

@@ -1338,6 +1338,7 @@ export const getPartyPlanById = async (req: Request, res: Response): Promise<voi
             success: true,
             data: {
                 id: plan.id,
+                userId: plan.userId,
                 status: plan.status,
                 visibility: plan.visibility,
                 selectedUsers: plan.selectedUsers,

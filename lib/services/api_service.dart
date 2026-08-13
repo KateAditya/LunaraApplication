@@ -546,13 +546,15 @@ class ApiService {
 
     try {
       final response = await post(
-        '/api/mobile/group-parties',
+        '/api/mobile/bookings',
         body: {
           'userId': userId,
           'venueId': venueId,
-          'partyDate': date,
+          'bookingDate': date,
           'startTime': time,
-          'numberOfFriends': guests,
+          'tablePackage': 'none',
+          'goingMode': 'party_request',
+          'numberOfGuests': guests,
           'partySubject': subject,
           'partyRequirement': requirement,
           'partyDescription': description,
@@ -1197,6 +1199,24 @@ class ApiService {
       }
     } catch (e) {
       debugPrint('acceptPartyPlanRequest error: $e');
+    }
+    return null;
+  }
+
+  /// Loads the authoritative Party Plan data used when opening a notification
+  /// or push deep link, where the original payload only contains a plan ID.
+  static Future<Map<String, dynamic>?> fetchPartyPlanDetail(String planId) async {
+    if (planId.isEmpty) return null;
+    try {
+      final response = await get('/api/mobile/party-plans/$planId');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is Map && data['success'] == true && data['data'] is Map) {
+          return Map<String, dynamic>.from(data['data'] as Map);
+        }
+      }
+    } catch (e) {
+      debugPrint('fetchPartyPlanDetail error: $e');
     }
     return null;
   }
@@ -4111,7 +4131,9 @@ class ApiService {
         body['otherReasonText'] = otherReasonText;
       }
       final response = await _post(
-        '/api/mobile/party-plans/$planId/cancellation-request',
+        // Mutual cancellation belongs to the Party Plan controller mounted at
+        // /api/mobile/plans (not the request-management route namespace).
+        '/api/mobile/plans/$planId/cancellation-request',
         body,
       );
       return jsonDecode(response.body) as Map<String, dynamic>;
@@ -4126,7 +4148,7 @@ class ApiService {
     final userId = currentUserId;
     if (userId == null) return null;
     try {
-      final response = await _get('/api/mobile/party-plans/$planId/cancellation-request?userId=$userId');
+      final response = await _get('/api/mobile/plans/$planId/cancellation-request?userId=$userId');
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data is Map<String, dynamic>) return data;
@@ -4149,7 +4171,7 @@ class ApiService {
     }
     try {
       final response = await _post(
-        '/api/mobile/party-plans/$planId/cancellation-request/respond',
+        '/api/mobile/plans/$planId/cancellation-request/respond',
         {
           'userId': userId,
           'requestId': requestId,
