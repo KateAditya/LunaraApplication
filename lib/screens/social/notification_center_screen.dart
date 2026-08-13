@@ -35,15 +35,11 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
   bool _isLoading = true;
   List<dynamic> _notifications = [];
-  Timer? _countdownTimer;
-  String? _sessionUserId;
 
   @override
   void initState() {
     super.initState();
-    _sessionUserId = ApiService.currentUserId;
     _fetchNotifications();
-    ApiService.authSessionNotifier.addListener(_onAuthSessionChanged);
     ApiService.addSocketListener('notification_created', _onSocketNotification);
     ApiService.addSocketListener(
       'notification_received',
@@ -53,16 +49,10 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       'notification_updated',
       _onSocketNotificationUpdated,
     );
-    // Drive live countdown for Pay Deposit cards
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
-    });
   }
 
   @override
   void dispose() {
-    _countdownTimer?.cancel();
-    ApiService.authSessionNotifier.removeListener(_onAuthSessionChanged);
     ApiService.removeSocketListener(
       'notification_created',
       _onSocketNotification,
@@ -91,13 +81,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 '')
             .toString();
     final String currentUid = ApiService.currentUserId ?? '';
-    // A notification without an explicit recipient is not safe to render on a
-    // shared device. The next server refresh will provide the current user's
-    // authoritative list.
-    if (recipientId.isEmpty ||
-        currentUid.isEmpty ||
-        recipientId != currentUid ||
-        currentUid != _sessionUserId) {
+    if (recipientId.isNotEmpty &&
+        currentUid.isNotEmpty &&
+        recipientId != currentUid) {
       return;
     }
 
@@ -122,20 +108,6 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     final Map<String, dynamic> updatedNotif = data is Map
         ? Map<String, dynamic>.from(data)
         : {};
-    final notification = updatedNotif['notification'] is Map
-        ? Map<String, dynamic>.from(updatedNotif['notification'])
-        : updatedNotif;
-    final recipientId =
-        (notification['recipientUserId'] ??
-                notification['recipientId'] ??
-                notification['userId'] ??
-                '')
-            .toString();
-    if (recipientId.isEmpty ||
-        recipientId != ApiService.currentUserId ||
-        ApiService.currentUserId != _sessionUserId) {
-      return;
-    }
     final id =
         updatedNotif['id']?.toString() ??
         updatedNotif['notification']?['id']?.toString();
@@ -160,10 +132,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       final response = await ApiService.get(
         '/api/mobile/user/notifications?userId=$currentUid',
       );
-      if (response.statusCode == 200 &&
-          mounted &&
-          currentUid == ApiService.currentUserId &&
-          currentUid == _sessionUserId) {
+      if (response.statusCode == 200 && mounted) {
         final bodyData = jsonDecode(response.body);
         if (bodyData != null && bodyData['data'] is List) {
           final fetchedList = List<dynamic>.from(bodyData['data']);
@@ -204,18 +173,6 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     if (mounted) {
       setState(() => _isLoading = false);
-    }
-  }
-
-  void _onAuthSessionChanged() {
-    if (!mounted) return;
-    _sessionUserId = ApiService.currentUserId;
-    setState(() {
-      _notifications = [];
-      _isLoading = _sessionUserId != null;
-    });
-    if (_sessionUserId != null) {
-      _fetchNotifications();
     }
   }
 
@@ -266,7 +223,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     try {
       final response = await ApiService.post(
-        '/api/mobile/user/notifications/mark-all-read',
+        '/api/mobile/notifications/mark-all-read',
         body: {'userId': currentUid},
       );
       if (response.statusCode == 200 && mounted) {
@@ -329,7 +286,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       }
 
       final response = await ApiService.post(
-        '/api/mobile/user/notifications/$notifId/action',
+        '/api/mobile/notifications/$notifId/action',
         body: {'action': action, 'userId': currentUid},
       );
 
@@ -409,7 +366,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     try {
       final response = await ApiService.post(
-        '/api/mobile/user/notifications/clear-all',
+        '/api/mobile/notifications/clear-all',
         body: {'userId': currentUid},
       );
       if (response.statusCode == 200 && mounted) {
@@ -467,14 +424,17 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         final ordId = currentOrderId.isNotEmpty
             ? currentOrderId
             : 'order_mock_direct';
-        final paymentConfirmed = await ApiService.verifyJoinerPayment(
-          requestId,
-          ordId,
-          'pay_direct_${DateTime.now().millisecondsSinceEpoch}',
-          'mock_signature',
+        final confirmRes = await ApiService.post(
+          '/api/mobile/party-plans/requests/$requestId/joiner-pay',
+          body: {
+            'razorpay_order_id': ordId,
+            'razorpay_payment_id':
+                'pay_direct_${DateTime.now().millisecondsSinceEpoch}',
+            'razorpay_signature': 'mock_signature',
+          },
         );
         if (mounted) setState(() => _isProcessingPayment = false);
-        if (paymentConfirmed && mounted) {
+        if (confirmRes.statusCode == 200 && mounted) {
           onSuccess();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -483,9 +443,19 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             ),
           );
         } else if (mounted) {
+          String msg = 'Payment Verification Failed';
+          try {
+            final b = jsonDecode(confirmRes.body);
+            msg =
+                b['message'] ??
+                b['error'] ??
+                'Server status ${confirmRes.statusCode}';
+          } catch (_) {
+            msg = 'Server status ${confirmRes.statusCode}';
+          }
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: const Text('Payment verification failed. Please refresh and try again.'),
+              content: Text('Payment Failed: $msg'),
               backgroundColor: Colors.redAccent,
             ),
           );
@@ -499,18 +469,23 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (
         PaymentSuccessResponse response,
       ) async {
-        final paymentConfirmed = await ApiService.verifyJoinerPayment(
-          requestId,
-          response.orderId ??
-              (currentOrderId.isNotEmpty
-                  ? currentOrderId
-                  : 'order_rzp_${DateTime.now().millisecondsSinceEpoch}'),
-          response.paymentId ?? 'pay_${DateTime.now().millisecondsSinceEpoch}',
-          response.signature ?? 'signature',
+        final confirmRes = await ApiService.post(
+          '/api/mobile/party-plans/requests/$requestId/joiner-pay',
+          body: {
+            'razorpay_order_id':
+                response.orderId ??
+                (currentOrderId.isNotEmpty
+                    ? currentOrderId
+                    : 'order_rzp_${DateTime.now().millisecondsSinceEpoch}'),
+            'razorpay_payment_id':
+                response.paymentId ??
+                'pay_${DateTime.now().millisecondsSinceEpoch}',
+            'razorpay_signature': response.signature ?? 'signature',
+          },
         );
         razorpay.clear();
         if (mounted) setState(() => _isProcessingPayment = false);
-        if (paymentConfirmed && mounted) {
+        if (confirmRes.statusCode == 200 && mounted) {
           onSuccess();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -519,9 +494,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             ),
           );
         } else if (mounted) {
+          String msg = 'Payment Confirmation Failed';
+          try {
+            final b = jsonDecode(confirmRes.body);
+            msg = b['message'] ?? b['error'] ?? msg;
+          } catch (_) {}
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: const Text('Payment confirmation failed. Please refresh and try again.'),
+              content: Text('Payment Failed: $msg'),
               backgroundColor: Colors.redAccent,
             ),
           );
@@ -645,18 +625,22 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         );
 
         debugPrint('[PAYMENT-08] Verifying payment with backend');
-        final paymentConfirmed = await ApiService.verifyHostPayment(
-          cleanPlanId,
-          oId,
-          pId,
-          sig,
+        final confirmRes = await ApiService.post(
+          '/api/mobile/party-plans/$cleanPlanId/host-pay',
+          body: {
+            'razorpay_order_id': oId,
+            'razorpay_payment_id': pId,
+            'razorpay_signature': sig,
+          },
         );
 
-        debugPrint('[PAYMENT-09] Server-side verification completed: $paymentConfirmed');
+        debugPrint(
+          '[PAYMENT-09] Verification response: statusCode=${confirmRes.statusCode}, body=${confirmRes.body}',
+        );
 
         razorpay.clear();
         if (mounted) setState(() => _isProcessingPayment = false);
-        if (paymentConfirmed && mounted) {
+        if (confirmRes.statusCode == 200 && mounted) {
           debugPrint('[PAYMENT-10] Deposit status updated successfully');
           await onSuccess();
           if (mounted) {
@@ -670,9 +654,17 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             );
           }
         } else if (mounted) {
+          String msg = 'Payment Confirmation Failed';
+          try {
+            final b = jsonDecode(confirmRes.body);
+            msg = b['message'] ?? b['error'] ?? msg;
+          } catch (_) {}
+          if (msg == 'Payment Failed') {
+            msg = 'Verification failed (Status ${confirmRes.statusCode})';
+          }
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: const Text('Payment confirmation failed. Please refresh and try again.'),
+              content: Text('Payment Failed: $msg'),
               backgroundColor: Colors.redAccent,
             ),
           );
@@ -2254,9 +2246,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                     paymentDeadlineAt:
                         data['paymentDeadlineAt'] ??
                         data['payment_deadline_at'],
-                    serverTime: data['serverTime'] ?? data['server_time'],
+                    acceptedAt: data['acceptedAt'] ?? data['accepted_at'],
                     amount: depositAmount,
-                    onExpired: _fetchNotifications,
                     onTap: () {
                       _markAsRead(item);
                       if (requestId.isNotEmpty) {
@@ -2276,28 +2267,15 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                               final txId =
                                   res['data']?['transactionId']?.toString() ??
                                   'wallet';
-                              final paymentConfirmed = await ApiService.verifyJoinerPayment(
-                                requestId,
-                                'order_mock_wallet',
-                                'wallet_$txId',
-                                'mock_signature',
+                              final confirmRes = await ApiService.post(
+                                '/api/mobile/party-plans/requests/$requestId/joiner-pay',
+                                body: {
+                                  'razorpay_order_id': 'order_mock_wallet',
+                                  'razorpay_payment_id': 'wallet_$txId',
+                                  'razorpay_signature': 'mock_signature',
+                                },
                               );
-                              if (paymentConfirmed && mounted) {
-                                // Optimistically hide the Pay Deposit button immediately
-                                setState(() {
-                                  if (item is Map) {
-                                    if (item['data'] is Map) {
-                                      (item['data']
-                                              as Map)['joinerPaymentStatus'] =
-                                          'paid';
-                                      (item['data'] as Map)['isPaid'] = true;
-                                      (item['data'] as Map)['primaryAction'] =
-                                          'open chat';
-                                    }
-                                    item['joinerPaymentStatus'] = 'paid';
-                                    item['isPaid'] = true;
-                                  }
-                                });
+                              if (confirmRes.statusCode == 200 && mounted) {
                                 _fetchNotifications();
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
@@ -2316,51 +2294,20 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                             _startRazorpayDirectPayment(
                               requestId: requestId,
                               venueName: venueName,
-                              onSuccess: () {
-                                // Optimistically hide the Pay Deposit button immediately
-                                if (mounted) {
-                                  setState(() {
-                                    if (item is Map) {
-                                      if (item['data'] is Map) {
-                                        (item['data']
-                                                as Map)['joinerPaymentStatus'] =
-                                            'paid';
-                                        (item['data'] as Map)['isPaid'] = true;
-                                        (item['data'] as Map)['primaryAction'] =
-                                            'open chat';
-                                      }
-                                      item['joinerPaymentStatus'] = 'paid';
-                                      item['isPaid'] = true;
-                                    }
-                                  });
-                                }
-                                _fetchNotifications();
-                              },
+                              onSuccess: () => _fetchNotifications(),
                             );
                           },
                           onHybridPayment: (shortfall) async {
-                            final paymentConfirmed = await ApiService.verifyJoinerPayment(
-                              requestId,
-                              'order_mock_hybrid',
-                              'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
-                              'mock_signature',
+                            final confirmRes = await ApiService.post(
+                              '/api/mobile/party-plans/requests/$requestId/joiner-pay',
+                              body: {
+                                'razorpay_order_id': 'order_mock_hybrid',
+                                'razorpay_payment_id':
+                                    'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
+                                'razorpay_signature': 'mock_signature',
+                              },
                             );
-                            if (paymentConfirmed && mounted) {
-                              // Optimistically hide the Pay Deposit button immediately
-                              setState(() {
-                                if (item is Map) {
-                                  if (item['data'] is Map) {
-                                    (item['data']
-                                            as Map)['joinerPaymentStatus'] =
-                                        'paid';
-                                    (item['data'] as Map)['isPaid'] = true;
-                                    (item['data'] as Map)['primaryAction'] =
-                                        'open chat';
-                                  }
-                                  item['joinerPaymentStatus'] = 'paid';
-                                  item['isPaid'] = true;
-                                }
-                              });
+                            if (confirmRes.statusCode == 200 && mounted) {
                               _fetchNotifications();
                             }
                           },
