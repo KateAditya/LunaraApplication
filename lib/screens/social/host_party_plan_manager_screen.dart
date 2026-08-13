@@ -12,10 +12,12 @@ class HostPartyPlanManagerScreen extends StatefulWidget {
   const HostPartyPlanManagerScreen({super.key});
 
   @override
-  State<HostPartyPlanManagerScreen> createState() => _HostPartyPlanManagerScreenState();
+  State<HostPartyPlanManagerScreen> createState() =>
+      _HostPartyPlanManagerScreenState();
 }
 
-class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen> {
+class _HostPartyPlanManagerScreenState
+    extends State<HostPartyPlanManagerScreen> {
   bool _isLoading = true;
   bool _isProcessing = false;
   List<Map<String, dynamic>> _myPlans = [];
@@ -42,7 +44,10 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
 
   void _initSocketListeners() {
     ApiService.addSocketListener('plan_unavailable', _onPlanUnavailable);
-    ApiService.addSocketListener('party_plan_request_accepted', _onSocketUpdate);
+    ApiService.addSocketListener(
+      'party_plan_request_accepted',
+      _onSocketUpdate,
+    );
     ApiService.addSocketListener('party_plan_match_success', _onSocketUpdate);
     ApiService.addSocketListener('party_plan_host_paid', _onSocketUpdate);
     ApiService.addSocketListener('party_plan_joiner_paid', _onSocketUpdate);
@@ -50,8 +55,14 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
 
   void _disposeSocketListeners() {
     ApiService.removeSocketListener('plan_unavailable', _onPlanUnavailable);
-    ApiService.removeSocketListener('party_plan_request_accepted', _onSocketUpdate);
-    ApiService.removeSocketListener('party_plan_match_success', _onSocketUpdate);
+    ApiService.removeSocketListener(
+      'party_plan_request_accepted',
+      _onSocketUpdate,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_match_success',
+      _onSocketUpdate,
+    );
     ApiService.removeSocketListener('party_plan_host_paid', _onSocketUpdate);
     ApiService.removeSocketListener('party_plan_joiner_paid', _onSocketUpdate);
   }
@@ -64,7 +75,9 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
       if (planId != null && requestId != null) {
         setState(() {
           if (_planRequests.containsKey(planId)) {
-            _planRequests[planId]!.removeWhere((r) => r['id']?.toString() == requestId);
+            _planRequests[planId]!.removeWhere(
+              (r) => r['id']?.toString() == requestId,
+            );
           }
         });
       }
@@ -139,9 +152,13 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
               !currentOrderId.startsWith('mock_') &&
               !currentOrderId.startsWith('pay_direct_') &&
               currentOrderId.length < 10)) {
-        debugPrint('[HOST_ORDER_CREATE] Creating Razorpay order via initiateHostPayment');
+        debugPrint(
+          '[HOST_ORDER_CREATE] Creating Razorpay order via initiateHostPayment',
+        );
         final initRes = await ApiService.initiateHostPayment(cleanPlanId);
-        debugPrint('[HOST_ORDER_RESPONSE] Order API response received: $initRes');
+        debugPrint(
+          '[HOST_ORDER_RESPONSE] Order API response received: $initRes',
+        );
         if (initRes != null && initRes['success'] == true) {
           currentOrderId = (initRes['razorpayOrderId'] ?? '').toString();
           if (initRes['razorpayKeyId'] != null &&
@@ -158,7 +175,9 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
       late Razorpay razorpay;
       razorpay = Razorpay();
 
-      razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (PaymentSuccessResponse response) async {
+      razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (
+        PaymentSuccessResponse response,
+      ) async {
         final pId = response.paymentId ?? '';
         final oId = response.orderId ?? currentOrderId;
         final sig = response.signature ?? '';
@@ -202,7 +221,8 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
             final b = jsonDecode(confirmRes.body);
             msg = b['message'] ?? b['error'] ?? msg;
           } catch (_) {}
-          if (msg == 'Payment Failed') msg = 'Verification failed (Status ${confirmRes.statusCode})';
+          if (msg == 'Payment Failed')
+            msg = 'Verification failed (Status ${confirmRes.statusCode})';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Payment Failed: $msg'),
@@ -212,13 +232,16 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
         }
       });
 
-      razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse response) {
+      razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (
+        PaymentFailureResponse response,
+      ) {
         debugPrint(
           '[PAYMENT-07] Razorpay error callback: code=${response.code}, message=${response.message}',
         );
         razorpay.clear();
         if (mounted) {
-          String errText = response.message ?? 'Payment process cancelled or failed';
+          String errText =
+              response.message ?? 'Payment process cancelled or failed';
           if (errText.isEmpty || errText == 'Payment Failed') {
             if (response.code == Razorpay.PAYMENT_CANCELLED) {
               errText = 'Payment cancelled by user';
@@ -235,7 +258,9 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
         }
       });
 
-      razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (ExternalWalletResponse response) {
+      razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (
+        ExternalWalletResponse response,
+      ) {
         razorpay.clear();
       });
 
@@ -266,18 +291,20 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
-    
+
     try {
       final plans = await ApiService.fetchMyPartyPlans();
-      final activePlans = plans.where((p) => p['status'] != 'cancelled').toList();
-      
+      final activePlans = plans
+          .where((p) => p['status'] != 'cancelled')
+          .toList();
+
       final reqsMap = <String, List<Map<String, dynamic>>>{};
       for (final plan in activePlans) {
         final planId = plan['id'];
         final reqs = await ApiService.fetchPartyPlanRequests(planId);
         reqsMap[planId] = reqs;
       }
-      
+
       if (mounted) {
         setState(() {
           _myPlans = activePlans;
@@ -299,7 +326,11 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
       if (!mounted) return;
       if (result != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Request Accepted! Complete your deposit to lock match.')),
+          const SnackBar(
+            content: Text(
+              'Request Accepted! Complete your deposit to lock match.',
+            ),
+          ),
         );
         await _loadData();
         final hostOrderId = result['hostRazorpayOrderId']?.toString();
@@ -320,7 +351,10 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
         }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to accept request.'), backgroundColor: Colors.red),
+          const SnackBar(
+            content: Text('Failed to accept request.'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
@@ -343,7 +377,10 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
         await _loadData();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to cancel plan.'), backgroundColor: Colors.red),
+          const SnackBar(
+            content: Text('Failed to cancel plan.'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
@@ -359,9 +396,14 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Revoke acceptance?'),
-        content: const Text('The participant has not completed payment. Revoking closes their payment window and reopens eligible requests.'),
+        content: const Text(
+          'The participant has not completed payment. Revoking closes their payment window and reopens eligible requests.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('KEEP ACCEPTANCE')),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('KEEP ACCEPTANCE'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
             style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
@@ -375,10 +417,16 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
     final success = await ApiService.revokePartyPlanAcceptance(reqId);
     if (!mounted) return;
     setState(() => _isProcessing = false);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(success ? 'Acceptance revoked. Payment window closed.' : 'Unable to revoke acceptance. Refresh and try again.'),
-      backgroundColor: success ? Colors.green : Colors.red,
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          success
+              ? 'Acceptance revoked. Payment window closed.'
+              : 'Unable to revoke acceptance. Refresh and try again.',
+        ),
+        backgroundColor: success ? Colors.green : Colors.red,
+      ),
+    );
     if (success) await _loadData();
   }
 
@@ -387,29 +435,36 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: const Text('Manage My Plans', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+        title: const Text(
+          'Manage My Plans',
+          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+        ),
         backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
         iconTheme: const IconThemeData(color: Colors.black),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: LunaraTheme.electricViolet))
+          ? const Center(
+              child: CircularProgressIndicator(
+                color: LunaraTheme.electricViolet,
+              ),
+            )
           : _myPlans.isEmpty
-              ? _buildEmptyState()
-              : RefreshIndicator(
-                  onRefresh: _loadData,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _myPlans.length,
-                    itemBuilder: (context, index) {
-                      final plan = _myPlans[index];
-                      final planId = plan['id'];
-                      final requests = _planRequests[planId] ?? [];
-                      return _buildPlanCard(plan, requests);
-                    },
-                  ),
-                ),
+          ? _buildEmptyState()
+          : RefreshIndicator(
+              onRefresh: _loadData,
+              child: ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: _myPlans.length,
+                itemBuilder: (context, index) {
+                  final plan = _myPlans[index];
+                  final planId = plan['id'];
+                  final requests = _planRequests[planId] ?? [];
+                  return _buildPlanCard(plan, requests);
+                },
+              ),
+            ),
     );
   }
 
@@ -433,21 +488,35 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
     );
   }
 
-  Widget _buildPlanCard(Map<String, dynamic> plan, List<Map<String, dynamic>> requests) {
+  Widget _buildPlanCard(
+    Map<String, dynamic> plan,
+    List<Map<String, dynamic>> requests,
+  ) {
     final venue = plan['venue'] ?? {};
     final venueName = venue['name'] ?? 'Unknown Venue';
     final message = plan['message'] ?? 'Let\'s party!';
-    final planDateTime = plan['planDateTime'] != null ? DateTime.parse(plan['planDateTime']).toLocal() : DateTime.now();
+    final planDateTime = plan['planDateTime'] != null
+        ? DateTime.parse(plan['planDateTime']).toLocal()
+        : DateTime.now();
     final isLive = plan['isLive'] ?? false;
-    final paymentStatus = (plan['hostPaymentStatus'] ?? 'pending').toString().toLowerCase();
-    final bool isHostPaid = paymentStatus == 'paid' || paymentStatus == 'refunded' || paymentStatus == 'completed' || paymentStatus == 'confirmed';
+    final paymentStatus = (plan['hostPaymentStatus'] ?? 'pending')
+        .toString()
+        .toLowerCase();
+    final bool isHostPaid =
+        paymentStatus == 'paid' ||
+        paymentStatus == 'refunded' ||
+        paymentStatus == 'completed' ||
+        paymentStatus == 'confirmed';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 24),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.1), width: 1.2),
+        border: Border.all(
+          color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+          width: 1.2,
+        ),
         boxShadow: [
           BoxShadow(
             color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
@@ -471,15 +540,23 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                     Expanded(
                       child: Text(
                         message,
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
-                        color: isLive ? Colors.green.withValues(alpha: 0.1) : Colors.orange.withValues(alpha: 0.1),
+                        color: isLive
+                            ? Colors.green.withValues(alpha: 0.1)
+                            : Colors.orange.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
@@ -496,17 +573,31 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    Icon(Icons.location_on_rounded, size: 14, color: Colors.grey[600]),
+                    Icon(
+                      Icons.location_on_rounded,
+                      size: 14,
+                      color: Colors.grey[600],
+                    ),
                     const SizedBox(width: 4),
-                    Text(venueName, style: TextStyle(color: Colors.grey[800], fontSize: 13)),
+                    Text(
+                      venueName,
+                      style: TextStyle(color: Colors.grey[800], fontSize: 13),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    Icon(Icons.calendar_today_rounded, size: 14, color: Colors.grey[600]),
+                    Icon(
+                      Icons.calendar_today_rounded,
+                      size: 14,
+                      color: Colors.grey[600],
+                    ),
                     const SizedBox(width: 4),
-                    Text(DateFormat('MMM dd, yyyy • hh:mm a').format(planDateTime), style: TextStyle(color: Colors.grey[800], fontSize: 13)),
+                    Text(
+                      DateFormat('MMM dd, yyyy • hh:mm a').format(planDateTime),
+                      style: TextStyle(color: Colors.grey[800], fontSize: 13),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -523,19 +614,33 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                             color: isHostPaid ? Colors.green : Colors.orange,
                           ),
                         ),
-                        if (!isHostPaid && requests.any((r) => r['status'] == 'payment_pending')) ...[
+                        if (!isHostPaid &&
+                            requests.any(
+                              (r) => r['status'] == 'payment_pending',
+                            )) ...[
                           const SizedBox(width: 8),
                           ElevatedButton(
                             onPressed: () => _onHostPayDeposit(plan),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.orange,
                               foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
                               minimumSize: const Size(0, 26),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(6),
+                              ),
                               elevation: 0,
                             ),
-                            child: const Text('PAY ₹99', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
+                            child: const Text(
+                              'PAY ₹99',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
                         ],
                       ],
@@ -548,14 +653,20 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                         minimumSize: const Size(50, 30),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                      child: const Text('CANCEL PLAN', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      child: const Text(
+                        'CANCEL PLAN',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ],
                 ),
               ],
             ),
           ),
-          
+
           // Requests Section
           if (requests.isNotEmpty) ...[
             Container(color: Colors.grey[200], height: 1),
@@ -566,31 +677,55 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                 children: [
                   Text(
                     'REQUESTS (${requests.length})',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey[600], letterSpacing: 1),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[600],
+                      letterSpacing: 1,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   ...requests.map<Widget>((req) {
-                    final hasActiveReservation = requests.any((r) =>
-                      r['status']?.toString().toLowerCase() == 'payment_pending' ||
-                      r['status']?.toString().toLowerCase() == 'accepted');
+                    final hasActiveReservation = requests.any(
+                      (r) =>
+                          r['status']?.toString().toLowerCase() ==
+                              'payment_pending' ||
+                          r['status']?.toString().toLowerCase() == 'accepted',
+                    );
                     final reqUser = req['requester'] ?? {};
-                    final name = '${reqUser['firstName'] ?? ''} ${reqUser['lastName'] ?? ''}'.trim();
+                    final name =
+                        '${reqUser['firstName'] ?? ''} ${reqUser['lastName'] ?? ''}'
+                            .trim();
                     final status = req['status'] ?? 'pending';
                     final isSelfPay = plan['paymentType'] == 'self_pay';
                     final hostPaid = isHostPaid;
-                    final joinerPaid = req['joinerPaymentStatus']?.toString().toLowerCase() == 'paid' || req['joinerPaymentStatus']?.toString().toLowerCase() == 'refunded' || isSelfPay;
-                    final timerText = _getTimeRemaining(req['paymentTimeoutAt']);
-                    
+                    final joinerPaid =
+                        req['joinerPaymentStatus']?.toString().toLowerCase() ==
+                            'paid' ||
+                        req['joinerPaymentStatus']?.toString().toLowerCase() ==
+                            'refunded' ||
+                        isSelfPay;
+                    final timerText = _getTimeRemaining(
+                      req['paymentTimeoutAt'],
+                    );
+
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.1), width: 1.2),
+                        border: Border.all(
+                          color: LunaraTheme.electricViolet.withValues(
+                            alpha: 0.1,
+                          ),
+                          width: 1.2,
+                        ),
                         boxShadow: [
                           BoxShadow(
-                            color: LunaraTheme.electricViolet.withValues(alpha: 0.05),
+                            color: LunaraTheme.electricViolet.withValues(
+                              alpha: 0.05,
+                            ),
                             blurRadius: 10,
                             offset: const Offset(0, 4),
                           ),
@@ -603,7 +738,10 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                             backgroundColor: LunaraTheme.electricViolet,
                             child: Text(
                               name.isNotEmpty ? name[0].toUpperCase() : 'U',
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -611,21 +749,65 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(name.isNotEmpty ? name : 'Lunara User', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                Text(
+                                  name.isNotEmpty ? name : 'Lunara User',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
                                 const SizedBox(height: 4),
-                                if (status.toString().toLowerCase() == 'pending') ...[
-                                   if (req['isInvite'] == true)
-                                     const Text('Invited (Awaiting User Acceptance)', style: TextStyle(color: Colors.blue, fontSize: 12, fontWeight: FontWeight.w600))
-                                   else
-                                     const Text('Wants to join', style: TextStyle(color: Colors.orange, fontSize: 12, fontWeight: FontWeight.w600))
-                                 ]
-                                else if (status.toString().toLowerCase() == 'payment_pending' || status.toString().toLowerCase() == 'accepted') ...[
+                                if (status.toString().toLowerCase() ==
+                                    'pending') ...[
+                                  if (req['isInvite'] == true)
+                                    const Text(
+                                      'Invited (Awaiting User Acceptance)',
+                                      style: TextStyle(
+                                        color: Colors.blue,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    )
+                                  else
+                                    const Text(
+                                      'Wants to join',
+                                      style: TextStyle(
+                                        color: Colors.orange,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                ] else if (status.toString().toLowerCase() ==
+                                        'payment_pending' ||
+                                    status.toString().toLowerCase() ==
+                                        'accepted') ...[
                                   if (!hostPaid)
-                                    const Text('Please pay your ₹99 deposit to lock match.', style: TextStyle(color: Colors.red, fontSize: 11, fontWeight: FontWeight.bold))
+                                    const Text(
+                                      'Please pay your ₹99 deposit to lock match.',
+                                      style: TextStyle(
+                                        color: Colors.red,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    )
                                   else if (hostPaid && !joinerPaid)
-                                    Text('Waiting for joiner payment... ($timerText)', style: TextStyle(color: Colors.blue, fontSize: 11, fontWeight: FontWeight.bold))
+                                    Text(
+                                      'Waiting for joiner payment... ($timerText)',
+                                      style: TextStyle(
+                                        color: Colors.blue,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    )
                                   else if (hostPaid && joinerPaid) ...[
-                                    const Text('Match Successful! Booking Confirmed 🎉', style: TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.bold)),
+                                    const Text(
+                                      'Match Successful! Booking Confirmed 🎉',
+                                      style: TextStyle(
+                                        color: Colors.green,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                                     const SizedBox(height: 6),
                                     Row(
                                       children: [
@@ -635,25 +817,46 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                                               Navigator.push(
                                                 context,
                                                 MaterialPageRoute(
-                                                  builder: (_) => PartyPlanTicketScreen(
-                                                    request: req,
-                                                    plan: plan,
-                                                    isHost: true,
-                                                  ),
+                                                  builder: (_) =>
+                                                      PartyPlanTicketScreen(
+                                                        request: req,
+                                                        plan: plan,
+                                                        isHost: true,
+                                                      ),
                                                 ),
                                               );
                                             },
-                                            icon: const Icon(Icons.qr_code_rounded, size: 14, color: Colors.white),
-                                            label: const Text('VIEW TICKET', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
+                                            icon: const Icon(
+                                              Icons.qr_code_rounded,
+                                              size: 14,
+                                              color: Colors.white,
+                                            ),
+                                            label: const Text(
+                                              'VIEW TICKET',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.white,
+                                              ),
+                                            ),
                                             style: ElevatedButton.styleFrom(
-                                              backgroundColor: LunaraTheme.electricViolet,
-                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                              backgroundColor:
+                                                  LunaraTheme.electricViolet,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                    vertical: 4,
+                                                  ),
                                               minimumSize: const Size(0, 32),
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
                                             ),
                                           ),
                                         ),
-                                        if (reqUser != null && reqUser.isNotEmpty) ...[
+                                        if (reqUser != null &&
+                                            reqUser.isNotEmpty) ...[
                                           const SizedBox(width: 8),
                                           Expanded(
                                             child: ElevatedButton.icon(
@@ -661,70 +864,167 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
                                                 Navigator.push(
                                                   context,
                                                   MaterialPageRoute(
-                                                    builder: (_) => ChatScreen(user: {
-                                                      ...reqUser,
-                                                      'contextType': 'party_plan',
-                                                      'planId': plan['id']?.toString(),
-                                                    }),
+                                                    builder: (_) => ChatScreen(
+                                                      user: {
+                                                        ...reqUser,
+                                                        'contextType':
+                                                            'party_plan',
+                                                        'planId': plan['id']
+                                                            ?.toString(),
+                                                      },
+                                                    ),
                                                   ),
                                                 );
                                               },
-                                              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 14, color: Colors.white),
-                                              label: const Text('CHAT', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
+                                              icon: const Icon(
+                                                Icons
+                                                    .chat_bubble_outline_rounded,
+                                                size: 14,
+                                                color: Colors.white,
+                                              ),
+                                              label: const Text(
+                                                'CHAT',
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
                                               style: ElevatedButton.styleFrom(
-                                                backgroundColor: LunaraTheme.hotPink,
-                                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                                backgroundColor:
+                                                    LunaraTheme.hotPink,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 12,
+                                                      vertical: 4,
+                                                    ),
                                                 minimumSize: const Size(0, 32),
-                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                ),
                                               ),
                                             ),
                                           ),
                                         ],
                                       ],
                                     ),
-                                  ]
-                                ]
-                                else if (status.toString().toLowerCase() == 'payment_failed')
-                                  const Text('Payment timeout or failed', style: TextStyle(color: Colors.grey, fontSize: 11))
-                                else if (status.toString().toLowerCase() == 'rejected')
-                                  const Text('Rejected', style: TextStyle(color: Colors.grey, fontSize: 11))
+                                  ],
+                                ] else if (status.toString().toLowerCase() ==
+                                    'payment_failed')
+                                  const Text(
+                                    'Payment timeout or failed',
+                                    style: TextStyle(
+                                      color: Colors.grey,
+                                      fontSize: 11,
+                                    ),
+                                  )
+                                else if (status.toString().toLowerCase() ==
+                                    'rejected')
+                                  const Text(
+                                    'Rejected',
+                                    style: TextStyle(
+                                      color: Colors.grey,
+                                      fontSize: 11,
+                                    ),
+                                  ),
                               ],
                             ),
                           ),
-                          if (status.toString().toLowerCase() == 'pending' && req['isInvite'] != true)
+                          if (status.toString().toLowerCase() == 'pending' &&
+                              req['isInvite'] != true)
                             ElevatedButton(
-                              onPressed: (_isProcessing || hasActiveReservation) ? null : () => _onAcceptRequest(req['id'], plan),
+                              onPressed: (_isProcessing || hasActiveReservation)
+                                  ? null
+                                  : () => _onAcceptRequest(req['id'], plan),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: hasActiveReservation ? Colors.grey : LunaraTheme.electricViolet,
+                                backgroundColor: hasActiveReservation
+                                    ? Colors.grey
+                                    : LunaraTheme.electricViolet,
                                 foregroundColor: Colors.white,
-                                disabledBackgroundColor: Colors.grey.withValues(alpha: 0.3),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                disabledBackgroundColor: Colors.grey.withValues(
+                                  alpha: 0.3,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
                                 minimumSize: const Size(0, 36),
                               ),
                               child: _isProcessing
-                                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                  : Text(hasActiveReservation ? 'LOCKED (30M)' : 'ACCEPT', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                  ? const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : Text(
+                                      hasActiveReservation
+                                          ? 'LOCKED (30M)'
+                                          : 'ACCEPT',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                             ),
-                          if ((status.toString().toLowerCase() == 'payment_pending' || status.toString().toLowerCase() == 'accepted') &&
+                          if ((status.toString().toLowerCase() ==
+                                      'payment_pending' ||
+                                  status.toString().toLowerCase() ==
+                                      'accepted') &&
                               req['joinerRazorpayPaymentId'] == null)
                             TextButton(
-                              onPressed: _isProcessing ? null : () => _onRevokeAcceptance(req['id'].toString()),
-                              style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
-                              child: const Text('REVOKE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                              onPressed: _isProcessing
+                                  ? null
+                                  : () => _onRevokeAcceptance(
+                                      req['id'].toString(),
+                                    ),
+                              style: TextButton.styleFrom(
+                                foregroundColor: Colors.redAccent,
+                              ),
+                              child: const Text(
+                                'REVOKE',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ),
-                          if ((status.toString().toLowerCase() == 'payment_pending' || status.toString().toLowerCase() == 'accepted') && !hostPaid)
+                          if ((status.toString().toLowerCase() ==
+                                      'payment_pending' ||
+                                  status.toString().toLowerCase() ==
+                                      'accepted') &&
+                              !hostPaid)
                             ElevatedButton(
-                              onPressed: _isProcessing ? null : () => _onHostPayDeposit(plan),
+                              onPressed: _isProcessing
+                                  ? null
+                                  : () => _onHostPayDeposit(plan),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green,
                                 foregroundColor: Colors.white,
-                                disabledBackgroundColor: Colors.green.withValues(alpha: 0.4),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                disabledBackgroundColor: Colors.green
+                                    .withValues(alpha: 0.4),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
                                 minimumSize: const Size(0, 36),
                               ),
-                              child: const Text('PAY ₹99', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                              child: const Text(
+                                'PAY ₹99',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ),
                         ],
                       ),
@@ -739,4 +1039,3 @@ class _HostPartyPlanManagerScreenState extends State<HostPartyPlanManagerScreen>
     );
   }
 }
-

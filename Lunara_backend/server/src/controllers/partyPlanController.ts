@@ -158,7 +158,7 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
                 };
                 io.to(`user_${plan.userId}`).emit('party_plan_ticket_generated', ticketData);
                 io.to(`user_${request.requesterId}`).emit('party_plan_ticket_generated', ticketData);
-            } catch (_) {}
+            } catch (_) { }
             return;
         }
 
@@ -297,11 +297,13 @@ async function rejectAndNotifyStaleRequests(plan: PartyPlan, acceptedRequestId: 
             where: {
                 planId: plan.id,
                 id: { [Op.ne]: acceptedRequestId },
-                status: { [Op.in]: [
-                    PartyPlanRequestStatus.PENDING,
-                    PartyPlanRequestStatus.WAITING,
-                    PartyPlanRequestStatus.PAYMENT_PENDING,
-                ]},
+                status: {
+                    [Op.in]: [
+                        PartyPlanRequestStatus.PENDING,
+                        PartyPlanRequestStatus.WAITING,
+                        PartyPlanRequestStatus.PAYMENT_PENDING,
+                    ]
+                },
             },
             transaction
         });
@@ -749,7 +751,7 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                                 logger.warn('Razorpay create joiner order failed for invite, using mock. Error: ' + err.message);
                             }
                         }
-                        
+
                         await PartyPlanRequest.create({
                             planId: plan.id,
                             requesterId: invitedUserId,
@@ -914,9 +916,9 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
         }
 
         const isMockPayment = razorpay_signature === 'mock_signature' ||
-                              (razorpay_order_id && (razorpay_order_id as string).startsWith('mock_')) ||
-                              (razorpay_order_id && (razorpay_order_id as string).startsWith('order_mock_')) ||
-                              (razorpay_order_id && (razorpay_order_id as string).startsWith('pay_direct_'));
+            (razorpay_order_id && (razorpay_order_id as string).startsWith('mock_')) ||
+            (razorpay_order_id && (razorpay_order_id as string).startsWith('order_mock_')) ||
+            (razorpay_order_id && (razorpay_order_id as string).startsWith('pay_direct_'));
 
         if (!isMockPayment && plan.hostRazorpayOrderId !== razorpay_order_id) {
             res.status(400).json({ success: false, message: 'Invalid order ID' });
@@ -1432,7 +1434,7 @@ export const updatePartyPlanStatus = async (req: Request, res: Response): Promis
             try {
                 const { io } = require('../server');
                 io.emit('party_plan_deleted', { planId: plan.id });
-            } catch (_) {}
+            } catch (_) { }
         }
 
         res.json({
@@ -2686,7 +2688,7 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
                         const { io } = require('../server');
                         const venueName = (plan as any)?.venue?.name || 'Club';
                         const joinerName = `${joiner.firstName} ${joiner.lastName}`;
-                        
+
                         io.to(`user_${plan.userId}`).emit('party_plan_match_success', { planId: plan.id, requestId: request.id });
                         io.to(`user_${request.requesterId}`).emit('party_plan_match_success', { planId: plan.id, requestId: request.id });
                         io.emit('party_plan_deleted', { planId: plan.id });
@@ -2750,7 +2752,7 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
                         const { io } = require('../server');
                         const venueName = (plan as any)?.venue?.name || 'Club';
                         const joinerName = `${joiner.firstName} ${joiner.lastName}`;
-                        
+
                         io.emit('party_plan_deleted', { planId: plan.id });
 
                         await NotificationService.dispatch({
@@ -2795,7 +2797,7 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
                     const { io } = require('../server');
                     const venueName = (plan as any)?.venue?.name || 'Club';
                     const joinerName = `${joiner.firstName} ${joiner.lastName}`;
-                    
+
                     io.to(`user_${request.requesterId}`).emit('party_plan_request_accepted', {
                         requestId: request.id,
                         planId: plan.id,
@@ -2810,19 +2812,19 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
 
                     io.emit('party_plan_deleted', { planId: plan.id });
 
-                        await NotificationService.dispatch({
-                            recipientUserId: plan.userId,
-                            actorUserId: joiner.id,
-                            eventType: 'invite_accepted',
-                            category: 'requests',
-                            entityType: 'party_plan',
-                            entityId: plan.id,
-                            title: 'Invite Accepted',
-                            body: `${joinerName} accepted your private invite to the Party Plan at ${venueName}. Awaiting participant payment.`,
-                            metadata: { planId: plan.id, requestId: request.id },
-                            idempotencyKey: `invite_accepted_awaiting_joiner_${request.id}`,
-                        });
-                    }
+                    await NotificationService.dispatch({
+                        recipientUserId: plan.userId,
+                        actorUserId: joiner.id,
+                        eventType: 'invite_accepted',
+                        category: 'requests',
+                        entityType: 'party_plan',
+                        entityId: plan.id,
+                        title: 'Invite Accepted',
+                        body: `${joinerName} accepted your private invite to the Party Plan at ${venueName}. Awaiting participant payment.`,
+                        metadata: { planId: plan.id, requestId: request.id },
+                        idempotencyKey: `invite_accepted_awaiting_joiner_${request.id}`,
+                    });
+                }
             } catch (socketErr) {
                 logger.warn('Socket emission failed for acceptPartyPlanInvite:', socketErr);
             }
@@ -2842,7 +2844,7 @@ async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction
     const { WalletTransactionType } = await import('../models/WalletTransaction');
 
     const wasHostPaid = plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID;
-    
+
     // 1. Update plan status
     await plan.update({
         status: PartyPlanStatus.CANCELLED,
@@ -2931,7 +2933,7 @@ async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction
                 read: false,
                 type: 'plan_unavailable',
             });
-        } catch (_) {}
+        } catch (_) { }
 
         setImmediate(async () => {
             try {
@@ -2947,7 +2949,7 @@ async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction
                         },
                     });
                 }
-            } catch (_) {}
+            } catch (_) { }
         });
     }
 
@@ -3408,9 +3410,9 @@ export const initiateHostPayment = async (req: Request, res: Response): Promise<
         };
 
         let order: any;
-        const hasRazorpayKeys = process.env.RAZORPAY_KEY_ID && 
-                                process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id' && 
-                                process.env.RAZORPAY_KEY_ID !== 'rzp_test_123';
+        const hasRazorpayKeys = process.env.RAZORPAY_KEY_ID &&
+            process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id' &&
+            process.env.RAZORPAY_KEY_ID !== 'rzp_test_123';
         if (hasRazorpayKeys) {
             try {
                 order = await razorpay.orders.create(options);
@@ -3452,7 +3454,7 @@ export const initiateJoinerPayment = async (req: Request, res: Response): Promis
             res.status(404).json({ success: false, message: 'Request not found' });
             return;
         }
-        
+
         const plan = (request as any).plan;
 
         if (request.joinerPaymentStatus === PartyPlanJoinerPaymentStatus.PAID) {
@@ -3473,9 +3475,9 @@ export const initiateJoinerPayment = async (req: Request, res: Response): Promis
         };
 
         let order: any;
-        const hasRazorpayKeys = process.env.RAZORPAY_KEY_ID && 
-                                process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id' && 
-                                process.env.RAZORPAY_KEY_ID !== 'rzp_test_123';
+        const hasRazorpayKeys = process.env.RAZORPAY_KEY_ID &&
+            process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id' &&
+            process.env.RAZORPAY_KEY_ID !== 'rzp_test_123';
         if (hasRazorpayKeys) {
             try {
                 order = await razorpay.orders.create(options);
@@ -3632,10 +3634,10 @@ export async function enrichPartyPlanNotificationCard(planId: string, recipientU
             include: [
                 { model: User, as: 'creator', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] },
                 { model: Venue, as: 'venue', attributes: ['id', 'name', 'area'] },
-                { 
-                    model: PartyPlanRequest, 
-                    as: 'requests', 
-                    include: [{ model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] }] 
+                {
+                    model: PartyPlanRequest,
+                    as: 'requests',
+                    include: [{ model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] }]
                 }
             ]
         });
@@ -3644,7 +3646,7 @@ export async function enrichPartyPlanNotificationCard(planId: string, recipientU
 
         const p = plan as any;
         const isHost = plan.userId === recipientUserId;
-        const matchedRequest = plan.matchedRequestId 
+        const matchedRequest = plan.matchedRequestId
             ? p.requests?.find((r: any) => r.id === plan.matchedRequestId)
             : p.requests?.find((r: any) => r.status === 'accepted' || r.status === 'payment_pending');
         const viewerRequest = isHost
@@ -3661,7 +3663,7 @@ export async function enrichPartyPlanNotificationCard(planId: string, recipientU
         const partyImage = p.creator?.profileImageUrl || '';
         const planTitle = plan.message || 'Party Night Out';
         const venueArea = p.venue?.area || 'Pune';
-        const distance = '1.2 km'; 
+        const distance = '1.2 km';
         const dateStr = plan.planDateTime.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
         const timeStr = plan.planDateTime.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
 
