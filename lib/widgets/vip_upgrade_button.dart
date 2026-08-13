@@ -18,7 +18,8 @@ class VIPUpgradeButton extends StatelessWidget {
   Color _getTierColor(String? tierName) {
     final effectiveTier = (tierName != null && tierName.isNotEmpty)
         ? tierName.toUpperCase()
-        : (ApiService.cachedCurrentUser?.subscriptionTier.toUpperCase() ?? 'FREE');
+        : (ApiService.cachedCurrentUser?.subscriptionTier.toUpperCase() ??
+              'FREE');
 
     switch (effectiveTier) {
       case 'ELITE':
@@ -44,9 +45,7 @@ class VIPUpgradeButton extends StatelessWidget {
       onTap: () async {
         await Navigator.push(
           context,
-          MaterialPageRoute(
-            builder: (_) => const VIPMembershipScreen(),
-          ),
+          MaterialPageRoute(builder: (_) => const VIPMembershipScreen()),
         );
         if (onUpdated != null) {
           onUpdated!();
@@ -61,14 +60,10 @@ class VIPUpgradeButton extends StatelessWidget {
           width: iconSize,
           height: iconSize,
           color: color,
-          errorBuilder: (_, __, ___) => Icon(
-            Icons.bolt,
-            color: color,
-            size: iconSize,
-          ),
+          errorBuilder: (_, _, _) =>
+              Icon(Icons.bolt, color: color, size: iconSize),
         ),
       ),
     );
   }
 }
-
