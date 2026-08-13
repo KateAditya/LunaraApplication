@@ -2893,12 +2893,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         );
         if (res != null && res['success'] == true) {
           final transactionId = res['data']?['transactionId']?.toString() ?? 'wallet';
-          final confirmRes = await ApiService.post('/api/mobile/party-plans/$cleanPlanId/host-pay', body: {
-            'razorpay_order_id': 'order_mock_wallet',
-            'razorpay_payment_id': 'wallet_$transactionId',
-            'razorpay_signature': 'mock_signature',
-          });
-          if (confirmRes.statusCode == 200 && mounted) {
+          final paymentConfirmed = await ApiService.verifyHostPayment(
+            cleanPlanId,
+            'order_mock_wallet',
+            'wallet_$transactionId',
+            'mock_signature',
+          );
+          if (paymentConfirmed && mounted) {
             await onSuccess();
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -2959,15 +2960,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     // Intercept mock orders or test keys to avoid Razorpay SDK code 0 error on devices
     if (currentOrderId.startsWith('order_mock_') || razorpayKey == 'rzp_test_123' || currentOrderId.startsWith('mock_')) {
-      final confirmRes = await ApiService.post(
-        '/api/mobile/party-plans/$cleanPlanId/host-pay',
-        body: {
-          'razorpay_order_id': currentOrderId,
-          'razorpay_payment_id': 'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
-          'razorpay_signature': 'mock_signature',
-        },
+      final paymentConfirmed = await ApiService.verifyHostPayment(
+        cleanPlanId,
+        currentOrderId,
+        'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
+        'mock_signature',
       );
-      if (confirmRes.statusCode == 200 && mounted) {
+      if (paymentConfirmed && mounted) {
         await onSuccess();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -2987,17 +2986,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final oId = response.orderId ?? currentOrderId;
       final sig = response.signature ?? 'mock_signature';
 
-      final confirmRes = await ApiService.post(
-        '/api/mobile/party-plans/$cleanPlanId/host-pay',
-        body: {
-          'razorpay_order_id': oId,
-          'razorpay_payment_id': pId,
-          'razorpay_signature': sig,
-        },
+      final paymentConfirmed = await ApiService.verifyHostPayment(
+        cleanPlanId,
+        oId,
+        pId,
+        sig,
       );
 
       razorpay.clear();
-      if (confirmRes.statusCode == 200 && mounted) {
+      if (paymentConfirmed && mounted) {
         await onSuccess();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -3006,6 +3003,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ),
         );
       } else if (mounted) {
+        // Never treat a client-side/mock identifier as confirmation. The
+        // backend verification result is the only payment success signal.
+        if (!paymentConfirmed) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Payment verification failed. Please refresh and try again.'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+          return;
+        }
         if (oId.startsWith('order_mock_') || pId.startsWith('pay_mock_')) {
           await onSuccess();
           ScaffoldMessenger.of(context).showSnackBar(
@@ -3015,11 +3023,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             ),
           );
         } else {
-          String msg = 'Payment Verification Failed';
-          try {
-            final b = jsonDecode(confirmRes.body);
-            msg = b['message'] ?? b['error'] ?? msg;
-          } catch (_) {}
+          const msg = 'Payment verification failed. Please refresh and try again.';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Payment Failed: $msg'), backgroundColor: Colors.redAccent),
           );
@@ -3032,15 +3036,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       debugPrint('[PAYMENT-07] Razorpay error callback: code=${response.code}, message=${response.message}');
       if (mounted) {
         if ((response.code == 0 || response.code == 2) && (razorpayKey == 'rzp_test_123' || currentOrderId.startsWith('order_mock_'))) {
-          final mockConfirm = await ApiService.post(
-            '/api/mobile/party-plans/$cleanPlanId/host-pay',
-            body: {
-              'razorpay_order_id': currentOrderId,
-              'razorpay_payment_id': 'pay_test_${DateTime.now().millisecondsSinceEpoch}',
-              'razorpay_signature': 'test_signature',
-            },
+          final mockConfirmed = await ApiService.verifyHostPayment(
+            cleanPlanId,
+            currentOrderId,
+            'pay_test_${DateTime.now().millisecondsSinceEpoch}',
+            'test_signature',
           );
-          if (mockConfirm.statusCode == 200 && mounted) {
+          if (mockConfirmed && mounted) {
             await onSuccess();
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(

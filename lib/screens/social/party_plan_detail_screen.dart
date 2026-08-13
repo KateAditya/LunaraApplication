@@ -315,6 +315,12 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     final status = widget.plan['status']?.toString();
     final isCancelled = status == 'cancelled';
 
+    // Before host acceptance, this user owns a request rather than a booking.
+    // Its only cancellation action is the request-level action in the bottom CTA.
+    if (_alreadyRequested && _requestStatus == 'pending' && !_isInvitedUser) {
+      return const SizedBox.shrink();
+    }
+
     if (_isExpired) {
       return Container(
         margin: const EdgeInsets.only(top: 16),
@@ -1151,7 +1157,12 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       final res = await ApiService.requestToJoinPartyPlanDetailed(planId);
       if (!mounted) return;
       if (res.alreadyRequested || res.success) {
-        setState(() => _alreadyRequested = true);
+        setState(() {
+          _alreadyRequested = true;
+          _isInvitedUser = false;
+          _activeRequestId = res.requestId ?? _activeRequestId;
+          _requestStatus = res.status ?? 'pending';
+        });
         if (res.isNewRequest) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -1775,7 +1786,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                       ),
                     ],
                   )
-                : (_alreadyRequested && _isInvitedUser && (_requestStatus == 'pending' || _requestStatus == 'invited'))
+            : (_alreadyRequested && _isInvitedUser && (_requestStatus == 'pending' || _requestStatus == 'invited'))
                     ? GestureDetector(
                         onTap: _isAcceptingInvite ? null : _handleAcceptInvite,
                         child: Container(
@@ -1820,6 +1831,31 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                               ),
                             ],
                           ),
+                        ),
+                      )
+                : (_alreadyRequested && _requestStatus == 'cancelled')
+                    ? Container(
+                        height: 58,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(color: Colors.grey.withValues(alpha: 0.35)),
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.cancel_rounded, color: Colors.grey),
+                            SizedBox(width: 10),
+                            Text(
+                              'REQUEST CANCELLED',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
                         ),
                       )
                 : _alreadyRequested

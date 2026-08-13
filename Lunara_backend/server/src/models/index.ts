@@ -602,6 +602,14 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
                 ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_arrival_confirmed BOOLEAN DEFAULT false;
                 ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_arrival_time TIMESTAMP WITH TIME ZONE;
                 ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS lat_lang_check_in VARCHAR(255);
+                ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS payment_timeout_at TIMESTAMP WITH TIME ZONE;
+                ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS joiner_payment_status VARCHAR(50) DEFAULT 'unpaid';
+                ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS joiner_razorpay_order_id VARCHAR(255);
+                ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS joiner_razorpay_payment_id VARCHAR(255);
+                ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP WITH TIME ZONE;
+                ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancelled_by UUID;
+                ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancellation_reason VARCHAR(100);
+                ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS previous_status VARCHAR(50);
 
                 ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS bank_name VARCHAR(255);
                 ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS account_number VARCHAR(255);

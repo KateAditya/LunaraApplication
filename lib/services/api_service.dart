@@ -546,15 +546,13 @@ class ApiService {
 
     try {
       final response = await post(
-        '/api/mobile/bookings',
+        '/api/mobile/group-parties',
         body: {
           'userId': userId,
           'venueId': venueId,
-          'bookingDate': date,
+          'partyDate': date,
           'startTime': time,
-          'tablePackage': 'none',
-          'goingMode': 'party_request',
-          'numberOfGuests': guests,
+          'numberOfFriends': guests,
           'partySubject': subject,
           'partyRequirement': requirement,
           'partyDescription': description,
@@ -1036,12 +1034,21 @@ class ApiService {
         body: {'userId': userId},
       );
       if (response.statusCode == 201) {
-        markPartyPlanAsRequestedLocal(planId);
+        Map<String, dynamic>? requestData;
+        try {
+          final payload = jsonDecode(response.body);
+          if (payload is Map && payload['data'] is Map) {
+            requestData = Map<String, dynamic>.from(payload['data'] as Map);
+          }
+        } catch (_) {}
+        markPartyPlanAsRequestedLocal(planId, requestData);
         return PartyPlanRequestResult(
           success: true,
           alreadyRequested: true,
           isNewRequest: true,
           message: 'Request sent successfully!',
+          requestId: requestData?['id']?.toString(),
+          status: requestData?['status']?.toString().toLowerCase() ?? 'pending',
         );
       }
 
@@ -4207,11 +4214,15 @@ class PartyPlanRequestResult {
   final bool alreadyRequested;
   final bool isNewRequest;
   final String message;
+  final String? requestId;
+  final String? status;
 
   PartyPlanRequestResult({
     required this.success,
     required this.alreadyRequested,
     required this.isNewRequest,
     required this.message,
+    this.requestId,
+    this.status,
   });
 }

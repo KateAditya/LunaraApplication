@@ -12,7 +12,7 @@ import Payment, { PaymentMethod, PaymentStatus as TxnStatus } from '../models/Pa
 import User from '../models/User';
 import Venue from '../models/Venue';
 import UserProfile from '../models/UserProfile';
-import PartyPlan, { PartyPlanStatus, PartyPlanVisibility } from '../models/PartyPlan';
+import PartyPlan, { PartyPlanStatus } from '../models/PartyPlan';
 import PartyPlanRequest, { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
 import UserPhoto from '../models/UserPhoto';
 import StrangersMeetRequest from '../models/StrangersMeetRequest';
@@ -253,33 +253,13 @@ export const getLiveFeed = async (req: Request, res: Response) => {
             order: [['createdAt', 'DESC']],
         });
 
-        // Query active Party Plans (public, plus user's own private plans)
-        const partyPlansWhere: any = {
-            status: PartyPlanStatus.ACTIVE,
-        };
-        if (viewerId) {
-            partyPlansWhere[Op.or] = [
-                {
-                    isLive: true,
-                    [Op.or]: [
-                        { visibility: PartyPlanVisibility.PUBLIC },
-                        { visibility: PartyPlanVisibility.BOTH },
-                        {
-                            visibility: PartyPlanVisibility.PRIVATE,
-                            selectedUsers: {
-                                [Op.contains]: [viewerId as string]
-                            }
-                        }
-                    ]
-                },
-                { userId: viewerId as string }
-            ];
-        } else {
-            partyPlansWhere.isLive = true;
-            partyPlansWhere.visibility = {
-                [Op.in]: [PartyPlanVisibility.PUBLIC, PartyPlanVisibility.BOTH]
-            };
-        }
+        // Party Plans are personal workflow cards, not public Live Feed posts.
+        // A host sees their plan here; invitees/requesters receive only their
+        // explicit invitation/request timeline records below. This prevents a
+        // newly created Party Plan from appearing in every user's Live Feed.
+        const partyPlansWhere: any = viewerId
+            ? { status: PartyPlanStatus.ACTIVE, userId: viewerId as string }
+            : { id: { [Op.eq]: null } };
         if (venueId) partyPlansWhere.venueId = venueId;
         if (date) {
             const startDate = new Date(date as string);

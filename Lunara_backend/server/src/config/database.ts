@@ -628,6 +628,13 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
             await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS joiner_payment_status VARCHAR(50) DEFAULT 'unpaid';`);
             await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS joiner_razorpay_order_id VARCHAR(255);`);
             await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS joiner_razorpay_payment_id VARCHAR(255);`);
+            // Request cancellation metadata is selected by PartyPlanRequest on every query.
+            // Keep this additive migration here because this project deploys schema updates at
+            // startup instead of through a Sequelize migrations directory.
+            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP WITH TIME ZONE;`);
+            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancelled_by UUID;`);
+            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancellation_reason VARCHAR(100);`);
+            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS previous_status VARCHAR(50);`);
         } catch (planErr: any) {
             logger.warn('Failed to migrate party_plans / party_plan_requests columns: ' + planErr.message);
         }

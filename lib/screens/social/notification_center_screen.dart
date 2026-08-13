@@ -467,17 +467,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         final ordId = currentOrderId.isNotEmpty
             ? currentOrderId
             : 'order_mock_direct';
-        final confirmRes = await ApiService.post(
-          '/api/mobile/party-plans/requests/$requestId/joiner-pay',
-          body: {
-            'razorpay_order_id': ordId,
-            'razorpay_payment_id':
-                'pay_direct_${DateTime.now().millisecondsSinceEpoch}',
-            'razorpay_signature': 'mock_signature',
-          },
+        final paymentConfirmed = await ApiService.verifyJoinerPayment(
+          requestId,
+          ordId,
+          'pay_direct_${DateTime.now().millisecondsSinceEpoch}',
+          'mock_signature',
         );
         if (mounted) setState(() => _isProcessingPayment = false);
-        if (confirmRes.statusCode == 200 && mounted) {
+        if (paymentConfirmed && mounted) {
           onSuccess();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -486,19 +483,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             ),
           );
         } else if (mounted) {
-          String msg = 'Payment Verification Failed';
-          try {
-            final b = jsonDecode(confirmRes.body);
-            msg =
-                b['message'] ??
-                b['error'] ??
-                'Server status ${confirmRes.statusCode}';
-          } catch (_) {
-            msg = 'Server status ${confirmRes.statusCode}';
-          }
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Payment Failed: $msg'),
+              content: const Text('Payment verification failed. Please refresh and try again.'),
               backgroundColor: Colors.redAccent,
             ),
           );
@@ -512,23 +499,18 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (
         PaymentSuccessResponse response,
       ) async {
-        final confirmRes = await ApiService.post(
-          '/api/mobile/party-plans/requests/$requestId/joiner-pay',
-          body: {
-            'razorpay_order_id':
-                response.orderId ??
-                (currentOrderId.isNotEmpty
-                    ? currentOrderId
-                    : 'order_rzp_${DateTime.now().millisecondsSinceEpoch}'),
-            'razorpay_payment_id':
-                response.paymentId ??
-                'pay_${DateTime.now().millisecondsSinceEpoch}',
-            'razorpay_signature': response.signature ?? 'signature',
-          },
+        final paymentConfirmed = await ApiService.verifyJoinerPayment(
+          requestId,
+          response.orderId ??
+              (currentOrderId.isNotEmpty
+                  ? currentOrderId
+                  : 'order_rzp_${DateTime.now().millisecondsSinceEpoch}'),
+          response.paymentId ?? 'pay_${DateTime.now().millisecondsSinceEpoch}',
+          response.signature ?? 'signature',
         );
         razorpay.clear();
         if (mounted) setState(() => _isProcessingPayment = false);
-        if (confirmRes.statusCode == 200 && mounted) {
+        if (paymentConfirmed && mounted) {
           onSuccess();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -537,14 +519,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             ),
           );
         } else if (mounted) {
-          String msg = 'Payment Confirmation Failed';
-          try {
-            final b = jsonDecode(confirmRes.body);
-            msg = b['message'] ?? b['error'] ?? msg;
-          } catch (_) {}
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Payment Failed: $msg'),
+              content: const Text('Payment confirmation failed. Please refresh and try again.'),
               backgroundColor: Colors.redAccent,
             ),
           );
@@ -668,22 +645,18 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         );
 
         debugPrint('[PAYMENT-08] Verifying payment with backend');
-        final confirmRes = await ApiService.post(
-          '/api/mobile/party-plans/$cleanPlanId/host-pay',
-          body: {
-            'razorpay_order_id': oId,
-            'razorpay_payment_id': pId,
-            'razorpay_signature': sig,
-          },
+        final paymentConfirmed = await ApiService.verifyHostPayment(
+          cleanPlanId,
+          oId,
+          pId,
+          sig,
         );
 
-        debugPrint(
-          '[PAYMENT-09] Verification response: statusCode=${confirmRes.statusCode}, body=${confirmRes.body}',
-        );
+        debugPrint('[PAYMENT-09] Server-side verification completed: $paymentConfirmed');
 
         razorpay.clear();
         if (mounted) setState(() => _isProcessingPayment = false);
-        if (confirmRes.statusCode == 200 && mounted) {
+        if (paymentConfirmed && mounted) {
           debugPrint('[PAYMENT-10] Deposit status updated successfully');
           await onSuccess();
           if (mounted) {
@@ -697,16 +670,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             );
           }
         } else if (mounted) {
-          String msg = 'Payment Confirmation Failed';
-          try {
-            final b = jsonDecode(confirmRes.body);
-            msg = b['message'] ?? b['error'] ?? msg;
-          } catch (_) {}
-          if (msg == 'Payment Failed')
-            msg = 'Verification failed (Status ${confirmRes.statusCode})';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Payment Failed: $msg'),
+              content: const Text('Payment confirmation failed. Please refresh and try again.'),
               backgroundColor: Colors.redAccent,
             ),
           );
@@ -2310,15 +2276,13 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                               final txId =
                                   res['data']?['transactionId']?.toString() ??
                                   'wallet';
-                              final confirmRes = await ApiService.post(
-                                '/api/mobile/party-plans/requests/$requestId/joiner-pay',
-                                body: {
-                                  'razorpay_order_id': 'order_mock_wallet',
-                                  'razorpay_payment_id': 'wallet_$txId',
-                                  'razorpay_signature': 'mock_signature',
-                                },
+                              final paymentConfirmed = await ApiService.verifyJoinerPayment(
+                                requestId,
+                                'order_mock_wallet',
+                                'wallet_$txId',
+                                'mock_signature',
                               );
-                              if (confirmRes.statusCode == 200 && mounted) {
+                              if (paymentConfirmed && mounted) {
                                 // Optimistically hide the Pay Deposit button immediately
                                 setState(() {
                                   if (item is Map) {
@@ -2375,16 +2339,13 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                             );
                           },
                           onHybridPayment: (shortfall) async {
-                            final confirmRes = await ApiService.post(
-                              '/api/mobile/party-plans/requests/$requestId/joiner-pay',
-                              body: {
-                                'razorpay_order_id': 'order_mock_hybrid',
-                                'razorpay_payment_id':
-                                    'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
-                                'razorpay_signature': 'mock_signature',
-                              },
+                            final paymentConfirmed = await ApiService.verifyJoinerPayment(
+                              requestId,
+                              'order_mock_hybrid',
+                              'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
+                              'mock_signature',
                             );
-                            if (confirmRes.statusCode == 200 && mounted) {
+                            if (paymentConfirmed && mounted) {
                               // Optimistically hide the Pay Deposit button immediately
                               setState(() {
                                 if (item is Map) {
