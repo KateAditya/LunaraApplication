@@ -523,6 +523,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                     booking['ticketCode'] ??
                     booking['id']?.toString().substring(0, 8),
                 ticketUrl: booking['ticketUrl'] ?? booking['ticket_url'],
+                status: status,
               ),
             ),
           );
