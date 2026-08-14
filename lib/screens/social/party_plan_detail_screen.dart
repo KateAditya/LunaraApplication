@@ -7,6 +7,8 @@ import '../../widgets/lunara_profile_image.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 import 'chat_screen.dart';
 import 'party_plan_ticket_screen.dart';
+import 'widgets/party_plan_arrival_dialog.dart';
+import '../profile/lunara_wallet_screen.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 class _VenueImageFallback extends StatelessWidget {
@@ -574,10 +576,111 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   }
 
   Widget _buildArrivalConfirmationCard() {
-    final isConfirmed = widget.plan['hasConfirmedBooking'] == true;
+    final isConfirmed = widget.plan['hasConfirmedBooking'] == true ||
+        widget.plan['lifecycleStatus'] == 'match_confirmed' ||
+        widget.plan['lifecycleStatus'] == 'chat_enabled' ||
+        widget.plan['lifecycleStatus'] == 'plan_completed';
     if (!isConfirmed) return const SizedBox.shrink();
 
+    final planId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
+    final venue = (widget.plan['venue'] is Map) ? widget.plan['venue'] as Map<String, dynamic> : <String, dynamic>{};
+    final venueName = venue['name']?.toString() ?? widget.plan['venueName']?.toString() ?? 'the venue';
+
+    final hostReached = widget.plan['hostArrivalConfirmed'] == true;
+    final guestReached = widget.plan['guestArrivalConfirmed'] == true;
+    final bothReached = hostReached && guestReached;
+    final isRefunded = widget.plan['hostPaymentStatus'] == 'refunded' ||
+        widget.plan['joinerPaymentStatus'] == 'refunded' ||
+        widget.plan['lifecycleStatus'] == 'plan_completed' ||
+        widget.plan['paymentStatus']?.toString().toLowerCase().contains('refunded') == true;
+
+    final bool isHost = _isHostPlan(widget.plan);
+    final userReached = isHost ? hostReached : guestReached;
+    final partnerReached = isHost ? guestReached : hostReached;
+
+    if (bothReached || isRefunded) {
+      return Container(
+        margin: const EdgeInsets.only(top: 14),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF10B981).withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.celebration_rounded, color: Color(0xFF10B981), size: 20),
+                SizedBox(width: 8),
+                Text(
+                  '🎉 PARTY COMPLETED',
+                  style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.8),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Both participants confirmed arrival! ₹99 Commitment Deposit has been refunded to your LUNARA Wallet.',
+              style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.4),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LunaraWalletScreen()),
+                ),
+                icon: const Icon(Icons.account_balance_wallet_rounded, size: 16),
+                label: const Text('VIEW WALLET', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF10B981),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (userReached && !partnerReached) {
+      return Container(
+        margin: const EdgeInsets.only(top: 14),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF6366F1).withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.4)),
+        ),
+        child: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.pin_drop_rounded, color: Color(0xFF6366F1), size: 20),
+                SizedBox(width: 8),
+                Text(
+                  '📍 ARRIVAL CONFIRMED',
+                  style: TextStyle(color: Color(0xFF6366F1), fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.8),
+                ),
+              ],
+            ),
+            SizedBox(height: 6),
+            Text(
+              'You confirmed arrival (✓ Reached). Waiting for your partner\'s confirmation (⏳ Waiting) to process your ₹99 Commitment Deposit refund.',
+              style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.4),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
+      margin: const EdgeInsets.only(top: 14),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFF1F1B2E),
@@ -592,7 +695,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
               Icon(Icons.pin_drop_rounded, color: LunaraTheme.electricViolet, size: 20),
               SizedBox(width: 8),
               Text(
-                'ARRIVAL CONFIRMATION',
+                '📍 ARE YOU AT THE VENUE?',
                 style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1),
               ),
             ],
@@ -608,19 +711,28 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
               Expanded(
                 child: ElevatedButton(
                   onPressed: () async {
-                    final planId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
                     final uid = await ApiService.getCurrentUserId();
                     if (planId.isNotEmpty && uid != null && uid.isNotEmpty) {
-                      await ApiService.confirmArrival(planId: planId, userId: uid, hasArrived: true);
-                      if (mounted) {
+                      final res = await ApiService.confirmArrival(planId: planId, userId: uid, hasArrived: true);
+                      if (res['bothArrived'] == true && mounted) {
+                        PartyPlanArrivalDialog.showBothArrivedSuccessDialog(
+                          context,
+                          venueName: venueName,
+                          plan: widget.plan,
+                        );
+                      } else if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('✅ Arrival confirmed (YES)!'), backgroundColor: Colors.green),
+                          const SnackBar(
+                            content: Text('✓ Arrival confirmed! Waiting for your partner.'),
+                            backgroundColor: Colors.green,
+                          ),
                         );
                       }
+                      _refreshPlanDetails();
                     }
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
+                    backgroundColor: const Color(0xFF10B981),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                   child: const Text('YES — I\'M HERE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
@@ -630,15 +742,18 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
               Expanded(
                 child: OutlinedButton(
                   onPressed: () async {
-                    final planId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
                     final uid = await ApiService.getCurrentUserId();
                     if (planId.isNotEmpty && uid != null && uid.isNotEmpty) {
                       await ApiService.confirmArrival(planId: planId, userId: uid, hasArrived: false);
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Recorded: NOT YET'), backgroundColor: Colors.orange),
+                          const SnackBar(
+                            content: Text('Recorded: NOT YET. Confirm when you reach.'),
+                            backgroundColor: Colors.orange,
+                          ),
                         );
                       }
+                      _refreshPlanDetails();
                     }
                   },
                   style: OutlinedButton.styleFrom(

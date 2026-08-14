@@ -3965,6 +3965,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                                     await ApiService.post(
                                                       '/api/mobile/party-plans/$planId/host-pay',
                                                       body: {
+                                                        'userId':
+                                                            ApiService.currentUserId ?? '',
                                                         'razorpay_order_id':
                                                             oId,
                                                         'razorpay_payment_id':
@@ -4172,6 +4174,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                                     await ApiService.post(
                                                       '/api/mobile/party-plans/$planId/host-pay',
                                                       body: {
+                                                        'userId':
+                                                            ApiService.currentUserId ?? '',
                                                         'razorpay_order_id':
                                                             'order_mock_wallet',
                                                         'razorpay_payment_id':

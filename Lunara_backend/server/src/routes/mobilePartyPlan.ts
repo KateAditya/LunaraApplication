@@ -77,7 +77,7 @@ router.post(
     '/:id/host-pay',
     [
         param('id').isUUID().withMessage('id must be a valid UUID'),
-        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
+        body('userId').optional({ checkFalsy: true }).isUUID().withMessage('userId must be a valid UUID'),
         body('razorpay_order_id').notEmpty().withMessage('razorpay_order_id is required'),
         body('razorpay_payment_id').notEmpty().withMessage('razorpay_payment_id is required'),
         body('razorpay_signature').notEmpty().withMessage('razorpay_signature is required'),
@@ -308,7 +308,7 @@ router.post(
     '/requests/:reqId/joiner-pay',
     [
         param('reqId').isUUID().withMessage('reqId must be a valid UUID'),
-        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
+        body('userId').optional({ checkFalsy: true }).isUUID().withMessage('userId must be a valid UUID'),
         body('razorpay_order_id').notEmpty().withMessage('razorpay_order_id is required'),
         body('razorpay_payment_id').notEmpty().withMessage('razorpay_payment_id is required'),
         body('razorpay_signature').notEmpty().withMessage('razorpay_signature is required'),
@@ -338,7 +338,7 @@ router.post(
     '/:id/initiate-host-payment',
     [
         param('id').isUUID().withMessage('id must be a valid UUID'),
-        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
+        body('userId').optional({ checkFalsy: true }).isUUID().withMessage('userId must be a valid UUID'),
         validate,
     ],
     initiateHostPayment
@@ -351,7 +351,7 @@ router.post(
     '/requests/:reqId/initiate-joiner-payment',
     [
         param('reqId').isUUID().withMessage('reqId must be a valid UUID'),
-        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
+        body('userId').optional({ checkFalsy: true }).isUUID().withMessage('userId must be a valid UUID'),
         validate,
     ],
     initiateJoinerPayment

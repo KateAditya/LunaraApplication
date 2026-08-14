@@ -120,9 +120,18 @@ export const getMyGroupParties = async (req: Request, res: Response): Promise<vo
                 {
                     model: Venue,
                     as: 'venue',
-                    attributes: ['id', 'name', 'addressLine1', 'city'],
+                    attributes: ['id', 'name', 'addressLine1', 'city', 'area', 'latitude', 'longitude'],
                     include: [
                         { model: VenueImage, as: 'images', attributes: ['id', 'filePath', 'imageType', 'isPrimary'], required: false },
+                    ],
+                },
+                {
+                    model: User,
+                    as: 'user',
+                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'isVerified'],
+                    include: [
+                        { model: UserProfile, as: 'profile', attributes: ['bio', 'city', 'displayName'], required: false },
+                        { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary'], required: false },
                     ],
                 },
             ],
@@ -155,9 +164,9 @@ export const getGroupPartyTicket = async (req: Request, res: Response): Promise<
                 {
                     model: User,
                     as: 'user',
-                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'],
+                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'isVerified'],
                     include: [
-                        { model: UserProfile, as: 'profile', attributes: ['bio', 'city'], required: false },
+                        { model: UserProfile, as: 'profile', attributes: ['bio', 'city', 'displayName'], required: false },
                         { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary'], required: false },
                     ],
                 },
@@ -182,12 +191,19 @@ export const getGroupPartyTicket = async (req: Request, res: Response): Promise<
         };
 
         const hostRaw = (groupParty as any).user;
+        const hostPhoto = resolveUserPhoto(hostRaw);
+        const hostName = hostRaw ? `${hostRaw.firstName || ''} ${hostRaw.lastName || ''}`.trim() : 'Party Host';
+        const hostUsername = hostRaw?.profile?.displayName || (hostRaw?.firstName ? `${hostRaw.firstName}_${hostRaw.lastName || ''}`.toLowerCase().replace(/_+$/, '') : 'host');
+
         const hostData = hostRaw ? {
             id: hostRaw.id,
             firstName: hostRaw.firstName,
             lastName: hostRaw.lastName,
-            username: hostRaw.profile?.displayName || (hostRaw.firstName ? `${hostRaw.firstName}_${hostRaw.lastName}`.toLowerCase() : 'user'),
-            profilePhotoUrl: resolveUserPhoto(hostRaw),
+            name: hostName,
+            username: hostUsername,
+            profilePhotoUrl: hostPhoto,
+            profileImageUrl: hostPhoto,
+            isVerified: hostRaw.isVerified || false,
             subscriptionTier: 'FREE',
         } : null;
 
@@ -202,17 +218,27 @@ export const getGroupPartyTicket = async (req: Request, res: Response): Promise<
             }
         }
 
+        const totalParticipants = Number(groupParty.numberOfFriends);
+        const hostCount = 1;
+        const memberCount = Math.max(1, totalParticipants - hostCount);
+
         res.json({
             success: true,
             data: {
                 groupParty: {
                     id: groupParty.id,
                     partyDate: groupParty.partyDate,
-                    numberOfFriends: groupParty.numberOfFriends,
-                    numberOfMembers: groupParty.numberOfFriends + 1,
-                    totalAmount: groupParty.totalAmount,
+                    totalParticipants,
+                    hostCount,
+                    memberCount,
+                    numberOfFriends: totalParticipants,
+                    numberOfMembers: totalParticipants,
+                    totalAmount: Number(groupParty.totalAmount),
+                    tableBookingCharge: Number(groupParty.tableBookingCharge),
+                    discountAmount: Number(groupParty.discountAmount),
                     status: groupParty.status,
                     paymentStatus: groupParty.paymentStatus,
+                    paymentMethod: groupParty.paymentId?.startsWith('wallet_') ? 'LUNARA Wallet' : 'Razorpay',
                     ticketCode: ticketCode,
                     ticketUrl: ticketUrl,
                     host: hostData,

@@ -621,7 +621,7 @@ class ApiService {
           raw
               .whereType<Map>()
               .where((b) => b['goingMode']?.toString() == 'party_request')
-              .map((b) => Map<String, dynamic>.from(b))
+              .map((b) => Map<String, dynamic>.from(b)),
         );
       }
 
@@ -638,7 +638,10 @@ class ApiService {
             final List rawList = data['data'];
             for (final gp in rawList) {
               if (gp is Map) {
-                // Map to unified booking schema
+                final totalCount = (gp['numberOfFriends'] ?? gp['totalParticipants'] ?? 5) is int
+                    ? (gp['numberOfFriends'] ?? gp['totalParticipants'] ?? 5)
+                    : (int.tryParse((gp['numberOfFriends'] ?? gp['totalParticipants'] ?? 5).toString()) ?? 5);
+                final hostUser = gp['user'] ?? gp['host'];
                 groupParties.add({
                   'id': gp['id'],
                   'bookingId': gp['id'],
@@ -649,7 +652,11 @@ class ApiService {
                   'bookingStatus': gp['status']?.toString() ?? 'pending',
                   'paymentStatus': gp['paymentStatus']?.toString(),
                   'adminApprovalStatus': gp['adminApprovalStatus']?.toString(),
-                  'numberOfGuests': gp['numberOfFriends'],
+                  'numberOfGuests': totalCount,
+                  'numberOfFriends': totalCount,
+                  'totalParticipants': totalCount,
+                  'memberCount': totalCount > 1 ? totalCount - 1 : 1,
+                  'hostCount': 1,
                   'partySubject': 'Group Party',
                   'bookingDate': gp['partyDate'],
                   'partyDate': gp['partyDate'],
@@ -657,13 +664,15 @@ class ApiService {
                   'approvedAmount': gp['totalAmount'],
                   'charges': gp['totalAmount'],
                   'totalAmount': gp['totalAmount'],
+                  'host': hostUser,
+                  'user': hostUser,
                   'createdAt': gp['createdAt'],
                   'mobileNumber': gp['mobileNumber'],
                   'optionalMobileNumber': gp['optionalMobileNumber'],
-                  'goingMode': 'party_request', // unified for the feed
+                  'goingMode': 'party_request',
                   'ticketCode': gp['ticketCode'],
                   'ticketUrl': gp['ticketUrl'],
-                  'isSmallGroupParty': true, // flag to distinguish from large party bookings
+                  'isSmallGroupParty': true,
                 });
               }
             }

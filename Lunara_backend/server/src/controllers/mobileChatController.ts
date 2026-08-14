@@ -148,13 +148,26 @@ export const getOrCreateConversation = async (req: Request, res: Response) => {
                 });
                 if (plan) {
                     const p = plan as any;
+                    const isHost = plan.userId === userId || plan.userId === otherUserId;
                     const matchedReq = p.requests?.find((r: any) => 
                         (r.requesterId === userId || r.requesterId === otherUserId) &&
                         (r.status === 'accepted' || r.status === 'payment_pending' || r.status === 'confirmed' || r.status === 'paid')
                     );
+                    if (!isHost || !matchedReq) {
+                        return res.status(403).json({
+                            success: false,
+                            message: 'You are not a matched participant in this Party Plan.'
+                        });
+                    }
+                    if (plan.status === 'cancelled' || plan.lifecycleStatus === 'cancelled') {
+                        return res.status(403).json({
+                            success: false,
+                            message: 'This Party Plan has been cancelled.'
+                        });
+                    }
                     const hostPaid = plan.hostPaymentStatus === 'paid';
                     const joinerPaid = matchedReq?.joinerPaymentStatus === 'paid' || plan.paymentType === 'self_pay';
-                    const isChatUnlocked = Boolean(p.chatEnabled) || p.lifecycleStatus === 'chat_enabled' || (hostPaid && joinerPaid);
+                    const isChatUnlocked = Boolean(p.chatEnabled) || p.lifecycleStatus === 'chat_enabled' || p.lifecycleStatus === 'match_confirmed' || (hostPaid && joinerPaid);
 
                     if (!isChatUnlocked) {
                         return res.status(403).json({
@@ -165,6 +178,40 @@ export const getOrCreateConversation = async (req: Request, res: Response) => {
                 }
             } catch (checkErr: any) {
                 logger.warn('Error checking party_plan chat unlock status:', checkErr.message);
+            }
+        }
+
+        // ── Security Guard: Enforce that Stranger Meet chat requires paid status ─────
+        if ((contextType === 'stranger_meet' || contextType === 'strangers_meet') && contextId) {
+            try {
+                const StrangersMeetRequest = (await import('../models/StrangersMeetRequest')).default;
+                const StrangersMeetJoiner = (await import('../models/StrangersMeetJoiner')).default;
+                const meet = await StrangersMeetRequest.findByPk(contextId);
+                if (meet) {
+                    const isHost = meet.userId === userId || meet.userId === otherUserId;
+                    const participantId = meet.userId === userId ? otherUserId : userId;
+                    const joiner = await StrangersMeetJoiner.findOne({
+                        where: {
+                            strangersMeetRequestId: contextId,
+                            userId: participantId,
+                        }
+                    });
+                    if (!isHost || !joiner) {
+                        return res.status(403).json({
+                            success: false,
+                            message: 'You are not a confirmed participant in this Stranger Meet.'
+                        });
+                    }
+                    const isJoinerPaid = joiner.status === 'paid' || joiner.paymentStatus === 'paid' || Number(meet.chargesPerHead || 0) === 0;
+                    if (!isJoinerPaid) {
+                        return res.status(403).json({
+                            success: false,
+                            message: 'Chat is locked until the participant entry fee is paid.'
+                        });
+                    }
+                }
+            } catch (smCheckErr: any) {
+                logger.warn('Error checking stranger_meet chat unlock status:', smCheckErr.message);
             }
         }
 

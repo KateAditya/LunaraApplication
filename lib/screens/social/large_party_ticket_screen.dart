@@ -36,7 +36,12 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
   Map<String, dynamic>? _freshHostUser;
   String? _canonicalTicketCode;
   String? _ticketUrl;
-  int? _freshMembersCount;
+  int? _freshTotalParticipants;
+  int? _freshMemberCount;
+  double? _freshTotalAmount;
+  String? _freshPaymentStatus;
+  String? _freshPaymentMethod;
+  Map<String, dynamic>? _freshVenue;
 
   @override
   void initState() {
@@ -89,7 +94,7 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
   }
 
   Future<void> _fetchTicketData() async {
-    final gpId = (widget.booking['id'] ?? widget.booking['partyId'] ?? widget.booking['groupPartyId'])?.toString();
+    final gpId = (widget.booking['id'] ?? widget.booking['partyId'] ?? widget.booking['groupPartyId'] ?? widget.booking['bookingId'])?.toString();
     if (gpId == null) return;
     try {
       final response = await ApiService.get('/api/mobile/group-parties/$gpId/ticket');
@@ -99,14 +104,29 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
           final ticketObj = mapData['data'];
           final groupParty = ticketObj['groupParty'];
           setState(() {
-            if (groupParty is Map && groupParty['host'] is Map) {
-              _freshHostUser = Map<String, dynamic>.from(groupParty['host']);
+            if (groupParty is Map) {
+              if (groupParty['host'] is Map) {
+                _freshHostUser = Map<String, dynamic>.from(groupParty['host']);
+              }
+              if (groupParty['venue'] is Map) {
+                _freshVenue = Map<String, dynamic>.from(groupParty['venue']);
+              }
+              if (groupParty['totalParticipants'] != null) {
+                _freshTotalParticipants = int.tryParse(groupParty['totalParticipants'].toString());
+              } else if (groupParty['numberOfFriends'] != null) {
+                _freshTotalParticipants = int.tryParse(groupParty['numberOfFriends'].toString());
+              }
+              if (groupParty['memberCount'] != null) {
+                _freshMemberCount = int.tryParse(groupParty['memberCount'].toString());
+              }
+              if (groupParty['totalAmount'] != null) {
+                _freshTotalAmount = double.tryParse(groupParty['totalAmount'].toString());
+              }
+              _freshPaymentStatus = groupParty['paymentStatus']?.toString();
+              _freshPaymentMethod = groupParty['paymentMethod']?.toString();
             }
             _canonicalTicketCode = ticketObj['ticketCode']?.toString();
             _ticketUrl = ticketObj['ticketUrl']?.toString();
-            if (groupParty is Map && groupParty['numberOfMembers'] != null) {
-              _freshMembersCount = int.tryParse(groupParty['numberOfMembers'].toString());
-            }
           });
         }
       }
@@ -154,7 +174,7 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
   }
 
   void _shareTicket(BuildContext context) {
-    final gpId = (widget.booking['id'] ?? widget.booking['partyId'] ?? widget.booking['groupPartyId'])?.toString() ?? '';
+    final gpId = (widget.booking['id'] ?? widget.booking['partyId'] ?? widget.booking['groupPartyId'] ?? widget.booking['bookingId'])?.toString() ?? '';
     final ticketId = (_canonicalTicketCode ?? widget.booking['ticketCode'] ?? widget.booking['id'] ?? 'TICKET').toString().toUpperCase();
 
     String? rawUrl = _ticketUrl ?? widget.booking['ticketUrl'] ?? widget.booking['ticket_url'];
@@ -251,20 +271,15 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final venueName = widget.venue['name'] ?? 'Unknown Venue';
-    final venueCity = widget.venue['city'] ?? 'Pune';
-    final venueArea = widget.venue['area'] ?? '';
-    final venueAddress = widget.venue['address'] ??
-        widget.venue['addressLine1'] ??
-        '${venueArea.isNotEmpty ? "$venueArea, " : ""}$venueCity, Maharashtra 411057';
-    final venueImageUrl = widget.venue['imageUrl'] ??
-        (widget.venue['images'] != null && (widget.venue['images'] as List).isNotEmpty
-            ? widget.venue['images'][0]['filePath']
-            : null) ??
-        '';
-    final cleanVenueImageUrl = venueImageUrl.startsWith('/')
-        ? '${ApiService.baseUrl}$venueImageUrl'
-        : venueImageUrl;
+    final venueMap = _freshVenue ?? (widget.venue.isNotEmpty ? Map<String, dynamic>.from(widget.venue) : (widget.booking['venue'] is Map ? Map<String, dynamic>.from(widget.booking['venue']) : <String, dynamic>{}));
+    final venueName = venueMap['name']?.toString() ?? widget.venue['name']?.toString() ?? 'Venue';
+    final venueCity = venueMap['city']?.toString() ?? widget.venue['city']?.toString() ?? 'Pune';
+    final venueArea = venueMap['area']?.toString() ?? widget.venue['area']?.toString() ?? '';
+    final venueAddress = venueMap['address']?.toString() ??
+        venueMap['addressLine1']?.toString() ??
+        widget.venue['address']?.toString() ??
+        widget.venue['addressLine1']?.toString() ??
+        '${venueArea.isNotEmpty ? "$venueArea, " : ""}$venueCity';
 
     final rawDate = widget.booking['bookingDate'] ?? widget.booking['partyDate'];
     DateTime planDateTime = DateTime.now();
@@ -275,11 +290,15 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
     }
 
     final ticketId = (_canonicalTicketCode ?? widget.booking['ticketCode'] ?? widget.booking['id'] ?? 'GP-TICKET').toString().toUpperCase();
-    final rawAmount = widget.booking['totalAmount'] ?? widget.booking['depositAmount'] ?? widget.booking['adminPaymentAmount'] ?? 0;
-    final double totalAmount = double.tryParse(rawAmount.toString()) ?? 0.0;
+    final double totalAmount = _freshTotalAmount ??
+        double.tryParse((widget.booking['totalAmount'] ?? widget.booking['depositAmount'] ?? widget.booking['approvedAmount'] ?? widget.booking['charges'] ?? 0).toString()) ??
+        0.0;
 
-    final rawGuestsCount = _freshMembersCount ?? widget.booking['numberOfFriends'] ?? widget.booking['numberOfGuests'] ?? widget.booking['numberOfPersons'] ?? 5;
-    final int membersCount = rawGuestsCount is int ? rawGuestsCount : (int.tryParse(rawGuestsCount.toString()) ?? 5);
+    // Standardized Participant Calculation:
+    // If total is 14: Host = 1, Members = 13, Total = 14
+    final rawGuestsCount = _freshTotalParticipants ?? widget.booking['totalParticipants'] ?? widget.booking['numberOfFriends'] ?? widget.booking['numberOfGuests'] ?? widget.booking['numberOfPersons'] ?? 5;
+    final int totalParticipants = rawGuestsCount is int ? rawGuestsCount : (int.tryParse(rawGuestsCount.toString()) ?? 5);
+    final int memberCount = _freshMemberCount ?? (totalParticipants > 1 ? totalParticipants - 1 : 1);
 
     final bookingCreatedDate = widget.booking['createdAt'] != null
         ? DateTime.tryParse(widget.booking['createdAt'].toString())?.toLocal() ?? planDateTime
@@ -287,14 +306,14 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
 
     final hostUser = _resolveHostUser();
     final hostNameRaw = '${hostUser['firstName'] ?? ''} ${hostUser['lastName'] ?? ''}'.trim();
-    final cleanHostName = hostNameRaw.isNotEmpty ? hostNameRaw : 'Party Host';
+    final cleanHostName = hostNameRaw.isNotEmpty ? hostNameRaw : (hostUser['name']?.toString() ?? 'Party Host');
     final hostUsernameRaw = hostUser['username']?.toString() ?? hostUser['firstName']?.toString().toLowerCase();
     final hostUsername = hostUsernameRaw != null && hostUsernameRaw.isNotEmpty
         ? (hostUsernameRaw.startsWith('@') ? hostUsernameRaw : '@$hostUsernameRaw')
         : '@host';
 
-    final latVal = widget.venue['latitude'];
-    final lngVal = widget.venue['longitude'];
+    final latVal = venueMap['latitude'] ?? widget.venue['latitude'];
+    final lngVal = venueMap['longitude'] ?? widget.venue['longitude'];
     double? lat = latVal != null ? double.tryParse(latVal.toString()) : null;
     double? lng = lngVal != null ? double.tryParse(lngVal.toString()) : null;
 
@@ -307,6 +326,9 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
         lng,
       );
     }
+
+    final paymentMethodLabel = _freshPaymentMethod ??
+        (widget.booking['paymentId']?.toString().startsWith('wallet_') == true ? 'LUNARA Wallet' : 'Lunara Secure Pay');
 
     const lightBgColor = Color(0xFFF6F7FB);
     const darkTextColor = Color(0xFF0F172A);
@@ -344,7 +366,7 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           child: Column(
             children: [
-              // ── THE TICKET CARD (LIGHT THEME) ──────────────────────────────
+              // ── THE TICKET CARD ───────────────────────────────────────────
               LunaraTicketWidget(
                 cardColor: Colors.white,
                 cutoutColor: lightBgColor,
@@ -402,8 +424,8 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                                   ),
                                 ),
                                 TextSpan(
-                                  text: ticketId.length > 12
-                                      ? ticketId.substring(0, 12)
+                                  text: ticketId.length > 14
+                                      ? ticketId.substring(0, 14)
                                       : ticketId,
                                   style: const TextStyle(
                                     color: Color(0xFF6D28D9),
@@ -474,13 +496,13 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                               ),
                             ),
                             Container(height: 36, width: 1, color: const Color(0xFFE2E8F0)),
-                            // MEMBERS
+                            // PARTICIPANTS (1 Host + 13 Members = 14 Total)
                             Expanded(
                               child: _buildLightDetailBox(
                                 icon: Icons.groups_rounded,
-                                label: 'MEMBERS',
-                                value: '$membersCount Members',
-                                subtext: 'Confirmed',
+                                label: 'PARTICIPANTS',
+                                value: '$totalParticipants Members',
+                                subtext: '1 Host + $memberCount Friends',
                               ),
                             ),
                           ],
@@ -596,7 +618,7 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
-                                    '$membersCount Members',
+                                    '$totalParticipants Participants',
                                     style: const TextStyle(
                                       color: darkTextColor,
                                       fontWeight: FontWeight.bold,
@@ -606,9 +628,9 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                                     overflow: TextOverflow.ellipsis,
                                     textAlign: TextAlign.center,
                                   ),
-                                  const Text(
-                                    'Vibe Crew',
-                                    style: TextStyle(
+                                  Text(
+                                    '1 Host + $memberCount Members',
+                                    style: const TextStyle(
                                       color: grayTextColor,
                                       fontSize: 10.5,
                                     ),
@@ -654,8 +676,8 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                                   Flexible(
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: const [
-                                        Text(
+                                      children: [
+                                        const Text(
                                           'BOOKING STATUS',
                                           style: TextStyle(
                                             color: grayTextColor,
@@ -664,10 +686,10 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                                             letterSpacing: 0.5,
                                           ),
                                         ),
-                                        SizedBox(height: 2),
+                                        const SizedBox(height: 2),
                                         Text(
-                                          'Lunara Secure Pay',
-                                          style: TextStyle(
+                                          paymentMethodLabel,
+                                          style: const TextStyle(
                                             color: darkTextColor,
                                             fontSize: 12,
                                             fontWeight: FontWeight.bold,
@@ -818,8 +840,14 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                               height: 38,
                               child: TextButton(
                                 onPressed: () async {
-                                  final mapUrl = Uri.parse(
-                                      'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent("$venueName, $venueAddress")}');
+                                  Uri mapUrl;
+                                  if (lat != null && lng != null && lat != 0.0 && lng != 0.0) {
+                                    mapUrl = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+                                  } else {
+                                    mapUrl = Uri.parse(
+                                      'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent("$venueName, $venueAddress")}',
+                                    );
+                                  }
                                   if (await canLaunchUrl(mapUrl)) {
                                     await launchUrl(mapUrl, mode: LaunchMode.externalApplication);
                                   }

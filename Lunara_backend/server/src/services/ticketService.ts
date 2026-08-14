@@ -717,7 +717,7 @@ export async function generateTicketForGroupPartyHelper(groupPartyId: string): P
             venueName: (groupParty as any).venue?.name || 'SAHARA',
             venueAddress: (groupParty as any).venue?.addressLine1 || 'Hinjawadi - Aundh Rd, Pune',
             venueImageUrl: venueImg?.filePath || null,
-            numberOfGuests: groupParty.numberOfFriends + 1,
+            numberOfGuests: groupParty.numberOfFriends,
             eventDate: groupParty.partyDate,
             startTime: '08:00 PM',
             paymentAmount: Number(groupParty.totalAmount),

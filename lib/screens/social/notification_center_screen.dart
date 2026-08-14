@@ -427,6 +427,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         final confirmRes = await ApiService.post(
           '/api/mobile/party-plans/requests/$requestId/joiner-pay',
           body: {
+            'userId': ApiService.currentUserId ?? '',
             'razorpay_order_id': ordId,
             'razorpay_payment_id':
                 'pay_direct_${DateTime.now().millisecondsSinceEpoch}',
@@ -472,6 +473,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         final confirmRes = await ApiService.post(
           '/api/mobile/party-plans/requests/$requestId/joiner-pay',
           body: {
+            'userId': ApiService.currentUserId ?? '',
             'razorpay_order_id':
                 response.orderId ??
                 (currentOrderId.isNotEmpty
@@ -628,6 +630,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         final confirmRes = await ApiService.post(
           '/api/mobile/party-plans/$cleanPlanId/host-pay',
           body: {
+            'userId': ApiService.currentUserId ?? '',
             'razorpay_order_id': oId,
             'razorpay_payment_id': pId,
             'razorpay_signature': sig,
@@ -2284,6 +2287,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                               final confirmRes = await ApiService.post(
                                 '/api/mobile/party-plans/requests/$requestId/joiner-pay',
                                 body: {
+                                  'userId': ApiService.currentUserId ?? '',
                                   'razorpay_order_id': 'order_mock_wallet',
                                   'razorpay_payment_id': 'wallet_$txId',
                                   'razorpay_signature': 'mock_signature',
@@ -2315,6 +2319,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                             final confirmRes = await ApiService.post(
                               '/api/mobile/party-plans/requests/$requestId/joiner-pay',
                               body: {
+                                'userId': ApiService.currentUserId ?? '',
                                 'razorpay_order_id': 'order_mock_hybrid',
                                 'razorpay_payment_id':
                                     'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',

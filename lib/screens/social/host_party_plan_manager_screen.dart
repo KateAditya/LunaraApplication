@@ -191,6 +191,7 @@ class _HostPartyPlanManagerScreenState
         final confirmRes = await ApiService.post(
           '/api/mobile/party-plans/$cleanPlanId/host-pay',
           body: {
+            'userId': ApiService.currentUserId ?? '',
             'razorpay_order_id': oId,
             'razorpay_payment_id': pId,
             'razorpay_signature': sig,
@@ -221,8 +222,9 @@ class _HostPartyPlanManagerScreenState
             final b = jsonDecode(confirmRes.body);
             msg = b['message'] ?? b['error'] ?? msg;
           } catch (_) {}
-          if (msg == 'Payment Failed')
+          if (msg == 'Payment Failed') {
             msg = 'Verification failed (Status ${confirmRes.statusCode})';
+          }
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Payment Failed: $msg'),

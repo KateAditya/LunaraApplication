@@ -1,10 +1,11 @@
-﻿// ignore_for_file: use_build_context_synchronously, unused_local_variable
+// ignore_for_file: use_build_context_synchronously, unused_local_variable
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:convert';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import 'party_plan_detail_screen.dart';
+import 'widgets/party_plan_arrival_dialog.dart';
 import '../profile/lunara_wallet_screen.dart';
 import '../../models/strangers_meet_request.dart';
 import 'strangers_meet_payment_screen.dart';
@@ -45,6 +46,7 @@ class UnifiedNotificationItem {
   final DateTime createdAt;
   final String timeAgo;
   final bool isRead;
+  final bool isExpired;
   final String priority; // 'CRITICAL', 'HIGH', 'NORMAL', 'LOW'
   final String? badgeText; // 'NEW', 'ACTION REQUIRED', 'EXPIRES SOON', 'REMINDER', 'COMPLETED'
   final Color accentColor;
@@ -64,6 +66,7 @@ class UnifiedNotificationItem {
     required this.createdAt,
     required this.timeAgo,
     this.isRead = false,
+    this.isExpired = false,
     this.priority = 'NORMAL',
     this.badgeText,
     required this.accentColor,
@@ -742,7 +745,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               builder: (_) => StrangersMeetPaymentScreen(
                 request: req,
                 onPaymentSuccess: () => _loadFeed(),
-                isJoinPayment: status != 'accepted',
+                isJoinPayment: true,
               ),
             ),
           );
@@ -823,25 +826,147 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Unified Item Builders & Mapping
+  // Unified Item Builders & Mapping (1 PLAN / 1 MEET = 1 SMART CARD)
   // ─────────────────────────────────────────────────────────────────────────────
+  String? _extractPartyPlanId(Map<String, dynamic> item) {
+    if (item['data'] is Map && item['data']['partyPlanId'] != null) {
+      final id = item['data']['partyPlanId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['metadata'] is Map && item['metadata']['partyPlanId'] != null) {
+      final id = item['metadata']['partyPlanId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['partyPlanId'] != null) {
+      final id = item['partyPlanId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['plan'] is Map && item['plan']['id'] != null) {
+      final String cat = (item['requestType'] ?? item['type'] ?? item['category'] ?? item['entityType'] ?? '').toString().toLowerCase();
+      if (cat.contains('party') || cat == 'my_request' || cat == 'incoming_request') {
+        if (!cat.contains('stranger') && !cat.contains('meet')) {
+          final id = item['plan']['id'].toString().trim();
+          if (id.isNotEmpty) return id;
+        }
+      }
+    }
+    if (item['planId'] != null) {
+      final String cat = (item['requestType'] ?? item['type'] ?? item['category'] ?? item['entityType'] ?? '').toString().toLowerCase();
+      if (cat.contains('party') || cat == 'my_request' || cat == 'incoming_request') {
+        if (!cat.contains('stranger') && !cat.contains('meet')) {
+          final id = item['planId'].toString().trim();
+          if (id.isNotEmpty) return id;
+        }
+      }
+    }
+    final String type = (item['type'] ?? item['eventType'] ?? item['category'] ?? item['entityType'] ?? '').toString().toLowerCase();
+    if (type == 'party_plan' || type == 'party_plan_timeline' || type.contains('party_plan')) {
+      final id = item['id']?.toString() ?? item['entityId']?.toString() ?? '';
+      if (id.isNotEmpty && !id.startsWith('sm_') && !id.startsWith('gp_')) {
+        return id.replaceAll('pp_', '').replaceAll('party_plan_timeline_', '').replaceAll('pp_host_deposit_', '');
+      }
+    }
+    return null;
+  }
+
+  String? _extractStrangersMeetId(Map<String, dynamic> item) {
+    if (item['data'] is Map && item['data']['strangersMeetId'] != null) {
+      final id = item['data']['strangersMeetId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['data'] is Map && item['data']['requestId'] != null && (item['data']['type']?.toString().contains('strangers_meet') == true || item['data']['type']?.toString().contains('sm_') == true)) {
+      final id = item['data']['requestId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['metadata'] is Map && item['metadata']['strangersMeetId'] != null) {
+      final id = item['metadata']['strangersMeetId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['strangersMeetId'] != null) {
+      final id = item['strangersMeetId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['strangersMeetRequestId'] != null) {
+      final id = item['strangersMeetRequestId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    final String cat = (item['requestType'] ?? item['type'] ?? item['category'] ?? item['entityType'] ?? '').toString().toLowerCase();
+    if (cat.contains('stranger') || cat.contains('meet')) {
+      if (item['planDetails'] is Map && item['planDetails']['id'] != null) {
+        return item['planDetails']['id'].toString().trim();
+      }
+      if (item['plan'] is Map && item['plan']['id'] != null) {
+        return item['plan']['id'].toString().trim();
+      }
+      if (item['planId'] != null) {
+        return item['planId'].toString().trim();
+      }
+      final id = item['id']?.toString() ?? item['entityId']?.toString() ?? '';
+      if (id.isNotEmpty && !id.startsWith('pp_') && !id.startsWith('gp_')) {
+        return id.replaceAll('sm_', '').replaceAll('strangers_meet_timeline_', '').replaceAll('sm_host_deposit_', '').replaceAll('sm_host_approved_', '');
+      }
+    }
+    return null;
+  }
+
   List<UnifiedNotificationItem> _buildUnifiedTimeline() {
     final List<UnifiedNotificationItem> items = [];
-    final currentUserId = ApiService.currentUserId;
+    final currentUserId = ApiService.currentUserId ?? '';
 
-    // Build set of entity IDs already represented in feedItems so that we can
-    // skip redundant server-side push notifications for the same plan/meet.
-    final Set<String> feedEntityIds = <String>{};
-    for (final fi in _feedItems) {
-      final reqId = fi['id']?.toString();
-      if (reqId != null && reqId.isNotEmpty) feedEntityIds.add(reqId);
-      final plan = fi['plan'];
-      final pId = plan is Map ? plan['id']?.toString() : fi['planId']?.toString();
-      if (pId != null && pId.isNotEmpty) feedEntityIds.add(pId);
+    // 1. Partition entries into Party Plan, Stranger Meet, and General Notifications
+    final Map<String, List<Map<String, dynamic>>> partyPlanGroups = {};
+    final Map<String, List<Map<String, dynamic>>> strangersMeetGroups = {};
+    final List<Map<String, dynamic>> nonPartyNotifications = [];
+    final List<Map<String, dynamic>> nonPartyFeedItems = [];
+
+    for (final n in _notifications) {
+      final ppId = _extractPartyPlanId(n);
+      final smId = _extractStrangersMeetId(n);
+
+      if (ppId != null && ppId.isNotEmpty) {
+        partyPlanGroups.putIfAbsent(ppId, () => []).add(n);
+      } else if (smId != null && smId.isNotEmpty) {
+        strangersMeetGroups.putIfAbsent(smId, () => []).add(n);
+      } else {
+        nonPartyNotifications.add(n);
+      }
     }
 
-    // 1. Process System / DB Notifications from `_notifications`
-    for (final n in _notifications) {
+    for (final fi in _feedItems) {
+      final ppId = _extractPartyPlanId(fi);
+      final smId = _extractStrangersMeetId(fi);
+
+      if (ppId != null && ppId.isNotEmpty) {
+        partyPlanGroups.putIfAbsent(ppId, () => []).add(fi);
+      } else if (smId != null && smId.isNotEmpty) {
+        strangersMeetGroups.putIfAbsent(smId, () => []).add(fi);
+      } else {
+        nonPartyFeedItems.add(fi);
+      }
+    }
+
+    // 2. Build Exactly ONE Authoritative Smart Card per Party Plan
+    for (final entry in partyPlanGroups.entries) {
+      final planId = entry.key;
+      final planEntries = entry.value;
+      final smartCard = _buildAuthoritativePartyPlanCard(planId, planEntries, currentUserId);
+      if (smartCard != null) {
+        items.add(smartCard);
+      }
+    }
+
+    // 3. Build Exactly ONE Authoritative Smart Card per Stranger Meet
+    for (final entry in strangersMeetGroups.entries) {
+      final meetId = entry.key;
+      final meetEntries = entry.value;
+      final smartCard = _buildAuthoritativeStrangersMeetCard(meetId, meetEntries, currentUserId);
+      if (smartCard != null) {
+        items.add(smartCard);
+      }
+    }
+
+    // 4. Process General Push Notifications (Table Plans, System, Wallet, Promo)
+    for (final n in nonPartyNotifications) {
       final id = n['id']?.toString() ?? '';
       final category = (n['category'] ?? n['entityType'] ?? 'system').toString().toLowerCase();
       final title = n['title']?.toString() ?? 'Notification';
@@ -850,152 +975,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final createdAt = _parseDateTime(n['createdAt']);
       final timeAgo = _formatTimeAgo(n['createdAt']);
 
-      // ── MANDATORY DISPATCH LOGIC FOR HOST PARTY PLAN DEPOSIT ───────────────
-      final Map<String, dynamic> notifData = n['data'] is Map
-          ? Map<String, dynamic>.from(n['data'])
-          : (n['metadata'] is Map
-              ? Map<String, dynamic>.from(n['metadata'])
-              : <String, dynamic>{});
-
-      final String notifType = (
-        n['type'] ??
-        n['eventType'] ??
-        notifData['type'] ??
-        ''
-      ).toString().trim().toLowerCase();
-
-      final String notifBody = body.trim().toLowerCase();
-
-      final String notifPrimaryAction = (
-        notifData['primaryAction'] ??
-        n['primaryAction'] ??
-        ''
-      ).toString().trim().toLowerCase();
-
-      final String notifHostStatus = (
-        notifData['hostPaymentStatus'] ??
-        n['hostPaymentStatus'] ??
-        ''
-      ).toString().trim().toLowerCase();
-
-      final String notifPartyPlanId =
-          notifData['partyPlanId']?.toString().trim() ?? '';
-
-      final bool isHostDepositRequired =
-          notifPartyPlanId.isNotEmpty &&
-          (
-            notifType == 'party_plan_timeline' ||
-            notifType.contains('party_plan_timeline')
-          ) &&
-          (
-            notifPrimaryAction == 'pay deposit' ||
-            notifBody.contains('action required: pay deposit') ||
-            notifBody.contains('pay deposit')
-          ) &&
-          notifHostStatus != 'paid' &&
-          notifHostStatus != 'completed';
-
-      if (isHostDepositRequired) {
-        debugPrint('### HOST PARTY PLAN DEPOSIT ROUTE ###');
-        debugPrint('partyPlanId=$notifPartyPlanId');
-        debugPrint('primaryAction=$notifPrimaryAction');
-        debugPrint('hostPaymentStatus=$notifHostStatus');
-
-        double depositAmount = 99.0;
-        final rawAmount = notifData['depositAmount'];
-        if (rawAmount is num) {
-          depositAmount = rawAmount.toDouble();
-        } else if (rawAmount is String) {
-          depositAmount = double.tryParse(rawAmount.trim()) ?? 99.0;
-        }
-
-        final venueName = notifData['venueName']?.toString().trim() ?? 'Venue';
-
-        final actionsList = [
-          NotificationAction(
-            label: 'Pay Deposit (${depositAmount.toStringAsFixed(0)})',
-            icon: Icons.payment_rounded,
-            isPrimary: true,
-            onTap: () async {
-              final hostRazorpayOrderId = notifData['hostRazorpayOrderId']?.toString().trim() ?? '';
-              await _startHostRazorpayDirectPaymentInLiveFeed(
-                partyPlanId: notifPartyPlanId,
-                venueName: venueName,
-                orderId: hostRazorpayOrderId,
-                depositAmount: depositAmount,
-                onSuccess: () async {
-                  _loadFeed();
-                },
-              );
-            },
-          ),
-          NotificationAction(
-            label: 'View Plan',
-            icon: Icons.open_in_new_rounded,
-            isPrimary: false,
-            color: Colors.grey[200],
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PartyPlanDetailScreen(
-                    plan: {'id': notifPartyPlanId, ...notifData},
-                  ),
-                ),
-              );
-            },
-          ),
-        ];
-
-        items.add(UnifiedNotificationItem(
-          id: 'pp_host_deposit_$notifPartyPlanId',
-          category: 'party_plan',
-          title: title,
-          body: body,
-          createdAt: createdAt,
-          timeAgo: timeAgo,
-          isRead: isRead,
-          badgeText: 'PARTY PLAN',
-          accentColor: const Color(0xFF8B5CF6),
-          categoryIcon: Icons.celebration_rounded,
-          avatarUrl: n['imageUrl']?.toString() ?? n['actor']?['profilePhotoUrl']?.toString(),
-          actions: actionsList,
-          rawData: n,
-        ));
-        continue;
-      }
-
       Color accentColor = const Color(0xFF6B7280);
       IconData icon = Icons.notifications_rounded;
       String? badge;
       String? actionText;
       VoidCallback? actionTap;
 
-      if (category.contains('stranger') || category.contains('meet')) {
-        // Skip push-notifications that are already shown as live feed items
-        // (avoids duplicate cards).
-        final notifEntityId = n['entityId']?.toString() ?? '';
-        if (feedEntityIds.isNotEmpty && notifEntityId.isNotEmpty &&
-            feedEntityIds.contains(notifEntityId)) {
-          continue;
-        }
-        accentColor = const Color(0xFF6366F1);
-        icon = Icons.people_alt_rounded;
-        badge = 'STRANGER MEET';
-      } else if (category.contains('booking') || category.contains('group')) {
+      if (category.contains('booking') || category.contains('group')) {
         accentColor = const Color(0xFF7C3AED);
         icon = Icons.confirmation_number_rounded;
         badge = 'BOOKING';
-      } else if (category.contains('party') || category.contains('plan') || category.contains('events')) {
-        // Skip push-notifications that are already shown as live feed items
-        final notifEntityId = n['entityId']?.toString() ?? '';
-        if (feedEntityIds.isNotEmpty && notifEntityId.isNotEmpty &&
-            feedEntityIds.contains(notifEntityId)) {
-          continue;
-        }
-        accentColor = const Color(0xFF8B5CF6);
-        icon = Icons.celebration_rounded;
-        badge = 'PARTY PLAN';
       } else if (category.contains('pay') || category.contains('deposit')) {
         accentColor = const Color(0xFF10B981);
         icon = Icons.payments_rounded;
@@ -1035,205 +1024,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
 
       List<NotificationAction>? actionsList;
-
       if (isExpired) {
         accentColor = const Color(0xFF9CA3AF);
         badge = 'EXPIRED';
-      } else {
-        final titleLower = title.toLowerCase();
-        final bodyLower = body.toLowerCase();
-        final entityId = n['entityId']?.toString() ?? '';
-
-        if (entityId.isNotEmpty) {
-          if (category.contains('stranger') || category.contains('meet')) {
-            if (titleLower.contains('request') || bodyLower.contains('request')) {
-              final match = _feedItems.firstWhere(
-                (item) => item['type'] == 'incoming_request' && 
-                          item['requestType'] == 'stranger_meet' &&
-                          item['planId']?.toString() == entityId &&
-                          item['status']?.toString().toLowerCase() == 'pending',
-                orElse: () => {},
-              );
-              if (match.isNotEmpty) {
-                final joinerId = match['id'].toString();
-                actionsList = [
-                  NotificationAction(
-                    label: 'Accept',
-                    icon: Icons.check_circle_rounded,
-                    isPrimary: true,
-                    onTap: () => _handleStrangersMeetJoinAction(entityId, joinerId, 'accept'),
-                  ),
-                  NotificationAction(
-                    label: 'Decline',
-                    icon: Icons.cancel_rounded,
-                    isPrimary: false,
-                    color: Colors.grey[200],
-                    onTap: () => _handleStrangersMeetJoinAction(entityId, joinerId, 'reject'),
-                  ),
-                ];
-              }
-            } else if (titleLower.contains('accepted') || bodyLower.contains('accepted')) {
-              actionsList = [
-                NotificationAction(
-                  label: 'Pay Deposit',
-                  icon: Icons.payment_rounded,
-                  isPrimary: true,
-                  onTap: () {
-                    try {
-                      final req = StrangersMeetRequest.fromJson(n['plan'] ?? n);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => StrangersMeetPaymentScreen(
-                            request: req,
-                            onPaymentSuccess: () => _loadFeed(),
-                            isJoinPayment: true,
-                          ),
-                        ),
-                      );
-                    } catch (e) {
-                      debugPrint('Error parsing strangers meet payment: $e');
-                    }
-                  },
-                ),
-              ];
-            } else if (titleLower.contains('confirmed') || bodyLower.contains('confirmed')) {
-              actionsList = [
-                NotificationAction(
-                  label: 'View Ticket',
-                  icon: Icons.confirmation_number_rounded,
-                  isPrimary: true,
-                  onTap: () {
-                    try {
-                      final req = StrangersMeetRequest.fromJson(n['plan'] ?? n);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => StrangersMeetTicketScreen(request: req),
-                        ),
-                      );
-                    } catch (e) {
-                      debugPrint('Error parsing strangers meet ticket: $e');
-                    }
-                  },
-                ),
-                NotificationAction(
-                  label: 'Chat',
-                  icon: Icons.chat_bubble_rounded,
-                  isPrimary: false,
-                  color: Colors.grey[200],
-                  onTap: () {
-                    final host = n['actor'] ?? {};
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ChatScreen(
-                          user: {
-                            'id': host['id'] ?? '',
-                            'firstName': host['firstName'] ?? 'Host',
-                            'lastName': host['lastName'] ?? '',
-                            'profilePhotoUrl': host['profilePhotoUrl'] ?? host['photoUrl'] ?? host['image'],
-                          },
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ];
-            }
-          } else if (category.contains('party') || category.contains('plan')) {
-            if (titleLower.contains('request') || bodyLower.contains('request')) {
-              actionsList = [
-                NotificationAction(
-                  label: 'Accept',
-                  icon: Icons.check_circle_rounded,
-                  isPrimary: true,
-                  onTap: () => _handleAcceptPartyPlan(entityId),
-                ),
-                NotificationAction(
-                  label: 'Decline',
-                  icon: Icons.cancel_rounded,
-                  isPrimary: false,
-                  color: Colors.grey[200],
-                  onTap: () => _handleRejectPartyPlan(entityId),
-                ),
-              ];
-            } else if (titleLower.contains('accepted') || bodyLower.contains('accepted')) {
-              actionsList = [
-                NotificationAction(
-                  label: 'Pay Deposit',
-                  icon: Icons.payment_rounded,
-                  isPrimary: true,
-                  onTap: () {
-                    final planData = n['plan'] is Map ? n['plan'] : n;
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => PartyPlanDetailScreen(
-                          plan: Map<String, dynamic>.from(planData),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ];
-            } else if (titleLower.contains('confirmed') || bodyLower.contains('confirmed')) {
-              final otherId = n['actor']?['id']?.toString() ?? n['actorId']?.toString();
-              actionsList = [
-                NotificationAction(
-                  label: 'Chat',
-                  icon: Icons.chat_bubble_rounded,
-                  isPrimary: true,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ChatScreen(
-                          user: {
-                            'id': otherId ?? '',
-                            'firstName': n['actor']?['firstName'] ?? 'Partner',
-                            'lastName': n['actor']?['lastName'] ?? '',
-                            'profilePhotoUrl': n['imageUrl']?.toString() ?? n['actor']?['profilePhotoUrl']?.toString(),
-                          },
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                NotificationAction(
-                  label: 'View Ticket',
-                  icon: Icons.confirmation_number_rounded,
-                  isPrimary: false,
-                  color: Colors.grey[200],
-                  onTap: () {
-                    final planData = n['plan'] is Map ? n['plan'] : n;
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => PartyPlanTicketScreen(
-                          request: n,
-                          plan: Map<String, dynamic>.from(planData),
-                          isHost: currentUserId == (planData['userId'] ?? planData['creator']?['id']),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ];
-            }
-          }
-        }
-
-        if (actionsList == null && actionText != null && actionTap != null) {
-          actionsList = [
-            NotificationAction(
-              label: actionText,
-              onTap: actionTap,
-              isPrimary: true,
-              icon: Icons.arrow_forward_rounded,
-            ),
-          ];
-        }
+      } else if (actionText != null && actionTap != null) {
+        actionsList = [
+          NotificationAction(
+            label: actionText,
+            onTap: actionTap,
+            isPrimary: true,
+            icon: Icons.arrow_forward_rounded,
+          ),
+        ];
       }
 
       final actorMap = n['actor'] is Map
@@ -1248,6 +1050,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         createdAt: createdAt,
         timeAgo: timeAgo,
         isRead: isRead,
+        isExpired: isExpired,
         badgeText: badge,
         accentColor: accentColor,
         categoryIcon: icon,
@@ -1255,780 +1058,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         senderUser: actorMap,
         actionButtonText: actionText,
         onActionTap: actionTap,
-        actions: actionsList,
+        actions: isExpired ? null : actionsList,
         rawData: n,
       ));
     }
 
-    // 2. Process Party Plans / Stranger Meets Join Requests from `_feedItems`
-    for (final item in _feedItems) {
-      final id = item['id']?.toString() ?? '';
-      if (id.isEmpty) continue;
-
-      final type = item['type']?.toString() ?? '';
-      final requestType = item['requestType']?.toString() ?? '';
-      final status = (item['status'] ?? 'pending').toString().toLowerCase();
-      final createdAt = _parseDateTime(item['createdAt'] ?? item['postedAt']);
-      final timeAgo = _formatTimeAgo(item['createdAt'] ?? item['postedAt']);
-      final isRead = _readRequestIds.contains(id);
-
-      final user = (item['user'] ?? item['requester'] ?? item['creator'] ?? item['host']) as Map<String, dynamic>? ?? {};
-      final venue = (item['venue'] ?? item['venueMap']) as Map<String, dynamic>? ?? {};
-      final venueName = venue['name'] ?? item['venueName'] ?? 'Venue';
-      final userName = '${user['firstName'] ?? 'User'} ${user['lastName'] ?? ''}'.trim();
-      // profileImageUrl is the key the backend sends; also check photoUrl and image as fallbacks
-      final userPhoto = (user['profileImageUrl']?.toString().isNotEmpty == true ? user['profileImageUrl'] : null)
-          ?? (user['profilePhotoUrl']?.toString().isNotEmpty == true ? user['profilePhotoUrl'] : null)
-          ?? (user['photoUrl']?.toString().isNotEmpty == true ? user['photoUrl'] : null)
-          ?? user['image'];
-
-      bool isExpired = false;
-      final planMap = item['plan'] is Map ? item['plan'] as Map<String, dynamic> : <String, dynamic>{};
-      final planData = planMap.isNotEmpty ? planMap : item;
-      final rawDateTime = planData['planDateTime'] ?? planData['eventDateTime'] ?? planData['planDate'] ?? planData['partyDate'] ?? planData['bookingDate'];
-      if (rawDateTime != null) {
-        try {
-          final planTime = DateTime.parse(rawDateTime.toString()).toLocal();
-          if (planTime.isBefore(DateTime.now())) {
-            isExpired = true;
-          }
-        } catch (_) {}
-      }
-
-      List<NotificationAction>? actionsList;
-      final bool isMyCreatedPartyPlan = (item['userId']?.toString() == currentUserId) ||
-          (planMap['userId']?.toString() == currentUserId) ||
-          (planData['userId']?.toString() == currentUserId) ||
-          (item['type'] == 'party_plan' && item['creator']?['id']?.toString() == currentUserId);
-
-      final bool isStranger = requestType.toLowerCase().contains('stranger') ||
-          type.toLowerCase().contains('stranger') ||
-          item['strangersMeetId'] != null ||
-          (item['plan'] is Map && item['plan']['strangersMeetId'] != null);
-
-      Color accent = isStranger
-          ? const Color(0xFF6366F1)
-          : const Color(0xFF8B5CF6);
-      String title = isStranger
-          ? '🤝 Stranger Meet'
-          : (isMyCreatedPartyPlan ? '🎉 Your Party Plan' : '🎉 Party Plan');
-      String body = isStranger
-          ? '$userName requested to join Stranger Meet at $venueName'
-          : (isMyCreatedPartyPlan
-              ? 'Your Party Plan at $venueName is active!'
-              : 'Party Plan at $venueName');
-      String badge = isStranger
-          ? 'STRANGER MEET'
-          : 'PARTY PLAN';
-
-      // Declare at loop scope so item builder can access for declined card avatars
-      Map<String, dynamic> hostCreator = <String, dynamic>{};
-      String? hostPhoto;
-
-      if (isExpired) {
-        accent = const Color(0xFF9CA3AF);
-        badge = 'EXPIRED';
-      } else {
-        if (isStranger) {
-          if (type == 'incoming_request') {
-            if (status == 'pending') {
-              title = '📥 Join Request Received';
-              body = '$userName requested to join your Stranger Meet at $venueName';
-              actionsList = [
-                NotificationAction(
-                  label: 'Accept',
-                  icon: Icons.check_circle_rounded,
-                  isPrimary: true,
-                  onTap: () => _handleStrangersMeetJoinAction(item['planId'].toString(), item['id'].toString(), 'accept'),
-                ),
-                NotificationAction(
-                  label: 'Decline',
-                  icon: Icons.cancel_rounded,
-                  isPrimary: false,
-                  color: Colors.grey[200],
-                  onTap: () => _handleStrangersMeetJoinAction(item['planId'].toString(), item['id'].toString(), 'reject'),
-                ),
-              ];
-            } else if (status == 'accepted' || status == 'payment_pending') {
-              title = '⏳ Approved (Awaiting Payment)';
-              body = 'You approved $userName to join Stranger Meet at $venueName. Awaiting payment to unlock chat.';
-              actionsList = [];
-            } else if (status == 'paid' || status == 'confirmed') {
-              title = '🎉 Seat Confirmed';
-              body = '$userName\'s safety deposit is paid! Seat is confirmed.';
-              badge = 'CONFIRMED';
-              actionsList = [
-                NotificationAction(
-                  label: 'Chat',
-                  icon: Icons.chat_bubble_rounded,
-                  isPrimary: true,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ChatScreen(
-                          user: {
-                            'id': user['id'] ?? '',
-                            'firstName': user['firstName'] ?? 'Partner',
-                            'lastName': user['lastName'] ?? '',
-                            'profilePhotoUrl': userPhoto,
-                          },
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                NotificationAction(
-                  label: 'View Ticket',
-                  icon: Icons.confirmation_number_rounded,
-                  isPrimary: false,
-                  color: Colors.grey[200],
-                  onTap: () {
-                    try {
-                      // Use planDetails which carries the actual SM request ID
-                      final smData = item['planDetails'] is Map
-                          ? (item['planDetails'] as Map<String, dynamic>)
-                          : item;
-                      final req = StrangersMeetRequest.fromJson(smData);
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
-                    } catch (e) {
-                      debugPrint('Error parsing strangers meet ticket: $e');
-                    }
-                  },
-                ),
-              ];
-            }
-          } else {
-            // My outgoing request or my own created meetup
-            final bool isHostOfMeet = requestType == 'stranger_meet';
-            if (isHostOfMeet) {
-              final paymentStatus = (item['paymentStatus'] ?? '').toString().toLowerCase();
-              // HOST'S OWN Created meetup request status
-              if (paymentStatus == 'paid' || status == 'paid' || status == 'confirmed') {
-                title = '🎉 Stranger Meet Confirmed & LIVE!';
-                body = 'Your Stranger Meet "${item['subject'] ?? ''}" at $venueName is live on the feed!';
-                badge = 'LIVE & CONFIRMED';
-                accent = const Color(0xFF10B981);
-                actionsList = [
-                  NotificationAction(
-                    label: 'View Ticket',
-                    icon: Icons.confirmation_number_rounded,
-                    isPrimary: true,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => StrangersMeetTicketScreen(
-                          request: StrangersMeetRequest.fromJson(item),
-                        ),
-                      ),
-                    ),
-                  ),
-                  NotificationAction(
-                    label: 'View Requests',
-                    icon: Icons.people_outline_rounded,
-                    isPrimary: false,
-                    color: Colors.grey[200],
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const StrangersMeetRequestsScreen(),
-                      ),
-                    ),
-                  ),
-                ];
-              } else if (status == 'approved' || status == 'active') {
-                title = '🎉 Stranger Meet Approved!';
-                body = 'Your meet request "${item['subject'] ?? ''}" at $venueName has been approved. Complete payment to publish it!';
-                badge = 'ACTION REQUIRED';
-                actionsList = [
-                  NotificationAction(
-                    label: 'Pay Deposit',
-                    icon: Icons.payment_rounded,
-                    isPrimary: true,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => StrangersMeetPaymentScreen(
-                          request: StrangersMeetRequest.fromJson(item),
-                          onPaymentSuccess: () => _loadFeed(),
-                          isJoinPayment: false, // Host payment
-                        ),
-                      ),
-                    ),
-                  ),
-                ];
-              } else if (status == 'pending') {
-                title = '⏳ Stranger Meet Awaiting Approval';
-                body = 'Your meet request "${item['subject'] ?? ''}" at $venueName has been submitted. Awaiting admin approval.';
-                badge = 'PENDING';
-              }
-            } else {
-              // ─── JOINER: My request to join someone else's Stranger Meet ─────
-              // For stranger_meet_join items, venue and host-user info live inside
-              // item['plan'] (not at the top level). Extract them here.
-              final smPlan = item['plan'] is Map
-                  ? (item['plan'] as Map<String, dynamic>)
-                  : <String, dynamic>{};
-              final smVenueMap = smPlan['venue'] is Map
-                  ? (smPlan['venue'] as Map<String, dynamic>)
-                  : venue;
-              final smVenueName = smVenueMap['name']?.toString().isNotEmpty == true
-                  ? smVenueMap['name'].toString()
-                  : venueName;
-              final smHost = smPlan['user'] is Map
-                  ? (smPlan['user'] as Map<String, dynamic>)
-                  : user;
-              final smHostPhoto =
-                  smHost['profileImageUrl'] ?? smHost['profilePhotoUrl'] ?? userPhoto;
-
-              // Check actual joiner payment status FIRST.
-              // After payment, backend keeps status='accepted' but paymentStatus='paid'.
-              final joinerPayStatus =
-                  (item['joinerPaymentStatus'] ?? '').toString().toLowerCase();
-
-              if (joinerPayStatus == 'paid') {
-                // ── Payment done – show confirmed state ──────────────────────
-                title = '🎉 You\'re In! Meet Confirmed';
-                body = 'Payment done! Your seat at $smVenueName is locked. Enjoy the meet! 🥂';
-                badge = 'CONFIRMED';
-                accent = const Color(0xFF10B981);
-                actionsList = [
-                  NotificationAction(
-                    label: 'Chat Host',
-                    icon: Icons.chat_bubble_rounded,
-                    isPrimary: false,
-                    color: Colors.grey[200],
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ChatScreen(
-                          user: {
-                            'id': smHost['id'] ?? '',
-                            'firstName': smHost['firstName'] ?? 'Host',
-                            'lastName': smHost['lastName'] ?? '',
-                            'profilePhotoUrl': smHostPhoto,
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                  NotificationAction(
-                    label: 'View Ticket',
-                    icon: Icons.confirmation_number_rounded,
-                    isPrimary: true,
-                    onTap: () {
-                      try {
-                        final req = StrangersMeetRequest.fromJson(
-                          smPlan.isNotEmpty ? smPlan : item,
-                        );
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => StrangersMeetTicketScreen(request: req),
-                          ),
-                        );
-                      } catch (e) {
-                        debugPrint('Error parsing SM ticket (joiner paid): $e');
-                      }
-                    },
-                  ),
-                ];
-              } else if (status == 'pending') {
-                // ── Pending host approval ────────────────────────────────────
-                title = '🤝 Request Sent';
-                body = 'Awaiting host approval for Stranger Meet at $smVenueName.';
-                badge = 'PENDING';
-                // No action button – nothing to do until host responds
-              } else if (status == 'accepted' || status == 'payment_pending') {
-                // ── Accepted – needs join payment ────────────────────────────
-                title = '✅ Accepted! Pay to Confirm';
-                body = 'Your request to join the meet at $smVenueName was accepted! '
-                    'Pay the deposit to secure your spot.';
-                badge = 'ACTION REQUIRED';
-                accent = const Color(0xFFF59E0B);
-                actionsList = [
-                  NotificationAction(
-                    label: 'Pay Deposit',
-                    icon: Icons.payment_rounded,
-                    isPrimary: true,
-                    onTap: () {
-                      try {
-                        // IMPORTANT: use smPlan (item['plan']) for the correct
-                        // StrangersMeetRequest ID. item['id'] is the joiner-record
-                        // ID, which is NOT the SM request ID the backend expects.
-                        final req = StrangersMeetRequest.fromJson(
-                          smPlan.isNotEmpty ? smPlan : item,
-                        );
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => StrangersMeetPaymentScreen(
-                              request: req,
-                              onPaymentSuccess: () => _loadFeed(),
-                              isJoinPayment: true,
-                            ),
-                          ),
-                        );
-                      } catch (e) {
-                        debugPrint('Error parsing SM payment (joiner): $e');
-                      }
-                    },
-                  ),
-                ];
-              } else if (status == 'rejected') {
-                // ── Rejected by host ─────────────────────────────────────────
-                title = '❌ Request Declined';
-                body = 'Your request to join Stranger Meet at $smVenueName was declined by the host.';
-                badge = 'DECLINED';
-                accent = const Color(0xFF9CA3AF);
-                // No action button
-              } else if (status == 'paid' || status == 'confirmed') {
-                // ── Paid / Confirmed (status-level fallback) ─────────────────
-                title = '🎉 Stranger Meet Confirmed!';
-                body = 'Your seat at $smVenueName is locked and confirmed!';
-                badge = 'CONFIRMED';
-                accent = const Color(0xFF10B981);
-                actionsList = [
-                  NotificationAction(
-                    label: 'View Ticket',
-                    icon: Icons.confirmation_number_rounded,
-                    isPrimary: true,
-                    onTap: () {
-                      try {
-                        final req = StrangersMeetRequest.fromJson(
-                          smPlan.isNotEmpty ? smPlan : item,
-                        );
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => StrangersMeetTicketScreen(request: req),
-                          ),
-                        );
-                      } catch (e) {
-                        debugPrint('Error parsing SM ticket (joiner confirmed): $e');
-                      }
-                    },
-                  ),
-                ];
-              }
-            }
-          }
-        } else {
-          // ─── Party Plan Requests ─────────────────────────────────────────────
-          //
-          // Detect whether this `my_request` is actually a private invitation
-          // sent by the HOST (plan.visibility == 'PRIVATE' &&
-          // plan.selectedUsers contains current user ID) vs a voluntary request.
-          final planVis = planMap['visibility']?.toString().toUpperCase() ?? '';
-          final selectedUsers = planMap['selectedUsers'];
-          final bool isPrivateInvite = planVis == 'PRIVATE' &&
-              selectedUsers is List &&
-              selectedUsers.any((u) => u?.toString() == currentUserId);
-
-          // Host user info from plan.creator (assigned to loop-level vars for use in item builder)
-          hostCreator = planMap['creator'] is Map ? planMap['creator'] as Map<String, dynamic> : <String, dynamic>{};
-          final hostName = '${hostCreator['firstName'] ?? user['firstName'] ?? 'Host'} ${hostCreator['lastName'] ?? user['lastName'] ?? ''}'.trim();
-          hostPhoto = (hostCreator['profileImageUrl']?.toString().isNotEmpty == true
-                  ? hostCreator['profileImageUrl'] as String
-                  : null) ??
-              (hostCreator['profilePhotoUrl']?.toString().isNotEmpty == true
-                  ? hostCreator['profilePhotoUrl'] as String
-                  : null) ??
-              userPhoto?.toString();
-
-          if (type == 'incoming_request') {
-            // ─── HOST VIEW: someone requested to join my plan ──────────────
-            if (status == 'pending') {
-              title = '📥 Party Plan Request';
-              body = '$userName requested to join your Party Plan at $venueName';
-              actionsList = [
-                NotificationAction(
-                  label: 'Accept',
-                  icon: Icons.check_circle_rounded,
-                  isPrimary: true,
-                  onTap: () => _handleAcceptPartyPlan(id),
-                ),
-                NotificationAction(
-                  label: 'Decline',
-                  icon: Icons.cancel_rounded,
-                  isPrimary: false,
-                  color: Colors.grey[200],
-                  onTap: () => _handleRejectPartyPlan(id),
-                ),
-              ];
-            } else if (status == 'accepted' || status == 'payment_pending') {
-              title = '⏳ Approved — Awaiting Payment';
-              body = 'You approved $userName. Waiting for safety deposit payment to unlock chat.';
-              actionsList = [
-                NotificationAction(
-                  label: 'Revoke',
-                  icon: Icons.cancel_rounded,
-                  isPrimary: false,
-                  color: Colors.grey[200],
-                  onTap: () => _handleRejectPartyPlan(id),
-                ),
-              ];
-            } else if (status == 'paid' || status == 'confirmed') {
-              title = '🎉 Partner Joined';
-              body = '$userName paid the deposit! Party Plan at $venueName is confirmed.';
-              badge = 'CONFIRMED';
-              final otherId = item['requesterId'] ?? user['id'] ?? '';
-              actionsList = [
-                NotificationAction(
-                  label: 'Chat',
-                  icon: Icons.chat_bubble_rounded,
-                  isPrimary: true,
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ChatScreen(
-                        user: {
-                          'id': otherId,
-                          'firstName': user['firstName'] ?? 'Party Partner',
-                          'lastName': user['lastName'] ?? '',
-                          'profilePhotoUrl': userPhoto,
-                        },
-                      ),
-                    ),
-                  ),
-                ),
-                NotificationAction(
-                  label: 'View Ticket',
-                  icon: Icons.confirmation_number_rounded,
-                  isPrimary: false,
-                  color: Colors.grey[200],
-                  onTap: () {
-                    final planData = item['plan'] is Map ? item['plan'] as Map<String, dynamic> : item;
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => PartyPlanTicketScreen(
-                          request: item,
-                          plan: planData,
-                          isHost: currentUserId == (planData['userId'] ?? planData['creator']?['id']),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ];
-            }
-          } else {
-            // ─── JOINER / INVITEE VIEW ────────────────────────────────────
-            if (isPrivateInvite) {
-              // ─── PRIVATE INVITE from host ─────────────────────────────
-              accent = const Color(0xFF7C3AED);
-              if (status == 'pending') {
-                title = '💌 Private Invite!';
-                badge = 'INVITE';
-                body = '$hostName privately invited you to their Party Plan at $venueName. Accept to proceed!';
-                actionsList = [
-                  NotificationAction(
-                    label: 'Accept',
-                    icon: Icons.check_circle_rounded,
-                    isPrimary: true,
-                    onTap: () => _handleAcceptPartyPlanInvite(id),
-                  ),
-                  NotificationAction(
-                    label: 'Decline',
-                    icon: Icons.cancel_rounded,
-                    isPrimary: false,
-                    color: Colors.grey[200],
-                    onTap: () => _handleRejectPartyPlan(id),
-                  ),
-                ];
-              } else if (status == 'accepted' || status == 'payment_pending') {
-                title = '✅ Invite Accepted!';
-                badge = 'ACTION REQUIRED';
-                body = 'You accepted $hostName\'s invite at $venueName. Pay the safety deposit to lock your spot!';
-                final countdownLabel = _calculateCountdownLabel(item, planMap);
-                actionsList = [
-                  NotificationAction(
-                    label: countdownLabel,
-                    icon: Icons.payment_rounded,
-                    isPrimary: true,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => PartyPlanDetailScreen(
-                          plan: planMap.isNotEmpty ? planMap : item,
-                        ),
-                      ),
-                    ).then((_) => _loadFeed(showLoader: false)),
-                  ),
-                  NotificationAction(
-                    label: 'Decline',
-                    icon: Icons.cancel_rounded,
-                    isPrimary: false,
-                    color: Colors.grey[200],
-                    onTap: () => _handleRejectPartyPlan(id),
-                  ),
-                ];
-              } else if (status == 'paid' || status == 'confirmed') {
-                title = '🎉 Party Confirmed!';
-                badge = 'CONFIRMED';
-                body = 'Your spot at $venueName is locked! Chat with $hostName.';
-                actionsList = [
-                  NotificationAction(
-                    label: 'Chat',
-                    icon: Icons.chat_bubble_rounded,
-                    isPrimary: true,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ChatScreen(
-                          user: {
-                            'id': hostCreator['id'] ?? planMap['userId'] ?? '',
-                            'firstName': hostCreator['firstName'] ?? 'Host',
-                            'lastName': hostCreator['lastName'] ?? '',
-                            'profilePhotoUrl': hostPhoto,
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                  NotificationAction(
-                    label: 'View Ticket',
-                    icon: Icons.confirmation_number_rounded,
-                    isPrimary: false,
-                    color: Colors.grey[200],
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => PartyPlanTicketScreen(
-                            request: item,
-                            plan: planMap.isNotEmpty ? planMap : item,
-                            isHost: false,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ];
-              } else if (status == 'rejected' || status == 'cancelled') {
-                title = '\u274c Invite Declined';
-                badge = 'DECLINED';
-                body = 'You declined the invite from $hostName at $venueName.';
-                accent = const Color(0xFF9CA3AF);
-              }
-            } else {
-              // ─── VOLUNTARY JOIN REQUEST sent by current user ──────────
-              if (status == 'pending') {
-                title = '⏳ Party Plan Request Sent';
-                body = 'You requested to join the Party Plan at $venueName.';
-                actionsList = [
-                  NotificationAction(
-                    label: 'Cancel Request',
-                    icon: Icons.cancel_rounded,
-                    isPrimary: false,
-                    color: Colors.grey[200],
-                    onTap: () => _handleCancelMyRequest(id),
-                  ),
-                ];
-              } else if (status == 'accepted' || status == 'payment_pending') {
-                title = '👤 Request Accepted!';
-                body = 'Your Party Plan request at $venueName was accepted! Pay safety deposit within 30 mins to unlock chat.';
-                badge = 'ACTION REQUIRED';
-                final countdownLabel = _calculateCountdownLabel(item, planMap);
-                actionsList = [
-                  NotificationAction(
-                    label: countdownLabel,
-                    icon: Icons.payment_rounded,
-                    isPrimary: true,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => PartyPlanDetailScreen(
-                          plan: planMap.isNotEmpty ? planMap : item,
-                        ),
-                      ),
-                    ).then((_) => _loadFeed(showLoader: false)),
-                  ),
-                  NotificationAction(
-                    label: 'Cancel',
-                    icon: Icons.cancel_rounded,
-                    isPrimary: false,
-                    color: Colors.grey[200],
-                    onTap: () => _handleCancelMyRequest(id),
-                  ),
-                ];
-              } else if (status == 'paid' || status == 'confirmed') {
-                title = '🎉 Match Confirmed!';
-                body = 'Party booking at $venueName is confirmed! Chat is unlocked.';
-                badge = 'CONFIRMED';
-                final otherId = item['hostId'] ?? planMap['userId'] ?? user['id'] ?? '';
-                actionsList = [
-                  NotificationAction(
-                    label: 'Chat',
-                    icon: Icons.chat_bubble_rounded,
-                    isPrimary: true,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ChatScreen(
-                          user: {
-                            'id': otherId,
-                            'firstName': user['firstName'] ?? 'Party Partner',
-                            'lastName': user['lastName'] ?? '',
-                            'profilePhotoUrl': userPhoto,
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                  NotificationAction(
-                    label: 'View Ticket',
-                    icon: Icons.confirmation_number_rounded,
-                    isPrimary: false,
-                    color: Colors.grey[200],
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => PartyPlanTicketScreen(
-                            request: item,
-                            plan: planMap.isNotEmpty ? planMap : item,
-                            isHost: currentUserId == (planMap['userId'] ?? item['hostId']),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ];
-              } else if (status == 'rejected' || status == 'cancelled') {
-                title = '\u274c Request Declined';
-                badge = 'DECLINED';
-                body = 'Your Party Plan request at $venueName was declined by $hostName.';
-                accent = const Color(0xFF9CA3AF);
-              }
-            }
-          }
-        }
-      }
-
-      // If current user is the host/creator of this party plan AND deposit is unpaid, enforce Action Required Pay Deposit card
-      final hostPayStatus = (item['hostPaymentStatus'] ?? planMap['hostPaymentStatus'] ?? '').toString().toLowerCase();
-
-      if (isMyCreatedPartyPlan && hostPayStatus != 'paid' && hostPayStatus != 'completed' && status != 'cancelled') {
-        final double depositAmt = (item['depositAmount'] ?? planMap['depositAmount'] ?? 99.0) is num
-            ? (item['depositAmount'] ?? planMap['depositAmount'] ?? 99.0).toDouble()
-            : 99.0;
-        final partyPlanId = item['id']?.toString() ?? planMap['id']?.toString() ?? '';
-        final hostOrderId = item['hostRazorpayOrderId']?.toString() ?? planMap['hostRazorpayOrderId']?.toString() ?? '';
-
-        title = '⚡ Action Required: Pay Host Deposit';
-        body = 'Pay deposit of ₹${depositAmt.toStringAsFixed(0)} for your Party Plan at $venueName to publish it!';
-        badge = 'ACTION REQUIRED';
-        accent = const Color(0xFF8B5CF6);
-        actionsList = [
-          NotificationAction(
-            label: 'Pay Deposit (${depositAmt.toStringAsFixed(0)})',
-            icon: Icons.payment_rounded,
-            isPrimary: true,
-            onTap: () async {
-              await _startHostRazorpayDirectPaymentInLiveFeed(
-                partyPlanId: partyPlanId,
-                venueName: venueName,
-                orderId: hostOrderId,
-                depositAmount: depositAmt,
-                onSuccess: () async {
-                  _loadFeed();
-                },
-              );
-            },
-          ),
-          NotificationAction(
-            label: 'View Plan',
-            icon: Icons.open_in_new_rounded,
-            isPrimary: false,
-            color: Colors.grey[200],
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PartyPlanDetailScreen(
-                    plan: planMap.isNotEmpty ? planMap : item,
-                  ),
-                ),
-              );
-            },
-          ),
-        ];
-      }
-
-      // Handle CANCELLED state for Party Plan cards
-      final String planStatus = (item['status'] ?? planMap['status'] ?? '').toString().toLowerCase();
-      final String lifecycleStatus = (item['lifecycleStatus'] ?? planMap['lifecycleStatus'] ?? '').toString().toLowerCase();
-
-      if (planStatus == 'cancelled' || lifecycleStatus == 'cancelled') {
-        title = '❌ Party Plan Cancelled';
-        body = 'This Party Plan at $venueName was cancelled by mutual agreement.';
-        badge = 'CANCELLED';
-        accent = Colors.redAccent;
-        actionsList = [
-          NotificationAction(
-            label: 'View Details',
-            icon: Icons.info_outline_rounded,
-            isPrimary: false,
-            color: Colors.grey[200],
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PartyPlanDetailScreen(
-                    plan: planMap.isNotEmpty ? planMap : item,
-                  ),
-                ),
-              );
-            },
-          ),
-        ];
-      }
-
-      // Hide unpaid party plans created by OTHER users from live feed
-      if (!isStranger && !isMyCreatedPartyPlan && hostPayStatus.isNotEmpty && hostPayStatus != 'paid' && hostPayStatus != 'completed') {
-        continue;
-      }
-
-        // For declined party plan cards, show the host/creator's avatar (the person who declined)
-        final bool isDeclined = badge == 'DECLINED' || badge == 'REJECTED';
-        final String? resolvedAvatarUrl = isDeclined && !isStranger
-            ? ((hostCreator['profileImageUrl']?.toString().isNotEmpty == true
-                    ? hostCreator['profileImageUrl']
-                    : null) ??
-                (hostCreator['profilePhotoUrl']?.toString().isNotEmpty == true
-                    ? hostCreator['profilePhotoUrl']
-                    : null) ??
-                (hostPhoto?.isNotEmpty == true ? hostPhoto : null) ??
-                userPhoto?.toString())
-            : userPhoto?.toString();
-        final Map<String, dynamic>? resolvedSenderUser = isDeclined && !isStranger && hostCreator.isNotEmpty
-            ? hostCreator
-            : (user.isNotEmpty ? user : null);
-
-        items.add(UnifiedNotificationItem(
-          id: requestType == 'stranger_meet' || type == 'stranger_meet' ? 'sm_$id' : 'pp_$id',
-          category: requestType == 'stranger_meet' || type == 'stranger_meet' ? 'stranger_meet' : 'party_plan',
-          title: title,
-          body: body,
-          createdAt: createdAt,
-          timeAgo: timeAgo,
-          isRead: isRead,
-          badgeText: badge,
-          accentColor: accent,
-          categoryIcon: requestType == 'stranger_meet' || type == 'stranger_meet'
-              ? Icons.people_alt_rounded
-              : Icons.celebration_rounded,
-          avatarUrl: resolvedAvatarUrl,
-          senderUser: resolvedSenderUser,
-          actions: actionsList,
-          rawData: item,
-        ));
-      }
-
-
-    // 3. Process Large Party / Group Party Bookings from `_largePartyBookings`
+    // 5. Process Large Party / Group Party Bookings
     for (final booking in _largePartyBookings) {
       final id = booking['id']?.toString() ?? booking['bookingId']?.toString() ?? '';
       if (id.isEmpty) continue;
@@ -2112,62 +1147,1069 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         createdAt: createdAt,
         timeAgo: timeAgo,
         isRead: true,
+        isExpired: isExpired,
         badgeText: badge,
         accentColor: accent,
         categoryIcon: Icons.groups_rounded,
         actionButtonText: actionText,
         onActionTap: actionTap,
-        actions: actionsList,
+        actions: isExpired ? null : actionsList,
         rawData: booking,
       ));
     }
 
     // Sort all timeline items descending by createdAt
     items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return items;
+  }
 
-    // Universal Entity Grouping & Deduplication so only 1 notification card is shown per plan/meet/booking
-    final Map<String, UnifiedNotificationItem> entityMap = {};
-    final List<UnifiedNotificationItem> uniqueItems = [];
-    for (final item in items) {
-      final raw = item.rawData;
-      final planData = raw['plan'] is Map ? (raw['plan'] as Map<String, dynamic>) : raw;
-      final rawData = raw['data'] is Map ? (raw['data'] as Map<String, dynamic>) : <String, dynamic>{};
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Build Authoritative Party Plan Smart Card (1 Party Plan = 1 Card)
+  // ─────────────────────────────────────────────────────────────────────────────
+  UnifiedNotificationItem? _buildAuthoritativePartyPlanCard(
+    String planId,
+    List<Map<String, dynamic>> entries,
+    String currentUserId,
+  ) {
+    if (entries.isEmpty) return null;
 
-      String groupKey = item.id;
-      final entityId = rawData['partyPlanId']?.toString() ??
-          raw['partyPlanId']?.toString() ??
-          raw['entityId']?.toString() ??
-          raw['requestId']?.toString() ??
-          raw['strangersMeetId']?.toString() ??
-          raw['bookingId']?.toString() ??
-          planData['id']?.toString();
-
-      if (entityId != null && entityId.isNotEmpty) {
-        groupKey = '${item.category}_$entityId';
-      }
-
-      if (!entityMap.containsKey(groupKey)) {
-        entityMap[groupKey] = item;
-        uniqueItems.add(item);
-      } else if (item.category == 'party_plan') {
-        // Active Host Pay Deposit notification takes priority over old party plan updates
-        final existingItem = entityMap[groupKey]!;
-        final isCurrentHostDeposit = item.actions?.any((a) => a.label.contains('Pay Deposit')) == true;
-        final isExistingHostDeposit = existingItem.actions?.any((a) => a.label.contains('Pay Deposit')) == true;
-
-        if (isCurrentHostDeposit && !isExistingHostDeposit) {
-          entityMap[groupKey] = item;
-          final idx = uniqueItems.indexOf(existingItem);
-          if (idx != -1) {
-            uniqueItems[idx] = item;
-          }
+    // 1. Extract the richest Plan map
+    Map<String, dynamic> planMap = {};
+    for (final e in entries) {
+      if (e['plan'] is Map && (e['plan'] as Map).isNotEmpty) {
+        planMap = Map<String, dynamic>.from(e['plan']);
+        break;
+      } else if (e['type'] == 'party_plan' || e['category'] == 'party_plan') {
+        if (e['venue'] != null || e['creator'] != null || e['planDateTime'] != null) {
+          planMap = Map<String, dynamic>.from(e);
+          break;
         }
       }
     }
+    if (planMap.isEmpty) {
+      final first = entries.first;
+      if (first['data'] is Map && (first['data'] as Map).isNotEmpty) {
+        planMap = Map<String, dynamic>.from(first['data']);
+      } else {
+        planMap = Map<String, dynamic>.from(first);
+      }
+    }
 
-    return uniqueItems;
+    planMap['id'] = planMap['id'] ?? planId;
+
+    // 2. Identify Venue and Host details
+    final venue = (planMap['venue'] is Map)
+        ? planMap['venue'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final venueName = venue['name']?.toString() ?? planMap['venueName']?.toString() ?? 'Party Venue';
+
+    final hostCreator = (planMap['creator'] is Map)
+        ? planMap['creator'] as Map<String, dynamic>
+        : (planMap['host'] is Map
+            ? planMap['host'] as Map<String, dynamic>
+            : <String, dynamic>{});
+    final hostName = '${hostCreator["firstName"] ?? planMap["hostName"] ?? "Host"} ${hostCreator["lastName"] ?? ""}'.trim();
+    final hostPhoto = hostCreator['profileImageUrl']?.toString() ?? hostCreator['profilePhotoUrl']?.toString() ?? planMap['hostProfilePhotoUrl']?.toString();
+
+    final String planHostId = (planMap['userId'] ?? hostCreator['id'] ?? '').toString();
+    final bool isHost = currentUserId.isNotEmpty && (planHostId == currentUserId || planMap['role'] == 'host');
+
+    // 3. Find requests involving current user or host
+    Map<String, dynamic>? myRequest;
+    final List<Map<String, dynamic>> pendingIncomingRequests = [];
+    Map<String, dynamic>? acceptedJoinerRequest;
+
+    for (final e in entries) {
+      final reqType = (e['type'] ?? e['requestType'] ?? '').toString();
+      final status = (e['status'] ?? '').toString().toLowerCase();
+
+      if (reqType == 'my_request' || e['requesterId']?.toString() == currentUserId) {
+        myRequest = e;
+      }
+      if (reqType == 'incoming_request' || (isHost && e['requester'] != null)) {
+        if (status == 'pending') {
+          pendingIncomingRequests.add(e);
+        } else if (status == 'accepted' || status == 'payment_pending' || status == 'paid' || status == 'confirmed') {
+          acceptedJoinerRequest = e;
+        }
+      }
+      if (status == 'confirmed' || status == 'paid') {
+        acceptedJoinerRequest = e;
+      }
+    }
+
+    // 4. Format plan date & time
+    String formattedDateTime = '';
+    final rawDateTime = planMap['planDateTime'] ?? planMap['eventDateTime'] ?? planMap['planDate'];
+    DateTime? parsedEventDate;
+    if (rawDateTime != null) {
+      try {
+        parsedEventDate = DateTime.parse(rawDateTime.toString()).toLocal();
+        const weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        final w = weekdayNames[parsedEventDate.weekday - 1];
+        final m = monthNames[parsedEventDate.month - 1];
+        final hour = parsedEventDate.hour % 12 == 0 ? 12 : parsedEventDate.hour % 12;
+        final ampm = parsedEventDate.hour >= 12 ? 'PM' : 'AM';
+        final minute = parsedEventDate.minute.toString().padLeft(2, '0');
+        formattedDateTime = '$w, ${parsedEventDate.day} $m • $hour:$minute $ampm';
+      } catch (_) {}
+    }
+
+    // 5. Expiration & Status Checks
+    bool isExpired = false;
+    if (parsedEventDate != null && parsedEventDate.isBefore(DateTime.now())) {
+      isExpired = true;
+    }
+
+    final String planStatus = (planMap['status'] ?? '').toString().toLowerCase();
+    final String lifecycleStatus = (planMap['lifecycleStatus'] ?? '').toString().toLowerCase();
+    final String hostPaymentStatus = (planMap['hostPaymentStatus'] ?? '').toString().toLowerCase();
+
+    if (planStatus == 'expired' || lifecycleStatus == 'expired' || lifecycleStatus == 'payment_expired') {
+      isExpired = true;
+    }
+
+    final bool isCancelled = planStatus == 'cancelled' ||
+        lifecycleStatus == 'cancelled' ||
+        (myRequest != null && (myRequest['status'] == 'cancelled' || myRequest['status'] == 'rejected'));
+
+    final bool hostReached = planMap['hostArrivalConfirmed'] == true;
+    final bool guestReached = (acceptedJoinerRequest != null && acceptedJoinerRequest['guestArrivalConfirmed'] == true) ||
+        (myRequest != null && myRequest['guestArrivalConfirmed'] == true);
+    final bool bothReached = hostReached && guestReached;
+    final bool userReached = isHost ? hostReached : guestReached;
+    final bool partnerReached = isHost ? guestReached : hostReached;
+    final bool isRefunded = hostPaymentStatus == 'refunded' ||
+        (myRequest != null && myRequest['joinerPaymentStatus'] == 'refunded') ||
+        lifecycleStatus == 'plan_completed' ||
+        planMap['paymentStatus']?.toString().toLowerCase().contains('refunded') == true;
+
+    final bool inArrivalWindow = parsedEventDate != null &&
+        parsedEventDate.difference(DateTime.now()).inMinutes <= 15 &&
+        parsedEventDate.difference(DateTime.now()).inHours >= -3;
+
+    final bool isConfirmed = lifecycleStatus == 'match_confirmed' ||
+        lifecycleStatus == 'chat_enabled' ||
+        (myRequest != null && (myRequest['status'] == 'confirmed' || myRequest['status'] == 'paid' || myRequest['joinerPaymentStatus'] == 'paid')) ||
+        (acceptedJoinerRequest != null && (acceptedJoinerRequest['status'] == 'confirmed' || acceptedJoinerRequest['status'] == 'paid' || acceptedJoinerRequest['joinerPaymentStatus'] == 'paid'));
+
+    String countdownLabel = 'Pay Deposit';
+    bool isPaymentExpired = false;
+    final rawDeadline = myRequest?['paymentDeadlineAt'] ??
+        myRequest?['paymentTimeoutAt'] ??
+        planMap['paymentDeadlineAt'] ??
+        planMap['paymentTimeoutAt'];
+
+    if (rawDeadline != null) {
+      try {
+        final deadline = DateTime.parse(rawDeadline.toString()).toLocal();
+        final remaining = deadline.difference(DateTime.now());
+        if (remaining.isNegative) {
+          isPaymentExpired = true;
+          countdownLabel = 'Pay Deposit (Expired)';
+        } else {
+          final m = remaining.inMinutes;
+          final s = remaining.inSeconds % 60;
+          countdownLabel = 'Pay Deposit ($m:${s.toString().padLeft(2, "0")})';
+        }
+      } catch (_) {}
+    }
+
+    if (isPaymentExpired && !isConfirmed) {
+      isExpired = true;
+    }
+
+    // 6. Contextual Title, Subtitle, Badges & Actions
+    Color accent = const Color(0xFF8B5CF6);
+    String title = 'Let\'s party at $venueName! 🚀';
+    String body = formattedDateTime.isNotEmpty ? '📅 $formattedDateTime' : 'Party Plan at $venueName';
+    String badge = 'PARTY PLAN';
+    List<NotificationAction>? actionsList;
+    Map<String, dynamic>? senderUser = hostCreator;
+    String? avatarUrl = hostPhoto;
+
+    if (isExpired) {
+      accent = const Color(0xFF9CA3AF);
+      badge = 'EXPIRED';
+      body = 'This Party Plan at $venueName has expired.';
+      actionsList = null;
+    } else if (isCancelled) {
+      accent = const Color(0xFFEF4444);
+      badge = 'CANCELLED';
+      body = 'Party Plan at $venueName was cancelled by mutual agreement.';
+      actionsList = [
+        NotificationAction(
+          label: 'View Details',
+          icon: Icons.info_outline_rounded,
+          isPrimary: false,
+          color: Colors.grey[200],
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+          ).then((_) => _loadFeed(showLoader: false)),
+        ),
+      ];
+    } else if (bothReached || isRefunded) {
+      title = '🎉 Party Completed';
+      badge = 'COMPLETED';
+      accent = const Color(0xFF10B981);
+      body = 'Both participants confirmed arrival • 💰 ₹99 Deposit refunded to LUNARA Wallet.';
+      actionsList = [
+        NotificationAction(
+          label: 'View Wallet',
+          icon: Icons.account_balance_wallet_rounded,
+          isPrimary: true,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const LunaraWalletScreen()),
+          ),
+        ),
+        NotificationAction(
+          label: 'View Details',
+          icon: Icons.info_outline_rounded,
+          isPrimary: false,
+          color: Colors.grey[200],
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+          ).then((_) => _loadFeed(showLoader: false)),
+        ),
+      ];
+    } else if (isConfirmed && userReached && !partnerReached) {
+      title = '📍 Arrival Confirmed';
+      badge = 'CONFIRMED';
+      accent = const Color(0xFF6366F1);
+      body = 'You: ✓ Reached • Partner: ⏳ Waiting for confirmation';
+      final otherId = isHost
+          ? (acceptedJoinerRequest?['requesterId'] ?? '')
+          : (planHostId.isNotEmpty ? planHostId : (hostCreator['id'] ?? ''));
+
+      actionsList = [
+        NotificationAction(
+          label: 'Chat',
+          icon: Icons.chat_bubble_rounded,
+          isPrimary: true,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ChatScreen(
+                user: {
+                  'id': otherId,
+                  'firstName': isHost ? 'Party Partner' : (hostCreator['firstName'] ?? hostName),
+                  'lastName': isHost ? '' : (hostCreator['lastName'] ?? ''),
+                  'profilePhotoUrl': isHost ? null : hostPhoto,
+                },
+              ),
+            ),
+          ),
+        ),
+        NotificationAction(
+          label: 'View Plan',
+          icon: Icons.open_in_new_rounded,
+          isPrimary: false,
+          color: Colors.grey[200],
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+          ),
+        ),
+      ];
+    } else if (isConfirmed && !userReached && inArrivalWindow) {
+      title = 'Let\'s party at $venueName! 🚀';
+      badge = 'ACTION REQUIRED';
+      accent = const Color(0xFFF59E0B);
+      body = '⏱ Starts soon • 📍 Have you reached the venue? Confirm arrival for ₹99 refund.';
+
+      actionsList = [
+        NotificationAction(
+          label: "I'M HERE",
+          icon: Icons.pin_drop_rounded,
+          isPrimary: true,
+          onTap: () => PartyPlanArrivalDialog.showArrivalPrompt(
+            context,
+            plan: planMap,
+            isHost: isHost,
+            onUpdate: () => _loadFeed(showLoader: false),
+          ),
+        ),
+        NotificationAction(
+          label: 'NOT YET',
+          icon: Icons.schedule_rounded,
+          isPrimary: false,
+          color: Colors.grey[200],
+          onTap: () async {
+            final uid = ApiService.currentUserId ?? '';
+            await ApiService.confirmArrival(planId: planId, userId: uid, hasArrived: false);
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Recorded: NOT YET. Confirm when you reach to unlock your ₹99 refund.'),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+            }
+            _loadFeed(showLoader: false);
+          },
+        ),
+      ];
+    } else if (isHost) {
+      if (hostPaymentStatus != 'paid' && hostPaymentStatus != 'completed') {
+        final double depositAmt = (planMap['depositAmount'] ?? 99.0) is num ? (planMap['depositAmount'] ?? 99.0).toDouble() : 99.0;
+        final hostOrderId = planMap['hostRazorpayOrderId']?.toString() ?? '';
+        title = '⚡ Action Required: Pay Host Deposit';
+        badge = 'ACTION REQUIRED';
+        accent = const Color(0xFF8B5CF6);
+        body = 'Pay deposit of ₹${depositAmt.toStringAsFixed(0)} to publish your Party Plan at $venueName!';
+        actionsList = [
+          NotificationAction(
+            label: 'Pay Deposit (${depositAmt.toStringAsFixed(0)})',
+            icon: Icons.payment_rounded,
+            isPrimary: true,
+            onTap: () async {
+              await _startHostRazorpayDirectPaymentInLiveFeed(
+                partyPlanId: planId,
+                venueName: venueName,
+                orderId: hostOrderId,
+                depositAmount: depositAmt,
+                onSuccess: () async => _loadFeed(),
+              );
+            },
+          ),
+          NotificationAction(
+            label: 'View Plan',
+            icon: Icons.open_in_new_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+            ),
+          ),
+        ];
+      } else if (isConfirmed) {
+        final joiner = (acceptedJoinerRequest != null && acceptedJoinerRequest['requester'] is Map)
+            ? acceptedJoinerRequest['requester'] as Map<String, dynamic>
+            : <String, dynamic>{};
+        final joinerName = '${joiner["firstName"] ?? "Party Partner"} ${joiner["lastName"] ?? ""}'.trim();
+        final joinerPhoto = joiner['profileImageUrl'] ?? joiner['profilePhotoUrl'];
+        final joinerId = joiner['id'] ?? acceptedJoinerRequest?['requesterId'] ?? '';
+
+        title = '🎉 Match Confirmed!';
+        badge = 'CONFIRMED';
+        accent = const Color(0xFF10B981);
+        body = 'Party with $joinerName at $venueName is confirmed! Chat & Ticket unlocked.';
+        senderUser = joiner.isNotEmpty ? joiner : hostCreator;
+        avatarUrl = joinerPhoto ?? hostPhoto;
+
+        actionsList = [
+          NotificationAction(
+            label: 'View Ticket',
+            icon: Icons.confirmation_number_rounded,
+            isPrimary: true,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PartyPlanTicketScreen(
+                  request: acceptedJoinerRequest ?? planMap,
+                  plan: planMap,
+                  isHost: true,
+                ),
+              ),
+            ),
+          ),
+          NotificationAction(
+            label: 'Chat',
+            icon: Icons.chat_bubble_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ChatScreen(
+                  user: {
+                    'id': joinerId,
+                    'firstName': joiner['firstName'] ?? 'Party Partner',
+                    'lastName': joiner['lastName'] ?? '',
+                    'profilePhotoUrl': joinerPhoto,
+                  },
+                ),
+              ),
+            ),
+          ),
+          NotificationAction(
+            label: 'Cancel Plan',
+            icon: Icons.cancel_outlined,
+            isPrimary: false,
+            color: Colors.red[50],
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+            ).then((_) => _loadFeed(showLoader: false)),
+          ),
+        ];
+      } else if (acceptedJoinerRequest != null && (acceptedJoinerRequest['status'] == 'accepted' || acceptedJoinerRequest['status'] == 'payment_pending')) {
+        final joiner = (acceptedJoinerRequest['requester'] is Map) ? acceptedJoinerRequest['requester'] as Map<String, dynamic> : <String, dynamic>{};
+        final joinerName = '${joiner["firstName"] ?? "Participant"} ${joiner["lastName"] ?? ""}'.trim();
+        final reqId = acceptedJoinerRequest['id']?.toString() ?? '';
+
+        title = '⏳ Approved — Awaiting Payment';
+        badge = 'AWAITING PAYMENT';
+        body = 'You approved $joinerName. Waiting for deposit payment to unlock chat.';
+        actionsList = [
+          NotificationAction(
+            label: 'Revoke',
+            icon: Icons.cancel_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () => _handleRejectPartyPlan(reqId),
+          ),
+          NotificationAction(
+            label: 'View Plan',
+            icon: Icons.open_in_new_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+            ),
+          ),
+        ];
+      } else if (pendingIncomingRequests.isNotEmpty) {
+        if (pendingIncomingRequests.length == 1) {
+          final firstReq = pendingIncomingRequests.first;
+          final reqUser = (firstReq['requester'] is Map) ? firstReq['requester'] as Map<String, dynamic> : <String, dynamic>{};
+          final reqUserName = '${reqUser["firstName"] ?? "A user"} ${reqUser["lastName"] ?? ""}'.trim();
+          final reqId = firstReq['id']?.toString() ?? '';
+
+          title = '📥 New Party Plan Request';
+          badge = 'NEW REQUEST';
+          body = '$reqUserName requested to join your Party Plan at $venueName';
+          senderUser = reqUser.isNotEmpty ? reqUser : hostCreator;
+          avatarUrl = reqUser['profileImageUrl'] ?? reqUser['profilePhotoUrl'];
+
+          actionsList = [
+            NotificationAction(
+              label: 'Approve',
+              icon: Icons.check_circle_rounded,
+              isPrimary: true,
+              onTap: () => _handleAcceptPartyPlan(reqId),
+            ),
+            NotificationAction(
+              label: 'Reject',
+              icon: Icons.cancel_rounded,
+              isPrimary: false,
+              color: Colors.grey[200],
+              onTap: () => _handleRejectPartyPlan(reqId),
+            ),
+          ];
+        } else {
+          title = '📥 Join Requests Received';
+          badge = 'REQUESTS (${pendingIncomingRequests.length})';
+          body = '${pendingIncomingRequests.length} users requested to join your Party Plan at $venueName';
+          actionsList = [
+            NotificationAction(
+              label: 'Review Requests (${pendingIncomingRequests.length})',
+              icon: Icons.people_alt_rounded,
+              isPrimary: true,
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+              ).then((_) => _loadFeed(showLoader: false)),
+            ),
+          ];
+        }
+      } else {
+        title = '🎉 Your Party Plan is Live!';
+        badge = 'LIVE';
+        body = formattedDateTime.isNotEmpty
+            ? 'Open for join requests at $venueName • $formattedDateTime'
+            : 'Your Party Plan at $venueName is live and open for requests!';
+        actionsList = [
+          NotificationAction(
+            label: 'View Plan',
+            icon: Icons.open_in_new_rounded,
+            isPrimary: true,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+            ),
+          ),
+          NotificationAction(
+            label: 'Cancel Plan',
+            icon: Icons.cancel_outlined,
+            isPrimary: false,
+            color: Colors.red[50],
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+            ).then((_) => _loadFeed(showLoader: false)),
+          ),
+        ];
+      }
+    } else {
+      final planVis = planMap['visibility']?.toString().toUpperCase() ?? '';
+      final selectedUsers = planMap['selectedUsers'];
+      final bool isPrivateInvite = planVis == 'PRIVATE' &&
+          selectedUsers is List &&
+          selectedUsers.any((u) => u?.toString() == currentUserId);
+
+      final myStatus = (myRequest?['status'] ?? '').toString().toLowerCase();
+
+      if (isConfirmed) {
+        title = '🎉 Match Confirmed!';
+        badge = 'CONFIRMED';
+        accent = const Color(0xFF10B981);
+        body = 'Party booking at $venueName is confirmed! Chat is unlocked with $hostName.';
+        final otherId = planHostId.isNotEmpty ? planHostId : (hostCreator['id'] ?? '');
+
+        actionsList = [
+          NotificationAction(
+            label: 'Chat',
+            icon: Icons.chat_bubble_rounded,
+            isPrimary: true,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ChatScreen(
+                  user: {
+                    'id': otherId,
+                    'firstName': hostCreator['firstName'] ?? hostName,
+                    'lastName': hostCreator['lastName'] ?? '',
+                    'profilePhotoUrl': hostPhoto,
+                  },
+                ),
+              ),
+            ),
+          ),
+          NotificationAction(
+            label: 'Cancel Party Plan',
+            icon: Icons.cancel_outlined,
+            isPrimary: false,
+            color: Colors.red[50],
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+            ).then((_) => _loadFeed(showLoader: false)),
+          ),
+        ];
+      } else if (myStatus == 'accepted' || myStatus == 'payment_pending') {
+        final reqId = myRequest?['id']?.toString() ?? '';
+        title = '✅ Approved! Pay Safety Deposit';
+        badge = 'ACTION REQUIRED';
+        accent = const Color(0xFF8B5CF6);
+        body = '$hostName accepted your request! Pay the safety deposit to lock your spot.';
+
+        actionsList = [
+          NotificationAction(
+            label: countdownLabel,
+            icon: Icons.payment_rounded,
+            isPrimary: true,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+            ).then((_) => _loadFeed(showLoader: false)),
+          ),
+          NotificationAction(
+            label: 'Withdraw Request',
+            icon: Icons.cancel_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () => _handleCancelMyRequest(reqId),
+          ),
+        ];
+      } else if (isPrivateInvite && (myStatus == 'pending' || myStatus.isEmpty)) {
+        final reqId = myRequest?['id']?.toString() ?? planId;
+        title = '💌 Private Party Invite!';
+        badge = 'INVITE';
+        accent = const Color(0xFF7C3AED);
+        body = '$hostName privately invited you to their Party Plan at $venueName. Accept to proceed!';
+
+        actionsList = [
+          NotificationAction(
+            label: 'Accept',
+            icon: Icons.check_circle_rounded,
+            isPrimary: true,
+            onTap: () => _handleAcceptPartyPlanInvite(reqId),
+          ),
+          NotificationAction(
+            label: 'Decline',
+            icon: Icons.cancel_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () => _handleRejectPartyPlan(reqId),
+          ),
+        ];
+      } else if (myStatus == 'pending') {
+        final reqId = myRequest?['id']?.toString() ?? '';
+        title = '🤝 Request Sent';
+        badge = 'REQUEST SENT';
+        body = 'Request sent to $hostName for Party Plan at $venueName. Waiting for host approval.';
+        actionsList = [
+          NotificationAction(
+            label: 'Withdraw Request',
+            icon: Icons.cancel_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () => _handleCancelMyRequest(reqId),
+          ),
+        ];
+      } else if (myStatus == 'rejected' || myStatus == 'declined') {
+        title = '❌ Request Declined';
+        badge = 'DECLINED';
+        accent = const Color(0xFF9CA3AF);
+        body = 'Your Party Plan request at $venueName was declined by $hostName.';
+        actionsList = null;
+      } else if (myStatus == 'withdrawn') {
+        title = '↩️ Request Withdrawn';
+        badge = 'WITHDRAWN';
+        accent = const Color(0xFF9CA3AF);
+        body = 'You withdrew your request for Party Plan at $venueName.';
+        actionsList = null;
+      } else {
+        title = '🎉 Party Plan at $venueName';
+        badge = 'PARTY PLAN';
+        body = formattedDateTime.isNotEmpty
+            ? '$hostName is hosting • $formattedDateTime'
+            : '$hostName is hosting a Party Plan at $venueName.';
+        actionsList = [
+          NotificationAction(
+            label: 'Request to Join',
+            icon: Icons.person_add_rounded,
+            isPrimary: true,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+            ).then((_) => _loadFeed(showLoader: false)),
+          ),
+        ];
+      }
+    }
+
+    DateTime latestCreatedAt = DateTime(2000);
+    bool allRead = true;
+    for (final e in entries) {
+      final dt = _parseDateTime(e['createdAt'] ?? e['postedAt']);
+      if (dt.isAfter(latestCreatedAt)) latestCreatedAt = dt;
+      final eId = e['id']?.toString() ?? '';
+      final read = e['read'] == true || e['isRead'] == true || _localReadNotificationIds.contains(eId);
+      if (!read) allRead = false;
+    }
+    if (_localReadNotificationIds.contains('pp_$planId')) {
+      allRead = true;
+    }
+    if (badge == 'ACTION REQUIRED' || badge == 'INVITE') {
+      allRead = false;
+    }
+
+    return UnifiedNotificationItem(
+      id: 'pp_$planId',
+      category: 'party_plan',
+      title: title,
+      body: body,
+      createdAt: latestCreatedAt,
+      timeAgo: _formatTimeAgo(latestCreatedAt),
+      isRead: allRead,
+      isExpired: isExpired,
+      badgeText: badge,
+      accentColor: accent,
+      categoryIcon: Icons.celebration_rounded,
+      avatarUrl: avatarUrl,
+      senderUser: senderUser,
+      actions: isExpired ? null : actionsList,
+      rawData: {'id': planId, 'plan': planMap, ...planMap},
+    );
   }
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Build Authoritative Stranger Meet Smart Card (1 Stranger Meet = 1 Card)
+  // ─────────────────────────────────────────────────────────────────────────────
+  UnifiedNotificationItem? _buildAuthoritativeStrangersMeetCard(
+    String meetId,
+    List<Map<String, dynamic>> entries,
+    String currentUserId,
+  ) {
+    if (entries.isEmpty) return null;
+
+    Map<String, dynamic> meetMap = {};
+    for (final e in entries) {
+      if (e['planDetails'] is Map && (e['planDetails'] as Map).isNotEmpty) {
+        meetMap = Map<String, dynamic>.from(e['planDetails']);
+        break;
+      } else if (e['plan'] is Map && (e['plan'] as Map).isNotEmpty) {
+        meetMap = Map<String, dynamic>.from(e['plan']);
+        break;
+      } else if (e['requestType'] == 'stranger_meet' || e['category'] == 'stranger_meet') {
+        meetMap = Map<String, dynamic>.from(e);
+        break;
+      }
+    }
+    if (meetMap.isEmpty) {
+      final first = entries.first;
+      if (first['data'] is Map && (first['data'] as Map).isNotEmpty) {
+        meetMap = Map<String, dynamic>.from(first['data']);
+      } else {
+        meetMap = Map<String, dynamic>.from(first);
+      }
+    }
+    meetMap['id'] = meetMap['id'] ?? meetId;
+
+    final venue = (meetMap['venue'] is Map)
+        ? meetMap['venue'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final venueName = venue['name']?.toString() ?? meetMap['venueName']?.toString() ?? 'Venue';
+
+    final hostCreator = (meetMap['user'] is Map)
+        ? meetMap['user'] as Map<String, dynamic>
+        : (meetMap['host'] is Map
+            ? meetMap['host'] as Map<String, dynamic>
+            : <String, dynamic>{});
+    final hostName = '${hostCreator["firstName"] ?? meetMap["hostName"] ?? "Host"} ${hostCreator["lastName"] ?? ""}'.trim();
+    final hostPhoto = hostCreator['profileImageUrl']?.toString() ?? hostCreator['profilePhotoUrl']?.toString() ?? hostCreator['photoUrl']?.toString();
+
+    final String meetHostId = (meetMap['userId'] ?? hostCreator['id'] ?? '').toString();
+    final bool isHost = currentUserId.isNotEmpty && (meetHostId == currentUserId || meetMap['role'] == 'host');
+
+    Map<String, dynamic>? myRequest;
+    final List<Map<String, dynamic>> pendingIncomingRequests = [];
+    Map<String, dynamic>? paidJoinerRecord;
+
+    for (final e in entries) {
+      final reqType = (e['type'] ?? e['requestType'] ?? '').toString();
+      final status = (e['status'] ?? '').toString().toLowerCase();
+      final pStatus = (e['joinerPaymentStatus'] ?? e['paymentStatus'] ?? '').toString().toLowerCase();
+
+      if (reqType == 'my_request' || reqType == 'stranger_meet_join' || e['userId']?.toString() == currentUserId) {
+        myRequest = e;
+      }
+      if (reqType == 'incoming_request' || (isHost && e['requester'] != null)) {
+        if (status == 'pending') {
+          pendingIncomingRequests.add(e);
+        } else if (status == 'paid' || pStatus == 'paid') {
+          paidJoinerRecord = e;
+        }
+      }
+      if (status == 'paid' || pStatus == 'paid') {
+        paidJoinerRecord = e;
+      }
+    }
+
+    String formattedDateTime = '';
+    final rawDateTime = meetMap['eventDateTime'] ?? meetMap['planDate'] ?? meetMap['partyDate'];
+    DateTime? parsedEventDate;
+    if (rawDateTime != null) {
+      try {
+        parsedEventDate = DateTime.parse(rawDateTime.toString()).toLocal();
+        const weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        final w = weekdayNames[parsedEventDate.weekday - 1];
+        final m = monthNames[parsedEventDate.month - 1];
+        final hour = parsedEventDate.hour % 12 == 0 ? 12 : parsedEventDate.hour % 12;
+        final ampm = parsedEventDate.hour >= 12 ? 'PM' : 'AM';
+        final minute = parsedEventDate.minute.toString().padLeft(2, '0');
+        formattedDateTime = '$w, ${parsedEventDate.day} $m • $hour:$minute $ampm';
+      } catch (_) {}
+    }
+
+    bool isExpired = false;
+    if (parsedEventDate != null && parsedEventDate.isBefore(DateTime.now())) {
+      isExpired = true;
+    }
+    final meetStatus = (meetMap['status'] ?? '').toString().toLowerCase();
+    if (meetStatus == 'completed' || meetStatus == 'expired' || meetStatus == 'cancelled') {
+      if (meetStatus == 'expired') isExpired = true;
+    }
+
+    final double chargesPerHead = (meetMap['chargesPerHead'] ?? myRequest?['chargesPerHead'] ?? 0.0) is num
+        ? (meetMap['chargesPerHead'] ?? myRequest?['chargesPerHead'] ?? 0.0).toDouble()
+        : 0.0;
+
+    Color accent = const Color(0xFF6366F1);
+    String title = '🤝 Stranger Meet at $venueName';
+    String body = formattedDateTime.isNotEmpty ? '📅 $formattedDateTime' : 'Stranger Meet at $venueName';
+    String badge = 'STRANGER MEET';
+    List<NotificationAction>? actionsList;
+    Map<String, dynamic>? senderUser = hostCreator;
+    String? avatarUrl = hostPhoto;
+
+    if (isExpired) {
+      accent = const Color(0xFF9CA3AF);
+      badge = 'EXPIRED';
+      body = 'This Stranger Meet at $venueName has ended/expired.';
+      actionsList = null;
+    } else if (isHost) {
+      final hostPayStatus = (meetMap['paymentStatus'] ?? '').toString().toLowerCase();
+      if (hostPayStatus == 'unpaid' || hostPayStatus == 'pending') {
+        title = '⚡ Action Required: Pay Host Deposit';
+        badge = 'ACTION REQUIRED';
+        accent = const Color(0xFF8B5CF6);
+        final double deposit = (meetMap['paymentAmount'] ?? 99.0) is num ? (meetMap['paymentAmount'] ?? 99.0).toDouble() : 99.0;
+        body = 'Pay deposit of ₹${deposit.toStringAsFixed(0)} to make your Stranger Meet live at $venueName!';
+        actionsList = [
+          NotificationAction(
+            label: 'Pay Deposit',
+            icon: Icons.payment_rounded,
+            isPrimary: true,
+            onTap: () {
+              try {
+                final req = StrangersMeetRequest.fromJson(meetMap);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => StrangersMeetPaymentScreen(
+                      request: req,
+                      onPaymentSuccess: () => _loadFeed(),
+                      isJoinPayment: false,
+                    ),
+                  ),
+                );
+              } catch (e) {
+                debugPrint('Error parsing SM host payment: $e');
+              }
+            },
+          ),
+        ];
+      } else if (pendingIncomingRequests.isNotEmpty) {
+        if (pendingIncomingRequests.length == 1) {
+          final firstReq = pendingIncomingRequests.first;
+          final reqUser = (firstReq['requester'] is Map) ? firstReq['requester'] as Map<String, dynamic> : <String, dynamic>{};
+          final reqUserName = '${reqUser["firstName"] ?? "A user"} ${reqUser["lastName"] ?? ""}'.trim();
+          final joinerId = firstReq['id']?.toString() ?? '';
+
+          title = '📥 Join Request Received';
+          badge = 'NEW REQUEST';
+          body = '$reqUserName requested to join your Stranger Meet at $venueName';
+          senderUser = reqUser.isNotEmpty ? reqUser : hostCreator;
+          avatarUrl = reqUser['profileImageUrl'] ?? reqUser['profilePhotoUrl'];
+
+          actionsList = [
+            NotificationAction(
+              label: 'Accept',
+              icon: Icons.check_circle_rounded,
+              isPrimary: true,
+              onTap: () => _handleStrangersMeetJoinAction(meetId, joinerId, 'accept'),
+            ),
+            NotificationAction(
+              label: 'Decline',
+              icon: Icons.cancel_rounded,
+              isPrimary: false,
+              color: Colors.grey[200],
+              onTap: () => _handleStrangersMeetJoinAction(meetId, joinerId, 'reject'),
+            ),
+          ];
+        } else {
+          title = '📥 Join Requests Received';
+          badge = 'REQUESTS (${pendingIncomingRequests.length})';
+          body = '${pendingIncomingRequests.length} users requested to join your Stranger Meet at $venueName';
+          actionsList = [
+            NotificationAction(
+              label: 'Review Requests',
+              icon: Icons.people_alt_rounded,
+              isPrimary: true,
+              onTap: () => _loadFeed(showLoader: false),
+            ),
+          ];
+        }
+      } else if (paidJoinerRecord != null) {
+        final joiner = (paidJoinerRecord['requester'] is Map) ? paidJoinerRecord['requester'] as Map<String, dynamic> : <String, dynamic>{};
+        final joinerName = '${joiner["firstName"] ?? "Participant"} ${joiner["lastName"] ?? ""}'.trim();
+        final joinerId = joiner['id']?.toString() ?? '';
+        final joinerPhoto = joiner['profileImageUrl']?.toString() ?? joiner['profilePhotoUrl']?.toString();
+
+        title = '🎉 Seat Confirmed!';
+        badge = 'CONFIRMED';
+        accent = const Color(0xFF10B981);
+        body = '$joinerName\'s seat at $venueName is locked! Chat unlocked.';
+        senderUser = joiner.isNotEmpty ? joiner : hostCreator;
+        avatarUrl = joinerPhoto ?? hostPhoto;
+
+        actionsList = [
+          NotificationAction(
+            label: 'Chat',
+            icon: Icons.chat_bubble_rounded,
+            isPrimary: true,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ChatScreen(
+                  user: {
+                    'id': joinerId,
+                    'firstName': joiner['firstName'] ?? 'Participant',
+                    'lastName': joiner['lastName'] ?? '',
+                    'profilePhotoUrl': joinerPhoto,
+                  },
+                ),
+              ),
+            ),
+          ),
+          NotificationAction(
+            label: 'View Ticket',
+            icon: Icons.confirmation_number_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () {
+              try {
+                final req = StrangersMeetRequest.fromJson(meetMap);
+                Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
+              } catch (e) {
+                debugPrint('Error parsing SM ticket: $e');
+              }
+            },
+          ),
+        ];
+      } else {
+        title = '🤝 Your Stranger Meet is Live!';
+        badge = 'LIVE';
+        body = formattedDateTime.isNotEmpty
+            ? 'Open for requests at $venueName • $formattedDateTime'
+            : 'Your Stranger Meet at $venueName is live!';
+        actionsList = [
+          NotificationAction(
+            label: 'View Ticket',
+            icon: Icons.confirmation_number_rounded,
+            isPrimary: true,
+            onTap: () {
+              try {
+                final req = StrangersMeetRequest.fromJson(meetMap);
+                Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
+              } catch (e) {
+                debugPrint('Error parsing SM ticket: $e');
+              }
+            },
+          ),
+        ];
+      }
+    } else {
+      final myStatus = (myRequest?['status'] ?? '').toString().toLowerCase();
+      final myPaymentStatus = (myRequest?['joinerPaymentStatus'] ?? myRequest?['paymentStatus'] ?? '').toString().toLowerCase();
+
+      if (myStatus == 'paid' || myPaymentStatus == 'paid') {
+        title = '🎉 Meet Confirmed!';
+        badge = 'CONFIRMED';
+        accent = const Color(0xFF10B981);
+        body = 'Payment done! Your seat at $venueName is locked. Chat unlocked with $hostName.';
+        final otherId = meetHostId.isNotEmpty ? meetHostId : (hostCreator['id'] ?? '');
+
+        actionsList = [
+          NotificationAction(
+            label: 'Chat',
+            icon: Icons.chat_bubble_rounded,
+            isPrimary: true,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ChatScreen(
+                  user: {
+                    'id': otherId,
+                    'firstName': hostCreator['firstName'] ?? hostName,
+                    'lastName': hostCreator['lastName'] ?? '',
+                    'profilePhotoUrl': hostPhoto,
+                  },
+                ),
+              ),
+            ),
+          ),
+          NotificationAction(
+            label: 'View Ticket',
+            icon: Icons.confirmation_number_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () {
+              try {
+                final req = StrangersMeetRequest.fromJson(meetMap);
+                Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
+              } catch (e) {
+                debugPrint('Error parsing SM ticket: $e');
+              }
+            },
+          ),
+        ];
+      } else if (myStatus == 'accepted' || myStatus == 'payment_pending') {
+        final feeLabel = chargesPerHead > 0 ? '₹${chargesPerHead.toStringAsFixed(0)}' : 'Entry Fee';
+        title = '✅ Accepted! Pay Entry Fee';
+        badge = 'ACTION REQUIRED';
+        accent = const Color(0xFFF59E0B);
+        body = '$hostName accepted your request! Pay $feeLabel to secure your spot at $venueName.';
+
+        actionsList = [
+          NotificationAction(
+            label: 'Pay $feeLabel',
+            icon: Icons.payment_rounded,
+            isPrimary: true,
+            onTap: () {
+              try {
+                final req = StrangersMeetRequest.fromJson(meetMap);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => StrangersMeetPaymentScreen(
+                      request: req,
+                      onPaymentSuccess: () => _loadFeed(),
+                      isJoinPayment: true,
+                    ),
+                  ),
+                );
+              } catch (e) {
+                debugPrint('Error opening SM join payment: $e');
+              }
+            },
+          ),
+        ];
+      } else if (myStatus == 'pending') {
+        title = '🤝 Request Sent';
+        badge = 'REQUEST SENT';
+        body = 'Request sent to $hostName for Stranger Meet at $venueName. Waiting for host approval.';
+        actionsList = null;
+      } else if (myStatus == 'rejected' || myStatus == 'declined') {
+        title = '❌ Request Declined';
+        badge = 'DECLINED';
+        accent = const Color(0xFF9CA3AF);
+        body = 'Your request to join Stranger Meet at $venueName was declined by $hostName.';
+        actionsList = null;
+      } else {
+        title = '🤝 Stranger Meet at $venueName';
+        badge = 'STRANGER MEET';
+        body = formattedDateTime.isNotEmpty
+            ? '$hostName is hosting • $formattedDateTime'
+            : '$hostName is hosting a Stranger Meet at $venueName.';
+        actionsList = null;
+      }
+    }
+
+    DateTime latestCreatedAt = DateTime(2000);
+    bool allRead = true;
+    for (final e in entries) {
+      final dt = _parseDateTime(e['createdAt'] ?? e['postedAt']);
+      if (dt.isAfter(latestCreatedAt)) latestCreatedAt = dt;
+      final eId = e['id']?.toString() ?? '';
+      final read = e['read'] == true || e['isRead'] == true || _localReadNotificationIds.contains(eId);
+      if (!read) allRead = false;
+    }
+    if (_localReadNotificationIds.contains('sm_$meetId')) {
+      allRead = true;
+    }
+    if (badge == 'ACTION REQUIRED' || badge == 'NEW REQUEST') {
+      allRead = false;
+    }
+
+    return UnifiedNotificationItem(
+      id: 'sm_$meetId',
+      category: 'stranger_meet',
+      title: title,
+      body: body,
+      createdAt: latestCreatedAt,
+      timeAgo: _formatTimeAgo(latestCreatedAt),
+      isRead: allRead,
+      isExpired: isExpired,
+      badgeText: badge,
+      accentColor: accent,
+      categoryIcon: Icons.people_alt_rounded,
+      avatarUrl: avatarUrl,
+      senderUser: senderUser,
+      actions: isExpired ? null : actionsList,
+      rawData: {'id': meetId, 'plan': meetMap, ...meetMap},
+    );
+  }
   // ─────────────────────────────────────────────────────────────────────────────
   // Filter Bottom Sheet
   // ─────────────────────────────────────────────────────────────────────────────
