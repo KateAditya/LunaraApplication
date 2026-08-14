@@ -19,6 +19,7 @@ import SocialConnection, { ConnectionStatus } from '../models/SocialConnection';
 import UserPenalty from '../models/UserPenalty';
 
 import { azureFaceService } from '../services/azureFaceService';
+import { RankingConfig } from '../utils/rankingConfig';
 
 // ─── Image compression constants ──────────────────────────────────────────────
 // Target HD/2K quality (~3-4 MB max target size, ultra-sharp & unblurred)
@@ -588,55 +589,32 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
         const profileWhere: any = {};
         if (city) profileWhere.city = { [Op.iLike]: `%${city}%` };
 
-        const { count, rows } = await User.findAndCountAll({
+        // PHASE 1: Scoping and Scoring
+        const matchingUsersRaw = await User.findAll({
             where: userWhere,
-            attributes: [
-                'id', 'firstName', 'lastName', 'email', 'phone',
-                'dateOfBirth', 'profileImageUrl', 'role',
-                'isVerified', 'isActive', 'createdAt', 'lastLoginAt',
-            ],
+            attributes: ['id'],
             include: [
                 {
                     model: UserProfile,
                     as: 'profile',
-                    attributes: [
-                        'displayName', 'bio', 'gender', 'city',
-                        'occupation', 'education', 'lookingFor',
-                        'instagramHandle', 'spotifyProfile',
-                        'relationshipStatus', 'company',
-                    ],
+                    attributes: ['id'],
                     where: Object.keys(profileWhere).length ? profileWhere : undefined,
-                    required: Object.keys(profileWhere).length > 0, // INNER JOIN only if city filter active
+                    required: Object.keys(profileWhere).length > 0,
                 },
                 {
                     model: UserPreference,
                     as: 'preferences',
-                    attributes: [
-                        'musicPreference', 'drinkPreference', 'smokingPreference',
-                        'budgetRange', 'preferredGenders',
-                        'minAgePreference', 'maxAgePreference',
-                        'showMeInMatching', 'matchDistanceKm', 'bookingAlertsEnabled',
-                    ],
+                    attributes: ['id', 'showMeInMatching'],
                     required: false,
-                },
-                {
-                    model: UserPhoto,
-                    as: 'photos',
-                    attributes: ['id', 'filePath', 'isPrimary', 'displayOrder'],
-                    required: false,
-                    where: { isPrimary: true },   // Only fetch primary photo for list
                 },
             ],
-            order: [['createdAt', 'DESC']],
-            limit,
-            offset,
-            distinct: true,   // Needed for correct count with includes
-            subQuery: false,
+            raw: true,
         });
 
+        const allUserIds = [...new Set(matchingUsersRaw.map((u: any) => u.id))];
+        const count = allUserIds.length;
         const totalPages = Math.ceil(count / limit);
 
-        const userIds = rows.map(u => u.id);
         const likesMap: Record<string, number> = {};
         const superLikesMap: Record<string, number> = {};
         const plansMap: Record<string, number> = {};
@@ -644,16 +622,20 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
         const tierRankMap: Record<string, number> = { FREE: 0, CORE: 1, PLUS: 2, PRO: 3, ELITE: 4 };
         const boostsMap: Record<string, number> = {};
         const pointsMap: Record<string, number> = {};
-        const rankScoreMap: Record<string, number> = {};
 
-        if (userIds.length > 0) {
+        const mySwipesMap: Record<string, { status: string; matchReason: string }> = {};
+
+        if (allUserIds.length > 0) {
+            const recencyDate = new Date(Date.now() - (RankingConfig.RECENCY_WINDOW_DAYS * 24 * 60 * 60 * 1000));
+
             const allLikesCounts = await UserMatch.findAll({
                 attributes: [
                     'user2Id',
                     [sequelize.fn('COUNT', sequelize.col('id')), 'count']
                 ],
                 where: {
-                    user2Id: { [Op.in]: userIds }
+                    user2Id: { [Op.in]: allUserIds },
+                    createdAt: { [Op.gte]: recencyDate }
                 },
                 group: ['user2Id']
             });
@@ -664,9 +646,10 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                     [sequelize.fn('COUNT', sequelize.col('id')), 'count']
                 ],
                 where: {
-                    user2Id: { [Op.in]: userIds },
+                    user2Id: { [Op.in]: allUserIds },
                     matchReason: 'superlike',
-                    status: { [Op.in]: ['pending', 'connected'] }
+                    status: { [Op.in]: ['pending', 'connected'] },
+                    createdAt: { [Op.gte]: recencyDate }
                 },
                 group: ['user2Id']
             });
@@ -677,8 +660,9 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                     [sequelize.fn('COUNT', sequelize.col('id')), 'count']
                 ],
                 where: {
-                    userId: { [Op.in]: userIds },
-                    status: 'active'
+                    userId: { [Op.in]: allUserIds },
+                    status: 'active',
+                    createdAt: { [Op.gte]: recencyDate }
                 },
                 group: ['userId']
             });
@@ -689,7 +673,8 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                     [sequelize.fn('COUNT', sequelize.col('id')), 'count']
                 ],
                 where: {
-                    userId: { [Op.in]: userIds }
+                    userId: { [Op.in]: allUserIds },
+                    createdAt: { [Op.gte]: recencyDate }
                 },
                 group: ['userId']
             });
@@ -700,51 +685,41 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                     [sequelize.fn('COUNT', sequelize.col('id')), 'count']
                 ],
                 where: {
-                    userId: { [Op.in]: userIds }
+                    userId: { [Op.in]: allUserIds },
+                    createdAt: { [Op.gte]: recencyDate }
                 },
                 group: ['userId']
             });
 
             allLikesCounts.forEach((c: any) => {
-                const u2Id = c.getDataValue('user2Id');
-                likesMap[u2Id] = parseInt(c.getDataValue('count')) || 0;
+                likesMap[c.getDataValue('user2Id')] = parseInt(c.getDataValue('count')) || 0;
             });
-
             superLikesCounts.forEach((c: any) => {
-                const u2Id = c.getDataValue('user2Id');
-                superLikesMap[u2Id] = parseInt(c.getDataValue('count')) || 0;
+                superLikesMap[c.getDataValue('user2Id')] = parseInt(c.getDataValue('count')) || 0;
             });
-
             plansCounts.forEach((c: any) => {
                 const uId = c.getDataValue('userId');
                 plansMap[uId] = (plansMap[uId] || 0) + (parseInt(c.getDataValue('count')) || 0);
             });
-
             groupPartyCounts.forEach((c: any) => {
                 const uId = c.getDataValue('userId');
                 plansMap[uId] = (plansMap[uId] || 0) + (parseInt(c.getDataValue('count')) || 0);
             });
-
             strangersMeetCounts.forEach((c: any) => {
                 const uId = c.getDataValue('userId');
                 plansMap[uId] = (plansMap[uId] || 0) + (parseInt(c.getDataValue('count')) || 0);
             });
-        }
 
-        // ── Batch-fetch real subscription tiers & current user swipes ─────────────
-        const mySwipesMap: Record<string, { status: string; matchReason: string }> = {};
-        if (userIds.length > 0) {
-            const now = new Date();
+            // ── Batch-fetch real subscription tiers & current user swipes ─────────────
             const activeSubs = await UserSubscription.findAll({
                 where: {
-                    userId: { [Op.in]: userIds },
+                    userId: { [Op.in]: allUserIds },
                     status: SubscriptionStatus.ACTIVE,
-                    endDate: { [Op.gt]: now },
+                    endDate: { [Op.gt]: new Date() },
                 },
                 include: [{ model: SubscriptionPackage, as: 'package', attributes: ['tier'] }],
                 order: [['createdAt', 'DESC']],
             });
-            // Keep only the latest active sub per user
             const seenUsers = new Set<string>();
             for (const sub of activeSubs) {
                 if (!seenUsers.has(sub.userId)) {
@@ -754,12 +729,11 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                 }
             }
 
-            // Batch fetch current user's swipe/like records on all returned users
             if (currentUserId) {
                 const mySwipes = await UserMatch.findAll({
                     where: {
                         user1Id: currentUserId,
-                        user2Id: { [Op.in]: userIds }
+                        user2Id: { [Op.in]: allUserIds }
                     }
                 });
                 mySwipes.forEach((s: any) => {
@@ -771,37 +745,106 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
             }
         }
 
-        // Compute points & rankScore (Boost + Superlikes + Likes + Points)
-        userIds.forEach(id => {
+        const scoredUsers = allUserIds.map(id => {
             const likes = likesMap[id] || 0;
             const superlikes = superLikesMap[id] || 0;
             const boosts = boostsMap[id] || 0;
             const plans = plansMap[id] || 0;
             const tierRank = tierRankMap[tierMap[id] ?? 'FREE'] ?? 0;
+            
+            const hasBoost = boosts > 0;
+            const hasVip = tierMap[id] !== 'FREE' && tierMap[id] !== undefined;
+
+            let priorityTier = 5;
+            let baseScore = RankingConfig.BASE_USER_SCORE;
+
+            const engagementScore = (likes * RankingConfig.LIKE_WEIGHT) 
+                                  + (superlikes * RankingConfig.SUPER_LIKE_WEIGHT) 
+                                  + (plans * RankingConfig.PARTY_PLAN_WEIGHT);
+
+            if (hasBoost && hasVip) {
+                priorityTier = 1;
+                baseScore = RankingConfig.TIER_1_BASE;
+            } else if (hasBoost) {
+                priorityTier = 2;
+                baseScore = RankingConfig.TIER_2_BASE;
+            } else if (hasVip) {
+                priorityTier = 3;
+                baseScore = RankingConfig.TIER_3_BASE;
+            } else if (engagementScore > 50) {
+                priorityTier = 4;
+            }
 
             const calcPoints = (likes * 15) + (superlikes * 35) + (boosts * 50) + (plans * 25) + 120;
-            const calcRankScore = (boosts > 0 ? 1000 : 0) + (tierRank * 250) + (boosts * 150) + (superlikes * 60) + (likes * 20) + calcPoints;
-
             pointsMap[id] = calcPoints;
-            rankScoreMap[id] = calcRankScore;
+
+            const rankScore = baseScore + engagementScore + calcPoints + (tierRank * 250);
+
+            return { id, rankScore, priorityTier, likes, superlikes, plans, boosts };
         });
 
-        const data = rows.map(user => {
-            const u = user as any;
+        // ── Rank-Score sort (Descending)
+        scoredUsers.sort((a, b) => b.rankScore - a.rankScore);
+
+        const paginatedScoredUsers = scoredUsers.slice(offset, offset + limit);
+        const paginatedUserIds = paginatedScoredUsers.map(u => u.id);
+
+        // PHASE 2: Hydration
+        let fullRows: any[] = [];
+        if (paginatedUserIds.length > 0) {
+            fullRows = await User.findAll({
+                where: { id: { [Op.in]: paginatedUserIds } },
+                attributes: [
+                    'id', 'firstName', 'lastName', 'email', 'phone',
+                    'dateOfBirth', 'profileImageUrl', 'role',
+                    'isVerified', 'isActive', 'createdAt', 'lastLoginAt',
+                ],
+                include: [
+                    {
+                        model: UserProfile,
+                        as: 'profile',
+                        attributes: [
+                            'displayName', 'bio', 'gender', 'city',
+                            'occupation', 'education', 'lookingFor',
+                            'instagramHandle', 'spotifyProfile',
+                            'relationshipStatus', 'company',
+                        ],
+                    },
+                    {
+                        model: UserPreference,
+                        as: 'preferences',
+                        attributes: [
+                            'musicPreference', 'drinkPreference', 'smokingPreference',
+                            'budgetRange', 'preferredGenders',
+                            'minAgePreference', 'maxAgePreference',
+                            'showMeInMatching', 'matchDistanceKm', 'bookingAlertsEnabled',
+                        ],
+                    },
+                    {
+                        model: UserPhoto,
+                        as: 'photos',
+                        attributes: ['id', 'filePath', 'isPrimary', 'displayOrder'],
+                        required: false,
+                        where: { isPrimary: true },
+                    },
+                ],
+            });
+        }
+
+        const userRowMap = new Map(fullRows.map((r: any) => [r.id, r]));
+
+        const data = paginatedScoredUsers.map(scoredUser => {
+            const user: any = userRowMap.get(scoredUser.id);
+            if (!user) return null; // Shouldn't happen
+
             const age = user.dateOfBirth
                 ? Math.floor((Date.now() - new Date(user.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
                 : null;
 
-            const photo = u.photos?.[0];
+            const photo = user.photos?.[0];
             const photoUrl = photo
                 ? '/' + photo.filePath.replace(/\\/g, '/')
                 : (user.profileImageUrl ?? null);
-
-            const likes = likesMap[user.id] || 0;
-            const superLikes = superLikesMap[user.id] || 0;
-            const boosts = boostsMap[user.id] || 0;
-            const points = pointsMap[user.id] || 120;
-            const rankScore = rankScoreMap[user.id] || 0;
 
             const mySwipe = mySwipesMap[user.id];
             const isLiked = !!mySwipe && ['pending', 'connected'].includes(mySwipe.status as string);
@@ -821,29 +864,31 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                 isActive: user.isActive,
                 profilePhotoUrl: photoUrl,
                 createdAt: user.createdAt,
-                lastLoginAt: (user as any).lastLoginAt ?? null,
-                profile: u.profile ?? null,
-                preferences: u.preferences ?? null,
-                likesCount: likes,
-                superLikesCount: superLikes,
-                boostCount: boosts,
-                boostsRemaining: boosts,
-                isBoosted: boosts > 0,
-                plansCount: plansMap[user.id] || 0,
-                doostCount: plansMap[user.id] || 0,
-                doost: plansMap[user.id] || 0,
-                points,
-                rankScore,
+                lastLoginAt: user.lastLoginAt ?? null,
+                profile: user.profile ?? null,
+                preferences: user.preferences ?? null,
+                likesCount: scoredUser.likes,
+                likeCount: scoredUser.likes,
+                superLikesCount: scoredUser.superlikes,
+                superLikeCount: scoredUser.superlikes,
+                boostCount: scoredUser.boosts,
+                boostsRemaining: scoredUser.boosts,
+                isBoosted: scoredUser.boosts > 0,
+                isVipActive: tierMap[user.id] !== 'FREE' && tierMap[user.id] !== undefined,
+                plansCount: scoredUser.plans,
+                activePartyPlanCount: scoredUser.plans,
+                doostCount: scoredUser.plans,
+                doost: scoredUser.plans,
+                points: pointsMap[user.id],
+                rankScore: scoredUser.rankScore,
+                rankingPriority: scoredUser.priorityTier,
                 subscriptionTier: tierMap[user.id] ?? 'FREE',
                 tierRank: tierRankMap[tierMap[user.id] ?? 'FREE'] ?? 0,
                 isLiked,
                 isSuperLiked,
                 swipeStatus: mySwipe?.status ?? null,
             };
-        });
-
-        // ── Rank-Score sort: Boost + Superlikes + Likes + Points
-        const sorted = data.sort((a, b) => (b.rankScore ?? 0) - (a.rankScore ?? 0));
+        }).filter(Boolean); // Remove nulls if any
 
         return res.status(200).json({
             success: true,
@@ -851,7 +896,7 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
             page,
             limit,
             totalPages,
-            data: sorted,
+            data,
         });
     } catch (error: any) {
         logger.error('[MobileUser] Error fetching customers:', error);
