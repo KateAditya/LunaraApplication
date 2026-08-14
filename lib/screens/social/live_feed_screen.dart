@@ -131,10 +131,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   int get totalUnreadCount {
     final allTimelineItems = _buildUnifiedTimeline();
-    return allTimelineItems.where((i) => !i.isRead).length;
+    return allTimelineItems.where((i) => !i.isRead && !i.isExpired).length;
   }
 
-  Set<String> get _readRequestIds => ApiService.localReadRequestIds;
   Set<String> get _localReadNotificationIds => ApiService.localReadNotificationIds;
 
   void _onPlanPostedNotify() {
@@ -196,6 +195,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   void _initSocketListeners() {
     ApiService.addSocketListener('party_plan_created', _onPartyPlanCreated);
     ApiService.addSocketListener('party_plan_deleted', _onPartyPlanDeleted);
+    ApiService.addSocketListener('party_plan_reposted', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('party_plan_cancelled', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('party_plan_request_created', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('party_plan_request_received', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('party_plan_request_updated', _onPartyPlanRequestUpdated);
@@ -216,6 +217,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   void _disposeSocketListeners() {
     ApiService.removeSocketListener('party_plan_created', _onPartyPlanCreated);
     ApiService.removeSocketListener('party_plan_deleted', _onPartyPlanDeleted);
+    ApiService.removeSocketListener('party_plan_reposted', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('party_plan_cancelled', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('party_plan_request_created', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('party_plan_request_received', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('party_plan_request_updated', _onPartyPlanRequestUpdated);
@@ -348,7 +351,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           _feedItems = combined;
           _notifications = notifs.map((n) {
             final nId = n['id']?.toString() ?? '';
-            if (_localReadNotificationIds.contains(nId)) {
+            if (_localReadNotificationIds.contains(nId) || ApiService.localReadRequestIds.contains(nId)) {
               return {...n, 'read': true, 'isRead': true};
             }
             return n;
@@ -387,9 +390,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (rawId.isNotEmpty) {
         ApiService.localReadRequestIds.add(rawId);
         ApiService.localReadRequestIds.add(item.id);
+        ApiService.localReadNotificationIds.add(rawId);
+        ApiService.localReadNotificationIds.add(item.id);
+      }
+    }
+    for (final n in _notifications) {
+      final nId = n['id']?.toString() ?? '';
+      if (nId.isNotEmpty) {
+        ApiService.localReadNotificationIds.add(nId);
       }
     }
     await ApiService.saveLocalReadRequestIds();
+    await ApiService.saveLocalReadNotificationIds();
     await ApiService.clearAllNotifications();
 
     if (mounted) {
@@ -742,7 +754,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (rawId.isNotEmpty) {
       ApiService.localReadRequestIds.add(rawId);
       ApiService.localReadRequestIds.add(item.id);
+      ApiService.localReadNotificationIds.add(rawId);
+      ApiService.localReadNotificationIds.add(item.id);
       ApiService.saveLocalReadRequestIds();
+      ApiService.saveLocalReadNotificationIds();
     }
     final notifId = item.rawData['id']?.toString();
     if (notifId != null && notifId.isNotEmpty) {
@@ -995,7 +1010,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final category = (n['category'] ?? n['entityType'] ?? 'system').toString().toLowerCase();
       final title = n['title']?.toString() ?? 'Notification';
       final body = n['body']?.toString() ?? '';
-      final isRead = n['read'] == true || n['isRead'] == true || _localReadNotificationIds.contains(id);
+      final isRead = n['read'] == true ||
+          n['isRead'] == true ||
+          _localReadNotificationIds.contains(id) ||
+          ApiService.localReadRequestIds.contains(id);
       final createdAt = _parseDateTime(n['createdAt']);
       final timeAgo = _formatTimeAgo(n['createdAt']);
 
@@ -1227,16 +1245,80 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         : <String, dynamic>{};
     final venueName = venue['name']?.toString() ?? planMap['venueName']?.toString() ?? 'Party Venue';
 
-    final hostCreator = (planMap['creator'] is Map)
-        ? planMap['creator'] as Map<String, dynamic>
-        : (planMap['host'] is Map
-            ? planMap['host'] as Map<String, dynamic>
-            : <String, dynamic>{});
-    final hostName = '${hostCreator["firstName"] ?? planMap["hostName"] ?? "Host"} ${hostCreator["lastName"] ?? ""}'.trim();
-    final hostPhoto = hostCreator['profileImageUrl']?.toString() ?? hostCreator['profilePhotoUrl']?.toString() ?? planMap['hostProfilePhotoUrl']?.toString();
+    Map<String, dynamic> hostCreator = (planMap['creator'] is Map && (planMap['creator'] as Map).isNotEmpty)
+        ? Map<String, dynamic>.from(planMap['creator'])
+        : (planMap['host'] is Map && (planMap['host'] as Map).isNotEmpty
+            ? Map<String, dynamic>.from(planMap['host'])
+            : (planMap['user'] is Map && (planMap['user'] as Map).isNotEmpty
+                ? Map<String, dynamic>.from(planMap['user'])
+                : <String, dynamic>{}));
+
+    if (hostCreator.isEmpty) {
+      for (final e in entries) {
+        if (e['creator'] is Map && (e['creator'] as Map).isNotEmpty) {
+          hostCreator = Map<String, dynamic>.from(e['creator']);
+          break;
+        }
+        if (e['host'] is Map && (e['host'] as Map).isNotEmpty) {
+          hostCreator = Map<String, dynamic>.from(e['host']);
+          break;
+        }
+        if (e['user'] is Map && (e['user'] as Map).isNotEmpty) {
+          hostCreator = Map<String, dynamic>.from(e['user']);
+          break;
+        }
+        if (e['data'] is Map) {
+          final d = e['data'] as Map;
+          if (d['creator'] is Map) { hostCreator = Map<String, dynamic>.from(d['creator']); break; }
+          if (d['host'] is Map) { hostCreator = Map<String, dynamic>.from(d['host']); break; }
+          if (d['user'] is Map) { hostCreator = Map<String, dynamic>.from(d['user']); break; }
+        }
+      }
+    }
+
+    String hostName = '';
+    if (hostCreator['firstName'] != null || hostCreator['name'] != null) {
+      final fn = hostCreator['firstName'] ?? hostCreator['name'];
+      final ln = hostCreator['lastName'] ?? '';
+      hostName = '$fn $ln'.trim();
+    } else if (planMap['hostName'] != null && planMap['hostName'].toString().trim().isNotEmpty) {
+      hostName = planMap['hostName'].toString().trim();
+    } else if (planMap['userName'] != null && planMap['userName'].toString().trim().isNotEmpty) {
+      hostName = planMap['userName'].toString().trim();
+    } else if (planMap['hostFirstName'] != null) {
+      hostName = '${planMap['hostFirstName']} ${planMap['hostLastName'] ?? ''}'.trim();
+    } else {
+      hostName = 'Party Host';
+    }
+
+    String? hostPhoto = hostCreator['profileImageUrl']?.toString() ??
+        hostCreator['profilePhotoUrl']?.toString() ??
+        planMap['hostProfilePhotoUrl']?.toString() ??
+        planMap['hostPhotoUrl']?.toString() ??
+        planMap['profileImageUrl']?.toString() ??
+        planMap['userPhotoUrl']?.toString();
+    if (hostPhoto != null) {
+      hostPhoto = ApiService.formatImageUrl(hostPhoto);
+    }
 
     final String planHostId = (planMap['userId'] ?? hostCreator['id'] ?? '').toString();
     final bool isHost = currentUserId.isNotEmpty && (planHostId == currentUserId || planMap['role'] == 'host');
+
+    final Map<String, dynamic> hostUserObj = {
+      'id': planHostId.isNotEmpty ? planHostId : (hostCreator['id'] ?? ''),
+      'name': hostName,
+      'firstName': hostName,
+      'lastName': hostCreator['lastName'] ?? '',
+      'profilePhotoUrl': hostPhoto,
+      'profileImageUrl': hostPhoto,
+    };
+    if (hostCreator.isNotEmpty) {
+      hostUserObj.addAll(hostCreator);
+      if (hostPhoto != null) {
+        hostUserObj['profilePhotoUrl'] = hostPhoto;
+        hostUserObj['profileImageUrl'] = hostPhoto;
+      }
+    }
 
     // 3. Find requests involving current user or host
     Map<String, dynamic>? myRequest;
@@ -1349,13 +1431,29 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     String body = formattedDateTime.isNotEmpty ? '📅 $formattedDateTime' : 'Party Plan at $venueName';
     String badge = 'PARTY PLAN';
     List<NotificationAction>? actionsList;
-    Map<String, dynamic>? senderUser = hostCreator;
+    Map<String, dynamic>? senderUser = hostUserObj;
     String? avatarUrl = hostPhoto;
 
     String? userRoleLabel = isHost ? '👑 Your Party Plan' : 'Hosted by';
-    Map<String, dynamic>? partnerUser;
-    String? partnerRoleLabel;
+    Map<String, dynamic>? partnerUser = isHost ? null : hostUserObj;
+    String? partnerRoleLabel = isHost ? null : 'Host:';
     String? statusSummary;
+
+    if (isHost && acceptedJoinerRequest != null) {
+      final joinerReq = (acceptedJoinerRequest['requester'] is Map && (acceptedJoinerRequest['requester'] as Map).isNotEmpty)
+          ? Map<String, dynamic>.from(acceptedJoinerRequest['requester'])
+          : (acceptedJoinerRequest['user'] is Map && (acceptedJoinerRequest['user'] as Map).isNotEmpty
+              ? Map<String, dynamic>.from(acceptedJoinerRequest['user'])
+              : <String, dynamic>{
+                  'id': acceptedJoinerRequest['requesterId'],
+                  'name': acceptedJoinerRequest['requesterName'] ?? 'Joiner',
+                  'firstName': acceptedJoinerRequest['requesterName'] ?? 'Joiner',
+                  'profilePhotoUrl': acceptedJoinerRequest['requesterPhotoUrl'],
+                  'profileImageUrl': acceptedJoinerRequest['requesterPhotoUrl'],
+                });
+      partnerUser = joinerReq;
+      partnerRoleLabel = 'Guest:';
+    }
 
     if (isExpired) {
       accent = const Color(0xFF9CA3AF);
@@ -1366,7 +1464,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     } else if (isCancelled) {
       accent = const Color(0xFFEF4444);
       badge = 'CANCELLED';
-      body = 'Party Plan at $venueName was cancelled by mutual agreement.';
+      body = 'Party Plan at $venueName was cancelled by the host.';
       statusSummary = 'Cancelled';
       actionsList = [
         NotificationAction(
@@ -1887,10 +1985,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final dt = _parseDateTime(e['createdAt'] ?? e['postedAt']);
       if (dt.isAfter(latestCreatedAt)) latestCreatedAt = dt;
       final eId = e['id']?.toString() ?? '';
-      final read = e['read'] == true || e['isRead'] == true || _localReadNotificationIds.contains(eId);
+      final read = e['read'] == true ||
+          e['isRead'] == true ||
+          _localReadNotificationIds.contains(eId) ||
+          ApiService.localReadRequestIds.contains(eId);
       if (!read) allRead = false;
     }
-    if (_localReadNotificationIds.contains('pp_$planId')) {
+    if (_localReadNotificationIds.contains('pp_$planId') ||
+        _localReadNotificationIds.contains(planId) ||
+        ApiService.localReadRequestIds.contains('pp_$planId') ||
+        ApiService.localReadRequestIds.contains(planId)) {
       allRead = true;
     }
     if (badge == 'ACTION REQUIRED' || badge == 'INVITE') {
@@ -2304,10 +2408,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final dt = _parseDateTime(e['createdAt'] ?? e['postedAt']);
       if (dt.isAfter(latestCreatedAt)) latestCreatedAt = dt;
       final eId = e['id']?.toString() ?? '';
-      final read = e['read'] == true || e['isRead'] == true || _localReadNotificationIds.contains(eId);
+      final read = e['read'] == true ||
+          e['isRead'] == true ||
+          _localReadNotificationIds.contains(eId) ||
+          ApiService.localReadRequestIds.contains(eId);
       if (!read) allRead = false;
     }
-    if (_localReadNotificationIds.contains('sm_$meetId')) {
+    if (_localReadNotificationIds.contains('sm_$meetId') ||
+        _localReadNotificationIds.contains(meetId) ||
+        ApiService.localReadRequestIds.contains('sm_$meetId') ||
+        ApiService.localReadRequestIds.contains(meetId)) {
       allRead = true;
     }
     if (badge == 'ACTION REQUIRED' || badge == 'NEW REQUEST') {
@@ -2355,6 +2465,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           {'id': 'PAYMENTS', 'label': 'Payments & Receipts', 'icon': Icons.payments_rounded},
           {'id': 'WALLET', 'label': 'Wallet Balance', 'icon': Icons.account_balance_wallet_rounded},
           {'id': 'CHAT', 'label': 'Messages & Chat', 'icon': Icons.chat_bubble_rounded},
+          {'id': 'EXPIRED', 'label': 'Expired Plans & Events', 'icon': Icons.history_rounded},
           {'id': 'SYSTEM', 'label': 'System & Security', 'icon': Icons.security_rounded},
           {'id': 'PROMOTIONS', 'label': 'Offers & Rewards', 'icon': Icons.card_giftcard_rounded},
         ];
@@ -2558,8 +2669,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   // Build Status Filter Pills with Live Unread Counts
   // ─────────────────────────────────────────────────────────────────────────────
   int _countForPill(String pillId, List<UnifiedNotificationItem> allItems) {
-    if (pillId == 'ALL') return allItems.where((i) => !i.isRead).length;
+    if (pillId == 'ALL') return allItems.where((i) => !i.isRead && !i.isExpired).length;
+    if (pillId == 'EXPIRED') return allItems.where((i) => i.isExpired && !i.isRead).length;
     return allItems.where((item) {
+      if (item.isExpired) return false;
       final badge = item.badgeText?.toUpperCase() ?? '';
       final category = item.category.toLowerCase();
       final title = item.title.toLowerCase();
@@ -2588,6 +2701,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       {'id': 'PENDING', 'label': 'Pending'},
       {'id': 'PAYMENT', 'label': 'Payment'},
       {'id': 'CONFIRMED', 'label': 'Confirmed'},
+      {'id': 'EXPIRED', 'label': 'Expired'},
       {'id': 'SYSTEM', 'label': 'System'},
     ];
 
@@ -2675,6 +2789,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     // Apply category filter
     final categoryFilteredItems = allTimelineItems.where((item) {
       if (_selectedCategoryFilter == 'ALL') return true;
+      if (_selectedCategoryFilter == 'EXPIRED') {
+        return item.isExpired;
+      }
       if (_selectedCategoryFilter == 'BOOKINGS') {
         return item.category == 'booking' || item.category == 'group';
       }
@@ -2702,8 +2819,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       return true;
     }).toList();
 
-    // Apply status pill filter (All, Requests, Pending, Payment, Confirmed, System)
+    // Apply status pill filter (All, Requests, Pending, Payment, Confirmed, Expired, System)
     final filteredItems = categoryFilteredItems.where((item) {
+      if (_selectedStatusPill == 'EXPIRED' || _selectedCategoryFilter == 'EXPIRED') {
+        return item.isExpired;
+      }
+
+      // Expired items must NOT show in 'ALL' or other active tabs
+      if (item.isExpired) {
+        return false;
+      }
+
       if (_selectedStatusPill == 'ALL') return true;
       final badge = item.badgeText?.toUpperCase() ?? '';
       final category = item.category.toLowerCase();
@@ -2745,8 +2871,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       return true;
     }).toList();
 
-    // Count total unread items
-    final totalUnread = allTimelineItems.where((i) => !i.isRead).length;
+    // Count total unread active items
+    final totalUnread = allTimelineItems.where((i) => !i.isRead && !i.isExpired).length;
 
     // Date grouping into TODAY, YESTERDAY, EARLIER
     final now = DateTime.now();
@@ -2785,9 +2911,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                       Icon(Icons.notifications_none_rounded, size: 64, color: Colors.grey[400]),
                                       const SizedBox(height: 16),
                                       Text(
-                                        _selectedCategoryFilter == 'ALL'
-                                            ? 'No notifications yet'
-                                            : 'No notifications in this category',
+                                        _selectedStatusPill == 'EXPIRED' || _selectedCategoryFilter == 'EXPIRED'
+                                            ? 'No expired plans or notifications'
+                                            : _selectedCategoryFilter != 'ALL'
+                                                ? 'No notifications in this category'
+                                                : _selectedStatusPill != 'ALL'
+                                                    ? 'No $_selectedStatusPill notifications'
+                                                    : 'No notifications yet',
                                         style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey[700]),
                                       ),
                                       const SizedBox(height: 8),
@@ -3358,29 +3488,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     } catch (e) {
       debugPrint('Error opening Razorpay for Host Payment: $e');
     }
-  }
-
-  String _calculateCountdownLabel(Map<String, dynamic> item, Map<String, dynamic> planMap) {
-    final rawDeadline = item['paymentDeadlineAt'] ?? item['payment_deadline_at'] ?? planMap['paymentDeadlineAt'] ?? planMap['payment_deadline_at'];
-    if (rawDeadline != null) {
-      try {
-        final deadline = DateTime.parse(rawDeadline.toString()).toUtc();
-        final rawServerTime = item['serverTime'] ?? planMap['serverTime'];
-        final serverNow = rawServerTime == null
-            ? DateTime.now().toUtc()
-            : DateTime.parse(rawServerTime.toString()).toUtc();
-        final clockOffset = serverNow.difference(DateTime.now().toUtc());
-        final diff = deadline.difference(DateTime.now().toUtc().add(clockOffset));
-        if (diff.inSeconds <= 0) {
-          return 'Pay Deposit (Expired)';
-        }
-        final mins = diff.inMinutes;
-        final secs = diff.inSeconds % 60;
-        final secStr = secs < 10 ? '0$secs' : '$secs';
-        return 'Pay Deposit (${mins}m ${secStr}s)';
-      } catch (_) {}
-    }
-    return 'Payment status unavailable';
   }
 }
 

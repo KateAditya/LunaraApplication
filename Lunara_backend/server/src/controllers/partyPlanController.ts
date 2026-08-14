@@ -1155,8 +1155,7 @@ export const getAllPartyPlans = async (req: Request, res: Response): Promise<voi
                         {
                             model: VenueImage,
                             as: 'images',
-                            attributes: ['id', 'filePath', 'imageType', 'isPrimary'],
-                            where: { imageType: 'cover', isPrimary: true },
+                            attributes: ['id', 'filePath', 'imageType', 'isPrimary', 'displayOrder'],
                             required: false,
                         }
                     ],
@@ -1265,8 +1264,7 @@ export const getPlansByUser = async (req: Request, res: Response): Promise<void>
                         {
                             model: VenueImage,
                             as: 'images',
-                            attributes: ['id', 'filePath', 'imageType', 'isPrimary'],
-                            where: { imageType: 'cover', isPrimary: true },
+                            attributes: ['id', 'filePath', 'imageType', 'isPrimary', 'displayOrder'],
                             required: false,
                         }
                     ],
@@ -1294,7 +1292,10 @@ export const getPlansByUser = async (req: Request, res: Response): Promise<void>
             foodPreference: p.foodPreference,
             drinkPreference: p.drinkPreference,
             user: buildUserData(p),
+            host: buildUserData(p),
+            creator: buildUserData(p),
             venue: buildVenueData(p),
+            venueImageUrl: buildVenueData(p)?.coverImageUrl || buildVenueData(p)?.imageUrl,
         }));
 
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
@@ -1343,8 +1344,7 @@ export const getPartyPlanById = async (req: Request, res: Response): Promise<voi
                         {
                             model: VenueImage,
                             as: 'images',
-                            attributes: ['id', 'filePath', 'imageType', 'isPrimary'],
-                            where: { imageType: 'cover', isPrimary: true },
+                            attributes: ['id', 'filePath', 'imageType', 'isPrimary', 'displayOrder'],
                             required: false,
                         }
                     ],
@@ -1357,16 +1357,22 @@ export const getPartyPlanById = async (req: Request, res: Response): Promise<voi
             return;
         }
 
+        const venueData = buildVenueData(plan);
+        const userData = buildUserData(plan);
+
         res.json({
             success: true,
             data: {
                 id: plan.id,
                 userId: plan.userId,
                 status: plan.status,
+                lifecycleStatus: plan.lifecycleStatus,
                 visibility: plan.visibility,
                 selectedUsers: plan.selectedUsers,
                 message: plan.message,
+                description: plan.message,
                 planDateTime: plan.planDateTime,
+                eventDateTime: plan.planDateTime,
                 createdAt: plan.createdAt,
                 updatedAt: plan.updatedAt,
                 hostPaymentStatus: plan.hostPaymentStatus,
@@ -1379,8 +1385,17 @@ export const getPartyPlanById = async (req: Request, res: Response): Promise<voi
                 paymentStatus: plan.paymentStatus,
                 foodPreference: plan.foodPreference,
                 drinkPreference: plan.drinkPreference,
-                user: buildUserData(plan),
-                venue: buildVenueData(plan),
+                showProfilePhoto: plan.showProfilePhoto ?? true,
+                showHostName: plan.showHostName ?? true,
+                showVenueDetails: plan.showVenueDetails ?? true,
+                showDateDetails: plan.showDateDetails ?? true,
+                user: userData,
+                host: userData,
+                creator: userData,
+                hostName: userData ? `${userData.firstName || ''} ${userData.lastName || ''}`.trim() : 'Party Host',
+                hostProfilePhotoUrl: userData?.profilePhotoUrl || userData?.photoUrl,
+                venue: venueData,
+                venueImageUrl: venueData?.coverImageUrl || venueData?.imageUrl,
             },
         });
     } catch (err: any) {
@@ -1540,23 +1555,24 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
         }
 
         const plan = await PartyPlan.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
-        if (!plan || !plan.isLive) {
+        if (!plan || !plan.isLive || plan.status === PartyPlanStatus.INACTIVE || plan.status === PartyPlanStatus.CANCELLED || plan.lifecycleStatus === PartyPlanLifecycleStatus.CANCELLED) {
             await transaction.rollback();
-            res.status(404).json({ success: false, message: 'Live Party plan not found' });
-            return;
-        }
-
-        // Reject if target plan is inactive or cancelled
-        if (plan.status === PartyPlanStatus.INACTIVE || plan.status === PartyPlanStatus.CANCELLED) {
-            await transaction.rollback();
-            res.status(400).json({ success: false, message: 'This party plan is no longer active.' });
+            res.status(400).json({
+                success: false,
+                code: 'PARTY_PLAN_NOT_ACTIVE',
+                message: 'This Party Plan is no longer available.'
+            });
             return;
         }
 
         // Reject if plan has expired
         if (plan.planDateTime && new Date(plan.planDateTime).getTime() < Date.now()) {
             await transaction.rollback();
-            res.status(400).json({ success: false, message: 'This party plan has expired' });
+            res.status(400).json({
+                success: false,
+                code: 'PARTY_PLAN_EXPIRED',
+                message: 'This Party Plan has expired.'
+            });
             return;
         }
 
@@ -3026,40 +3042,59 @@ async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction
     // 1. Update plan status
     await plan.update({
         status: PartyPlanStatus.CANCELLED,
+        lifecycleStatus: PartyPlanLifecycleStatus.CANCELLED,
         isLive: false,
         paymentStatus: plan.paymentStatus === 'Confirmed' ? 'Refunded' : plan.paymentStatus,
         hostPaymentStatus: wasHostPaid ? PartyPlanPaymentStatus.REFUNDED : plan.hostPaymentStatus,
     }, { transaction });
 
-    // 1.5 Refund Host if paid
+    // 1.5 Refund Host if paid (Idempotent: check existing transaction reference)
     if (wasHostPaid) {
-        const hostUser = await User.findByPk(plan.userId, { transaction });
-        if (hostUser) {
-            const hOld = Number(hostUser.walletBalance || 0);
-            // Refund exactly what the host paid: their commitment deposit (always ₹99)
-            const hDeposit = Number(plan.depositAmount) || 99.00;
-            const hNew = hOld + hDeposit;
-            await hostUser.update({ walletBalance: hNew }, { transaction });
-            await WalletTransaction.logTransaction({
-                userId: hostUser.id,
+        const hostRefundRef = `REFUND_HOST_CANCEL_${plan.id}`;
+        const existingHostTx = await WalletTransaction.findOne({
+            where: {
+                userId: plan.userId,
                 partyPlanId: plan.id,
-                amount: hDeposit,
-                openingBalance: hOld,
-                closingBalance: hNew,
-                transactionType: WalletTransactionType.REFUND,
-                reference: `REFUND_HOST_CANCEL_${plan.id}`,
-            }, transaction);
+                reference: hostRefundRef,
+            },
+            transaction
+        });
+
+        if (!existingHostTx) {
+            const hostUser = await User.findByPk(plan.userId, { transaction });
+            if (hostUser) {
+                const hOld = Number(hostUser.walletBalance || 0);
+                const hDeposit = Number(plan.depositAmount) || 99.00;
+                const hNew = hOld + hDeposit;
+                await hostUser.update({ walletBalance: hNew }, { transaction });
+                await WalletTransaction.logTransaction({
+                    userId: hostUser.id,
+                    partyPlanId: plan.id,
+                    amount: hDeposit,
+                    openingBalance: hOld,
+                    closingBalance: hNew,
+                    transactionType: WalletTransactionType.REFUND,
+                    reference: hostRefundRef,
+                }, transaction);
+            }
         }
     }
 
     // 2. Release lock in Time Lock Engine
     await PlanEligibilityService.releaseLock(plan.id, { transaction });
 
-    // 3. Find and update all requests
+    // 3. Find and cancel all active requests
     const requests = await PartyPlanRequest.findAll({
         where: {
             planId: plan.id,
-            status: { [Op.in]: [PartyPlanRequestStatus.PENDING, PartyPlanRequestStatus.PAYMENT_PENDING, PartyPlanRequestStatus.ACCEPTED] }
+            status: {
+                [Op.in]: [
+                    PartyPlanRequestStatus.PENDING,
+                    PartyPlanRequestStatus.WAITING,
+                    PartyPlanRequestStatus.PAYMENT_PENDING,
+                    PartyPlanRequestStatus.ACCEPTED
+                ]
+            }
         },
         transaction
     });
@@ -3069,18 +3104,29 @@ async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction
 
         await req.update({
             status: PartyPlanRequestStatus.CANCELLED,
+            cancelledBy: plan.userId,
+            cancelledAt: new Date(),
+            cancellationReason: 'cancelled_by_host',
             joinerPaymentStatus: wasJoinerPaid ? PartyPlanJoinerPaymentStatus.REFUNDED : req.joinerPaymentStatus
         }, { transaction });
 
-        // Refund Joiner if paid
+        // Refund Joiner if paid (Idempotent: check existing transaction reference)
         if (wasJoinerPaid) {
-            const joinerUser = await User.findByPk(req.requesterId, { transaction });
-            if (joinerUser) {
-                const jOld = Number(joinerUser.walletBalance || 0);
-                // Joiner commitment deposit is always ₹99 regardless of payment model.
-                // SELF_PAY only means the host covers the venue expense — joiner still paid their deposit.
-                const jDeposit = 99.00;
-                if (jDeposit > 0) {
+            const joinerRefundRef = `REFUND_JOINER_CANCEL_${req.id}`;
+            const existingJoinerTx = await WalletTransaction.findOne({
+                where: {
+                    userId: req.requesterId,
+                    partyPlanId: plan.id,
+                    reference: joinerRefundRef,
+                },
+                transaction
+            });
+
+            if (!existingJoinerTx) {
+                const joinerUser = await User.findByPk(req.requesterId, { transaction });
+                if (joinerUser) {
+                    const jOld = Number(joinerUser.walletBalance || 0);
+                    const jDeposit = 99.00;
                     const jNew = jOld + jDeposit;
                     await joinerUser.update({ walletBalance: jNew }, { transaction });
                     await WalletTransaction.logTransaction({
@@ -3090,7 +3136,7 @@ async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction
                         openingBalance: jOld,
                         closingBalance: jNew,
                         transactionType: WalletTransactionType.REFUND,
-                        reference: `REFUND_JOINER_CANCEL_${req.id}`,
+                        reference: joinerRefundRef,
                     }, transaction);
                 }
             }
@@ -3099,27 +3145,38 @@ async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction
         // Notify joiners
         try {
             const { io } = require('../server');
-            io.to(`user_${req.requesterId}`).emit('plan_unavailable', {
-                planId: plan.id,
-                requestId: req.id,
-            });
-            io.to(`user_${req.requesterId}`).emit('notification_created', {
-                id: `ppr_cancelled_${req.id}`,
-                title: 'Party Plan Cancelled',
-                body: 'The Party Plan has been cancelled by the host. Any deposits paid will be refunded.',
-                createdAt: new Date().toISOString(),
-                read: false,
-                type: 'plan_unavailable',
-            });
+            if (io) {
+                io.to(`user_${req.requesterId}`).emit('plan_unavailable', {
+                    planId: plan.id,
+                    requestId: req.id,
+                });
+                io.to(`user_${req.requesterId}`).emit('party_plan_request_cancelled', {
+                    planId: plan.id,
+                    requestId: req.id,
+                    cancelledBy: plan.userId,
+                });
+            }
         } catch (_) { }
 
         setImmediate(async () => {
             try {
+                await NotificationService.dispatch({
+                    recipientUserId: req.requesterId,
+                    actorUserId: plan.userId,
+                    eventType: 'party_plan_cancelled',
+                    category: 'requests',
+                    entityType: 'party_plan_request',
+                    entityId: req.id,
+                    title: 'Party Plan Cancelled',
+                    body: 'This Party Plan is no longer available because the host cancelled it.',
+                    metadata: { partyPlanId: plan.id, planId: plan.id, requestId: req.id },
+                    idempotencyKey: `req_cancelled_by_host_${req.id}`,
+                });
                 const joiner = await User.findByPk(req.requesterId);
                 if (joiner && joiner.fcmToken) {
                     await sendMulticastPushNotification([joiner.fcmToken], {
                         title: 'Party Plan Cancelled',
-                        body: 'The Party Plan has been cancelled by the host. Any deposits paid will be refunded.',
+                        body: 'This Party Plan is no longer available because the host cancelled it.',
                         data: {
                             type: 'plan_unavailable',
                             partyPlanId: plan.id,
@@ -3176,48 +3233,288 @@ export const cancelPartyPlan = async (req: Request, res: Response): Promise<void
     const transaction = await sequelize.transaction();
     try {
         const { id } = req.params;
-        const { userId } = req.body;
+        const callerUserId = (req.user?.id || req.body.userId || '').toString();
 
-        const plan = await PartyPlan.findByPk(id, { transaction });
+        const plan = await PartyPlan.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
         if (!plan) {
             await transaction.rollback();
             res.status(404).json({ success: false, message: 'Party plan not found' });
             return;
         }
 
-        if (plan.userId !== userId) {
+        if (callerUserId && plan.userId !== callerUserId) {
             await transaction.rollback();
             res.status(403).json({ success: false, message: 'Only the host can cancel the plan' });
             return;
         }
 
-        // Row lock
-        await plan.reload({ lock: transaction.LOCK.UPDATE, transaction });
-
-        // Check if already cancelled
+        // Check if already cancelled (idempotent)
         if (plan.status === PartyPlanStatus.CANCELLED) {
             await transaction.rollback();
             res.json({ success: true, message: 'Party plan is already cancelled' });
             return;
         }
 
+        const wasHostPaid = plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID;
         await cancelPartyPlanInternal(plan, transaction);
 
         await transaction.commit();
 
-        // Emit socket event to notify other clients to remove it from feed
+        let venueName = 'the venue';
         try {
-            const { io } = require('../server');
-            io.emit('party_plan_deleted', { planId: plan.id });
-        } catch (socketErr) {
-            logger.warn('Socket emission failed for party_plan_deleted on cancel:', socketErr);
-        }
+            const venue = await Venue.findByPk(plan.venueId);
+            if (venue) venueName = venue.name;
+        } catch (_) {}
 
-        res.json({ success: true, message: 'Party plan cancelled' });
+        // Post-commit notification & socket broadcast
+        setImmediate(async () => {
+            try {
+                await NotificationService.dispatch({
+                    recipientUserId: plan.userId,
+                    actorUserId: plan.userId,
+                    eventType: 'party_plan_cancelled',
+                    category: 'requests',
+                    entityType: 'party_plan',
+                    entityId: plan.id,
+                    title: 'Party Plan Cancelled',
+                    body: wasHostPaid
+                        ? `Your Party Plan at ${venueName} has been cancelled. ₹99 has been refunded to your Lunara Wallet.`
+                        : `Your Party Plan at ${venueName} has been cancelled.`,
+                    metadata: {
+                        partyPlanId: plan.id,
+                        planId: plan.id,
+                        refundAmount: wasHostPaid ? 99.0 : 0.0,
+                    },
+                    idempotencyKey: `host_plan_cancelled_${plan.id}`,
+                });
+
+                const { io } = require('../server');
+                if (io) {
+                    io.emit('party_plan_deleted', { planId: plan.id });
+                    io.emit('party_plan_cancelled', { planId: plan.id });
+                }
+            } catch (socketErr) {
+                logger.warn('Socket/Notification dispatch failed on cancel:', socketErr);
+            }
+        });
+
+        res.json({
+            success: true,
+            message: wasHostPaid
+                ? 'Party plan cancelled. ₹99 has been refunded to your Lunara Wallet.'
+                : 'Party plan cancelled.'
+        });
     } catch (err: any) {
         await transaction.rollback();
         logger.error('cancelPartyPlan error:', err);
         res.status(500).json({ success: false, message: 'Failed to cancel plan', error: err.message });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/party-plans/:id/repost
+// Repost an existing party plan with a new date/time (by host)
+// ─────────────────────────────────────────────────────────────────────────────
+export const repostPartyPlan = async (req: Request, res: Response): Promise<void> => {
+    const transaction = await sequelize.transaction();
+    try {
+        const { id } = req.params;
+        const callerUserId = (req.user?.id || req.body.userId || '').toString();
+        const { newDateTime, reason } = req.body;
+
+        if (!callerUserId) {
+            await transaction.rollback();
+            res.status(400).json({ success: false, message: 'userId is required' });
+            return;
+        }
+
+        if (!newDateTime) {
+            await transaction.rollback();
+            res.status(400).json({ success: false, message: 'newDateTime is required' });
+            return;
+        }
+
+        const parsedDate = new Date(newDateTime);
+        if (isNaN(parsedDate.getTime())) {
+            await transaction.rollback();
+            res.status(400).json({ success: false, message: 'newDateTime must be a valid ISO 8601 date string' });
+            return;
+        }
+
+        // Validate lead time: must be in the future (minimum 30 minutes)
+        if (parsedDate.getTime() <= Date.now() + 30 * 60 * 1000) {
+            await transaction.rollback();
+            res.status(400).json({
+                success: false,
+                message: 'New date and time must be at least 30 minutes in the future'
+            });
+            return;
+        }
+
+        const plan = await PartyPlan.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+        if (!plan) {
+            await transaction.rollback();
+            res.status(404).json({ success: false, message: 'Party plan not found' });
+            return;
+        }
+
+        if (plan.userId !== callerUserId) {
+            await transaction.rollback();
+            res.status(403).json({ success: false, message: 'Only the host can repost the plan' });
+            return;
+        }
+
+        const oldDateTime = plan.planDateTime;
+
+        // Cancel previous pending / waiting / accepted requests cleanly because schedule changed
+        const pendingRequests = await PartyPlanRequest.findAll({
+            where: {
+                planId: plan.id,
+                status: {
+                    [Op.in]: [
+                        PartyPlanRequestStatus.PENDING,
+                        PartyPlanRequestStatus.WAITING,
+                        PartyPlanRequestStatus.PAYMENT_PENDING,
+                        PartyPlanRequestStatus.ACCEPTED,
+                    ]
+                }
+            },
+            transaction
+        });
+
+        for (const reqItem of pendingRequests) {
+            const wasJoinerPaid = reqItem.joinerPaymentStatus === PartyPlanJoinerPaymentStatus.PAID;
+            await reqItem.update({
+                status: PartyPlanRequestStatus.CANCELLED,
+                cancelledBy: callerUserId,
+                cancelledAt: new Date(),
+                cancellationReason: 'plan_reposted_new_schedule',
+                joinerPaymentStatus: wasJoinerPaid ? PartyPlanJoinerPaymentStatus.REFUNDED : reqItem.joinerPaymentStatus
+            }, { transaction });
+
+            if (wasJoinerPaid) {
+                const WalletTransaction = (await import('../models/WalletTransaction')).default;
+                const { WalletTransactionType } = await import('../models/WalletTransaction');
+                const joinerRefundRef = `REFUND_JOINER_REPOST_${reqItem.id}`;
+                const existingJoinerTx = await WalletTransaction.findOne({
+                    where: {
+                        userId: reqItem.requesterId,
+                        partyPlanId: plan.id,
+                        reference: joinerRefundRef,
+                    },
+                    transaction
+                });
+
+                if (!existingJoinerTx) {
+                    const joinerUser = await User.findByPk(reqItem.requesterId, { transaction });
+                    if (joinerUser) {
+                        const jOld = Number(joinerUser.walletBalance || 0);
+                        const jDeposit = 99.00;
+                        const jNew = jOld + jDeposit;
+                        await joinerUser.update({ walletBalance: jNew }, { transaction });
+                        await WalletTransaction.logTransaction({
+                            userId: joinerUser.id,
+                            partyPlanId: plan.id,
+                            amount: jDeposit,
+                            openingBalance: jOld,
+                            closingBalance: jNew,
+                            transactionType: WalletTransactionType.REFUND,
+                            reference: joinerRefundRef,
+                        }, transaction);
+                    }
+                }
+            }
+        }
+
+        // Update the existing Party Plan in-place (no duplicate records)
+        await plan.update({
+            planDateTime: parsedDate,
+            status: PartyPlanStatus.ACTIVE,
+            lifecycleStatus: PartyPlanLifecycleStatus.POSTED,
+            isLive: true,
+            matchedRequestId: null,
+            acceptedAt: null,
+            paymentDeadlineAt: null,
+            paymentStatus: plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID ? 'Confirmed' : 'Active',
+            reminder24hSent: false,
+            reminder3hSent: false,
+            reminder2hSent: false,
+            reminder1hSent: false,
+            reminder30mSent: false,
+            reminder10mSent: false,
+            hostArrivalConfirmed: false,
+            hostArrivalTime: null,
+        }, { transaction });
+
+        // Release/update lock in Time Lock Engine
+        await PlanEligibilityService.releaseLock(plan.id, { transaction });
+
+        await transaction.commit();
+
+        // Venue details for notification
+        let venueName = 'the venue';
+        try {
+            const venue = await Venue.findByPk(plan.venueId);
+            if (venue) venueName = venue.name;
+        } catch (_) {}
+
+        // Post-commit notifications and socket broadcast
+        setImmediate(async () => {
+            try {
+                const formattedDate = parsedDate.toLocaleString('en-IN', {
+                    dateStyle: 'medium',
+                    timeStyle: 'short',
+                });
+
+                // In-place notification for Host
+                await NotificationService.dispatch({
+                    recipientUserId: plan.userId,
+                    actorUserId: plan.userId,
+                    eventType: 'party_plan_reposted',
+                    category: 'requests',
+                    entityType: 'party_plan',
+                    entityId: plan.id,
+                    title: 'Party Plan Reposted',
+                    body: `Your Party Plan at ${venueName} has been reposted for ${formattedDate}.`,
+                    metadata: {
+                        partyPlanId: plan.id,
+                        planId: plan.id,
+                        oldDateTime,
+                        newDateTime: parsedDate.toISOString(),
+                        reason,
+                    },
+                    idempotencyKey: `plan_reposted_${plan.id}_${parsedDate.getTime()}`,
+                });
+
+                // Socket broadcasts
+                const { io } = require('../server');
+                if (io) {
+                    io.emit('party_plan_reposted', {
+                        planId: plan.id,
+                        newDateTime: parsedDate.toISOString(),
+                        oldDateTime,
+                    });
+                    io.emit('party_plan_created', {
+                        id: plan.id,
+                        planId: plan.id,
+                        status: plan.status,
+                        planDateTime: plan.planDateTime,
+                    });
+                }
+            } catch (notifyErr: any) {
+                logger.warn('Failed to dispatch repost notification:', notifyErr.message);
+            }
+        });
+
+        res.json({
+            success: true,
+            message: 'Party Plan successfully reposted with the new date and time.',
+            data: plan
+        });
+    } catch (err: any) {
+        await transaction.rollback();
+        logger.error('repostPartyPlan error:', err);
+        res.status(500).json({ success: false, message: 'Failed to repost plan', error: err.message });
     }
 };
 
@@ -3474,7 +3771,7 @@ function buildVenueData(plan: PartyPlan, currentUserId?: string, isAcceptedJoine
 
     let coverImageUrl = venue.coverImageUrl || venue.imageUrl || venue.image || null;
     if (!coverImageUrl && venue.images && venue.images.length > 0) {
-        const coverImage = venue.images[0];
+        const coverImage = venue.images.find((img: any) => img.isPrimary || String(img.imageType || '').toLowerCase().includes('cover')) || venue.images[0];
         const rawPath = coverImage?.filePath || coverImage?.url || coverImage?.imageUrl;
         if (rawPath) {
             coverImageUrl = rawPath;
@@ -3495,8 +3792,10 @@ function buildVenueData(plan: PartyPlan, currentUserId?: string, isAcceptedJoine
         phone: venue.phone,
         coverChargeMale: venue.coverChargeMale,
         coverChargeFemale: venue.coverChargeFemale,
+        coverImage: coverImageUrl ? { filePath: coverImageUrl, url: coverImageUrl } : null,
         coverImageUrl: coverImageUrl,
         imageUrl: coverImageUrl,
+        images: venue.images || [],
         isSecret: false,
     };
 }
@@ -4011,12 +4310,38 @@ export async function enrichPartyPlanNotificationCard(planId: string, recipientU
     try {
         const plan = await PartyPlan.findByPk(planId, {
             include: [
-                { model: User, as: 'creator', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] },
-                { model: Venue, as: 'venue', attributes: ['id', 'name', 'area'] },
+                {
+                    model: User,
+                    as: 'creator',
+                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'email', 'phone', 'dateOfBirth'],
+                    include: [
+                        { model: UserProfile, as: 'profile', attributes: ['bio', 'occupation', 'gender', 'city'], required: false },
+                        { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary', 'displayOrder'], required: false },
+                    ]
+                },
+                {
+                    model: Venue,
+                    as: 'venue',
+                    attributes: ['id', 'name', 'area', 'addressLine1', 'city', 'category', 'phone'],
+                    include: [{
+                        model: VenueImage,
+                        as: 'images',
+                        attributes: ['id', 'filePath', 'imageType', 'isPrimary', 'displayOrder'],
+                        required: false,
+                    }]
+                },
                 {
                     model: PartyPlanRequest,
                     as: 'requests',
-                    include: [{ model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] }]
+                    include: [{
+                        model: User,
+                        as: 'requester',
+                        attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'email', 'phone', 'dateOfBirth'],
+                        include: [
+                            { model: UserProfile, as: 'profile', attributes: ['bio', 'occupation', 'gender', 'city'], required: false },
+                            { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary', 'displayOrder'], required: false },
+                        ]
+                    }]
                 }
             ]
         });
@@ -4036,10 +4361,40 @@ export async function enrichPartyPlanNotificationCard(planId: string, recipientU
             ? (matchedRequest ? matchedRequest.requester : null)
             : p.creator;
 
-        const hostName = `${p.creator?.firstName || 'Host'} ${p.creator?.lastName || ''}`.trim();
-        const guestName = counterpartUser ? `${counterpartUser.firstName} ${counterpartUser.lastName}`.trim() : 'Partner';
+        let hostPhoto = p.creator?.profileImageUrl || null;
+        if (!hostPhoto && p.creator?.photos && p.creator.photos.length > 0) {
+            const prim = p.creator.photos.find((ph: any) => ph.isPrimary) || p.creator.photos[0];
+            if (prim?.filePath) hostPhoto = prim.filePath;
+        }
+        if (hostPhoto && typeof hostPhoto === 'string' && !hostPhoto.startsWith('http') && !hostPhoto.startsWith('assets/')) {
+            const cl = hostPhoto.replace(/\\/g, '/');
+            hostPhoto = cl.startsWith('/') ? cl : '/' + cl;
+        }
 
-        const partyImage = p.creator?.profileImageUrl || '';
+        let counterpartPhoto = counterpartUser?.profileImageUrl || null;
+        if (!counterpartPhoto && counterpartUser?.photos && counterpartUser.photos.length > 0) {
+            const prim = counterpartUser.photos.find((ph: any) => ph.isPrimary) || counterpartUser.photos[0];
+            if (prim?.filePath) counterpartPhoto = prim.filePath;
+        }
+        if (counterpartPhoto && typeof counterpartPhoto === 'string' && !counterpartPhoto.startsWith('http') && !counterpartPhoto.startsWith('assets/')) {
+            const cl = counterpartPhoto.replace(/\\/g, '/');
+            counterpartPhoto = cl.startsWith('/') ? cl : '/' + cl;
+        }
+
+        let venueCover = p.venue?.coverImageUrl || p.venue?.imageUrl || null;
+        if (!venueCover && p.venue?.images && p.venue.images.length > 0) {
+            const prim = p.venue.images.find((img: any) => img.isPrimary || String(img.imageType || '').toLowerCase().includes('cover')) || p.venue.images[0];
+            if (prim?.filePath) venueCover = prim.filePath;
+        }
+        if (venueCover && typeof venueCover === 'string' && !venueCover.startsWith('http') && !venueCover.startsWith('assets/')) {
+            const cl = venueCover.replace(/\\/g, '/');
+            venueCover = cl.startsWith('/') ? cl : '/' + cl;
+        }
+
+        const hostName = `${p.creator?.firstName || 'Host'} ${p.creator?.lastName || ''}`.trim();
+        const guestName = counterpartUser ? `${counterpartUser.firstName || 'Joiner'} ${counterpartUser.lastName || ''}`.trim() : 'Partner';
+
+        const partyImage = hostPhoto || p.creator?.profileImageUrl || '';
         const planTitle = plan.message || 'Party Night Out';
         const venueArea = p.venue?.area || 'Pune';
         const distance = '1.2 km';
@@ -4289,11 +4644,58 @@ export async function enrichPartyPlanNotificationCard(planId: string, recipientU
             }
         }
 
+        const hostObj = {
+            id: p.creator?.id,
+            firstName: p.creator?.firstName,
+            lastName: p.creator?.lastName,
+            name: hostName,
+            profileImageUrl: hostPhoto,
+            profilePhotoUrl: hostPhoto,
+            bio: p.creator?.profile?.bio,
+            occupation: p.creator?.profile?.occupation,
+        };
+
+        const guestObj = counterpartUser ? {
+            id: counterpartUser.id,
+            firstName: counterpartUser.firstName,
+            lastName: counterpartUser.lastName,
+            name: guestName,
+            profileImageUrl: counterpartPhoto,
+            profilePhotoUrl: counterpartPhoto,
+            bio: counterpartUser.profile?.bio,
+            occupation: counterpartUser.profile?.occupation,
+        } : null;
+
+        const venueObj = p.venue ? {
+            id: p.venue.id,
+            name: p.venue.name,
+            area: p.venue.area,
+            addressLine1: p.venue.addressLine1,
+            city: p.venue.city,
+            category: p.venue.category,
+            phone: p.venue.phone,
+            coverImage: venueCover ? { filePath: venueCover, url: venueCover } : null,
+            coverImageUrl: venueCover,
+            imageUrl: venueCover,
+            images: p.venue.images || [],
+        } : null;
+
         return {
             partyPlanId: plan.id,
+            id: plan.id,
             partyImage,
             hostName,
             guestName,
+            hostProfilePhotoUrl: hostPhoto,
+            guestProfilePhotoUrl: counterpartPhoto,
+            host: hostObj,
+            creator: hostObj,
+            user: hostObj,
+            guest: guestObj,
+            partner: isHost ? guestObj : hostObj,
+            matchedPartner: isHost ? guestObj : hostObj,
+            venue: venueObj,
+            venueImageUrl: venueCover,
             planTitle,
             venueName: p.venue?.name || 'Venue',
             venueArea,
@@ -4321,6 +4723,19 @@ export async function enrichPartyPlanNotificationCard(planId: string, recipientU
             acceptedAt: plan.acceptedAt ? plan.acceptedAt.toISOString() : null,
             paymentDeadlineAt: plan.paymentDeadlineAt ? plan.paymentDeadlineAt.toISOString() : null,
             serverTime: new Date().toISOString(),
+            isHost,
+            role: isHost ? 'host' : 'viewer',
+            status: plan.status,
+            lifecycleStatus: plan.lifecycleStatus,
+            planDateTime: plan.planDateTime ? plan.planDateTime.toISOString() : null,
+            eventDateTime: plan.planDateTime ? plan.planDateTime.toISOString() : null,
+            visibility: plan.visibility,
+            foodPreference: plan.foodPreference,
+            drinkPreference: plan.drinkPreference,
+            showProfilePhoto: plan.showProfilePhoto ?? true,
+            showHostName: plan.showHostName ?? true,
+            showVenueDetails: plan.showVenueDetails ?? true,
+            showDateDetails: plan.showDateDetails ?? true,
         };
     } catch (enrichErr: any) {
         logger.error(`Error enriching party plan notification card ${planId}:`, enrichErr);

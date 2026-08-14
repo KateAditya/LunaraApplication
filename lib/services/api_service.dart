@@ -1373,21 +1373,51 @@ class ApiService {
     return false;
   }
 
-  static Future<bool> cancelPartyPlan(String planId) async {
+  static Future<Map<String, dynamic>?> cancelPartyPlanDetailed(String planId, {String? reason}) async {
     final userId = currentUserId;
-    if (userId == null) return false;
+    if (userId == null) return {'success': false, 'message': 'User not authenticated'};
     try {
       final response = await post(
         '/api/mobile/party-plans/$planId/cancel',
-        body: {'userId': userId},
+        body: {'userId': userId, 'reason': ?reason},
       );
-      if (response.statusCode == 200) {
-        return true;
-      }
+      markPartyPlanAsCancelledLocal(planId);
+      final data = jsonDecode(response.body);
+      return data is Map<String, dynamic> ? data : {'success': response.statusCode == 200};
     } catch (e) {
       debugPrint('cancelPartyPlan error: $e');
+      return {'success': false, 'message': e.toString()};
     }
-    return false;
+  }
+
+  static Future<bool> cancelPartyPlan(String planId, {String? reason}) async {
+    final res = await cancelPartyPlanDetailed(planId, reason: reason);
+    return res?['success'] == true;
+  }
+
+  static Future<Map<String, dynamic>?> repostPartyPlan(
+    String planId, {
+    required DateTime newDateTime,
+    String? reason,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) return {'success': false, 'message': 'User not authenticated'};
+    try {
+      final response = await post(
+        '/api/mobile/party-plans/$planId/repost',
+        body: {
+          'userId': userId,
+          'newDateTime': newDateTime.toUtc().toIso8601String(),
+          'reason': ?reason,
+        },
+      );
+      markPartyPlanAsCancelledLocal(planId);
+      final data = jsonDecode(response.body);
+      return data is Map<String, dynamic> ? data : {'success': response.statusCode == 200};
+    } catch (e) {
+      debugPrint('repostPartyPlan error: $e');
+      return {'success': false, 'message': e.toString()};
+    }
   }
 
   static Future<Map<String, dynamic>?> fetchWalletData() async {
@@ -2832,12 +2862,6 @@ class ApiService {
   static Future<bool> clearAllNotifications() async {
     final userId = currentUserId;
     if (userId == null) return false;
-    await loadLocalReadIds();
-    // Only clear notification IDs here.
-    // localReadRequestIds is managed separately by markAllNotificationsAsRead
-    // in live_feed_screen so feed items can be re-added as "read" after this call.
-    localReadNotificationIds.clear();
-    await saveLocalReadNotificationIds();
     try {
       final response = await post(
         '/api/mobile/user/notifications/clear-all',

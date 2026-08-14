@@ -210,7 +210,9 @@ async function getUserNotifications(
 
         for (const sn of storedNotifs) {
             const notificationId = sn.id;
-            const isRead = sn.isRead || activeReadNotificationIds.has(notificationId);
+            const snCreatedTime = sn.createdAt ? new Date(sn.createdAt).getTime() : 0;
+            const isCleared = clearedAt > 0 && snCreatedTime <= clearedAt;
+            const isRead = sn.isRead || isCleared || activeReadNotificationIds.has(notificationId);
             const metadata = sn.metadata || {};
             
             // Extract partyPlanId if present
@@ -323,6 +325,9 @@ async function getUserNotifications(
             const m = match as any;
             const firstUser = m.user1;
             const notificationId = `match_${match.id}`;
+            const mCreatedTime = match.createdAt ? new Date(match.createdAt).getTime() : 0;
+            const isCleared = clearedAt > 0 && mCreatedTime <= clearedAt;
+            const isRead = isCleared || activeReadNotificationIds.has(notificationId);
             notifications.push({
                 id: notificationId,
                 title: m.isSuperLike ? '⭐ Super Liked!' : '💖 New Connection!',
@@ -330,8 +335,8 @@ async function getUserNotifications(
                 category: 'likes',
                 type: m.isSuperLike ? 'super_like' : 'like',
                 createdAt: match.createdAt ? match.createdAt.toISOString() : new Date().toISOString(),
-                read: activeReadNotificationIds.has(notificationId),
-                isRead: activeReadNotificationIds.has(notificationId),
+                read: isRead,
+                isRead: isRead,
                 sender: firstUser ? {
                     id: firstUser.id,
                     firstName: firstUser.firstName,
@@ -769,6 +774,11 @@ router.post('/notifications/clear-all', authenticate, async (req, res) => {
 
         user.clearedNotificationsAt = new Date();
         await user.save();
+
+        await Notification.update(
+            { isRead: true, readAt: new Date() },
+            { where: { recipientUserId: userId, isRead: false } }
+        );
 
         return res.json({ success: true, message: 'All notifications cleared successfully' });
     } catch (error: any) {

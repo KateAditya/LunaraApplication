@@ -90,8 +90,13 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       // replacing stale or partial card data with the server-authoritative plan.
       widget.plan.addAll(plan);
       widget.plan['planId'] = planId;
+      final freshImg = _getVenueImageUrl();
+      if (freshImg != null && freshImg.isNotEmpty) {
+        _fetchedVenueImageUrl = freshImg;
+      }
     });
     _checkRequestStatus();
+    _loadVenueDetailsIfNeeded();
     _fetchCurrentUserAndCancellationState();
   }
 
@@ -278,13 +283,18 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                             ? null
                             : () async {
                                 Navigator.pop(ctx);
-                                await _submitCancellationRequest(selectedReason, selectedReason == 'other' ? otherController.text.trim() : null);
+                                final otherText = selectedReason == 'other' ? otherController.text.trim() : null;
+                                if (_isHostPlan(widget.plan)) {
+                                  _showHostCancellationChoiceDialog(selectedReason, otherText);
+                                } else {
+                                  await _submitCancellationRequest(selectedReason, otherText);
+                                }
                               },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.redAccent,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),
-                        child: const Text('SUBMIT CANCELLATION REQUEST', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.8)),
+                        child: const Text('PROCEED WITH CANCELLATION', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.8)),
                       ),
                     ),
                   ],
@@ -295,6 +305,250 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         );
       },
     );
+  }
+
+  void _showHostCancellationChoiceDialog(String selectedReason, String? otherText) {
+    final planId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
+    final venue = widget.plan['venue'] as Map<String, dynamic>? ?? {};
+    final venueName = venue['name'] as String? ?? 'the venue';
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF14141F),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Row(
+          children: [
+            Icon(Icons.help_outline_rounded, color: LunaraTheme.electricViolet, size: 24),
+            SizedBox(width: 10),
+            Text('CANCEL OR REPOST?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 17)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Select an action for your Party Plan at ',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            Text(
+              venueName,
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.redAccent.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+              ),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.cancel_rounded, color: Colors.redAccent, size: 18),
+                      SizedBox(width: 8),
+                      Text('Option A: Cancel & Refund', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 13)),
+                    ],
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    '• Party Plan permanently ends.\n• ₹99 Commitment Deposit refunded to your Lunara Wallet.\n• All pending requests are cancelled.',
+                    style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.3),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.3)),
+              ),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.event_repeat_rounded, color: LunaraTheme.electricViolet, size: 18),
+                      SizedBox(width: 8),
+                      Text('Option B: Repost Plan', style: TextStyle(color: LunaraTheme.electricViolet, fontWeight: FontWeight.bold, fontSize: 13)),
+                    ],
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    '• Reschedule for a new date & time.\n• Remains active & live in feed (no refund).\n• Prior requests cleared for new schedule.',
+                    style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.3),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('KEEP PLAN', style: TextStyle(color: Colors.white60, fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _handleHostCancelAndRefund(planId, selectedReason, otherText);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('CANCEL & REFUND', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _handleHostRepostFlow(planId, selectedReason, otherText);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: LunaraTheme.electricViolet,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('REPOST PLAN', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleHostCancelAndRefund(String planId, String reason, String? otherText) async {
+    setState(() => _isLoadingCancellation = true);
+    final res = await ApiService.cancelPartyPlanDetailed(
+      planId,
+      reason: reason == 'other' ? otherText : reason,
+    );
+    if (!mounted) return;
+    setState(() {
+      _isLoadingCancellation = false;
+      if (res?['success'] == true) {
+        widget.plan['status'] = 'cancelled';
+        widget.plan['lifecycleStatus'] = 'cancelled';
+        widget.plan['isLive'] = false;
+      }
+    });
+
+    if (res?['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(res?['message'] ?? 'Party Plan cancelled. ₹99 has been refunded to your Lunara Wallet.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      _checkRequestStatus();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(res?['message'] ?? 'Failed to cancel party plan'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleHostRepostFlow(String planId, String reason, String? otherText) async {
+    final now = DateTime.now();
+    final initialDate = now.add(const Duration(hours: 1));
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 30)),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: LunaraTheme.electricViolet,
+              onPrimary: Colors.white,
+              surface: Color(0xFF1A1A24),
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (pickedDate == null || !mounted) return;
+
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initialDate),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: LunaraTheme.electricViolet,
+              onPrimary: Colors.white,
+              surface: Color(0xFF1A1A24),
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (pickedTime == null || !mounted) return;
+
+    final newDateTime = DateTime(
+      pickedDate.year,
+      pickedDate.month,
+      pickedDate.day,
+      pickedTime.hour,
+      pickedTime.minute,
+    );
+
+    if (newDateTime.difference(DateTime.now()).inMinutes < 30) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a time at least 30 minutes in the future.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isLoadingCancellation = true);
+    final res = await ApiService.repostPartyPlan(
+      planId,
+      newDateTime: newDateTime,
+      reason: reason == 'other' ? otherText : reason,
+    );
+    if (!mounted) return;
+    setState(() => _isLoadingCancellation = false);
+
+    if (res?['success'] == true) {
+      setState(() {
+        widget.plan['planDateTime'] = newDateTime.toUtc().toIso8601String();
+        widget.plan['status'] = 'active';
+        widget.plan['lifecycleStatus'] = 'posted';
+        widget.plan['isLive'] = true;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('🎉 Party Plan reposted for ${DateFormat('dd MMM, hh:mm a').format(newDateTime)}!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      _checkRequestStatus();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(res?['message'] ?? 'Failed to repost party plan'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
   }
 
   Future<void> _submitCancellationRequest(String reason, String? otherText) async {
@@ -770,6 +1024,38 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     );
   }
 
+  String? _extractImageUrlFromAny(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is String) {
+      if (raw.trim().isEmpty) return null;
+      return ApiService.formatImageUrl(raw);
+    }
+    if (raw is Map) {
+      final possibleKeys = [
+        'url',
+        'filePath',
+        'imageUrl',
+        'coverImageUrl',
+        'cover_image_url',
+        'path',
+        'image'
+      ];
+      for (final k in possibleKeys) {
+        if (raw[k] is String && (raw[k] as String).trim().isNotEmpty) {
+          final fmt = ApiService.formatImageUrl(raw[k] as String);
+          if (fmt != null && fmt.isNotEmpty) return fmt;
+        }
+      }
+    }
+    if (raw is List && raw.isNotEmpty) {
+      for (final item in raw) {
+        final fmt = _extractImageUrlFromAny(item);
+        if (fmt != null && fmt.isNotEmpty) return fmt;
+      }
+    }
+    return null;
+  }
+
   Future<void> _loadVenueDetailsIfNeeded() async {
     final initialUrl = _getVenueImageUrl();
     if (initialUrl != null && initialUrl.isNotEmpty) return;
@@ -785,27 +1071,18 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['venue'] is Map) {
           final v = Map<String, dynamic>.from(data['venue']);
-          final raw = v['imageUrl'] ??
+          dynamic raw = v['coverImage'] ??
               v['coverImageUrl'] ??
-              v['coverImage'] ??
+              v['cover_image_url'] ??
+              v['imageUrl'] ??
               v['image'] ??
-              (v['gallery'] is List && (v['gallery'] as List).isNotEmpty
-                  ? (v['gallery'] as List).first
-                  : null) ??
-              (v['images'] is List && (v['images'] as List).isNotEmpty
-                  ? ((v['images'] as List).first is Map
-                      ? ((v['images'] as List).first['filePath'] ??
-                          (v['images'] as List).first['url'] ??
-                          (v['images'] as List).first['imageUrl'])
-                      : (v['images'] as List).first)
-                  : null);
-          if (raw != null) {
-            final formatted = ApiService.formatImageUrl(raw);
-            if (mounted && formatted != null && formatted.isNotEmpty) {
-              setState(() {
-                _fetchedVenueImageUrl = formatted;
-              });
-            }
+              v['gallery'] ??
+              v['images'];
+          final formatted = _extractImageUrlFromAny(raw);
+          if (mounted && formatted != null && formatted.isNotEmpty) {
+            setState(() {
+              _fetchedVenueImageUrl = formatted;
+            });
           }
         }
       }
@@ -821,31 +1098,23 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     final venue = widget.plan['venue'] as Map<String, dynamic>? ?? {};
     final plan = widget.plan;
 
-    final raw = venue['imageUrl'] ??
+    dynamic rawCandidate = venue['coverImage'] ??
         venue['coverImageUrl'] ??
         venue['cover_image_url'] ??
+        venue['imageUrl'] ??
         venue['image'] ??
-        venue['coverImage'] ??
-        (venue['images'] is List && (venue['images'] as List).isNotEmpty
-            ? ((venue['images'] as List).first is Map
-                ? ((venue['images'] as List).first['filePath'] ??
-                    (venue['images'] as List).first['url'] ??
-                    (venue['images'] as List).first['imageUrl'])
-                : (venue['images'] as List).first)
-            : null) ??
+        venue['images'] ??
+        venue['gallery'] ??
         plan['venueImageUrl'] ??
         plan['venue_image_url'] ??
         plan['venueImage'] ??
         plan['imageUrl'] ??
         plan['image'];
 
-    final formatted = ApiService.formatImageUrl(raw);
+    final formatted = _extractImageUrlFromAny(rawCandidate);
     if (formatted != null && formatted.isNotEmpty) {
       return formatted;
     }
-    // Do not mask a missing venue image with a generic club photo. Returning
-    // null lets the detail page load the selected venue and, only if it has no
-    // image, render the branded gradient fallback.
     return null;
   }
 
@@ -1827,6 +2096,42 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   }
 
   Widget? _buildBottomCTA(bool isMyPost) {
+    final plan = widget.plan;
+    final planStatus = (plan['status'] ?? '').toString().toLowerCase();
+    final lifecycleStatus = (plan['lifecycleStatus'] ?? plan['lifecycle_status'] ?? '').toString().toLowerCase();
+    final isPlanCancelled = planStatus == 'cancelled' || lifecycleStatus == 'cancelled';
+
+    if (isPlanCancelled) {
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Container(
+            height: 58,
+            decoration: BoxDecoration(
+              color: Colors.red.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.redAccent.withValues(alpha: 0.35)),
+            ),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.cancel_rounded, color: Colors.redAccent, size: 22),
+                SizedBox(width: 10),
+                Text(
+                  'PLAN CANCELLED BY HOST',
+                  style: TextStyle(
+                    color: Colors.redAccent,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     if (_isExpired) {
       return _expiredBanner();
     }
@@ -2263,35 +2568,68 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       );
     }
 
-    // Host Paid — show static host label
+    // Host Paid — show host label + CANCEL PLAN button
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-        child: Container(
-          height: 58,
-          decoration: BoxDecoration(
-            color: LunaraTheme.primaryDeep.withValues(alpha: 0.3),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: LunaraTheme.primaryDeep.withValues(alpha: 0.5),
-            ),
-          ),
-          child: const Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.star_rounded, color: LunaraTheme.electricViolet),
-              SizedBox(width: 10),
-              Text(
-                'YOUR PARTY PLAN',
-                style: TextStyle(
-                  color: LunaraTheme.electricViolet,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                  letterSpacing: 1,
+        child: Row(
+          children: [
+            Expanded(
+              child: Container(
+                height: 54,
+                decoration: BoxDecoration(
+                  color: LunaraTheme.primaryDeep.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: LunaraTheme.primaryDeep.withValues(alpha: 0.5),
+                  ),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.star_rounded, color: LunaraTheme.electricViolet),
+                    SizedBox(width: 8),
+                    Text(
+                      'YOUR PARTY PLAN',
+                      style: TextStyle(
+                        color: LunaraTheme.electricViolet,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 10),
+            GestureDetector(
+              onTap: _isLoadingCancellation ? null : _showCancellationStep1Dialog,
+              child: Container(
+                height: 54,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: Colors.redAccent.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 20),
+                    SizedBox(width: 6),
+                    Text(
+                      'CANCEL',
+                      style: TextStyle(
+                        color: Colors.redAccent,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

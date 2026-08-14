@@ -50,6 +50,9 @@ class _HostPartyPlanManagerScreenState
     ApiService.addSocketListener('party_plan_request_cancelled', _onSocketUpdate);
     ApiService.addSocketListener('party_plan_request_rejected', _onSocketUpdate);
     ApiService.addSocketListener('party_plan_relisted', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_reposted', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_cancelled', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_deleted', _onSocketUpdate);
     ApiService.addSocketListener(
       'party_plan_request_accepted',
       _onSocketUpdate,
@@ -67,6 +70,9 @@ class _HostPartyPlanManagerScreenState
     ApiService.removeSocketListener('party_plan_request_cancelled', _onSocketUpdate);
     ApiService.removeSocketListener('party_plan_request_rejected', _onSocketUpdate);
     ApiService.removeSocketListener('party_plan_relisted', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_reposted', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_cancelled', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_deleted', _onSocketUpdate);
     ApiService.removeSocketListener(
       'party_plan_request_accepted',
       _onSocketUpdate,
@@ -378,29 +384,438 @@ class _HostPartyPlanManagerScreenState
     }
   }
 
-  void _onCancelPlan(String planId) async {
+  void _onCancelPlan(String planId) {
+    String selectedReason = 'my_plans_changed';
+    final TextEditingController otherController = TextEditingController();
+
+    final Map<String, String> reasonOptions = {
+      'my_plans_changed': 'My plans have changed',
+      'not_available': 'I\'m not available anymore',
+      'not_interested': 'Not interested anymore',
+      'found_another_plan': 'Found another plan',
+      'venue_changed': 'Venue changed',
+      'personal_reasons': 'Personal reasons',
+      'other': 'Other',
+    };
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF14141F),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Why are you cancelling?',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Select a reason for internal record. This is never displayed publicly.',
+                      style: TextStyle(color: Colors.white54, fontSize: 12),
+                    ),
+                    const SizedBox(height: 16),
+                    ...reasonOptions.entries.map((entry) {
+                      final isSelected = selectedReason == entry.key;
+                      return InkWell(
+                        onTap: () => setModalState(() => selectedReason = entry.key),
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? Colors.redAccent.withValues(alpha: 0.15)
+                                : Colors.white.withValues(alpha: 0.04),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isSelected
+                                  ? Colors.redAccent
+                                  : Colors.white10,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                isSelected
+                                    ? Icons.radio_button_checked
+                                    : Icons.radio_button_off,
+                                color: isSelected
+                                    ? Colors.redAccent
+                                    : Colors.white38,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  entry.value,
+                                  style: TextStyle(
+                                    color: isSelected
+                                        ? Colors.white
+                                        : Colors.white70,
+                                    fontSize: 14,
+                                    fontWeight: isSelected
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                    if (selectedReason == 'other') ...[
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: otherController,
+                        maxLength: 150,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                        ),
+                        decoration: InputDecoration(
+                          hintText: 'Enter reason (max 150 characters)',
+                          hintStyle: const TextStyle(
+                            color: Colors.white38,
+                            fontSize: 12,
+                          ),
+                          filled: true,
+                          fillColor: Colors.white.withValues(alpha: 0.06),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _showHostChoiceDialog(
+                            planId,
+                            selectedReason,
+                            selectedReason == 'other'
+                                ? otherController.text.trim()
+                                : null,
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.redAccent,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: const Text(
+                          'PROCEED WITH CANCELLATION',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showHostChoiceDialog(String planId, String selectedReason, String? otherText) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF14141F),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Row(
+          children: [
+            Icon(Icons.help_outline_rounded, color: LunaraTheme.electricViolet, size: 24),
+            SizedBox(width: 10),
+            Text(
+              'CANCEL OR REPOST?',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 17,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Choose an option for your Party Plan:',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.redAccent.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+              ),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.cancel_rounded, color: Colors.redAccent, size: 18),
+                      SizedBox(width: 8),
+                      Text(
+                        'Option A: Cancel & Refund',
+                        style: TextStyle(
+                          color: Colors.redAccent,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    '• Party Plan permanently ends.\n• ₹99 Commitment Deposit refunded to your Lunara Wallet.\n• All pending requests are cancelled.',
+                    style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.3),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.3)),
+              ),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.event_repeat_rounded, color: LunaraTheme.electricViolet, size: 18),
+                      SizedBox(width: 8),
+                      Text(
+                        'Option B: Repost Plan',
+                        style: TextStyle(
+                          color: LunaraTheme.electricViolet,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    '• Reschedule for a new date & time.\n• Remains active & live in feed (no refund).\n• Prior requests cleared for new schedule.',
+                    style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.3),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('KEEP PLAN', style: TextStyle(color: Colors.white60, fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _handleHostCancelAndRefund(planId, selectedReason, otherText);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text(
+              'CANCEL & REFUND',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _handleHostRepostFlow(planId, selectedReason, otherText);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: LunaraTheme.electricViolet,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text(
+              'REPOST PLAN',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _handleHostCancelAndRefund(String planId, String reason, String? otherText) async {
     if (_isProcessing) return;
     setState(() => _isProcessing = true);
     try {
-      final success = await ApiService.cancelPartyPlan(planId);
+      final res = await ApiService.cancelPartyPlanDetailed(
+        planId,
+        reason: reason == 'other' ? otherText : reason,
+      );
       if (!mounted) return;
-      if (success) {
+      if (res?['success'] == true) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Plan Cancelled successfully.')),
+          SnackBar(
+            content: Text(res?['message'] ?? 'Plan cancelled and refund processed.'),
+            backgroundColor: Colors.green,
+          ),
         );
         await _loadData();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to cancel plan.'),
+          SnackBar(
+            content: Text(res?['message'] ?? 'Failed to cancel plan.'),
             backgroundColor: Colors.red,
           ),
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _isProcessing = false);
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  void _handleHostRepostFlow(String planId, String reason, String? otherText) async {
+    final now = DateTime.now();
+    final initialDate = now.add(const Duration(hours: 1));
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 30)),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: LunaraTheme.electricViolet,
+              onPrimary: Colors.white,
+              surface: Color(0xFF1A1A24),
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (pickedDate == null || !mounted) return;
+
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initialDate),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: LunaraTheme.electricViolet,
+              onPrimary: Colors.white,
+              surface: Color(0xFF1A1A24),
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (pickedTime == null || !mounted) return;
+
+    final newDateTime = DateTime(
+      pickedDate.year,
+      pickedDate.month,
+      pickedDate.day,
+      pickedTime.hour,
+      pickedTime.minute,
+    );
+
+    if (newDateTime.difference(DateTime.now()).inMinutes < 30) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a time at least 30 minutes in the future.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    if (_isProcessing) return;
+    setState(() => _isProcessing = true);
+    try {
+      final res = await ApiService.repostPartyPlan(
+        planId,
+        newDateTime: newDateTime,
+        reason: reason == 'other' ? otherText : reason,
+      );
+      if (!mounted) return;
+      if (res?['success'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('🎉 Party Plan reposted for ${DateFormat('dd MMM, hh:mm a').format(newDateTime)}!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        await _loadData();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res?['message'] ?? 'Failed to repost plan.'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 

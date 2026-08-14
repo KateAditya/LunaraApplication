@@ -733,6 +733,15 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
         await NightPartnerMatch.sync(options);
         await PartySafetyCheck.sync(options);
         await UserLike.sync(options);
+        await Notification.sync(options);
+        await WalletTransaction.sync(options);
+        await Ticket.sync(options);
+        await PartyReview.sync(options);
+        await ReliabilityHistory.sync(options);
+        await RewardPointLedger.sync(options);
+        await SmartWallet.sync(options);
+        await SmartWalletConfig.sync(options);
+        await WalletPromotionalCampaign.sync(options);
 
         console.log('✅ All models synchronized successfully');
     } catch (error) {
@@ -800,5 +809,6 @@ export default {
     WalletPromotionalCampaign,
     WalletCashbackRule,
     UserLike,
+    WalletTransaction,
     syncModels,
 };

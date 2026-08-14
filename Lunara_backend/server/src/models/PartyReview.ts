@@ -92,7 +92,7 @@ PartyReview.init(
         tableName: 'party_reviews',
         timestamps: true,
         indexes: [
-            { fields: ['plan_id', 'reviewerId'], unique: true },
+            { fields: ['plan_id', 'reviewer_id'], unique: true },
             { fields: ['reviewer_id'] },
             { fields: ['reviewee_id'] },
         ],

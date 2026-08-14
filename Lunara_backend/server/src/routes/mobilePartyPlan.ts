@@ -14,6 +14,7 @@ import {
     acceptPartyPlanRequest,
     verifyJoinerPayment,
     cancelPartyPlan,
+    repostPartyPlan,
     getJoinerRequests,
     initiateHostPayment,
     initiateJoinerPayment,
@@ -182,6 +183,22 @@ router.post(
         validate,
     ],
     cancelPartyPlan
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/party-plans/:id/repost
+// Repost a party plan with a new date/time (by host)
+// ─────────────────────────────────────────────────────────────────────────────
+router.post(
+    '/:id/repost',
+    [
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
+        body('newDateTime').notEmpty().withMessage('newDateTime is required').isISO8601().withMessage('newDateTime must be a valid ISO 8601 date string'),
+        body('reason').optional().isString().isLength({ max: 500 }),
+        validate,
+    ],
+    repostPartyPlan
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
