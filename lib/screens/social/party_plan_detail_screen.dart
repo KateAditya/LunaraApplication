@@ -809,7 +809,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     });
     final action = withdraw ? 'withdrawn' : 'cancelled';
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(success ? 'Request ' + action : 'Unable to update this request. Please refresh and try again.'),
+      content: Text(success ? 'Request $action' : 'Unable to update this request. Please refresh and try again.'),
       backgroundColor: success ? Colors.green : Colors.red,
     ));
   }

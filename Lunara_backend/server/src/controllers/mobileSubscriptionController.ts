@@ -175,7 +175,7 @@ export const createSubscriptionOrder = async (req: Request, res: Response): Prom
             }
         }
 
-        const amount = Math.round(pkg.price * 100); // in paise
+        const amount = Math.round(Number(pkg.price) * 100); // in paise
         let orderId = `free_sub_${Date.now()}`;
         
         if (amount > 0) {
@@ -193,7 +193,7 @@ export const createSubscriptionOrder = async (req: Request, res: Response): Prom
             userId,
             packageId: pkg.id,
             type: TransactionType.PURCHASE,
-            amount: pkg.price,
+            amount: Number(pkg.price),
             currency: (pkg as any).currency || 'INR',
             paymentMethod: 'razorpay',
             paymentGateway: 'razorpay',
