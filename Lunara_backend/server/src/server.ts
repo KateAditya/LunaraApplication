@@ -19,6 +19,7 @@ import Message, { MessageStatus } from './models/Message';
 import Conversation from './models/Conversation';
 import { Op } from 'sequelize';
 import { startPartyPlanCron, startNotificationJobCron, startExpiringPlanAlertCron } from './cron/partyPlanCron';
+import { startSubscriptionCron } from './cron/subscriptionCron';
 
 // Load environment variables
 dotenv.config();
@@ -394,6 +395,7 @@ const startServer = async () => {
             startPartyPlanCron();
             startNotificationJobCron();
             startExpiringPlanAlertCron();
+            startSubscriptionCron();
             ExpiredTicketCleanupWorker.startWorker();
             logger.info('Background Cron Jobs & ExpiredTicketCleanupWorker started on process/instance.');
         } else {
@@ -428,6 +430,7 @@ if (process.env.NODE_ENV !== 'test') {
                 startPartyPlanCron();
                 startNotificationJobCron();
                 startExpiringPlanAlertCron();
+                startSubscriptionCron();
                 ExpiredTicketCleanupWorker.startWorker();
                 logger.info('Primary process database connected & initiated background Cron Jobs.');
             }).catch((err) => {

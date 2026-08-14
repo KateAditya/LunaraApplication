@@ -24,11 +24,6 @@ function generateInvoiceNumber(): string {
     return `LUN-${ts}-${rand}`;
 }
 
-function getTierRank(tier: string | undefined): number {
-    if (!tier) return -1;
-    const order = ['FREE', 'CORE', 'PLUS', 'PRO', 'ELITE'];
-    return order.indexOf(tier.toUpperCase());
-}
 
 // ─── Plan Listing ─────────────────────────────────────────────────────────────
 
@@ -158,22 +153,7 @@ export const createSubscriptionOrder = async (req: Request, res: Response): Prom
             return;
         }
 
-        // Validate VIP hierarchy (can only purchase higher rank)
-        const activeSub = await UserSubscription.findOne({
-            where: { userId, status: SubscriptionStatus.ACTIVE },
-            include: [{ model: SubscriptionPackage, as: 'package' }]
-        });
-
-        if (activeSub) {
-            const activePkg = (activeSub as any).package;
-            const currentRank = getTierRank(activePkg?.tier);
-            const requestedRank = getTierRank(pkg.tier);
-
-            if (currentRank >= 0 && requestedRank <= currentRank) {
-                res.status(403).json({ success: false, message: 'You already have a higher or equal VIP plan active.' });
-                return;
-            }
-        }
+        // Removed VIP hierarchy restriction to allow stacked future purchases
 
         const amount = Math.round(Number(pkg.price) * 100); // in paise
         let orderId = `free_sub_${Date.now()}`;
@@ -246,21 +226,33 @@ export const purchaseSubscription = async (req: Request, res: Response): Promise
         });
         const txnType = existingSub ? TransactionType.UPGRADE : TransactionType.PURCHASE;
 
-        // Expire current subscriptions
-        await UserSubscription.update(
-            { status: SubscriptionStatus.EXPIRED },
-            { where: { userId, status: SubscriptionStatus.ACTIVE } }
-        );
+        // Do NOT expire active subscriptions to support future stacking.
+        // Find the latest upcoming or active subscription to determine start date.
+        const lastUpcoming = await UserSubscription.findOne({
+            where: { userId, status: SubscriptionStatus.UPCOMING },
+            order: [['endDate', 'DESC']]
+        });
+        
+        const activeSubForDate = await UserSubscription.findOne({
+            where: { userId, status: SubscriptionStatus.ACTIVE, endDate: { [Op.gt]: new Date() } }
+        });
 
-        // Create new subscription
         const startDate = new Date();
-        const endDate = new Date();
+        if (lastUpcoming) {
+            startDate.setTime(lastUpcoming.endDate.getTime());
+        } else if (activeSubForDate) {
+            startDate.setTime(activeSubForDate.endDate.getTime());
+        }
+
+        const endDate = new Date(startDate);
         endDate.setDate(endDate.getDate() + pkg.durationDays);
+
+        const newStatus = startDate > new Date() ? SubscriptionStatus.UPCOMING : SubscriptionStatus.ACTIVE;
 
         const newSub = await UserSubscription.create({
             userId,
             packageId: pkg.id,
-            status: SubscriptionStatus.ACTIVE,
+            status: newStatus,
             startDate,
             endDate,
             superlikesRemaining: pkg.superlikesPerCycle,
@@ -337,40 +329,38 @@ export const renewSubscription = async (req: Request, res: Response): Promise<vo
             return;
         }
 
-        // Extend or create active subscription
-        const existingSub = await UserSubscription.findOne({
-            where: { userId, status: SubscriptionStatus.ACTIVE, packageId: pkg.id },
+        // Do NOT expire active subscriptions to support future stacking.
+        // Find the latest upcoming or active subscription to determine start date.
+        const lastUpcoming = await UserSubscription.findOne({
+            where: { userId, status: SubscriptionStatus.UPCOMING },
+            order: [['endDate', 'DESC']]
+        });
+        
+        const activeSubForDate = await UserSubscription.findOne({
+            where: { userId, status: SubscriptionStatus.ACTIVE, endDate: { [Op.gt]: new Date() } }
         });
 
-        let subscription;
-        if (existingSub) {
-            const newEnd = new Date(existingSub.endDate);
-            newEnd.setDate(newEnd.getDate() + pkg.durationDays);
-            await existingSub.update({
-                endDate: newEnd,
-                superlikesRemaining: pkg.superlikesPerCycle,
-                boostsRemaining: pkg.boostsPerCycle,
-            });
-            subscription = existingSub;
-        } else {
-            // Re-activate
-            await UserSubscription.update(
-                { status: SubscriptionStatus.EXPIRED },
-                { where: { userId, status: SubscriptionStatus.ACTIVE } }
-            );
-            const startDate = new Date();
-            const endDate = new Date();
-            endDate.setDate(endDate.getDate() + pkg.durationDays);
-            subscription = await UserSubscription.create({
-                userId,
-                packageId: pkg.id,
-                status: SubscriptionStatus.ACTIVE,
-                startDate,
-                endDate,
-                superlikesRemaining: pkg.superlikesPerCycle,
-                boostsRemaining: pkg.boostsPerCycle,
-            });
+        const startDate = new Date();
+        if (lastUpcoming) {
+            startDate.setTime(lastUpcoming.endDate.getTime());
+        } else if (activeSubForDate) {
+            startDate.setTime(activeSubForDate.endDate.getTime());
         }
+
+        const endDate = new Date(startDate);
+        endDate.setDate(endDate.getDate() + pkg.durationDays);
+
+        const newStatus = startDate > new Date() ? SubscriptionStatus.UPCOMING : SubscriptionStatus.ACTIVE;
+
+        const subscription = await UserSubscription.create({
+            userId,
+            packageId: pkg.id,
+            status: newStatus,
+            startDate,
+            endDate,
+            superlikesRemaining: pkg.superlikesPerCycle,
+            boostsRemaining: pkg.boostsPerCycle,
+        });
 
         // Record transaction
         const transaction = await SubscriptionTransaction.create({
@@ -721,6 +711,24 @@ export const useBoost = async (req: Request, res: Response): Promise<void> => {
         });
     } catch (error: any) {
         logger.error('Error activating boost:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// ─── Purchased Plans ────────────────────────────────────────────────────────────
+
+// @route GET /api/mobile/subscriptions/plans
+export const getUserSubscriptions = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const userId = (req as any).user.id;
+        const plans = await UserSubscription.findAll({
+            where: { userId },
+            include: [{ model: SubscriptionPackage, as: 'package' }],
+            order: [['createdAt', 'DESC']],
+        });
+        res.status(200).json({ success: true, data: plans });
+    } catch (error: any) {
+        logger.error('Error fetching user subscriptions:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 };

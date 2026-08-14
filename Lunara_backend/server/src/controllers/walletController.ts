@@ -1065,28 +1065,50 @@ export const payVipWithWallet = async (req: Request, res: Response): Promise<voi
         const UserSubscriptionModel = (await import('../models/UserSubscription')).default;
         const SubscriptionStatusEnum = (await import('../models/UserSubscription')).SubscriptionStatus;
 
-        const validUntil = new Date();
-        validUntil.setMonth(validUntil.getMonth() + 1);
+        let pkg = await SubscriptionPackage.findByPk(packageId);
+        let durationDays = 30; // default
+        let superlikesRemaining = 0;
+        let boostsRemaining = 0;
 
-        let sub = await UserSubscriptionModel.findOne({ where: { userId } });
-        if (sub) {
-            await sub.update({
-                packageId: packageId || sub.packageId,
-                status: SubscriptionStatusEnum.ACTIVE,
-                startDate: new Date(),
-                endDate: validUntil,
-                autoRenew: false,
-            });
-        } else {
-            sub = await UserSubscriptionModel.create({
-                userId,
-                packageId: packageId || 'DEFAULT_GOLD_PKG',
-                status: SubscriptionStatusEnum.ACTIVE,
-                startDate: new Date(),
-                endDate: validUntil,
-                autoRenew: false,
-            });
+        if (pkg) {
+            durationDays = pkg.durationDays;
+            superlikesRemaining = pkg.superlikesPerCycle;
+            boostsRemaining = pkg.boostsPerCycle;
         }
+
+        // Do NOT expire active subscriptions to support future stacking.
+        // Find the latest upcoming or active subscription to determine start date.
+        const lastUpcoming = await UserSubscriptionModel.findOne({
+            where: { userId, status: SubscriptionStatusEnum.UPCOMING },
+            order: [['endDate', 'DESC']]
+        });
+        
+        const activeSubForDate = await UserSubscriptionModel.findOne({
+            where: { userId, status: SubscriptionStatusEnum.ACTIVE, endDate: { [Op.gt]: new Date() } }
+        });
+
+        const startDate = new Date();
+        if (lastUpcoming) {
+            startDate.setTime(lastUpcoming.endDate.getTime());
+        } else if (activeSubForDate) {
+            startDate.setTime(activeSubForDate.endDate.getTime());
+        }
+
+        const validUntil = new Date(startDate);
+        validUntil.setDate(validUntil.getDate() + durationDays);
+
+        const newStatus = startDate > new Date() ? SubscriptionStatusEnum.UPCOMING : SubscriptionStatusEnum.ACTIVE;
+
+        const sub = await UserSubscriptionModel.create({
+            userId,
+            packageId: packageId || (pkg ? pkg.id : 'DEFAULT_GOLD_PKG'),
+            status: newStatus,
+            startDate,
+            endDate: validUntil,
+            superlikesRemaining,
+            boostsRemaining,
+            autoRenew: false,
+        });
 
         res.json({
             success: true,

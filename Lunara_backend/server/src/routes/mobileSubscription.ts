@@ -27,8 +27,9 @@ router.post('/create-boost-order', ctrl.createBoostOrder);
 router.post('/purchase-boost', ctrl.purchaseBoost);
 router.post('/use-boost', ctrl.useBoost);
 
-// ── History & Invoices ─────────────────────────────────────────────────────────
+// ─── History & Invoices ─────────────────────────────────────────────────────────
 router.get('/history', ctrl.getSubscriptionHistory);
+router.get('/plans', ctrl.getUserSubscriptions);
 
 // ── Feature Access Check ───────────────────────────────────────────────────────
 router.get('/check/:featureKey', ctrl.checkFeatureAccess);

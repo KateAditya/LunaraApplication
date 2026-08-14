@@ -3,6 +3,7 @@ import sequelize from '../config/database';
 
 export enum SubscriptionStatus {
     ACTIVE = 'ACTIVE',
+    UPCOMING = 'UPCOMING',
     EXPIRED = 'EXPIRED',
     CANCELLED = 'CANCELLED'
 }

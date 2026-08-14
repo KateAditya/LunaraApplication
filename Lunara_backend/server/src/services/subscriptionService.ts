@@ -83,7 +83,54 @@ export class SubscriptionService {
         return null;
     }
 
+    static async activateUpcomingSubscriptions(userId: string): Promise<void> {
+        const now = new Date();
+
+        // 1. Expire currently ACTIVE subscriptions that have passed endDate
+        await UserSubscription.update(
+            { status: SubscriptionStatus.EXPIRED },
+            { 
+                where: { 
+                    userId, 
+                    status: SubscriptionStatus.ACTIVE, 
+                    endDate: { [Op.lte]: now } 
+                } 
+            }
+        );
+
+        // 2. See if there is any CURRENTLY active subscription
+        const activeSub = await UserSubscription.findOne({
+            where: { userId, status: SubscriptionStatus.ACTIVE }
+        });
+
+        if (!activeSub) {
+            // 3. Find the oldest UPCOMING subscription that is ready to activate
+            const upcomingSub = await UserSubscription.findOne({
+                where: { 
+                    userId, 
+                    status: SubscriptionStatus.UPCOMING,
+                    startDate: { [Op.lte]: now }
+                },
+                order: [['startDate', 'ASC']],
+                include: [{ model: SubscriptionPackage, as: 'package' }]
+            });
+
+            if (upcomingSub) {
+                const pkg = (upcomingSub as any).package;
+                await upcomingSub.update({ 
+                    status: SubscriptionStatus.ACTIVE,
+                    superlikesRemaining: pkg?.superlikesPerCycle || 0,
+                    boostsRemaining: pkg?.boostsPerCycle || 0,
+                });
+                // Recursively call to handle skipped periods if necessary
+                await this.activateUpcomingSubscriptions(userId);
+            }
+        }
+    }
+
     private static async buildCache(userId: string): Promise<CacheEntry> {
+        await this.activateUpcomingSubscriptions(userId);
+
         const subscription = await UserSubscription.findOne({
             where: {
                 userId,
