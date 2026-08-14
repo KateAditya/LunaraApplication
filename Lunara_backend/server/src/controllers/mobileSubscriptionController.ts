@@ -208,6 +208,15 @@ export const purchaseSubscription = async (req: Request, res: Response): Promise
             return;
         }
 
+        // Idempotency check: if transaction is already processed, return success immediately
+        if (gatewayOrderId) {
+            const existingTxn = await SubscriptionTransaction.findOne({ where: { gatewayOrderId } });
+            if (existingTxn && existingTxn.status === TransactionStatus.SUCCESS) {
+                res.status(200).json({ success: true, message: 'Already processed', data: existingTxn });
+                return;
+            }
+        }
+
         // Verify Razorpay Payment Signature
         if (gatewayOrderId && gatewayPaymentId && razorpay_signature) {
             const hmac = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || 'secret123');
@@ -322,6 +331,15 @@ export const renewSubscription = async (req: Request, res: Response): Promise<vo
                 include: [{ model: SubscriptionPackage, as: 'package' }],
             });
             pkg = current ? (current as any).package : null;
+        }
+
+        // Idempotency check: if transaction is already processed, return success immediately
+        if (gatewayOrderId) {
+            const existingTxn = await SubscriptionTransaction.findOne({ where: { gatewayOrderId } });
+            if (existingTxn && existingTxn.status === TransactionStatus.SUCCESS) {
+                res.status(200).json({ success: true, message: 'Already processed', data: existingTxn });
+                return;
+            }
         }
 
         if (!pkg || !pkg.isActive) {
