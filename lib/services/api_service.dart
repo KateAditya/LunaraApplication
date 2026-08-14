@@ -1237,7 +1237,7 @@ class ApiService {
     try {
       final response = await post(
         '/api/mobile/party-plans/requests/$reqId/cancel',
-        body: {'userId': userId, if (reason != null) 'reason': reason},
+        body: {'userId': userId, 'reason': ?reason},
       );
       return response.statusCode == 200;
     } catch (e) {
@@ -1253,7 +1253,7 @@ class ApiService {
     try {
       final response = await post(
         '/api/mobile/party-plans/requests/$reqId/withdraw',
-        body: {'userId': userId, if (reason != null) 'reason': reason},
+        body: {'userId': userId, 'reason': ?reason},
       );
       return response.statusCode == 200;
     } catch (e) {
@@ -1269,7 +1269,7 @@ class ApiService {
     try {
       final response = await post(
         '/api/mobile/party-plans/requests/$reqId/revoke',
-        body: {'userId': userId, if (reason != null) 'reason': reason},
+        body: {'userId': userId, 'reason': ?reason},
       );
       return response.statusCode == 200;
     } catch (e) {

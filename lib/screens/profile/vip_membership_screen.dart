@@ -323,6 +323,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
               ),
             );
           }
+          await SubscriptionProvider.instance.refreshAfterPurchase();
           await _loadData();
           return true;
         } else {

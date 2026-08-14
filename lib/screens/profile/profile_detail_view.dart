@@ -50,6 +50,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
   bool _isBlocked = false;
   late User _currentUser;
   String? _localSwipedAction;
+  bool _isLoadingSwipeStatus = false;
 
   @override
   void initState() {
@@ -61,7 +62,10 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
             : (widget.user.isLiked ? 'like' : null));
     if (!widget.isMe) {
       _checkBlockStatus();
-      _fetchLiveSwipeStatus();
+      _isLoadingSwipeStatus = true;
+      _fetchLiveSwipeStatus().then((_) {
+        if (mounted) setState(() => _isLoadingSwipeStatus = false);
+      });
     }
   }
 
@@ -75,7 +79,10 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
               ? 'superlike'
               : (widget.user.isLiked ? 'like' : null));
       if (!widget.isMe) {
-        _fetchLiveSwipeStatus();
+        _isLoadingSwipeStatus = true;
+        _fetchLiveSwipeStatus().then((_) {
+          if (mounted) setState(() => _isLoadingSwipeStatus = false);
+        });
       }
     } else if (widget.swipedAction != oldWidget.swipedAction) {
       _localSwipedAction = widget.swipedAction;
@@ -85,12 +92,10 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
   Future<void> _fetchLiveSwipeStatus() async {
     try {
       final status = await ApiService.fetchSwipeStatus(_currentUser.id);
-      if (mounted) {
+      if (mounted && status.isNotEmpty) {
         final action = status['actionType']?.toString() ??
             (status['alreadySuperLiked'] == true ? 'superlike' : (status['alreadyLiked'] == true ? 'like' : null));
-        if (action != null) {
-          setState(() => _localSwipedAction = action);
-        }
+        setState(() => _localSwipedAction = action);
       }
     } catch (_) {}
   }
@@ -965,6 +970,15 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
               ),
             ),
           ],
+        ),
+      );
+    }
+
+    if (_isLoadingSwipeStatus) {
+      return const SizedBox(
+        height: 100, // Approximate height of the action buttons
+        child: Center(
+          child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
         ),
       );
     }
