@@ -1239,7 +1239,19 @@ class ApiService {
         '/api/mobile/party-plans/requests/$reqId/cancel',
         body: {'userId': userId, 'reason': ?reason},
       );
-      return response.statusCode == 200;
+      if (response.statusCode == 200) {
+        String? targetPlanId;
+        _cachedPartyPlanRequests.forEach((pId, req) {
+          if (req['id']?.toString() == reqId) {
+            targetPlanId = pId;
+          }
+        });
+        if (targetPlanId != null) {
+          markPartyPlanAsCancelledLocal(targetPlanId!);
+        }
+        return true;
+      }
+      return false;
     } catch (e) {
       debugPrint('cancelPartyPlanRequest error: $e');
       return false;
@@ -1255,7 +1267,19 @@ class ApiService {
         '/api/mobile/party-plans/requests/$reqId/withdraw',
         body: {'userId': userId, 'reason': ?reason},
       );
-      return response.statusCode == 200;
+      if (response.statusCode == 200) {
+        String? targetPlanId;
+        _cachedPartyPlanRequests.forEach((pId, req) {
+          if (req['id']?.toString() == reqId) {
+            targetPlanId = pId;
+          }
+        });
+        if (targetPlanId != null) {
+          markPartyPlanAsCancelledLocal(targetPlanId!);
+        }
+        return true;
+      }
+      return false;
     } catch (e) {
       debugPrint('withdrawPartyPlanRequest error: $e');
       return false;

@@ -56,6 +56,10 @@ class UnifiedNotificationItem {
   final VoidCallback? onActionTap;
   final List<NotificationAction>? actions;
   final Map<String, dynamic> rawData;
+  final String? userRoleLabel;
+  final Map<String, dynamic>? partnerUser;
+  final String? partnerRoleLabel;
+  final String? statusSummary;
 
   UnifiedNotificationItem({
     required this.id,
@@ -76,6 +80,10 @@ class UnifiedNotificationItem {
     this.onActionTap,
     this.actions,
     required this.rawData,
+    this.userRoleLabel,
+    this.partnerUser,
+    this.partnerRoleLabel,
+    this.statusSummary,
   });
 }
 
@@ -188,6 +196,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   void _initSocketListeners() {
     ApiService.addSocketListener('party_plan_created', _onPartyPlanCreated);
     ApiService.addSocketListener('party_plan_deleted', _onPartyPlanDeleted);
+    ApiService.addSocketListener('party_plan_request_created', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('party_plan_request_received', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('party_plan_request_updated', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('party_plan_request_cancelled', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('party_plan_request_rejected', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('party_plan_relisted', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('party_plan_request_accepted', _onPartyPlanRequestAccepted);
     ApiService.addSocketListener('party_plan_match_success', _onPartyPlanMatchSuccess);
     ApiService.addSocketListener('party_plan_host_paid', _onPartyPlanHostPaid);
@@ -202,6 +216,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   void _disposeSocketListeners() {
     ApiService.removeSocketListener('party_plan_created', _onPartyPlanCreated);
     ApiService.removeSocketListener('party_plan_deleted', _onPartyPlanDeleted);
+    ApiService.removeSocketListener('party_plan_request_created', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('party_plan_request_received', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('party_plan_request_updated', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('party_plan_request_cancelled', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('party_plan_request_rejected', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('party_plan_relisted', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('party_plan_request_accepted', _onPartyPlanRequestAccepted);
     ApiService.removeSocketListener('party_plan_match_success', _onPartyPlanMatchSuccess);
     ApiService.removeSocketListener('party_plan_host_paid', _onPartyPlanHostPaid);
@@ -211,6 +231,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.removeSocketListener('group_party_payment_success', _onGroupPartyUpdated);
     ApiService.removeSocketListener('large_party_status_update', _onGroupPartyUpdated);
     ApiService.removeSocketListener('group_party_status_update', _onGroupPartyUpdated);
+  }
+
+  void _onPartyPlanRequestUpdated(dynamic data) {
+    if (!mounted) return;
+    _loadFeed(showLoader: false);
   }
 
   void _onNotificationCreated(dynamic data) {
@@ -1270,8 +1295,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
 
     final bool isCancelled = planStatus == 'cancelled' ||
-        lifecycleStatus == 'cancelled' ||
-        (myRequest != null && (myRequest['status'] == 'cancelled' || myRequest['status'] == 'rejected'));
+        lifecycleStatus == 'cancelled';
 
     final bool hostReached = planMap['hostArrivalConfirmed'] == true;
     final bool guestReached = (acceptedJoinerRequest != null && acceptedJoinerRequest['guestArrivalConfirmed'] == true) ||
@@ -1310,7 +1334,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         } else {
           final m = remaining.inMinutes;
           final s = remaining.inSeconds % 60;
-          countdownLabel = 'Pay Deposit ($m:${s.toString().padLeft(2, "0")})';
+          countdownLabel = 'Pay Deposit (${m}m ${s.toString().padLeft(2, "0")}s)';
         }
       } catch (_) {}
     }
@@ -1319,7 +1343,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       isExpired = true;
     }
 
-    // 6. Contextual Title, Subtitle, Badges & Actions
+    // 6. Contextual Title, Role, Partner & Actions
     Color accent = const Color(0xFF8B5CF6);
     String title = 'Let\'s party at $venueName! 🚀';
     String body = formattedDateTime.isNotEmpty ? '📅 $formattedDateTime' : 'Party Plan at $venueName';
@@ -1328,15 +1352,22 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     Map<String, dynamic>? senderUser = hostCreator;
     String? avatarUrl = hostPhoto;
 
+    String? userRoleLabel = isHost ? '👑 Your Party Plan' : 'Hosted by';
+    Map<String, dynamic>? partnerUser;
+    String? partnerRoleLabel;
+    String? statusSummary;
+
     if (isExpired) {
       accent = const Color(0xFF9CA3AF);
       badge = 'EXPIRED';
       body = 'This Party Plan at $venueName has expired.';
       actionsList = null;
+      statusSummary = 'Plan Expired';
     } else if (isCancelled) {
       accent = const Color(0xFFEF4444);
       badge = 'CANCELLED';
       body = 'Party Plan at $venueName was cancelled by mutual agreement.';
+      statusSummary = 'Cancelled';
       actionsList = [
         NotificationAction(
           label: 'View Details',
@@ -1354,6 +1385,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       badge = 'COMPLETED';
       accent = const Color(0xFF10B981);
       body = 'Both participants confirmed arrival • 💰 ₹99 Deposit refunded to LUNARA Wallet.';
+      statusSummary = '₹99 Refunded';
       actionsList = [
         NotificationAction(
           label: 'View Wallet',
@@ -1380,6 +1412,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       badge = 'CONFIRMED';
       accent = const Color(0xFF6366F1);
       body = 'You: ✓ Reached • Partner: ⏳ Waiting for confirmation';
+      statusSummary = 'Waiting for Partner';
       final otherId = isHost
           ? (acceptedJoinerRequest?['requesterId'] ?? '')
           : (planHostId.isNotEmpty ? planHostId : (hostCreator['id'] ?? ''));
@@ -1419,6 +1452,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       badge = 'ACTION REQUIRED';
       accent = const Color(0xFFF59E0B);
       body = '⏱ Starts soon • 📍 Have you reached the venue? Confirm arrival for ₹99 refund.';
+      statusSummary = 'Confirm Arrival';
 
       actionsList = [
         NotificationAction(
@@ -1453,6 +1487,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ),
       ];
     } else if (isHost) {
+      userRoleLabel = '👑 Your Party Plan';
       if (hostPaymentStatus != 'paid' && hostPaymentStatus != 'completed') {
         final double depositAmt = (planMap['depositAmount'] ?? 99.0) is num ? (planMap['depositAmount'] ?? 99.0).toDouble() : 99.0;
         final hostOrderId = planMap['hostRazorpayOrderId']?.toString() ?? '';
@@ -1460,6 +1495,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         badge = 'ACTION REQUIRED';
         accent = const Color(0xFF8B5CF6);
         body = 'Pay deposit of ₹${depositAmt.toStringAsFixed(0)} to publish your Party Plan at $venueName!';
+        statusSummary = 'Deposit Required';
         actionsList = [
           NotificationAction(
             label: 'Pay Deposit (${depositAmt.toStringAsFixed(0)})',
@@ -1497,9 +1533,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         title = '🎉 Match Confirmed!';
         badge = 'CONFIRMED';
         accent = const Color(0xFF10B981);
-        body = 'Party with $joinerName at $venueName is confirmed! Chat & Ticket unlocked.';
+        body = 'Your Party Plan with $joinerName at $venueName is confirmed. Both deposits paid • Chat unlocked.';
         senderUser = joiner.isNotEmpty ? joiner : hostCreator;
         avatarUrl = joinerPhoto ?? hostPhoto;
+
+        partnerUser = joiner.isNotEmpty ? joiner : null;
+        partnerRoleLabel = 'Partner:';
+        statusSummary = 'Both Deposits Paid • Chat Unlocked';
 
         actionsList = [
           NotificationAction(
@@ -1554,7 +1594,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
         title = '⏳ Approved — Awaiting Payment';
         badge = 'AWAITING PAYMENT';
-        body = 'You approved $joinerName. Waiting for deposit payment to unlock chat.';
+        body = 'You approved $joinerName. Waiting for safety deposit payment to unlock chat.';
+        partnerUser = joiner.isNotEmpty ? joiner : null;
+        partnerRoleLabel = 'Partner:';
+        statusSummary = 'Awaiting Joiner Deposit';
+
         actionsList = [
           NotificationAction(
             label: 'Revoke',
@@ -1583,9 +1627,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
           title = '📥 New Party Plan Request';
           badge = 'NEW REQUEST';
-          body = '$reqUserName requested to join your Party Plan at $venueName';
+          body = '$reqUserName requested to join your Party Plan at $venueName.';
           senderUser = reqUser.isNotEmpty ? reqUser : hostCreator;
           avatarUrl = reqUser['profileImageUrl'] ?? reqUser['profilePhotoUrl'];
+
+          partnerUser = reqUser.isNotEmpty ? reqUser : null;
+          partnerRoleLabel = 'Request from:';
+          statusSummary = 'Approval Required';
 
           actionsList = [
             NotificationAction(
@@ -1605,7 +1653,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         } else {
           title = '📥 Join Requests Received';
           badge = 'REQUESTS (${pendingIncomingRequests.length})';
-          body = '${pendingIncomingRequests.length} users requested to join your Party Plan at $venueName';
+          body = '${pendingIncomingRequests.length} users requested to join your Party Plan at $venueName.';
+          statusSummary = '${pendingIncomingRequests.length} Pending Requests';
           actionsList = [
             NotificationAction(
               label: 'Review Requests (${pendingIncomingRequests.length})',
@@ -1624,6 +1673,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         body = formattedDateTime.isNotEmpty
             ? 'Open for join requests at $venueName • $formattedDateTime'
             : 'Your Party Plan at $venueName is live and open for requests!';
+        statusSummary = 'Live & Open';
         actionsList = [
           NotificationAction(
             label: 'View Plan',
@@ -1647,6 +1697,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ];
       }
     } else {
+      userRoleLabel = 'Hosted by';
+      partnerUser = hostCreator.isNotEmpty ? hostCreator : null;
+      partnerRoleLabel = 'Host:';
+
       final planVis = planMap['visibility']?.toString().toUpperCase() ?? '';
       final selectedUsers = planMap['selectedUsers'];
       final bool isPrivateInvite = planVis == 'PRIVATE' &&
@@ -1659,8 +1713,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         title = '🎉 Match Confirmed!';
         badge = 'CONFIRMED';
         accent = const Color(0xFF10B981);
-        body = 'Party booking at $venueName is confirmed! Chat is unlocked with $hostName.';
+        body = 'Your Party Plan with $hostName at $venueName is confirmed. Both deposits paid • Chat unlocked.';
         final otherId = planHostId.isNotEmpty ? planHostId : (hostCreator['id'] ?? '');
+        statusSummary = 'Both Deposits Paid • Chat Unlocked';
 
         actionsList = [
           NotificationAction(
@@ -1682,7 +1737,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             ),
           ),
           NotificationAction(
-            label: 'Cancel Party Plan',
+            label: 'View Ticket',
+            icon: Icons.confirmation_number_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PartyPlanTicketScreen(
+                  request: myRequest ?? planMap,
+                  plan: planMap,
+                  isHost: false,
+                ),
+              ),
+            ),
+          ),
+          NotificationAction(
+            label: 'Cancel Plan',
             icon: Icons.cancel_outlined,
             isPrimary: false,
             color: Colors.red[50],
@@ -1697,7 +1768,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         title = '✅ Approved! Pay Safety Deposit';
         badge = 'ACTION REQUIRED';
         accent = const Color(0xFF8B5CF6);
-        body = '$hostName accepted your request! Pay the safety deposit to lock your spot.';
+        body = '$hostName accepted your request! Pay your safety deposit within $countdownLabel to confirm match.';
+        statusSummary = countdownLabel;
 
         actionsList = [
           NotificationAction(
@@ -1723,6 +1795,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         badge = 'INVITE';
         accent = const Color(0xFF7C3AED);
         body = '$hostName privately invited you to their Party Plan at $venueName. Accept to proceed!';
+        statusSummary = 'Private Invite';
 
         actionsList = [
           NotificationAction(
@@ -1744,6 +1817,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         title = '🤝 Request Sent';
         badge = 'REQUEST SENT';
         body = 'Request sent to $hostName for Party Plan at $venueName. Waiting for host approval.';
+        statusSummary = 'Pending Approval';
         actionsList = [
           NotificationAction(
             label: 'Withdraw Request',
@@ -1758,13 +1832,35 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         badge = 'DECLINED';
         accent = const Color(0xFF9CA3AF);
         body = 'Your Party Plan request at $venueName was declined by $hostName.';
-        actionsList = null;
-      } else if (myStatus == 'withdrawn') {
-        title = '↩️ Request Withdrawn';
-        badge = 'WITHDRAWN';
+        statusSummary = 'Declined';
+        actionsList = [
+          NotificationAction(
+            label: 'Request to Join',
+            icon: Icons.person_add_rounded,
+            isPrimary: true,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+            ).then((_) => _loadFeed(showLoader: false)),
+          ),
+        ];
+      } else if (myStatus == 'withdrawn' || myStatus == 'cancelled') {
+        title = '↩️ Request Cancelled';
+        badge = 'CANCELLED';
         accent = const Color(0xFF9CA3AF);
-        body = 'You withdrew your request for Party Plan at $venueName.';
-        actionsList = null;
+        body = 'You cancelled your request for Party Plan at $venueName.';
+        statusSummary = 'Cancelled';
+        actionsList = [
+          NotificationAction(
+            label: 'Request to Join',
+            icon: Icons.person_add_rounded,
+            isPrimary: true,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+            ).then((_) => _loadFeed(showLoader: false)),
+          ),
+        ];
       } else {
         title = '🎉 Party Plan at $venueName';
         badge = 'PARTY PLAN';
@@ -1817,12 +1913,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       senderUser: senderUser,
       actions: isExpired ? null : actionsList,
       rawData: {'id': planId, 'plan': planMap, ...planMap},
+      userRoleLabel: userRoleLabel,
+      partnerUser: partnerUser,
+      partnerRoleLabel: partnerRoleLabel,
+      statusSummary: statusSummary,
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Build Authoritative Stranger Meet Smart Card (1 Stranger Meet = 1 Card)
-  // ─────────────────────────────────────────────────────────────────────────────
   UnifiedNotificationItem? _buildAuthoritativeStrangersMeetCard(
     String meetId,
     List<Map<String, dynamic>> entries,
@@ -1931,12 +2028,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     Map<String, dynamic>? senderUser = hostCreator;
     String? avatarUrl = hostPhoto;
 
+    String? userRoleLabel = isHost ? '👑 Your Stranger Meet' : 'Hosted by';
+    Map<String, dynamic>? partnerUser;
+    String? partnerRoleLabel;
+    String? statusSummary;
+
     if (isExpired) {
       accent = const Color(0xFF9CA3AF);
       badge = 'EXPIRED';
       body = 'This Stranger Meet at $venueName has ended/expired.';
+      statusSummary = 'Meet Expired';
       actionsList = null;
     } else if (isHost) {
+      userRoleLabel = '👑 Your Stranger Meet';
       final hostPayStatus = (meetMap['paymentStatus'] ?? '').toString().toLowerCase();
       if (hostPayStatus == 'unpaid' || hostPayStatus == 'pending') {
         title = '⚡ Action Required: Pay Host Deposit';
@@ -1944,6 +2048,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         accent = const Color(0xFF8B5CF6);
         final double deposit = (meetMap['paymentAmount'] ?? 99.0) is num ? (meetMap['paymentAmount'] ?? 99.0).toDouble() : 99.0;
         body = 'Pay deposit of ₹${deposit.toStringAsFixed(0)} to make your Stranger Meet live at $venueName!';
+        statusSummary = 'Deposit Pending';
         actionsList = [
           NotificationAction(
             label: 'Pay Deposit',
@@ -1977,9 +2082,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
           title = '📥 Join Request Received';
           badge = 'NEW REQUEST';
-          body = '$reqUserName requested to join your Stranger Meet at $venueName';
+          body = '$reqUserName requested to join your Stranger Meet at $venueName.';
           senderUser = reqUser.isNotEmpty ? reqUser : hostCreator;
           avatarUrl = reqUser['profileImageUrl'] ?? reqUser['profilePhotoUrl'];
+
+          partnerUser = reqUser.isNotEmpty ? reqUser : null;
+          partnerRoleLabel = 'Request from:';
+          statusSummary = 'Approval Required';
 
           actionsList = [
             NotificationAction(
@@ -1999,7 +2108,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         } else {
           title = '📥 Join Requests Received';
           badge = 'REQUESTS (${pendingIncomingRequests.length})';
-          body = '${pendingIncomingRequests.length} users requested to join your Stranger Meet at $venueName';
+          body = '${pendingIncomingRequests.length} users requested to join your Stranger Meet at $venueName.';
+          statusSummary = '${pendingIncomingRequests.length} Pending Requests';
           actionsList = [
             NotificationAction(
               label: 'Review Requests',
@@ -2018,9 +2128,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         title = '🎉 Seat Confirmed!';
         badge = 'CONFIRMED';
         accent = const Color(0xFF10B981);
-        body = '$joinerName\'s seat at $venueName is locked! Chat unlocked.';
+        body = 'Your Stranger Meet with $joinerName at $venueName is locked! Chat unlocked.';
         senderUser = joiner.isNotEmpty ? joiner : hostCreator;
         avatarUrl = joinerPhoto ?? hostPhoto;
+
+        partnerUser = joiner.isNotEmpty ? joiner : null;
+        partnerRoleLabel = 'Participant:';
+        statusSummary = 'Payment Done • Chat Unlocked';
 
         actionsList = [
           NotificationAction(
@@ -2062,6 +2176,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         body = formattedDateTime.isNotEmpty
             ? 'Open for requests at $venueName • $formattedDateTime'
             : 'Your Stranger Meet at $venueName is live!';
+        statusSummary = 'Live & Open';
         actionsList = [
           NotificationAction(
             label: 'View Ticket',
@@ -2079,6 +2194,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ];
       }
     } else {
+      userRoleLabel = 'Hosted by';
+      partnerUser = hostCreator.isNotEmpty ? hostCreator : null;
+      partnerRoleLabel = 'Host:';
+
       final myStatus = (myRequest?['status'] ?? '').toString().toLowerCase();
       final myPaymentStatus = (myRequest?['joinerPaymentStatus'] ?? myRequest?['paymentStatus'] ?? '').toString().toLowerCase();
 
@@ -2086,8 +2205,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         title = '🎉 Meet Confirmed!';
         badge = 'CONFIRMED';
         accent = const Color(0xFF10B981);
-        body = 'Payment done! Your seat at $venueName is locked. Chat unlocked with $hostName.';
+        body = 'Your Stranger Meet with $hostName at $venueName is confirmed! Chat unlocked.';
         final otherId = meetHostId.isNotEmpty ? meetHostId : (hostCreator['id'] ?? '');
+        statusSummary = 'Payment Done • Chat Unlocked';
 
         actionsList = [
           NotificationAction(
@@ -2129,6 +2249,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         badge = 'ACTION REQUIRED';
         accent = const Color(0xFFF59E0B);
         body = '$hostName accepted your request! Pay $feeLabel to secure your spot at $venueName.';
+        statusSummary = 'Pay $feeLabel';
 
         actionsList = [
           NotificationAction(
@@ -2158,12 +2279,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         title = '🤝 Request Sent';
         badge = 'REQUEST SENT';
         body = 'Request sent to $hostName for Stranger Meet at $venueName. Waiting for host approval.';
+        statusSummary = 'Pending Approval';
         actionsList = null;
       } else if (myStatus == 'rejected' || myStatus == 'declined') {
         title = '❌ Request Declined';
         badge = 'DECLINED';
         accent = const Color(0xFF9CA3AF);
         body = 'Your request to join Stranger Meet at $venueName was declined by $hostName.';
+        statusSummary = 'Declined';
         actionsList = null;
       } else {
         title = '🤝 Stranger Meet at $venueName';
@@ -2207,6 +2330,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       senderUser: senderUser,
       actions: isExpired ? null : actionsList,
       rawData: {'id': meetId, 'plan': meetMap, ...meetMap},
+      userRoleLabel: userRoleLabel,
+      partnerUser: partnerUser,
+      partnerRoleLabel: partnerRoleLabel,
+      statusSummary: statusSummary,
     );
   }
   // ─────────────────────────────────────────────────────────────────────────────
@@ -2836,7 +2963,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                         ),
                         const SizedBox(height: 10),
 
-                        // Title
+                        // Title / Activity Headline
                         Text(
                           item.title,
                           style: const TextStyle(
@@ -2845,7 +2972,77 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                             color: Colors.black87,
                           ),
                         ),
-                        const SizedBox(height: 4),
+
+                        // ── Role & Participant Info Box ──
+                        if (item.partnerUser != null || item.userRoleLabel != null) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: Row(
+                              children: [
+                                if (item.partnerUser != null) ...[
+                                  LunaraProfileImage(
+                                    userData: item.partnerUser!,
+                                    radius: 15,
+                                    isInteractive: item.partnerUser!['id'] != null,
+                                  ),
+                                  const SizedBox(width: 8),
+                                ],
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      if (item.userRoleLabel != null)
+                                        Text(
+                                          item.userRoleLabel!,
+                                          style: const TextStyle(
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.w800,
+                                            color: Color(0xFF64748B),
+                                            letterSpacing: 0.4,
+                                          ),
+                                        ),
+                                      if (item.partnerUser != null)
+                                        Text(
+                                          '${item.partnerRoleLabel ?? "With:"} ${item.partnerUser!["firstName"] ?? item.partnerUser!["name"] ?? "User"} ${item.partnerUser!["lastName"] ?? ""}'.trim(),
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFF0F172A),
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                if (item.statusSummary != null)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFEDE9FE),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      item.statusSummary!,
+                                      style: const TextStyle(
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF7C3AED),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+
+                        const SizedBox(height: 6),
 
                         // Body Description
                         Text(

@@ -44,6 +44,12 @@ class _HostPartyPlanManagerScreenState
 
   void _initSocketListeners() {
     ApiService.addSocketListener('plan_unavailable', _onPlanUnavailable);
+    ApiService.addSocketListener('party_plan_request_created', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_request_received', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_request_updated', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_request_cancelled', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_request_rejected', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_relisted', _onSocketUpdate);
     ApiService.addSocketListener(
       'party_plan_request_accepted',
       _onSocketUpdate,
@@ -55,6 +61,12 @@ class _HostPartyPlanManagerScreenState
 
   void _disposeSocketListeners() {
     ApiService.removeSocketListener('plan_unavailable', _onPlanUnavailable);
+    ApiService.removeSocketListener('party_plan_request_created', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_request_received', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_request_updated', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_request_cancelled', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_request_rejected', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_relisted', _onSocketUpdate);
     ApiService.removeSocketListener(
       'party_plan_request_accepted',
       _onSocketUpdate,

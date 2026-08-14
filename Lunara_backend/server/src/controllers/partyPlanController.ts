@@ -574,21 +574,29 @@ async function notifyRequestLifecycleChange(params: {
         actorUserId: params.actorUserId,
         eventType: params.eventType,
         category: 'requests',
-        entityType: 'party_plan',
-        entityId: params.plan.id,
+        entityType: 'party_plan_request',
+        entityId: params.request.id,
         title: params.title,
         body: params.body,
-        metadata: { planId: params.plan.id, requestId: params.request.id },
-        idempotencyKey: `${params.eventType}_${params.request.id}`,
+        metadata: { partyPlanId: params.plan.id, planId: params.plan.id, requestId: params.request.id },
+        idempotencyKey: `${params.eventType}_${params.recipientUserId}_${params.request.id}`,
     });
 
     const { io } = require('../server');
-    io.to(`user_${params.plan.userId}`).emit('party_plan_request_updated', {
-        planId: params.plan.id, requestId: params.request.id,
-    });
-    io.to(`user_${params.request.requesterId}`).emit('party_plan_request_updated', {
-        planId: params.plan.id, requestId: params.request.id,
-    });
+    if (io) {
+        io.to(`user_${params.plan.userId}`).emit('party_plan_request_updated', {
+            planId: params.plan.id, requestId: params.request.id, eventType: params.eventType,
+        });
+        io.to(`user_${params.request.requesterId}`).emit('party_plan_request_updated', {
+            planId: params.plan.id, requestId: params.request.id, eventType: params.eventType,
+        });
+        io.to(`user_${params.plan.userId}`).emit(params.eventType, {
+            planId: params.plan.id, requestId: params.request.id,
+        });
+        io.to(`user_${params.request.requesterId}`).emit(params.eventType, {
+            planId: params.plan.id, requestId: params.request.id,
+        });
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1510,25 +1518,45 @@ export const deletePartyPlan = async (req: Request, res: Response): Promise<void
 // POST /api/mobile/party-plans/:id/requests
 // Request to join a party plan
 // ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/party-plans/:id/requests
+// Request to join a party plan
+// ─────────────────────────────────────────────────────────────────────────────
 export const createPartyPlanRequest = async (req: Request, res: Response): Promise<void> => {
+    const transaction = await sequelize.transaction();
     try {
         const { id } = req.params;
-        const { userId } = req.body;
+        const callerUserId = (req.user?.id || req.body.userId || '').toString();
 
-        if (!userId) {
+        if (!callerUserId) {
+            await transaction.rollback();
             res.status(400).json({ success: false, message: 'userId is required' });
             return;
         }
 
-        const plan = await PartyPlan.findByPk(id);
+        if (req.user?.id && req.body.userId && req.user.id !== req.body.userId) {
+            await transaction.rollback();
+            res.status(403).json({ success: false, message: 'You can only create requests for yourself' });
+            return;
+        }
+
+        const plan = await PartyPlan.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
         if (!plan || !plan.isLive) {
+            await transaction.rollback();
             res.status(404).json({ success: false, message: 'Live Party plan not found' });
             return;
         }
 
         // Reject if target plan is inactive or cancelled
         if (plan.status === PartyPlanStatus.INACTIVE || plan.status === PartyPlanStatus.CANCELLED) {
+            await transaction.rollback();
             res.status(400).json({ success: false, message: 'This party plan is no longer active.' });
+            return;
+        }
+
+        // Reject if plan has expired
+        if (plan.planDateTime && new Date(plan.planDateTime).getTime() < Date.now()) {
+            await transaction.rollback();
+            res.status(400).json({ success: false, message: 'This party plan has expired' });
             return;
         }
 
@@ -1543,9 +1571,11 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
                         paymentTimeoutAt: { [Op.gt]: new Date() }
                     }
                 ]
-            }
+            },
+            transaction
         });
         if (acceptedOrPendingReq) {
+            await transaction.rollback();
             res.status(400).json({
                 success: false,
                 message: 'This party plan already has an accepted or processing request.'
@@ -1553,46 +1583,71 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
             return;
         }
 
-        if (plan.userId === userId) {
+        if (plan.userId === callerUserId) {
+            await transaction.rollback();
             res.status(400).json({ success: false, message: 'You cannot request to join your own plan' });
             return;
         }
 
         if (plan.visibility === PartyPlanVisibility.PRIVATE) {
-            const isInvited = plan.selectedUsers && plan.selectedUsers.includes(userId);
+            const isInvited = plan.selectedUsers && plan.selectedUsers.includes(callerUserId);
             if (!isInvited) {
+                await transaction.rollback();
                 res.status(403).json({ success: false, message: 'You are not invited to this private party plan' });
                 return;
             }
         }
 
-        const existingReq = await PartyPlanRequest.findOne({ where: { planId: id, requesterId: userId } });
-        if (existingReq) {
-            res.status(400).json({ success: false, message: 'You have already requested to join this plan' });
+        // Check ONLY for currently ACTIVE requests from this user on this plan.
+        // Historical cancelled, rejected, or expired requests do NOT block sending a new request.
+        const activeExistingReq = await PartyPlanRequest.findOne({
+            where: {
+                planId: id,
+                requesterId: callerUserId,
+                status: {
+                    [Op.in]: [
+                        PartyPlanRequestStatus.PENDING,
+                        PartyPlanRequestStatus.WAITING,
+                        PartyPlanRequestStatus.PAYMENT_PENDING,
+                        PartyPlanRequestStatus.ACCEPTED,
+                    ]
+                }
+            },
+            transaction
+        });
+        if (activeExistingReq) {
+            await transaction.rollback();
+            res.status(409).json({ success: false, message: 'You already have an active request to join this plan' });
             return;
         }
 
         const newReq = await PartyPlanRequest.create({
             planId: id,
-            requesterId: userId,
+            requesterId: callerUserId,
             status: PartyPlanRequestStatus.PENDING,
             joinerPaymentStatus: PartyPlanJoinerPaymentStatus.UNPAID,
             latLangCheckIn: false,
-        });
+        }, { transaction });
+
+        if (plan.lifecycleStatus === PartyPlanLifecycleStatus.POSTED) {
+            await plan.update({ lifecycleStatus: PartyPlanLifecycleStatus.REQUEST_RECEIVED }, { transaction });
+        }
+
+        await transaction.commit();
 
         // Notify host and requester via NotificationService
         setImmediate(async () => {
             try {
                 const host = await User.findByPk(plan.userId);
-                const requester = await User.findByPk(userId);
+                const requester = await User.findByPk(callerUserId);
                 if (host && requester) {
                     const venueName = (plan as any)?.venue?.name || 'Venue';
                     const requesterName = `${requester.firstName} ${requester.lastName}`.trim();
 
-                    // Notify Host — use request-scoped idempotencyKey so it never overwrites the plan_posted notification
+                    // Notify Host — use request-scoped idempotencyKey
                     await NotificationService.dispatch({
                         recipientUserId: plan.userId,
-                        actorUserId: userId,
+                        actorUserId: callerUserId,
                         eventType: 'party_plan_request_received',
                         category: 'requests',
                         entityType: 'party_plan_request',
@@ -1602,6 +1657,7 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
                         idempotencyKey: `plan_request_received_${newReq.id}`,
                         metadata: {
                             partyPlanId: plan.id,
+                            planId: plan.id,
                             requestId: newReq.id,
                             requesterName,
                             venueName,
@@ -1610,7 +1666,7 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
 
                     // Notify Requester — scoped idempotencyKey per request
                     await NotificationService.dispatch({
-                        recipientUserId: userId,
+                        recipientUserId: callerUserId,
                         actorUserId: plan.userId,
                         eventType: 'party_plan_request_sent',
                         category: 'requests',
@@ -1621,15 +1677,20 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
                         idempotencyKey: `plan_request_sent_${newReq.id}`,
                         metadata: {
                             partyPlanId: plan.id,
+                            planId: plan.id,
                             requestId: newReq.id,
                             venueName,
                         },
                     });
                 }
 
-                // Also notify admin room via Socket.IO
                 const { io } = require('../server');
                 if (io) {
+                    io.to(`user_${plan.userId}`).emit('party_plan_request_created', { planId: plan.id, requestId: newReq.id });
+                    io.to(`user_${plan.userId}`).emit('party_plan_request_received', { planId: plan.id, requestId: newReq.id });
+                    io.to(`user_${plan.userId}`).emit('party_plan_request_updated', { planId: plan.id, requestId: newReq.id });
+                    io.to(`user_${callerUserId}`).emit('party_plan_request_updated', { planId: plan.id, requestId: newReq.id });
+
                     io.to('admin_notifications').to('admin').emit('admin_notification_created', {
                         type: 'party_request',
                         title: '🎉 New Party Plan Request Posted!',
@@ -1646,6 +1707,7 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
 
         res.status(201).json({ success: true, message: 'Request sent successfully!', data: newReq });
     } catch (err: any) {
+        await transaction.rollback();
         logger.error('createPartyPlanRequest error:', err);
         res.status(500).json({ success: false, message: 'Failed to send request', error: err.message });
     }
@@ -1658,7 +1720,7 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
 export const getPartyPlanRequests = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const { userId } = req.query; // Host's user id
+        const callerUserId = (req.user?.id || req.query.userId || '').toString();
 
         const plan = await PartyPlan.findByPk(id);
         if (!plan) {
@@ -1666,13 +1728,29 @@ export const getPartyPlanRequests = async (req: Request, res: Response): Promise
             return;
         }
 
-        if (plan.userId !== userId) {
+        if (callerUserId && plan.userId !== callerUserId) {
             res.status(403).json({ success: false, message: 'Only the host can view requests' });
             return;
         }
 
+        const { status: statusQuery } = req.query;
+        const whereClause: any = { planId: id };
+        if (statusQuery) {
+            whereClause.status = statusQuery;
+        } else {
+            // By default, only return active actionable requests (PENDING, WAITING, PAYMENT_PENDING, ACCEPTED)
+            whereClause.status = {
+                [Op.in]: [
+                    PartyPlanRequestStatus.PENDING,
+                    PartyPlanRequestStatus.WAITING,
+                    PartyPlanRequestStatus.PAYMENT_PENDING,
+                    PartyPlanRequestStatus.ACCEPTED,
+                ]
+            };
+        }
+
         const requests = await PartyPlanRequest.findAll({
-            where: { planId: id },
+            where: whereClause,
             include: [
                 {
                     model: User,
@@ -1726,27 +1804,36 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
     const transaction = await sequelize.transaction();
     try {
         const { reqId } = req.params;
-        const { userId } = req.body; // Host's userId
+        const callerUserId = (req.user?.id || req.body.userId || '').toString();
 
-        const request = await PartyPlanRequest.findByPk(reqId, {
-            include: [{ model: PartyPlan, as: 'plan' }],
-            transaction
-        });
+        const request = await PartyPlanRequest.findByPk(reqId, { transaction });
         if (!request) {
             await transaction.rollback();
             res.status(404).json({ success: false, message: 'Request not found' });
             return;
         }
 
-        const plan = (request as any).plan as PartyPlan;
-        if (!plan || plan.userId !== userId) {
+        const plan = await PartyPlan.findByPk(request.planId, { transaction, lock: transaction.LOCK.UPDATE });
+        if (!plan) {
+            await transaction.rollback();
+            res.status(404).json({ success: false, message: 'Party plan not found' });
+            return;
+        }
+
+        if (callerUserId && plan.userId !== callerUserId) {
             await transaction.rollback();
             res.status(403).json({ success: false, message: 'Only the host can accept requests' });
             return;
         }
 
-        // Acquire transactional row update lock on the party plan FIRST (prevents race conditions)
-        await plan.reload({ lock: transaction.LOCK.UPDATE, transaction });
+        await request.reload({ lock: transaction.LOCK.UPDATE, transaction });
+
+        // Reject if plan has expired
+        if (plan.planDateTime && new Date(plan.planDateTime).getTime() < Date.now()) {
+            await transaction.rollback();
+            res.status(400).json({ success: false, message: 'This party plan has expired' });
+            return;
+        }
 
         // Lifecycle-based state validation (single source of truth)
         const acceptableStates = [
@@ -1769,7 +1856,16 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
             return;
         }
 
-        // Validate that the request being accepted is still PENDING or WAITING
+        // Validate that the request being accepted is still PENDING or WAITING (and NOT cancelled)
+        if (request.status === PartyPlanRequestStatus.CANCELLED) {
+            await transaction.rollback();
+            res.status(409).json({
+                success: false,
+                message: 'This request was cancelled by the requester and is no longer available.'
+            });
+            return;
+        }
+
         if (request.status !== PartyPlanRequestStatus.PENDING && request.status !== PartyPlanRequestStatus.WAITING) {
             await transaction.rollback();
             res.status(400).json({
@@ -1811,7 +1907,7 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
 
                 await transaction.commit();
 
-                // Notify joiner via NotificationService (authoritative — no duplicate inline socket call)
+                // Notify joiner via NotificationService
                 setImmediate(async () => {
                     try {
                         await NotificationService.dispatch({
@@ -1819,20 +1915,22 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
                             actorUserId: plan.userId,
                             eventType: 'party_plan_request_accepted',
                             category: 'requests',
-                            entityType: 'party_plan',
-                            entityId: plan.id,
+                            entityType: 'party_plan_request',
+                            entityId: request.id,
                             title: '✅ Request Accepted!',
                             body: 'Your join request was accepted. Waiting for host to complete their payment.',
-                            metadata: { planId: plan.id, requestId: request.id },
+                            metadata: { partyPlanId: plan.id, planId: plan.id, requestId: request.id },
                             idempotencyKey: `request_accepted_${request.id}`,
                         });
                         const { io } = require('../server');
-                        io.to(`user_${request.requesterId}`).emit('party_plan_request_accepted', {
-                            requestId: request.id,
-                            planId: plan.id,
-                            hostAlreadyPaid: false,
-                            hostRazorpayOrderId: plan.hostRazorpayOrderId,
-                        });
+                        if (io) {
+                            io.to(`user_${request.requesterId}`).emit('party_plan_request_accepted', {
+                                requestId: request.id,
+                                planId: plan.id,
+                                hostAlreadyPaid: false,
+                                hostRazorpayOrderId: plan.hostRazorpayOrderId,
+                            });
+                        }
                     } catch (err: any) {
                         logger.warn('Failed to send request accepted notification:', err.message);
                     }
@@ -1907,40 +2005,42 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
 
         await transaction.commit();
 
-        // Post-commit socket & notification dispatch (non-blocking, authoritative via NotificationService)
+        // Post-commit socket & notification dispatch
         setImmediate(async () => {
             try {
                 const { io } = require('../server');
 
                 // Notify joiner of acceptance + payment details
-                io.to(`user_${request.requesterId}`).emit('party_plan_request_accepted', {
-                    requestId: request.id,
-                    planId: plan.id,
-                    hostAlreadyPaid,
-                    hostRazorpayOrderId: hostOrder ? hostOrder.id : null,
-                    hostAmount: hostOrder ? hostOrder.amount : null,
-                    hostCurrency: hostOrder ? hostOrder.currency : null,
-                    joinerRazorpayOrderId: joinerOrder.id,
-                    joinerAmount: joinerOrder.amount,
-                    joinerCurrency: joinerOrder.currency,
-                });
+                if (io) {
+                    io.to(`user_${request.requesterId}`).emit('party_plan_request_accepted', {
+                        requestId: request.id,
+                        planId: plan.id,
+                        hostAlreadyPaid,
+                        hostRazorpayOrderId: hostOrder ? hostOrder.id : null,
+                        hostAmount: hostOrder ? hostOrder.amount : null,
+                        hostCurrency: hostOrder ? hostOrder.currency : null,
+                        joinerRazorpayOrderId: joinerOrder.id,
+                        joinerAmount: joinerOrder.amount,
+                        joinerCurrency: joinerOrder.currency,
+                    });
 
-                // Remove from global feeds (plan is reserved)
-                io.emit('party_plan_deleted', { planId: plan.id });
+                    // Remove from global feeds (plan is reserved)
+                    io.emit('party_plan_deleted', { planId: plan.id });
+                }
 
-                // Notify joiner via NotificationService (DB + socket + FCM in one call)
+                // Notify joiner via NotificationService
                 await NotificationService.dispatch({
                     recipientUserId: request.requesterId,
                     actorUserId: plan.userId,
                     eventType: 'party_plan_request_accepted',
                     category: 'requests',
-                    entityType: 'party_plan',
-                    entityId: plan.id,
+                    entityType: 'party_plan_request',
+                    entityId: request.id,
                     title: '✅ Request Accepted!',
                     body: hostAlreadyPaid
                         ? 'Host has paid. Please pay your deposit to confirm the booking!'
                         : 'Your join request was accepted by the host. Pay your deposit to confirm.',
-                    metadata: { planId: plan.id, requestId: request.id },
+                    metadata: { partyPlanId: plan.id, planId: plan.id, requestId: request.id },
                     idempotencyKey: `request_accepted_${request.id}`,
                 });
 
@@ -1951,11 +2051,11 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
                         actorUserId: request.requesterId,
                         eventType: 'host_payment_required',
                         category: 'requests',
-                        entityType: 'party_plan',
-                        entityId: plan.id,
+                        entityType: 'party_plan_request',
+                        entityId: request.id,
                         title: '⚡ Action Required: Pay Deposit',
                         body: 'You accepted a request. Please pay your ₹99 deposit to lock this match!',
-                        metadata: { planId: plan.id, requestId: request.id },
+                        metadata: { partyPlanId: plan.id, planId: plan.id, requestId: request.id },
                         idempotencyKey: `host_payment_required_${plan.id}_${request.id}`,
                     });
                 }
@@ -1994,19 +2094,28 @@ export const cancelPartyPlanRequest = async (req: Request, res: Response): Promi
     const transaction = await sequelize.transaction();
     try {
         const { reqId } = req.params;
-        const { userId, reason } = req.body;
+        const callerUserId = (req.user?.id || req.body.userId || '').toString();
+        const reason = req.body.reason;
+
+        if (!callerUserId) {
+            await transaction.rollback();
+            res.status(400).json({ success: false, message: 'userId is required' });
+            return;
+        }
+
         const request = await PartyPlanRequest.findByPk(reqId, { transaction });
         if (!request) {
             await transaction.rollback();
             res.status(404).json({ success: false, message: 'Request not found' });
             return;
         }
-        if (request.requesterId !== userId) {
+        if (request.requesterId !== callerUserId) {
             await transaction.rollback();
             res.status(403).json({ success: false, message: 'You can only cancel your own request' });
             return;
         }
-        if (request.status === PartyPlanRequestStatus.CANCELLED && request.cancelledBy === userId) {
+        // Idempotency: If already cancelled by this user, return success immediately
+        if (request.status === PartyPlanRequestStatus.CANCELLED && request.cancelledBy === callerUserId) {
             await transaction.rollback();
             res.json({ success: true, message: 'Request was already cancelled', data: request });
             return;
@@ -2016,8 +2125,8 @@ export const cancelPartyPlanRequest = async (req: Request, res: Response): Promi
             res.status(409).json({ success: false, message: 'Only a pending request can be cancelled. Use the appropriate next-step flow for an accepted request.' });
             return;
         }
-        // Always lock plan first, then request. Payment verification follows
-        // this same order, preventing a payment/revocation deadlock.
+
+        // Lock plan and request
         const plan = await PartyPlan.findByPk(request.planId, { transaction, lock: transaction.LOCK.UPDATE });
         if (!plan) {
             await transaction.rollback();
@@ -2035,21 +2144,58 @@ export const cancelPartyPlanRequest = async (req: Request, res: Response): Promi
             status: PartyPlanRequestStatus.CANCELLED,
             previousStatus: request.status,
             cancelledAt: new Date(),
-            cancelledBy: userId,
+            cancelledBy: callerUserId,
             cancellationReason: reason || 'cancelled_by_requester',
         }, { transaction });
+
+        // If plan was in REQUEST_RECEIVED and no other active requests remain, revert to POSTED
+        const remainingActiveCount = await PartyPlanRequest.count({
+            where: {
+                planId: plan.id,
+                status: {
+                    [Op.in]: [PartyPlanRequestStatus.PENDING, PartyPlanRequestStatus.WAITING, PartyPlanRequestStatus.PAYMENT_PENDING, PartyPlanRequestStatus.ACCEPTED]
+                }
+            },
+            transaction
+        });
+        if (remainingActiveCount === 0 && plan.lifecycleStatus === PartyPlanLifecycleStatus.REQUEST_RECEIVED) {
+            await plan.update({ lifecycleStatus: PartyPlanLifecycleStatus.POSTED }, { transaction });
+        }
+
         await transaction.commit();
 
         await auditRequestTransition({
-            plan, request, actorUserId: userId, action: 'REQUEST_CANCELLED_BY_USER',
+            plan, request, actorUserId: callerUserId, action: 'REQUEST_CANCELLED_BY_USER',
             previousStatus: PartyPlanRequestStatus.PENDING, newStatus: PartyPlanRequestStatus.CANCELLED,
             reason: reason || 'cancelled_by_requester',
         });
-        setImmediate(() => notifyRequestLifecycleChange({
-            plan, request, recipientUserId: plan.userId, actorUserId: userId,
-            eventType: 'party_plan_request_cancelled', title: 'Request Cancelled',
-            body: 'The participant cancelled their Party Plan request.',
-        }).catch((err: any) => logger.warn('Request cancellation notification failed:', err.message)));
+
+        // Authoritative synchronization for BOTH Host and Requester
+        setImmediate(async () => {
+            try {
+                // 1. Notify Host (Request Cancelled)
+                await notifyRequestLifecycleChange({
+                    plan, request, recipientUserId: plan.userId, actorUserId: callerUserId,
+                    eventType: 'party_plan_request_cancelled', title: 'Request Cancelled',
+                    body: 'The participant cancelled their Party Plan request.',
+                });
+
+                // 2. Notify Requester (State updated from Request Sent -> Request Cancelled)
+                await notifyRequestLifecycleChange({
+                    plan, request, recipientUserId: callerUserId, actorUserId: plan.userId,
+                    eventType: 'party_plan_request_cancelled', title: 'Request Cancelled',
+                    body: 'You cancelled your request to join this Party Plan. No further action is required.',
+                });
+
+                const { io } = require('../server');
+                if (io) {
+                    io.to(`user_${plan.userId}`).emit('party_plan_request_cancelled', { planId: plan.id, requestId: request.id });
+                    io.to(`user_${callerUserId}`).emit('party_plan_request_cancelled', { planId: plan.id, requestId: request.id });
+                }
+            } catch (notifErr: any) {
+                logger.warn('Request cancellation notification failed:', notifErr.message);
+            }
+        });
 
         res.json({ success: true, message: 'Request cancelled', data: request });
     } catch (err: any) {
