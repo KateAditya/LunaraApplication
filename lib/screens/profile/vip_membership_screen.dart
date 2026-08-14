@@ -813,7 +813,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
   }
 
   Widget _buildPurchaseHistory() {
-    if (_subscriptionHistory.isEmpty) return const SizedBox.shrink();
+    if (_userSubscriptions.isEmpty) return const SizedBox.shrink();
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -830,7 +830,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
           ),
         ),
         const SizedBox(height: 16),
-        ..._subscriptionHistory.map((historyItem) {
+        ..._userSubscriptions.map((historyItem) {
           final pkg = historyItem['package'] ?? {};
           final status = historyItem['status'] ?? 'UNKNOWN';
           final tier = pkg['tier'] ?? 'UNKNOWN';
