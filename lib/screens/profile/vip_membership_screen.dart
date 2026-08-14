@@ -33,22 +33,22 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
   VIPPaymentState _paymentState = VIPPaymentState.initial;
 
   List<dynamic> _allPackages = [];
-  
+
   String? get _activePackageId {
     final status = SubscriptionProvider.instance.status;
     return status.isActive ? status.packageId : null;
   }
-  
+
   int get _activeRemainingDays {
     final status = SubscriptionProvider.instance.status;
     return status.isActive ? status.remainingDays : 0;
   }
-  
+
   String? get _activePackageTier {
     final status = SubscriptionProvider.instance.status;
     return status.isActive ? status.tier : null;
   }
-  
+
   int get _boostsRemaining {
     final status = SubscriptionProvider.instance.status;
     return status.boostsRemaining;
@@ -70,7 +70,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
 
     _razorpay = Razorpay();
     _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handleRazorpaySuccess);
@@ -87,15 +87,19 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     super.dispose();
   }
 
+  List<dynamic> _userSubscriptions = [];
+
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
       final packages = await ApiService.fetchSubscriptionPackages();
       final currentSub = await ApiService.fetchUserSubscription();
+      final plans = await ApiService.fetchUserSubscriptions();
       await ApiService.fetchProfile();
 
       setState(() {
         _allPackages = packages;
+        _userSubscriptions = plans;
         _isLoading = false;
       });
     } catch (e) {
@@ -318,7 +322,9 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Successfully upgraded to ${pkg['name'] ?? pkg['tier']}! 🎉'),
+                content: Text(
+                  'Successfully upgraded to ${pkg['name'] ?? pkg['tier']}! 🎉',
+                ),
                 backgroundColor: const Color(0xFF10B981),
               ),
             );
@@ -342,14 +348,17 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
         await _initiatePurchase();
       },
       onHybridPayment: (shortfallAmount) async {
-        final orderData = await ApiService.createWalletRechargeOrder(shortfallAmount);
+        final orderData = await ApiService.createWalletRechargeOrder(
+          shortfallAmount,
+        );
         if (orderData != null) {
           final String orderId = orderData['orderId'] ?? orderData['id'] ?? '';
           final options = {
             'key': orderData['keyId'] ?? 'rzp_test_key',
             'amount': (shortfallAmount * 100).toInt(),
             'name': 'Lunara VIP Shortfall',
-            'description': 'Recharge ₹${shortfallAmount.toStringAsFixed(0)} for ${pkg['name'] ?? pkg['tier']}',
+            'description':
+                'Recharge ₹${shortfallAmount.toStringAsFixed(0)} for ${pkg['name'] ?? pkg['tier']}',
             'order_id': orderId,
             'theme': {'color': '#7F00FF'},
           };
@@ -436,7 +445,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
       debugPrint('[VIP] Refreshing subscription');
       setState(() => _paymentState = VIPPaymentState.subscriptionActive);
       debugPrint('[VIP] Subscription ACTIVE');
-      
+
       SubscriptionProvider.instance.refreshAfterPurchase();
       _showSuccessDialog(
         'Subscription Activated!',
@@ -447,9 +456,11 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
       debugPrint('[VIP] Payment verification failed');
       debugPrint('[VIP] HTTP status: ${response['statusCode']}');
       debugPrint('[VIP] Response: ${response['message']}');
-      
-      setState(() => _paymentState = VIPPaymentState.subscriptionActivationFailed);
-      
+
+      setState(
+        () => _paymentState = VIPPaymentState.subscriptionActivationFailed,
+      );
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -486,7 +497,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     if (response['success'] == true) {
       debugPrint('[VIP] Boost activation result: success');
       setState(() => _paymentState = VIPPaymentState.subscriptionActive);
-      
+
       SubscriptionProvider.instance.refreshAfterPurchase();
       _showSuccessDialog(
         'Boosts Credited!',
@@ -495,8 +506,10 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
       _loadData();
     } else {
       debugPrint('[VIP] Boost verification failed');
-      setState(() => _paymentState = VIPPaymentState.subscriptionActivationFailed);
-      
+      setState(
+        () => _paymentState = VIPPaymentState.subscriptionActivationFailed,
+      );
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -607,51 +620,60 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      appBar: AppBar(
-        title: Text(
-          'LUNARA VIP',
-          style: TextStyle(
-            fontWeight: FontWeight.w900,
-            color: Theme.of(context).colorScheme.onSurface,
-            letterSpacing: 1,
-          ),
-        ),
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        elevation: 0,
-        centerTitle: true,
-        iconTheme: IconThemeData(
-          color: Theme.of(context).colorScheme.onSurface,
-        ),
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: LunaraTheme.electricViolet,
-          indicatorWeight: 3,
-          labelColor: Theme.of(context).colorScheme.onSurface,
-          unselectedLabelColor: Theme.of(
-            context,
-          ).colorScheme.onSurface.withValues(alpha: 0.38),
-          labelStyle: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 14,
-          ),
-          tabs: const [
-            Tab(text: 'VIP PASSES'),
-            Tab(text: 'PROFILE BOOST'),
-          ],
-        ),
-      ),
-      body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(
-                color: LunaraTheme.electricViolet,
-              ),
-            )
-          : TabBarView(
-              controller: _tabController,
-              children: [_buildVIPPassesTab(), _buildProfileBoostTab()],
+        appBar: AppBar(
+          title: Text(
+            'LUNARA VIP',
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              color: Theme.of(context).colorScheme.onSurface,
+              letterSpacing: 1,
             ),
+          ),
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          elevation: 0,
+          centerTitle: true,
+          iconTheme: IconThemeData(
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+          bottom: TabBar(
+            controller: _tabController,
+            isScrollable: true,
+            indicatorColor: LunaraTheme.electricViolet,
+            indicatorWeight: 3,
+            labelColor: Theme.of(context).colorScheme.onSurface,
+            unselectedLabelColor: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.38),
+            labelStyle: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+            tabs: const [
+              Tab(text: 'VIP PASSES'),
+              Tab(text: 'PROFILE BOOST'),
+              Tab(text: 'PURCHASED PLANS'),
+            ],
+          ),
+        ),
+        body: _isLoading
+            ? const Center(
+                child: CircularProgressIndicator(
+                  color: LunaraTheme.electricViolet,
+                ),
+              )
+            : TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildVIPPassesTab(),
+                  _buildProfileBoostTab(),
+                  _buildPurchasedPlansTab(),
+                ],
+              ),
+      ),
     );
   }
 
@@ -684,11 +706,9 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
       if (selectedRank > currentRank) {
         actionText = 'UPGRADE';
       } else if (selectedRank == currentRank) {
-        actionText = 'CURRENT PLAN';
-        canPurchase = false;
+        actionText = 'EXTEND PLAN';
       } else {
-        actionText = 'LOWER PLAN';
-        canPurchase = false;
+        actionText = 'DOWNGRADE (FUTURE)';
       }
     }
 
@@ -756,9 +776,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
             child: ElevatedButton(
               onPressed: _isProcessing || !canPurchase
                   ? null
-                  : (isActive
-                        ? null
-                        : () => _confirmPlanAction(actionText, pkg, price)),
+                  : () => _confirmPlanAction(actionText, pkg, price),
               style: ElevatedButton.styleFrom(
                 backgroundColor: !canPurchase || isActive
                     ? Colors.grey[800]
@@ -770,13 +788,13 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
               child: _isProcessing
                   ? const CircularProgressIndicator(color: Colors.white)
                   : Text(
-                      !canPurchase || isActive
+                      !canPurchase
                           ? actionText
                           : '$actionText FOR ₹${price.toStringAsFixed(0)}',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: tier == 'ELITE' && canPurchase && !isActive
+                        color: tier == 'ELITE' && canPurchase
                             ? Colors.black
                             : Colors.white,
                         letterSpacing: 1,
@@ -784,9 +802,124 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
                     ),
             ),
           ),
+          const SizedBox(height: 32),
+
+          // Purchase History Section
+          _buildPurchaseHistory(),
           const SizedBox(height: 20),
         ],
       ),
+    );
+  }
+
+  Widget _buildPurchaseHistory() {
+    if (_subscriptionHistory.isEmpty) return const SizedBox.shrink();
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'PURCHASED VIP PLANS',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 16),
+        ..._subscriptionHistory.map((historyItem) {
+          final pkg = historyItem['package'] ?? {};
+          final status = historyItem['status'] ?? 'UNKNOWN';
+          final tier = pkg['tier'] ?? 'UNKNOWN';
+          final planName = pkg['name'] ?? tier;
+
+          Color statusColor = Colors.grey;
+          if (status == 'ACTIVE') statusColor = Colors.green;
+          if (status == 'UPCOMING') statusColor = Colors.amber;
+
+          final startDateStr = historyItem['startDate'] ?? '';
+          final endDateStr = historyItem['endDate'] ?? '';
+
+          String formatSimpleDate(String d) {
+            if (d.isEmpty) return '';
+            try {
+              final dt = DateTime.parse(d).toLocal();
+              return '${dt.day}-${dt.month}-${dt.year}';
+            } catch (e) {
+              return d;
+            }
+          }
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E1E28) : Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isDark ? Colors.white10 : Colors.black12,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      planName,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        status,
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Start: ${formatSimpleDate(startDateStr)}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+                Text(
+                  'Expiry: ${formatSimpleDate(endDateStr)}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
     );
   }
 
@@ -1578,6 +1711,123 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildPurchasedPlansTab() {
+    if (_userSubscriptions.isEmpty) {
+      return Center(
+        child: Text(
+          'No purchased plans found.',
+          style: TextStyle(
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.7),
+          ),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      color: LunaraTheme.electricViolet,
+      child: ListView.separated(
+        padding: const EdgeInsets.all(16),
+        itemCount: _userSubscriptions.length,
+        separatorBuilder: (context, index) => const SizedBox(height: 16),
+        itemBuilder: (context, index) {
+          final sub = _userSubscriptions[index];
+          final pkg = sub['package'];
+          final status = sub['status'] ?? 'UNKNOWN';
+          final startDate = DateTime.tryParse(sub['startDate'] ?? '');
+          final endDate = DateTime.tryParse(sub['endDate'] ?? '');
+          final purchaseDate = DateTime.tryParse(sub['createdAt'] ?? '');
+
+          final String planName = pkg != null
+              ? (pkg['name'] ?? 'VIP Plan')
+              : 'Unknown Plan';
+          final int duration = pkg != null ? (pkg['durationDays'] ?? 0) : 0;
+
+          Color statusColor = Colors.grey;
+          if (status == 'ACTIVE') {
+            statusColor = Colors.green;
+          } else if (status == 'UPCOMING')
+            statusColor = Colors.orange;
+
+          return Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF16161E),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+            ),
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '$planName ($duration Days)',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        status,
+                        style: TextStyle(
+                          color: statusColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _buildDateRow('Purchase Date', purchaseDate),
+                const SizedBox(height: 8),
+                _buildDateRow('Start Date', startDate),
+                const SizedBox(height: 8),
+                _buildDateRow('Expiry Date', endDate),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildDateRow(String label, DateTime? date) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white70, fontSize: 14),
+        ),
+        Text(
+          date != null ? '${date.day}-${date.month}-${date.year}' : 'N/A',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
     );
   }
 

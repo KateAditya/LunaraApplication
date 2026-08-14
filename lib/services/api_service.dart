@@ -3561,6 +3561,8 @@ class ApiService {
     return {};
   }
 
+
+
   static Future<Map<String, dynamic>?> createGroupParty({
     required String venueId,
     required int numberOfFriends,
@@ -3782,6 +3784,23 @@ class ApiService {
       }
     } catch (e) {
       debugPrint('fetchSubscriptionHistory error: $e');
+    }
+    return [];
+  }
+
+  /// Fetches actual purchased subscription plans (ACTIVE, UPCOMING, EXPIRED)
+  static Future<List<Map<String, dynamic>>> fetchUserSubscriptions() async {
+    try {
+      final response = await get('/api/mobile/subscriptions/plans');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          final plans = data['data'] as List? ?? [];
+          return plans.map((p) => Map<String, dynamic>.from(p)).toList();
+        }
+      }
+    } catch (e) {
+      debugPrint('fetchUserSubscriptions error: $e');
     }
     return [];
   }
