@@ -161,6 +161,8 @@ class _ProfileVibeScreenState extends State<ProfileVibeScreen> {
                     data['drinkPreference'] = [_drinkingHabit];
                     data['city'] = _cityController.text.trim();
                     data['occupation'] = _occupationController.text.trim();
+                    data['minBudget'] = _budgetRange.start.round();
+                    data['maxBudget'] = _budgetRange.end.round();
                     data['budgetRange'] =
                         '${_budgetRange.start.round()}-${_budgetRange.end.round()}';
 

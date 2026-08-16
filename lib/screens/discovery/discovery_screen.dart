@@ -61,13 +61,21 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   @override
   void initState() {
     super.initState();
+    GooglePlacesService.addListener(_onDistanceUpdated);
     _loadVenues();
     _determinePosition(requestIfNeeded: true);
+  }
+
+  void _onDistanceUpdated() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   @override
   void dispose() {
     _positionStreamSubscription?.cancel();
+    GooglePlacesService.removeListener(_onDistanceUpdated);
     _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
@@ -142,12 +150,28 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         setState(() {
           _currentPosition = position;
         });
+        _prefetchRoadDistances(_allVenues);
       }
       _startLocationUpdates();
       if (showLoader && mounted) Navigator.pop(context);
     } catch (e) {
       debugPrint("Error getting location: $e");
       if (showLoader && mounted) Navigator.pop(context);
+    }
+  }
+
+  void _prefetchRoadDistances(List<Venue> venues) {
+    if (_currentPosition == null || venues.isEmpty) return;
+    final dests = venues
+        .where((v) => v.latitude != null && v.longitude != null && v.latitude != 0.0 && v.longitude != 0.0)
+        .map((v) => {'lat': v.latitude!, 'lng': v.longitude!})
+        .toList();
+    if (dests.isNotEmpty) {
+      GooglePlacesService.prefetchDistances(
+        _currentPosition!.latitude,
+        _currentPosition!.longitude,
+        dests,
+      );
     }
   }
 
@@ -165,6 +189,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               setState(() {
                 _currentPosition = position;
               });
+              _prefetchRoadDistances(_allVenues);
             }
           },
           onError: (e) {
@@ -521,6 +546,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           _isLoading = false;
         });
         _fetchGoogleRatingsForVenues(_allVenues);
+        _prefetchRoadDistances(_allVenues);
       }
     } catch (e) {
       debugPrint('Error in _loadVenues: $e');

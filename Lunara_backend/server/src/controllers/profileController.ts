@@ -61,24 +61,35 @@ export const updateProfile = async (req: Request, res: Response): Promise<Respon
             transaction
         });
 
+        // Compute budgetRange if minBudget or maxBudget is provided
+        let computedBudgetRange = data.budgetRange;
+        if (!computedBudgetRange && (data.minBudget !== undefined || data.maxBudget !== undefined)) {
+            if (data.minBudget !== undefined && data.maxBudget !== undefined) {
+                computedBudgetRange = `₹${data.minBudget} - ₹${data.maxBudget}`;
+            } else if (data.minBudget !== undefined) {
+                computedBudgetRange = `₹${data.minBudget}+`;
+            } else if (data.maxBudget !== undefined) {
+                computedBudgetRange = `Up to ₹${data.maxBudget}`;
+            }
+        }
+
         await preference.update(
             {
-                musicPreference: data.musicPreference,
-                smokingPreference: data.smokingPreference,
-                drinkPreference: data.drinkPreference,
-                preferredGenders: data.preferredGenders,
-                minAgePreference: data.minAgePreference,
-                maxAgePreference: data.maxAgePreference,
-                minBudget: data.minBudget,
-                maxBudget: data.maxBudget,
-                showMeInMatching: data.invisibleMode !== undefined ? !data.invisibleMode : undefined,
-                matchDistanceKm: data.matchDistanceKm,
-                bookingAlertsEnabled: data.bookingAlertsEnabled,
+                musicPreference: data.musicPreference ?? preference.musicPreference,
+                smokingPreference: data.smokingPreference ?? preference.smokingPreference,
+                drinkPreference: data.drinkPreference ?? preference.drinkPreference,
+                preferredGenders: data.preferredGenders ?? preference.preferredGenders,
+                minAgePreference: data.minAgePreference !== undefined ? data.minAgePreference : preference.minAgePreference,
+                maxAgePreference: data.maxAgePreference !== undefined ? data.maxAgePreference : preference.maxAgePreference,
+                minBudget: data.minBudget !== undefined ? data.minBudget : preference.minBudget,
+                maxBudget: data.maxBudget !== undefined ? data.maxBudget : preference.maxBudget,
+                budgetRange: computedBudgetRange ?? preference.budgetRange,
+                showMeInMatching: data.invisibleMode !== undefined ? !data.invisibleMode : (data.showMeInMatching !== undefined ? data.showMeInMatching : preference.showMeInMatching),
+                matchDistanceKm: data.matchDistanceKm !== undefined ? data.matchDistanceKm : preference.matchDistanceKm,
+                bookingAlertsEnabled: data.bookingAlertsEnabled !== undefined ? data.bookingAlertsEnabled : preference.bookingAlertsEnabled,
             },
             { transaction }
         );
-
-
 
         await transaction.commit();
 

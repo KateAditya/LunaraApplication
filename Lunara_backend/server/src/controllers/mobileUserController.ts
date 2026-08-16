@@ -3,7 +3,8 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import sharp from 'sharp';
-import { UserProfile, UserPreference, UserPhoto, UserMatch, PartyPlan, GroupParty, StrangersMeetRequest, Booking, Plan } from '../models';
+import { UserProfile, UserPreference, UserPhoto, UserMatch, PartyPlan, GroupParty, StrangersMeetRequest, Booking, Plan, Venue } from '../models';
+import Notification from '../models/Notification';
 import UserLike from '../models/UserLike';
 import User, { UserRole } from '../models/User';
 import sequelize from '../config/database';
@@ -64,44 +65,63 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
             const file = files[i];
 
             const fileBuffer = file.buffer || fs.readFileSync(file.path);
+            const fileSizeMB = fileBuffer.length / (1024 * 1024);
 
-            // ── Auto-Compress with sharp (HD 2K target size ~3-4MB, no blur) ──
+            // ── Auto-Compress with sharp (if > 3MB, compress down to <= 3MB, otherwise upload directly) ──
             const randomHex = crypto.randomBytes(8).toString('hex');
             const filename = `${Date.now()}_${randomHex}.jpg`;
             const absolutePath = path.join(galleryDir, filename);
 
-            let compressedBuffer: Buffer;
-            const fileSizeMB = fileBuffer.length / (1024 * 1024);
+            let finalBuffer: Buffer;
 
-            if (fileSizeMB <= 3.5) {
-                // If original image is already <= 3.5 MB, preserve full resolution & detail without heavy compression
-                compressedBuffer = await sharp(fileBuffer)
-                    .rotate() // Auto-rotates image based on EXIF orientation data
-                    .jpeg({ quality: 95, progressive: true })
-                    .toBuffer();
+            if (fileSizeMB <= 3.0) {
+                // If original image is already <= 3 MB, upload directly without compressing
+                try {
+                    // Normalize EXIF orientation if needed without lowering quality
+                    finalBuffer = await sharp(fileBuffer)
+                        .rotate()
+                        .jpeg({ quality: 98, progressive: true })
+                        .toBuffer();
+                } catch {
+                    finalBuffer = fileBuffer;
+                }
             } else {
-                // If original image is larger than 3.5 MB, compress down to ~3-4 MB with 2400px HD resolution cap
-                compressedBuffer = await sharp(fileBuffer)
+                // If original image is larger than 3 MB, auto-compress down to <= 3 MB
+                let compressed = await sharp(fileBuffer)
                     .rotate()
                     .resize({
                         width: PHOTO_MAX_WIDTH,
                         height: PHOTO_MAX_HEIGHT,
-                        fit: 'inside',          // preserve aspect ratio, never upscale beyond box
-                        withoutEnlargement: true,  // skip resize if image is already smaller
+                        fit: 'inside',
+                        withoutEnlargement: true,
                     })
                     .jpeg({ quality: PHOTO_QUALITY, progressive: true })
                     .toBuffer();
+
+                // If still > 3MB, perform an additional pass to guarantee <= 3MB
+                if (compressed.length > 3 * 1024 * 1024) {
+                    compressed = await sharp(compressed)
+                        .resize({
+                            width: 1920,
+                            height: 1920,
+                            fit: 'inside',
+                            withoutEnlargement: true,
+                        })
+                        .jpeg({ quality: 82, progressive: true })
+                        .toBuffer();
+                }
+                finalBuffer = compressed;
             }
 
             // ── Perform Backend Face Verification Scan ────────────────────────
             try {
-                const faceScan = await azureFaceService.detectFace(compressedBuffer);
+                const faceScan = await azureFaceService.detectFace(finalBuffer);
                 logger.info(`[PhotoUpload] Face verification scan for "${file.originalname}": hasFace=${faceScan.hasFace}, faces=${faceScan.faceCount}`);
             } catch (faceErr: any) {
                 logger.warn(`[PhotoUpload] Face verification scan warning for "${file.originalname}": ${faceErr.message}`);
             }
 
-            fs.writeFileSync(absolutePath, compressedBuffer);
+            fs.writeFileSync(absolutePath, finalBuffer);
 
             // Store relative path (forward-slash, no leading slash) in DB
             const uploadsBase = process.env.UPLOAD_DIR || 'uploads';
@@ -109,7 +129,7 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
                 .join(uploadsBase, 'users', userId, 'gallery', filename)
                 .replace(/\\/g, '/');
 
-            // Upload compressed image to Azure Blob Storage if configured
+            // Upload to Azure Blob Storage if configured
             if (process.env.AZURE_STORAGE_CONNECTION_STRING) {
                 try {
                     const { BlobServiceClient } = require('@azure/storage-blob');
@@ -122,7 +142,7 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
                         : relativePath;
 
                     const blockBlobClient = containerClient.getBlockBlobClient(blobName);
-                    await blockBlobClient.upload(compressedBuffer, compressedBuffer.length, {
+                    await blockBlobClient.upload(finalBuffer, finalBuffer.length, {
                         blobHTTPHeaders: { blobContentType: 'image/jpeg' }
                     });
                     logger.info(`[Azure Blob] Successfully uploaded user photo ${blobName} to container ${containerName}`);
@@ -136,7 +156,7 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
             const photo = await UserPhoto.create({
                 userId,
                 filePath: relativePath,
-                fileSize: compressedBuffer.length,   // compressed size, not original
+                fileSize: finalBuffer.length,
                 mimeType: 'image/jpeg',
                 isPrimary: photoIsPrimary,
                 displayOrder: i,
@@ -191,6 +211,8 @@ interface ProfileSetupBody {
     occupation?: string;
     education?: string;
     budgetRange?: string;
+    minBudget?: number;
+    maxBudget?: number;
     // Step 4: Privacy Settings
     preferredGenders?: string[];
     minAgePreference?: number;
@@ -240,6 +262,8 @@ export const completeProfileSetup = async (req: Request, res: Response): Promise
                     smokingPreference: data.smokingPreference,
                     drinkPreference: data.drinkPreference,
                     budgetRange: data.budgetRange,
+                    minBudget: data.minBudget,
+                    maxBudget: data.maxBudget,
                     preferredGenders: data.preferredGenders,
                     minAgePreference: data.minAgePreference,
                     maxAgePreference: data.maxAgePreference,
@@ -491,6 +515,8 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
                     preferredGenders: preferences.preferredGenders ?? [],
                     minAgePreference: preferences.minAgePreference ?? null,
                     maxAgePreference: preferences.maxAgePreference ?? null,
+                    minBudget: preferences.minBudget ?? null,
+                    maxBudget: preferences.maxBudget ?? null,
                     budgetRange: preferences.budgetRange ?? null,
                     partyTimePreference: preferences.partyTimePreference ?? null,
                     groupSizePreference: preferences.groupSizePreference ?? null,
@@ -1275,7 +1301,24 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
             return res.status(400).json({ success: false, message: 'Invalid action. Must be like, superlike, or nope' });
         }
 
-        // 0. Save permanent profile like/superlike record in UserLike table
+        // 0. Block validation: check if either user blocked the other
+        try {
+            const isBlocked = await SocialConnection.findOne({
+                where: {
+                    [Op.or]: [
+                        { requesterId: userId, receiverId: targetUserId, status: ConnectionStatus.BLOCKED },
+                        { requesterId: targetUserId, receiverId: userId, status: ConnectionStatus.BLOCKED },
+                    ]
+                }
+            });
+            if (isBlocked) {
+                return res.status(403).json({ success: false, message: 'Cannot interact with this user.' });
+            }
+        } catch (blockErr) {
+            logger.warn('[swipeUser] Failed to check block status:', blockErr);
+        }
+
+        // 0.5 Save permanent profile like/superlike record in UserLike table
         try {
             await UserLike.upsert({
                 userId,
@@ -1545,18 +1588,83 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
             const currentUser = await User.findByPk(userId);
             const targetUser = await User.findByPk(targetUserId);
             if (currentUser && targetUser) {
-                const senderName = `${currentUser.firstName} ${currentUser.lastName}`;
+                const senderName = `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || 'Someone';
                 const isSuper = action === 'superlike';
-                const title = isSuper ? 'Super Like' : 'Like';
+                const title = isSuper ? '⭐ Super Like!' : '💖 New Connection!';
                 const body = isSuper 
-                    ? `${senderName} super liked your profile 🌟`
+                    ? `${senderName} sent you a Super Like! 💜`
                     : `${senderName} liked your profile ❤️`;
+
+                let postedPlans: any[] = [];
+                if (isSuper) {
+                    try {
+                        const activePlans = await PartyPlan.findAll({
+                            where: {
+                                userId: currentUser.id,
+                                status: 'active',
+                                isLive: true,
+                                planDateTime: { [Op.gte]: new Date() },
+                                visibility: 'public',
+                            },
+                            include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }],
+                            order: [['planDateTime', 'ASC']],
+                            limit: 3,
+                        });
+                        postedPlans = activePlans.map((p: any) => ({
+                            id: p.id,
+                            title: `Let's party at ${p.venue?.name || 'Venue'}! 🚀`,
+                            venueName: p.venue?.name || 'Venue',
+                            planDateTime: p.planDateTime,
+                            status: p.status,
+                            isLive: p.isLive,
+                        }));
+                    } catch (planErr) {
+                        logger.warn('[swipeUser] Failed to fetch sender posted plans:', planErr);
+                    }
+
+                    // Persist DB notification record idempotently
+                    try {
+                        await Notification.findOrCreate({
+                            where: {
+                                recipientUserId: targetUserId,
+                                entityType: 'user_match',
+                                entityId: match.id,
+                            },
+                            defaults: {
+                                recipientUserId: targetUserId,
+                                actorUserId: currentUser.id,
+                                title,
+                                body,
+                                category: 'super_like',
+                                eventType: 'super_like',
+                                actionType: 'view_profile',
+                                entityType: 'user_match',
+                                entityId: match.id,
+                                isRead: false,
+                                priority: 'HIGH' as any,
+                                deepLink: `/profile/${currentUser.id}`,
+                                metadata: {
+                                    matchId: match.id,
+                                    senderId: currentUser.id,
+                                    senderName,
+                                    senderImage: currentUser.profileImageUrl || '',
+                                    postedPlans,
+                                    action: 'superlike',
+                                },
+                            }
+                        });
+                    } catch (dbNotifErr) {
+                        logger.warn('[swipeUser] Failed to persist superlike notification:', dbNotifErr);
+                    }
+                }
 
                 const { io } = require('../server');
                 io.to(`user_${targetUserId}`).emit('notification_created', {
                     id: `match_${match.id}`,
                     title,
                     body,
+                    category: isSuper ? 'super_like' : 'likes',
+                    type: isSuper ? 'super_like' : 'like',
                     createdAt: new Date().toISOString(),
                     read: false,
                     sender: {
@@ -1564,6 +1672,14 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                         firstName: currentUser.firstName,
                         lastName: currentUser.lastName,
                         profileImageUrl: currentUser.profileImageUrl,
+                    },
+                    data: {
+                        matchId: match.id,
+                        senderId: currentUser.id,
+                        senderName,
+                        senderImage: currentUser.profileImageUrl || '',
+                        postedPlans,
+                        action: isSuper ? 'superlike' : 'like',
                     }
                 });
 

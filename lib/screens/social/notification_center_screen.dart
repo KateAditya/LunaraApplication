@@ -1448,7 +1448,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       return _buildPartyPlanPostedCard(item);
     }
     // ── Generic event types ─────────────────────────────────────
-    if (eventType.contains('PARTNER_REQUEST') ||
+    if (eventType.contains('SUPER_LIKE') ||
+        eventType.contains('SUPERLIKE') ||
+        titleLower.contains('super like') ||
+        titleLower.contains('super liked') ||
+        bodyLower.contains('super liked') ||
+        bodyLower.contains('super like')) {
+      return _buildSuperLikeCard(item);
+    } else if (eventType.contains('PARTNER_REQUEST') ||
         titleLower.contains('wants to join') ||
         titleLower.contains('partner request')) {
       return _buildPartnerRequestCard(item);
@@ -3791,6 +3798,229 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 fontWeight: FontWeight.bold,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Super Like Card Component ─────────────────────────────────────────────
+  Widget _buildSuperLikeCard(dynamic item) {
+    final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final data = item['metadata'] is Map
+        ? item['metadata'] as Map<String, dynamic>
+        : (item['data'] is Map
+            ? item['data'] as Map<String, dynamic>
+            : <String, dynamic>{});
+
+    final String title = (item['title'] ?? '⭐ Super Like!').toString();
+    final String body = (item['body'] ?? 'Someone sent you a Super Like! 💜').toString();
+    final String timeStr = _formatTimeAgo(item['createdAt']);
+
+    final actor = item['sender'] ?? item['actor'] ?? item['actorUser'];
+    final actorMap = actor is Map ? Map<String, dynamic>.from(actor) : <String, dynamic>{};
+    final String senderId = (actorMap['id'] ?? data['senderId'] ?? '').toString();
+    final String senderName = (actorMap['firstName'] ?? data['senderName'] ?? 'Someone').toString();
+    final String? senderPhoto = (actorMap['profileImageUrl'] ?? actorMap['profilePhotoUrl'] ?? data['senderImage'])?.toString();
+
+    final List postedPlans = (data['postedPlans'] is List) ? (data['postedPlans'] as List) : [];
+    final Map<String, dynamic>? firstPlan = postedPlans.isNotEmpty && postedPlans.first is Map
+        ? Map<String, dynamic>.from(postedPlans.first)
+        : null;
+
+    return _buildBaseCardContainer(
+      isUnread: isUnread,
+      onTap: () {
+        _markAsRead(item);
+        if (senderId.isNotEmpty) {
+          _openUserProfile({'id': senderId, 'firstName': senderName, 'profileImageUrl': senderPhoto});
+        }
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF8B5CF6), Color(0xFFC084FC)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF8B5CF6).withValues(alpha: 0.3),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: ClipOval(
+                  child: senderPhoto != null && senderPhoto.isNotEmpty
+                      ? Image.network(
+                          ApiService.formatImageUrl(senderPhoto) ?? '',
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => const Center(
+                            child: Icon(Icons.star_rounded, color: Colors.white, size: 22),
+                          ),
+                        )
+                      : const Center(
+                          child: Icon(Icons.star_rounded, color: Colors.white, size: 22),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF8B5CF6).withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text(
+                            'SUPER LIKE',
+                            style: TextStyle(
+                              color: Color(0xFF8B5CF6),
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          timeStr,
+                          style: const TextStyle(
+                            color: Color(0xFF94A3B8),
+                            fontSize: 10.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: const Color(0xFF0F172A),
+                        fontWeight: isUnread ? FontWeight.w900 : FontWeight.bold,
+                        fontSize: 13.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isUnread) ...[
+                const SizedBox(width: 8),
+                _buildUnreadDot(),
+              ],
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            body,
+            style: const TextStyle(
+              color: Color(0xFF475569),
+              fontSize: 12.5,
+              height: 1.35,
+            ),
+          ),
+          if (firstPlan != null) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.celebration_rounded, color: Color(0xFF8B5CF6), size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      "$senderName's Plan: ${firstPlan['title'] ?? firstPlan['venueName'] ?? 'Party Plan'}",
+                      style: const TextStyle(
+                        color: Color(0xFF1E293B),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    _markAsRead(item);
+                    if (senderId.isNotEmpty) {
+                      _openUserProfile({'id': senderId, 'firstName': senderName, 'profileImageUrl': senderPhoto});
+                    }
+                  },
+                  icon: const Icon(Icons.person_rounded, size: 14, color: Color(0xFF8B5CF6)),
+                  label: const Text(
+                    'View Profile',
+                    style: TextStyle(
+                      color: Color(0xFF8B5CF6),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFF8B5CF6)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                ),
+              ),
+              if (firstPlan != null) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      _markAsRead(item);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PartyPlanDetailScreen(plan: firstPlan),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.open_in_new_rounded, size: 14, color: Colors.white),
+                    label: const Text(
+                      'View Plan',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF8B5CF6),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
         ],
       ),

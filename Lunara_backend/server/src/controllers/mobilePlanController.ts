@@ -19,6 +19,8 @@ import UserPhoto from '../models/UserPhoto';
 import StrangersMeetRequest from '../models/StrangersMeetRequest';
 import StrangersMeetJoiner from '../models/StrangersMeetJoiner';
 import GroupParty from '../models/GroupParty';
+import SocialConnection, { ConnectionStatus } from '../models/SocialConnection';
+import UserMatch from '../models/UserMatch';
 import { logger } from '../config/logger';
 import Conversation from '../models/Conversation';
 import ChatSubscription, { ChatSubscriptionStatus, ChatSubscriptionType } from '../models/ChatSubscription';
@@ -261,12 +263,54 @@ export const getLiveFeed = async (req: Request, res: Response) => {
             order: [['createdAt', 'DESC']],
         });
 
+        // Find users who have Super Liked viewerId (excluding blocked relationships)
+        let superLikedUserIds: string[] = [];
+        if (viewerId) {
+            try {
+                const blockedConnections = await SocialConnection.findAll({
+                    where: {
+                        [Op.or]: [
+                            { requesterId: viewerId as string, status: ConnectionStatus.BLOCKED },
+                            { receiverId: viewerId as string, status: ConnectionStatus.BLOCKED },
+                        ]
+                    }
+                });
+                const blockedIds = new Set<string>();
+                for (const bc of blockedConnections) {
+                    if (bc.requesterId === viewerId) blockedIds.add(bc.receiverId);
+                    else blockedIds.add(bc.requesterId);
+                }
+
+                const superLikes = await UserMatch.findAll({
+                    where: {
+                        user2Id: viewerId as string,
+                        matchReason: 'superlike',
+                    },
+                    attributes: ['user1Id']
+                });
+                superLikedUserIds = superLikes
+                    .map(m => m.user1Id)
+                    .filter(id => id && !blockedIds.has(id));
+            } catch (slErr) {
+                logger.warn('[getLiveFeed] Error fetching superliked users:', slErr);
+            }
+        }
+
         // Party Plans are personal workflow cards, not public Live Feed posts.
         // A host sees their plan here; invitees/requesters receive only their
         // explicit invitation/request timeline records below. This prevents a
         // newly created Party Plan from appearing in every user's Live Feed.
         const partyPlansWhere: any = viewerId
-            ? { status: PartyPlanStatus.ACTIVE, userId: viewerId as string }
+            ? {
+                status: PartyPlanStatus.ACTIVE,
+                isLive: true,
+                [Op.or]: [
+                    { userId: viewerId as string },
+                    ...(superLikedUserIds.length > 0
+                        ? [{ userId: { [Op.in]: superLikedUserIds }, visibility: 'public' }]
+                        : [])
+                ]
+            }
             : { id: { [Op.eq]: null } };
         if (venueId) partyPlansWhere.venueId = venueId;
         if (date) {
@@ -348,6 +392,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
         // Map Party Plans to consistent payload structure
         const partyFeed = partyPlans.map(p => {
             const creator = (p as any).creator;
+            const isSuperLiked = superLikedUserIds.includes(p.userId) && p.userId !== viewerId;
             const matchScore = viewerId
                 ? calcMatchScore(viewerId as string, p.userId)
                 : Math.floor(Math.random() * 46) + 50;
@@ -360,11 +405,9 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 planId: p.id,
                 id: p.id,
                 type: 'party_plan',
-                // The card role is resolved on the server.  The client uses it
-                // only to choose presentation; payment authorization remains
-                // validated by the payment endpoint.
                 userId: p.userId,
                 role: viewerId && p.userId === viewerId ? 'host' : 'viewer',
+                superLikedYou: isSuperLiked,
                 host: {
                     id: creator?.id,
                     name: creator ? `${creator.firstName} ${creator.lastName?.charAt(0) ?? ''}.` : 'Unknown',

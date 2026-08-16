@@ -1,4 +1,3 @@
-// Trigger azure deployment 2
 import { Router } from 'express';
 import { body, param } from 'express-validator';
 import { validate } from '../middleware/validate';
@@ -17,21 +16,26 @@ const router = Router();
 
 const profileSetupValidation = [
     // Step 2
-    body('bio').optional().trim().isLength({ max: 200 }).withMessage('Bio must be at most 200 characters'),
+    body('bio').optional().trim().isLength({ max: 500 }).withMessage('Bio must be at most 500 characters'),
     body('lookingFor').optional().isArray().withMessage('lookingFor must be an array'),
+    body('interests').optional().isArray().withMessage('interests must be an array'),
+    body('nightlifePreference').optional().isArray().withMessage('nightlifePreference must be an array'),
     // Step 3
     body('musicPreference').optional().isArray().withMessage('musicPreference must be an array'),
     body('smokingPreference').optional().trim().isString(),
     body('drinkPreference').optional().isArray().withMessage('drinkPreference must be an array'),
     body('occupation').optional().trim().isString(),
     body('education').optional().trim().isString(),
+    body('city').optional().trim().isString(),
     body('budgetRange').optional().trim().isString(),
+    body('minBudget').optional({ nullable: true, checkFalsy: true }).toInt().isInt({ min: 0 }),
+    body('maxBudget').optional({ nullable: true, checkFalsy: true }).toInt().isInt({ min: 0 }),
     // Step 4
     body('preferredGenders').optional().isArray().withMessage('preferredGenders must be an array'),
-    body('minAgePreference').optional().isInt({ min: 18 }).withMessage('minAgePreference must be at least 18'),
-    body('maxAgePreference').optional().isInt({ max: 100 }),
+    body('minAgePreference').optional({ nullable: true, checkFalsy: true }).toInt().isInt({ min: 18 }).withMessage('minAgePreference must be at least 18'),
+    body('maxAgePreference').optional({ nullable: true, checkFalsy: true }).toInt().isInt({ max: 100 }),
     body('showMeInMatching').optional().isBoolean(),
-    body('matchDistanceKm').optional().isInt({ min: 1 }),
+    body('matchDistanceKm').optional({ nullable: true, checkFalsy: true }).toInt().isInt({ min: 1 }),
     body('bookingAlertsEnabled').optional().isBoolean(),
     validate,
 ];
@@ -45,8 +49,6 @@ const profileSetupValidation = [
  * Upload multiple photos (multipart/form-data) under the field "photos".
  */
 router.post('/photos', uploadTempPhotos.array('photos', 6), mobileUserController.uploadPhotos);
-
-
 
 /**
  * PUT /api/mobile/user/profile-setup
@@ -165,7 +167,6 @@ function getReadRequestIds(userId: string): Set<string> {
     }
     return userReadRequestIds.get(userId)!;
 }
-
 
 function getDateSection(createdAtStr: string): 'Today' | 'Yesterday' | 'This Week' | 'Earlier' {
     const date = new Date(createdAtStr);
@@ -313,7 +314,7 @@ async function getUserNotifications(
     notifications.length = 0;
     notifications.push(...otherNotifs, ...timelineCards);
 
-    // 1. Fetch Likes & Super Likes (in-memory fallback)
+    // 1. Fetch Likes & Super Likes (with active posted plans & duplicate protection)
     try {
         const matches = await UserMatch.findAll({
             where: { user2Id: uId },
@@ -325,15 +326,55 @@ async function getUserNotifications(
             const m = match as any;
             const firstUser = m.user1;
             const notificationId = `match_${match.id}`;
+
+            // Check if already in notifications list from stored DB records
+            const alreadyExists = notifications.some(n => 
+                n.id === notificationId || 
+                n.entityId === match.id || 
+                (n.data && n.data.matchId === match.id)
+            );
+            if (alreadyExists) continue;
+
             const mCreatedTime = match.createdAt ? new Date(match.createdAt).getTime() : 0;
             const isCleared = clearedAt > 0 && mCreatedTime <= clearedAt;
             const isRead = isCleared || activeReadNotificationIds.has(notificationId);
+            const isSuper = m.matchReason === 'superlike' || m.isSuperLike;
+            const senderName = `${firstUser?.firstName || 'Someone'} ${firstUser?.lastName || ''}`.trim();
+
+            let postedPlans: any[] = [];
+            if (isSuper && firstUser?.id) {
+                try {
+                    const activePlans = await PartyPlan.findAll({
+                        where: {
+                            userId: firstUser.id,
+                            status: 'active',
+                            isLive: true,
+                            planDateTime: { [Op.gte]: new Date() },
+                            visibility: 'public',
+                        },
+                        include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }],
+                        order: [['planDateTime', 'ASC']],
+                        limit: 3,
+                    });
+                    postedPlans = activePlans.map((p: any) => ({
+                        id: p.id,
+                        title: `Let's party at ${p.venue?.name || 'Venue'}! 🚀`,
+                        venueName: p.venue?.name || 'Venue',
+                        planDateTime: p.planDateTime,
+                        status: p.status,
+                        isLive: p.isLive,
+                    }));
+                } catch (pErr) {
+                    console.error('Error fetching superlike sender plans:', pErr);
+                }
+            }
+
             notifications.push({
                 id: notificationId,
-                title: m.isSuperLike ? '⭐ Super Liked!' : '💖 New Connection!',
-                body: `${firstUser?.firstName || 'Someone'} ${m.isSuperLike ? 'super liked' : 'liked'} your profile.`,
-                category: 'likes',
-                type: m.isSuperLike ? 'super_like' : 'like',
+                title: isSuper ? '⭐ Super Like!' : '💖 New Connection!',
+                body: isSuper ? `${senderName} sent you a Super Like! 💜` : `${senderName} liked your profile ❤️`,
+                category: isSuper ? 'super_like' : 'likes',
+                type: isSuper ? 'super_like' : 'like',
                 createdAt: match.createdAt ? match.createdAt.toISOString() : new Date().toISOString(),
                 read: isRead,
                 isRead: isRead,
@@ -343,7 +384,14 @@ async function getUserNotifications(
                     lastName: firstUser.lastName,
                     profileImageUrl: firstUser.profileImageUrl,
                 } : null,
-                data: { matchId: match.id }
+                data: {
+                    matchId: match.id,
+                    senderId: firstUser?.id,
+                    senderName,
+                    senderImage: firstUser?.profileImageUrl || '',
+                    postedPlans,
+                    action: isSuper ? 'superlike' : 'like',
+                }
             });
         }
     } catch (matchErr) {

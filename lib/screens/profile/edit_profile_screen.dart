@@ -200,18 +200,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       final List<String> namesList = [];
       for (var image in images) {
         final bytes = await image.readAsBytes();
-        if (bytes.length > 500 * 1024) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Image "${image.name}" exceeds the 500KB limit (actual size: ${(bytes.length / 1024).toStringAsFixed(1)}KB).'),
-              backgroundColor: Colors.red,
-            ),
-          );
-          setState(() => _isLoading = false);
-          return;
-        }
         bytesList.add(bytes);
         namesList.add(image.name);
       }
@@ -315,7 +303,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late Set<String> _selectedDrink;
 
   final List<String> _genderPrefOptions = [
-    'MALE', 'FEMALE', 'EVERYONE',
+    'MALE', 'FEMALE', 'ALL',
   ];
   late Set<String> _selectedPrefGenders;
 
@@ -382,7 +370,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (!_drinkOptions.contains(item)) _drinkOptions.add(item);
     }
 
-    _selectedPrefGenders = u.preferredGenders.map((e) => e.toUpperCase()).toSet();
+    _selectedPrefGenders = u.preferredGenders.map((e) {
+      final upper = e.toUpperCase();
+      if (upper == 'MEN') return 'MALE';
+      if (upper == 'WOMEN') return 'FEMALE';
+      if (upper == 'EVERYONE') return 'ALL';
+      return upper;
+    }).toSet();
+    if (_selectedPrefGenders.isEmpty) {
+      _selectedPrefGenders.add('ALL');
+    }
     for (final item in _selectedPrefGenders) {
       if (!_genderPrefOptions.contains(item)) _genderPrefOptions.add(item);
     }
@@ -418,6 +415,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (!_formKey.currentState!.validate()) return;
     
     setState(() => _isLoading = true);
+
+    final int? minBudget = int.tryParse(_minBudgetController.text.trim());
+    final int? maxBudget = int.tryParse(_maxBudgetController.text.trim());
+    final int? minAge = int.tryParse(_minAgeController.text.trim());
+    final int? maxAge = int.tryParse(_maxAgeController.text.trim());
     
     final Map<String, dynamic> data = {
       'firstName': _firstNameController.text.trim(),
@@ -434,11 +436,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       'drinkPreference': _selectedDrink.toList(),
       'occupation': _occupationController.text.trim(),
       'education': _educationController.text.trim(),
-      'minBudget': int.tryParse(_minBudgetController.text.trim()),
-      'maxBudget': int.tryParse(_maxBudgetController.text.trim()),
+      'minBudget': minBudget,
+      'maxBudget': maxBudget,
       'preferredGenders': _selectedPrefGenders.toList(),
-      'minAgePreference': int.tryParse(_minAgeController.text.trim()),
-      'maxAgePreference': int.tryParse(_maxAgeController.text.trim()),
+      'minAgePreference': minAge,
+      'maxAgePreference': maxAge,
       'matchDistanceKm': _selectedDistance,
       'invisibleMode': _invisibleMode,
       'bookingAlertsEnabled': _bookingAlerts,
@@ -446,7 +448,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     
     data.removeWhere((key, value) => value == null || value == '' || (value is List && value.isEmpty));
     
-    final success = await ApiService.updateProfile(data);
+    final result = await ApiService.updateProfile(data);
+    final success = result['success'] == true;
     
     setState(() => _isLoading = false);
     
@@ -456,12 +459,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (success) {
       ApiService.profileUpdateNotifier.value++;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profile updated successfully!'), backgroundColor: Colors.green),
+        SnackBar(
+          content: Text(result['message'] ?? 'Profile updated successfully!'),
+          backgroundColor: Colors.green,
+        ),
       );
       Navigator.pop(context, true);
     } else {
+      final msg = result['message'] ?? 'Failed to update profile.';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to update profile.'), backgroundColor: Colors.red),
+        SnackBar(content: Text(msg), backgroundColor: Colors.red),
       );
     }
   }
@@ -953,39 +960,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                Center(
-                  child: Text(
-                    'Profile picture must be less than 500 KB',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
                 const SizedBox(height: 24),
                 
                 _buildSection('PHOTOS', [
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.info_outline, size: 14, color: LunaraTheme.electricViolet),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            'Each photo must be less than 500 KB.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                   _buildOtherPhotosGrid(),
                 ], initiallyExpanded: true),
                 const SizedBox(height: 8),

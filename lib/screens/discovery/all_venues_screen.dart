@@ -55,7 +55,14 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
         .toSet()
         .toList();
     _categories = ['ALL', ...types];
+    GooglePlacesService.addListener(_onDistanceUpdated);
     _determinePosition();
+  }
+
+  void _onDistanceUpdated() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _determinePosition() async {
@@ -76,6 +83,17 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
           _currentPosition = position;
         });
         _applyFilters();
+        final dests = widget.venues
+            .where((v) => v.latitude != null && v.longitude != null && v.latitude != 0.0 && v.longitude != 0.0)
+            .map((v) => {'lat': v.latitude!, 'lng': v.longitude!})
+            .toList();
+        if (dests.isNotEmpty) {
+          GooglePlacesService.prefetchDistances(
+            position.latitude,
+            position.longitude,
+            dests,
+          );
+        }
       }
     } catch (e) {
       debugPrint("Error getting location in AllVenuesScreen: $e");
@@ -85,6 +103,7 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    GooglePlacesService.removeListener(_onDistanceUpdated);
     super.dispose();
   }
 
@@ -520,6 +539,36 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
                               fontWeight: FontWeight.w500,
                             ),
                           ),
+                          if (_currentPosition != null && venue.latitude != null && venue.longitude != null && venue.latitude != 0.0 && venue.longitude != 0.0) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.directions_run_rounded, color: Color(0xFF64748B), size: 12),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    GooglePlacesService.formatRoadDistance(
+                                      _currentPosition!.latitude,
+                                      _currentPosition!.longitude,
+                                      venue.latitude!,
+                                      venue.longitude!,
+                                    ),
+                                    style: const TextStyle(
+                                      color: Color(0xFF64748B),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                       GestureDetector(

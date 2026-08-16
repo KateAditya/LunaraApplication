@@ -67,7 +67,9 @@ export type NotificationCategory =
     | 'events'
     | 'system'
     | 'alert'
-    | 'activity';
+    | 'activity'
+    | 'super_like'
+    | 'likes';
 
 export type NotificationPriority = 'CRITICAL' | 'HIGH' | 'NORMAL' | 'LOW';
 

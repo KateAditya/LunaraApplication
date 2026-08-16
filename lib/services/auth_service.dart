@@ -76,7 +76,7 @@ class AuthService {
 
       final response = await ApiService.postMultipart(
         '/api/mobile/user/photos',
-        fields: {'userId': userId},
+        fields: {'userId': userId, 'isPrimary': 'true'},
         files: files,
       );
 

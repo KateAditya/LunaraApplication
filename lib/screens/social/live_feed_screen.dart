@@ -17,6 +17,8 @@ import 'party_plan_ticket_screen.dart';
 import 'strangers_meet_requests_screen.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 import '../../widgets/lunara_profile_image.dart';
+import '../profile/profile_screen.dart';
+import '../../models/user.dart';
 
 /// ─────────────────────────────────────────────────────────────────────────────
 /// Unified Notification Item Schema
@@ -1047,6 +1049,32 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         accentColor = const Color(0xFFEF4444);
         icon = Icons.cancel_rounded;
         badge = 'CANCELLED';
+      } else if (category.contains('super_like') || category.contains('superlike') || (n['type']?.toString().contains('super_like') == true) || (n['data']?['action'] == 'superlike')) {
+        accentColor = const Color(0xFF8B5CF6);
+        icon = Icons.star_rounded;
+        badge = 'SUPER LIKE';
+        final sId = (n['sender'] is Map ? n['sender']['id'] : null) ?? n['data']?['senderId'] ?? n['actorUserId'];
+        if (sId != null && sId.toString().isNotEmpty) {
+          final sName = (n['sender'] is Map ? n['sender']['firstName'] : null) ?? n['data']?['senderName'] ?? 'Someone';
+          final sPhoto = (n['sender'] is Map ? n['sender']['profileImageUrl'] : null) ?? n['data']?['senderImage'];
+          actionText = 'View Profile';
+          actionTap = () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ProfileScreen(
+                user: User.fromJson({
+                  'id': sId.toString(),
+                  'firstName': sName.toString(),
+                  'photos': sPhoto != null ? [{'url': sPhoto.toString()}] : [],
+                }),
+              ),
+            ),
+          );
+        }
+      } else if (category.contains('like')) {
+        accentColor = const Color(0xFFEC4899);
+        icon = Icons.favorite_rounded;
+        badge = 'LIKE';
       } else if (category.contains('promo') || category.contains('offer')) {
         accentColor = const Color(0xFFF59E0B);
         icon = Icons.card_giftcard_rounded;
@@ -1960,11 +1988,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ),
         ];
       } else {
-        title = '🎉 Party Plan at $venueName';
-        badge = 'PARTY PLAN';
-        body = formattedDateTime.isNotEmpty
-            ? '$hostName is hosting • $formattedDateTime'
-            : '$hostName is hosting a Party Plan at $venueName.';
+        final bool superLikedYou = planMap['superLikedYou'] == true;
+        title = superLikedYou ? '⭐ Let\'s party at $venueName!' : '🎉 Party Plan at $venueName';
+        badge = superLikedYou ? 'SUPER LIKED YOU' : 'PARTY PLAN';
+        accent = superLikedYou ? const Color(0xFF8B5CF6) : accent;
+        body = superLikedYou
+            ? '💜 $hostName Super Liked you • $formattedDateTime'
+            : (formattedDateTime.isNotEmpty
+                ? '$hostName is hosting • $formattedDateTime'
+                : '$hostName is hosting a Party Plan at $venueName.');
         actionsList = [
           NotificationAction(
             label: 'Request to Join',

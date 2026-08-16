@@ -209,6 +209,54 @@ class User {
         }
       }
     }
+    // Extract minBudget & maxBudget with fallback to profile / data / budgetRange string
+    int? parsedMinBudget = preferences['minBudget'] != null
+        ? int.tryParse(preferences['minBudget'].toString())
+        : (profile['minBudget'] != null
+            ? int.tryParse(profile['minBudget'].toString())
+            : (data['minBudget'] != null ? int.tryParse(data['minBudget'].toString()) : null));
+
+    int? parsedMaxBudget = preferences['maxBudget'] != null
+        ? int.tryParse(preferences['maxBudget'].toString())
+        : (profile['maxBudget'] != null
+            ? int.tryParse(profile['maxBudget'].toString())
+            : (data['maxBudget'] != null ? int.tryParse(data['maxBudget'].toString()) : null));
+
+    final rawBudgetRange = preferences['budgetRange']?.toString() ??
+        profile['budgetRange']?.toString() ??
+        data['budgetRange']?.toString();
+
+    if ((parsedMinBudget == null || parsedMaxBudget == null) && rawBudgetRange != null) {
+      final numbers = RegExp(r'\d+')
+          .allMatches(rawBudgetRange)
+          .map((m) => int.tryParse(m.group(0)!))
+          .whereType<int>()
+          .toList();
+      if (numbers.length >= 2) {
+        parsedMinBudget ??= numbers[0];
+        parsedMaxBudget ??= numbers[1];
+      } else if (numbers.length == 1) {
+        if (rawBudgetRange.contains('Up to') || rawBudgetRange.contains('Under') || rawBudgetRange.contains('Max')) {
+          parsedMaxBudget ??= numbers[0];
+        } else {
+          parsedMinBudget ??= numbers[0];
+        }
+      }
+    }
+
+    final rawPrefGenders = preferences['preferredGenders'] ?? profile['preferredGenders'] ?? data['preferredGenders'];
+    final List<String> parsedPrefGenders = rawPrefGenders is List
+        ? List<String>.from(rawPrefGenders.map((e) => e.toString()))
+        : (rawPrefGenders is String && rawPrefGenders.isNotEmpty ? [rawPrefGenders] : const []);
+
+    final rawDistance = preferences['matchDistanceKm'] ?? profile['matchDistanceKm'] ?? data['matchDistanceKm'];
+    final int? parsedDistance = rawDistance != null ? int.tryParse(rawDistance.toString()) : null;
+
+    final rawMinAge = preferences['minAgePreference'] ?? profile['minAgePreference'] ?? data['minAgePreference'];
+    final int? parsedMinAge = rawMinAge != null ? int.tryParse(rawMinAge.toString()) : null;
+
+    final rawMaxAge = preferences['maxAgePreference'] ?? profile['maxAgePreference'] ?? data['maxAgePreference'];
+    final int? parsedMaxAge = rawMaxAge != null ? int.tryParse(rawMaxAge.toString()) : null;
 
     return User(
       id: data['id']?.toString() ?? data['_id']?.toString() ?? '',
@@ -255,27 +303,13 @@ class User {
               preferences['drinkPreference'].map((e) => e.toString()),
             )
           : const [],
-      budgetRange: preferences['budgetRange']?.toString(),
-      minBudget: preferences['minBudget'] != null
-          ? int.tryParse(preferences['minBudget'].toString())
-          : null,
-      maxBudget: preferences['maxBudget'] != null
-          ? int.tryParse(preferences['maxBudget'].toString())
-          : null,
-      preferredGenders: preferences['preferredGenders'] is List
-          ? List<String>.from(
-              preferences['preferredGenders'].map((e) => e.toString()),
-            )
-          : const [],
-      minAgePreference: preferences['minAgePreference'] != null
-          ? int.tryParse(preferences['minAgePreference'].toString())
-          : null,
-      maxAgePreference: preferences['maxAgePreference'] != null
-          ? int.tryParse(preferences['maxAgePreference'].toString())
-          : null,
-      matchDistanceKm: preferences['matchDistanceKm'] != null
-          ? int.tryParse(preferences['matchDistanceKm'].toString())
-          : null,
+      budgetRange: rawBudgetRange,
+      minBudget: parsedMinBudget,
+      maxBudget: parsedMaxBudget,
+      preferredGenders: parsedPrefGenders,
+      minAgePreference: parsedMinAge,
+      maxAgePreference: parsedMaxAge,
+      matchDistanceKm: parsedDistance,
       invisibleMode:
           preferences['invisibleMode'] == true || data['invisibleMode'] == true,
       showMeInMatching: preferences['showMeInMatching'] ?? true,

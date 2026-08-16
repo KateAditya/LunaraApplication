@@ -2065,18 +2065,28 @@ class ApiService {
     return response;
   }
 
-  static Future<bool> updateProfile(Map<String, dynamic> data) async {
+  static Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> data) async {
     try {
       final response = await put('/api/profile/update', body: data);
-      //debugPrint('updateProfile ${response.statusCode}: ${response.body}');
+      debugPrint('updateProfile ${response.statusCode}: ${response.body}');
+      final resData = jsonDecode(response.body);
       if (response.statusCode == 200 || response.statusCode == 201) {
-        final resData = jsonDecode(response.body);
-        return resData['success'] == true;
+        return {
+          'success': resData['success'] == true,
+          'message': resData['message'] ?? 'Profile updated successfully',
+        };
       }
+      return {
+        'success': false,
+        'message': resData['message'] ?? resData['error'] ?? 'Failed to update profile (${response.statusCode})',
+      };
     } catch (e) {
       debugPrint('updateProfile error: $e');
+      return {
+        'success': false,
+        'message': 'Error: $e',
+      };
     }
-    return false;
   }
 
   static Future<bool> uploadProfilePhotos(

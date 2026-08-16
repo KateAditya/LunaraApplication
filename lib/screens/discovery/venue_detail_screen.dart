@@ -51,11 +51,18 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
       _loadGoogleRating();
     }
     _loadVenueEvents();
+    GooglePlacesService.addListener(_onDistanceUpdated);
     _checkLocationAndForce(requestIfNeeded: false);
     if (!kIsWeb) {
       _serviceStatusSubscription = Geolocator.getServiceStatusStream().listen((status) {
         _checkLocationAndForce(requestIfNeeded: false);
       });
+    }
+  }
+
+  void _onDistanceUpdated() {
+    if (mounted) {
+      setState(() {});
     }
   }
 
@@ -70,6 +77,7 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _serviceStatusSubscription?.cancel();
+    GooglePlacesService.removeListener(_onDistanceUpdated);
     super.dispose();
   }
 
@@ -132,6 +140,24 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
           _currentPosition = position;
         });
       }
+
+      final latVal = venue['latitude'] ?? venue['lat'];
+      final lngVal = venue['longitude'] ?? venue['lng'];
+      final double? lat = latVal != null ? double.tryParse(latVal.toString()) : null;
+      final double? lng = lngVal != null ? double.tryParse(lngVal.toString()) : null;
+
+      if (lat != null && lng != null && lat != 0.0 && lng != 0.0) {
+        await GooglePlacesService.fetchRoadDistanceMeters(
+          position.latitude,
+          position.longitude,
+          lat,
+          lng,
+        );
+        if (mounted) {
+          setState(() {});
+        }
+      }
+
       if (showLoader && mounted) {
         Navigator.pop(context);
       }
