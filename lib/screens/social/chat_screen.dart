@@ -116,8 +116,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
     ApiService.addSocketListener('typing_started', _onTypingStartedSocket);
     ApiService.addSocketListener('typing_stopped', _onTypingStoppedSocket);
-    ApiService.addSocketListener('party_plan_cancelled', _onPlanCancelledSocket);
-    ApiService.addSocketListener('party_plan_cancellation_requested', _onCancellationRequestedSocket);
+    ApiService.addSocketListener(
+      'party_plan_cancelled',
+      _onPlanCancelledSocket,
+    );
+    ApiService.addSocketListener(
+      'party_plan_cancellation_requested',
+      _onCancellationRequestedSocket,
+    );
   }
 
   void _removeSocketListeners() {
@@ -130,8 +136,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
     ApiService.removeSocketListener('typing_started', _onTypingStartedSocket);
     ApiService.removeSocketListener('typing_stopped', _onTypingStoppedSocket);
-    ApiService.removeSocketListener('party_plan_cancelled', _onPlanCancelledSocket);
-    ApiService.removeSocketListener('party_plan_cancellation_requested', _onCancellationRequestedSocket);
+    ApiService.removeSocketListener(
+      'party_plan_cancelled',
+      _onPlanCancelledSocket,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_cancellation_requested',
+      _onCancellationRequestedSocket,
+    );
   }
 
   void _onPlanCancelledSocket(dynamic rawData) {
@@ -770,7 +782,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           'Delete ${_selectedMessageIds.length} message(s)?',
           style: const TextStyle(fontWeight: FontWeight.w800),
         ),
-        content: const Text('These messages will be removed for everyone. You can only delete your own messages.'),
+        content: const Text(
+          'These messages will be removed for everyone. You can only delete your own messages.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -816,8 +830,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       setState(() {});
     }
   }
-
-
 
   // ── Build ────────────────────────────────────────────────────────────────────
 
@@ -1004,7 +1016,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       planMap = Map<String, dynamic>.from(rawPlan);
     }
 
-    final eventTitle = widget.user['eventTitle']?.toString() ??
+    final eventTitle =
+        widget.user['eventTitle']?.toString() ??
         widget.user['subject']?.toString() ??
         widget.user['planName']?.toString() ??
         widget.user['title']?.toString() ??
@@ -1020,14 +1033,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     final title = eventTitle.trim();
 
-    final venueName = widget.user['venueName']?.toString() ??
+    final venueName =
+        widget.user['venueName']?.toString() ??
         widget.user['venue']?['name']?.toString() ??
         widget.user['location']?.toString() ??
         planMap?['venue']?['name']?.toString() ??
         planMap?['venueName']?.toString() ??
         planMap?['location']?.toString();
 
-    final eventTime = widget.user['eventTime']?.toString() ??
+    final eventTime =
+        widget.user['eventTime']?.toString() ??
         widget.user['planDateTime']?.toString() ??
         widget.user['eventDateTime']?.toString() ??
         widget.user['time']?.toString() ??
@@ -1999,10 +2014,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final msgId = _safeString(msg['id']);
     final status = _safeString(msg['status'], 'sent');
     final timeStr = _formatMessageTime(msg['createdAt']?.toString());
-    
+
     final bool isSelected = _selectedMessageIds.contains(msgId);
     final bool selectionMode = _selectedMessageIds.isNotEmpty;
-    final bool canSelect = !isDeleted && msgId.isNotEmpty && !msgId.startsWith('temp_');
+    final bool canSelect =
+        !isDeleted && msgId.isNotEmpty && !msgId.startsWith('temp_');
 
     void handleTap() {
       if (selectionMode && canSelect) {
@@ -2028,8 +2044,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       onTap: handleTap,
       onLongPress: handleLongPress,
       child: Container(
-        color: isSelected ? const Color(0xFF7C3AED).withValues(alpha: 0.15) : Colors.transparent,
-        padding: const EdgeInsets.symmetric(vertical: 2), // removed horizontal padding
+        color: isSelected
+            ? const Color(0xFF7C3AED).withValues(alpha: 0.15)
+            : Colors.transparent,
+        padding: const EdgeInsets.symmetric(
+          vertical: 2,
+        ), // removed horizontal padding
         child: Align(
           alignment: isSent ? Alignment.centerRight : Alignment.centerLeft,
           child: Container(
@@ -2066,40 +2086,40 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               ],
             ),
             child: isDeleted
-              ? Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.block_rounded,
-                        size: 14,
-                        color: Colors.grey[500],
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '[Message deleted]',
-                        style: TextStyle(
+                ? Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.block_rounded,
+                          size: 14,
                           color: Colors.grey[500],
-                          fontStyle: FontStyle.italic,
-                          fontSize: 13,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 6),
+                        Text(
+                          '[Message deleted]',
+                          style: TextStyle(
+                            color: Colors.grey[500],
+                            fontStyle: FontStyle.italic,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : _buildTextBubbleContent(
+                    text,
+                    timeStr,
+                    isSent,
+                    isIcebreaker,
+                    status,
                   ),
-                )
-              : _buildTextBubbleContent(
-                  text,
-                  timeStr,
-                  isSent,
-                  isIcebreaker,
-                  status,
-                ),
+          ),
         ),
-      ),
       ),
     );
   }
@@ -2341,7 +2361,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             Expanded(
               child: Text(
                 'This Party Plan has been cancelled. This conversation will be archived after 24 hours.',
-                style: TextStyle(color: Colors.red.shade800, fontSize: 12, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: Colors.red.shade800,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ],
@@ -2363,12 +2387,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             ),
             child: Row(
               children: [
-                Icon(Icons.hourglass_top_rounded, color: Colors.amber.shade800, size: 16),
+                Icon(
+                  Icons.hourglass_top_rounded,
+                  color: Colors.amber.shade800,
+                  size: 16,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     'Cancellation Request Pending — Waiting for the other participant.',
-                    style: TextStyle(color: Colors.amber.shade900, fontSize: 11, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      color: Colors.amber.shade900,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],

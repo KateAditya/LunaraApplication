@@ -128,7 +128,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   void refreshFeed() {
     _loadFeed(showLoader: false);
-    _loadGroupPartyBookings();
   }
 
   int get totalUnreadCount {
@@ -141,14 +140,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   void _onPlanPostedNotify() {
     if (mounted) {
       _loadFeed(showLoader: false);
-      _loadGroupPartyBookings();
     }
   }
 
   void _onProfileUpdateNotify() {
     if (mounted) {
       _loadFeed(showLoader: false);
-      _loadGroupPartyBookings();
     }
   }
 
@@ -162,7 +159,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     )..repeat(reverse: true);
 
     _loadFeed();
-    _loadGroupPartyBookings();
     _initSocketListeners();
 
     // Razorpay setup
@@ -171,10 +167,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     _razorpay!.on(Razorpay.EVENT_PAYMENT_ERROR, _onLargePartyPaymentError);
     _razorpay!.on(Razorpay.EVENT_EXTERNAL_WALLET, _onLargePartyExternalWallet);
 
-    // Fast polling every 15 seconds
-    _pollingTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+    // Background sync timer every 45 seconds (WebSockets handle real-time events)
+    _pollingTimer = Timer.periodic(const Duration(seconds: 45), (_) {
       _loadFeed(showLoader: false);
-      _loadGroupPartyBookings();
     });
 
     ApiService.planPostedNotifier.addListener(_onPlanPostedNotify);
@@ -336,11 +331,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   Future<void> _loadFeed({bool showLoader = true}) async {
     final requestUserId = _sessionUserId;
-    if (showLoader) setState(() => _isLoading = true);
+    if (showLoader && _feedItems.isEmpty && _notifications.isEmpty) {
+      setState(() => _isLoading = true);
+    }
     try {
       await ApiService.loadLocalReadIds();
-      final data = await ApiService.fetchLiveFeedData();
-      final notifs = await ApiService.fetchNotifications();
+      final responses = await Future.wait([
+        ApiService.fetchLiveFeedData(),
+        ApiService.fetchNotifications(),
+        ApiService.fetchMyLargePartyBookings(),
+      ]);
+
+      final data = responses[0] as Map<String, dynamic>;
+      final notifs = responses[1] as List<Map<String, dynamic>>;
+      final largeParties = responses[2] as List<Map<String, dynamic>>;
 
       List<Map<String, dynamic>> combined = [
         ...List<Map<String, dynamic>>.from(data['feed'] ?? []),
@@ -351,6 +355,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (mounted && requestUserId == ApiService.currentUserId && requestUserId == _sessionUserId) {
         setState(() {
           _feedItems = combined;
+          _largePartyBookings = largeParties;
           _notifications = notifs.map((n) {
             final nId = n['id']?.toString() ?? '';
             if (_localReadNotificationIds.contains(nId) || ApiService.localReadRequestIds.contains(nId)) {
@@ -1005,24 +1010,78 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     return null;
   }
 
+  String? _extractGroupPartyId(Map<String, dynamic> item) {
+    if (item['data'] is Map && item['data']['partyId'] != null) {
+      final id = item['data']['partyId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['data'] is Map && item['data']['groupPartyId'] != null) {
+      final id = item['data']['groupPartyId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['data'] is Map && item['data']['bookingId'] != null && (item['data']['type']?.toString().contains('group_party') == true || item['data']['type']?.toString().contains('large_party') == true)) {
+      final id = item['data']['bookingId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['metadata'] is Map && item['metadata']['groupPartyId'] != null) {
+      final id = item['metadata']['groupPartyId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['metadata'] is Map && item['metadata']['partyId'] != null) {
+      final id = item['metadata']['partyId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['groupPartyId'] != null) {
+      final id = item['groupPartyId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['partyId'] != null) {
+      final id = item['partyId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    final String cat = (item['requestType'] ?? item['type'] ?? item['category'] ?? item['entityType'] ?? '').toString().toLowerCase();
+    final String title = (item['title'] ?? '').toString().toLowerCase();
+    final String body = (item['body'] ?? '').toString().toLowerCase();
+    if (cat.contains('group_party') || cat.contains('large_party') || cat == 'group_party_small' || cat == 'group_party_large' || title.contains('group party') || body.contains('group party')) {
+      final id = item['id']?.toString() ?? item['entityId']?.toString() ?? '';
+      if (id.isNotEmpty) {
+        final cleanId = id
+            .replaceAll('group_party_timeline_', '')
+            .replaceAll('group_party_', '')
+            .replaceAll('gp_', '')
+            .replaceAll('_confirmed', '')
+            .replaceAll('_approved', '')
+            .replaceAll('_rejected', '')
+            .replaceAll('_cancelled', '')
+            .replaceAll('_payment_success', '');
+        if (cleanId.isNotEmpty) return cleanId;
+      }
+    }
+    return null;
+  }
+
   List<UnifiedNotificationItem> _buildUnifiedTimeline() {
     final List<UnifiedNotificationItem> items = [];
     final currentUserId = ApiService.currentUserId ?? '';
 
-    // 1. Partition entries into Party Plan, Stranger Meet, and General Notifications
+    // 1. Partition entries into Party Plan, Stranger Meet, Group Party, and General Notifications
     final Map<String, List<Map<String, dynamic>>> partyPlanGroups = {};
     final Map<String, List<Map<String, dynamic>>> strangersMeetGroups = {};
+    final Map<String, List<Map<String, dynamic>>> groupPartyGroups = {};
     final List<Map<String, dynamic>> nonPartyNotifications = [];
     final List<Map<String, dynamic>> nonPartyFeedItems = [];
 
     for (final n in _notifications) {
       final ppId = _extractPartyPlanId(n);
       final smId = _extractStrangersMeetId(n);
+      final gpId = _extractGroupPartyId(n);
 
       if (ppId != null && ppId.isNotEmpty) {
         partyPlanGroups.putIfAbsent(ppId, () => []).add(n);
       } else if (smId != null && smId.isNotEmpty) {
         strangersMeetGroups.putIfAbsent(smId, () => []).add(n);
+      } else if (gpId != null && gpId.isNotEmpty) {
+        groupPartyGroups.putIfAbsent(gpId, () => []).add(n);
       } else {
         nonPartyNotifications.add(n);
       }
@@ -1031,13 +1090,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     for (final fi in _feedItems) {
       final ppId = _extractPartyPlanId(fi);
       final smId = _extractStrangersMeetId(fi);
+      final gpId = _extractGroupPartyId(fi);
 
       if (ppId != null && ppId.isNotEmpty) {
         partyPlanGroups.putIfAbsent(ppId, () => []).add(fi);
       } else if (smId != null && smId.isNotEmpty) {
         strangersMeetGroups.putIfAbsent(smId, () => []).add(fi);
+      } else if (gpId != null && gpId.isNotEmpty) {
+        groupPartyGroups.putIfAbsent(gpId, () => []).add(fi);
       } else {
         nonPartyFeedItems.add(fi);
+      }
+    }
+
+    for (final booking in _largePartyBookings) {
+      final gpId = _extractGroupPartyId(booking) ?? booking['id']?.toString() ?? booking['bookingId']?.toString();
+      if (gpId != null && gpId.isNotEmpty) {
+        groupPartyGroups.putIfAbsent(gpId, () => []).add(booking);
       }
     }
 
@@ -1061,7 +1130,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
 
-    // 4. Process General Push Notifications (Table Plans, System, Wallet, Promo)
+    // 4. Build Exactly ONE Authoritative Smart Card per Group Party
+    for (final entry in groupPartyGroups.entries) {
+      final partyId = entry.key;
+      final partyEntries = entry.value;
+      final smartCard = _buildAuthoritativeGroupPartyCard(partyId, partyEntries, currentUserId);
+      if (smartCard != null) {
+        items.add(smartCard);
+      }
+    }
+
+    // 5. Process General Push Notifications (Table Plans, System, Wallet, Promo)
     for (final n in nonPartyNotifications) {
       final id = n['id']?.toString() ?? '';
       final category = (n['category'] ?? n['entityType'] ?? 'system').toString().toLowerCase();
@@ -1188,104 +1267,245 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       ));
     }
 
-    // 5. Process Large Party / Group Party Bookings
-    for (final booking in _largePartyBookings) {
-      final id = booking['id']?.toString() ?? booking['bookingId']?.toString() ?? '';
-      if (id.isEmpty) continue;
-
-      final status = (booking['status'] ?? booking['bookingStatus'] ?? 'pending').toString().toLowerCase();
-      final venueName = booking['venueName'] ?? booking['venue']?['name'] ?? 'Group Party Venue';
-      final guests = booking['numberOfGuests'] ?? booking['numberOfFriends'] ?? 1;
-      final createdAt = _parseDateTime(booking['createdAt'] ?? booking['partyDate']);
-      final timeAgo = _formatTimeAgo(booking['createdAt'] ?? booking['partyDate']);
-
-      String title = '👥 Group Party Booking';
-      String body = 'Group Party at $venueName ($guests guests)';
-      Color accent = const Color(0xFF7C3AED);
-      String badge = 'BOOKING';
-      String? actionText;
-      VoidCallback? actionTap;
-
-      bool isExpired = false;
-      final rawDateTime = booking['partyDate'] ?? booking['bookingDate'] ?? booking['createdAt'];
-      if (rawDateTime != null) {
-        try {
-          final planTime = DateTime.parse(rawDateTime.toString()).toLocal();
-          if (planTime.isBefore(DateTime.now())) {
-            isExpired = true;
-          }
-        } catch (_) {}
-      }
-
-      if (isExpired) {
-        accent = const Color(0xFF9CA3AF);
-        badge = 'EXPIRED';
-      } else {
-        final adminApproval = (booking['adminApprovalStatus'] ?? '').toString().toLowerCase();
-        if (status == 'approved' || status == 'awaiting_payment' || adminApproval == 'approved') {
-          title = '⚡ Group Party Approved!';
-          body = 'Admin approved your Group Party at $venueName. Pay to lock!';
-          badge = 'ACTION REQUIRED';
-          actionText = 'Pay Now';
-          actionTap = () => _initiateLargePartyPayment(booking);
-        } else if (status == 'confirmed' || status == 'paid') {
-          title = '🎉 Group Party Confirmed!';
-          body = 'Booking confirmed for $guests guests at $venueName.';
-          badge = 'CONFIRMED';
-          actionText = 'View Ticket';
-          final venueMap = (booking['venue'] is Map) ? booking['venue'] as Map<dynamic, dynamic> : {'name': venueName};
-          actionTap = () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => LargePartyTicketScreen(
-                booking: booking,
-                venue: venueMap,
-              ),
-            ),
-          );
-        } else if (status == 'cancelled' || status == 'rejected') {
-          title = '❌ Group Party Cancelled';
-          body = 'Group Party booking at $venueName was cancelled.';
-          accent = const Color(0xFFEF4444);
-          badge = 'CANCELLED';
-          actionText = 'View Details';
-        }
-      }
-
-      List<NotificationAction>? actionsList;
-      if (!isExpired && actionText != null && actionTap != null) {
-        actionsList = [
-          NotificationAction(
-            label: actionText,
-            onTap: actionTap,
-            isPrimary: true,
-            icon: actionText == 'Pay Now' ? Icons.payment_rounded : Icons.confirmation_number_rounded,
-          )
-        ];
-      }
-
-      items.add(UnifiedNotificationItem(
-        id: 'gp_$id',
-        category: 'booking',
-        title: title,
-        body: body,
-        createdAt: createdAt,
-        timeAgo: timeAgo,
-        isRead: true,
-        isExpired: isExpired,
-        badgeText: badge,
-        accentColor: accent,
-        categoryIcon: Icons.groups_rounded,
-        actionButtonText: actionText,
-        onActionTap: actionTap,
-        actions: isExpired ? null : actionsList,
-        rawData: booking,
-      ));
-    }
-
     // Sort all timeline items descending by createdAt
     items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return items;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Build Authoritative Group Party Smart Card (1 Group Party = 1 Card)
+  // ─────────────────────────────────────────────────────────────────────────────
+  UnifiedNotificationItem? _buildAuthoritativeGroupPartyCard(
+    String partyId,
+    List<Map<String, dynamic>> entries,
+    String currentUserId,
+  ) {
+    if (entries.isEmpty) return null;
+
+    // Extract best representative map
+    Map<String, dynamic> partyMap = {};
+    for (final e in entries) {
+      if (e['data'] is Map && (e['data']['type'] == 'group_party_timeline' || e['data']['partyId'] != null)) {
+        partyMap = Map<String, dynamic>.from(e['data']);
+        break;
+      }
+      if (e['type'] == 'group_party_timeline' || e['category'] == 'group_party' || e['category'] == 'large_party') {
+        partyMap = Map<String, dynamic>.from(e);
+        break;
+      }
+    }
+    if (partyMap.isEmpty) {
+      partyMap = Map<String, dynamic>.from(entries.first);
+      if (partyMap['data'] is Map) {
+        partyMap.addAll(Map<String, dynamic>.from(partyMap['data']));
+      }
+    }
+
+    // Determine status from entries
+    bool isConfirmed = false;
+    bool isApproved = false;
+    bool isPending = false;
+    bool isCancelled = false;
+    bool isCompleted = false;
+
+    for (final e in entries) {
+      final status = (e['status'] ?? e['bookingStatus'] ?? e['data']?['status'] ?? e['adminApprovalStatus'] ?? '').toString().toLowerCase();
+      final paymentStatus = (e['paymentStatus'] ?? e['data']?['paymentStatus'] ?? '').toString().toLowerCase();
+      final title = (e['title'] ?? '').toString().toLowerCase();
+      final body = (e['body'] ?? '').toString().toLowerCase();
+      final eventType = (e['type'] ?? e['eventType'] ?? '').toString().toLowerCase();
+
+      if (status == 'confirmed' || status == 'paid' || status == 'payment_done' ||
+          paymentStatus == 'paid' || paymentStatus == 'free' ||
+          title.contains('confirmed') || eventType.contains('confirmed') || eventType.contains('payment_success')) {
+        isConfirmed = true;
+      } else if (status == 'approved' || status == 'awaiting_payment' || title.contains('approved') || eventType.contains('approved')) {
+        isApproved = true;
+      } else if (status == 'cancelled' || status == 'rejected' || title.contains('cancelled') || title.contains('rejected')) {
+        isCancelled = true;
+      } else if (status == 'completed' || title.contains('completed')) {
+        isCompleted = true;
+      } else if (status == 'pending') {
+        isPending = true;
+      }
+    }
+
+    // Status precedence
+    String overallStatus = isConfirmed
+        ? 'confirmed'
+        : (isCompleted
+            ? 'completed'
+            : (isApproved
+                ? 'approved'
+                : (isCancelled
+                    ? 'cancelled'
+                    : 'pending')));
+
+    // Venue name
+    String venueName = partyMap['venueName'] ??
+        (partyMap['venue'] is Map ? partyMap['venue']['name'] : null) ??
+        'Venue';
+    if (venueName == 'Venue' || venueName.isEmpty) {
+      for (final e in entries) {
+        final vn = e['venueName'] ?? (e['venue'] is Map ? e['venue']['name'] : null);
+        if (vn != null && vn.toString().isNotEmpty) {
+          venueName = vn.toString();
+          break;
+        }
+      }
+    }
+
+    // Guest count
+    int guestCount = 5;
+    final rawGuests = partyMap['guestCount'] ??
+        partyMap['numberOfFriends'] ??
+        partyMap['numberOfGuests'];
+    if (rawGuests is num && rawGuests > 0) {
+      guestCount = rawGuests.toInt();
+    } else {
+      for (final e in entries) {
+        final gc = e['guestCount'] ?? e['numberOfFriends'] ?? e['numberOfGuests'] ?? e['data']?['guestCount'];
+        if (gc != null && gc is num && gc > 0) {
+          guestCount = gc.toInt();
+          break;
+        }
+      }
+    }
+
+    // Timestamp & read status
+    DateTime latestTime = DateTime.fromMillisecondsSinceEpoch(0);
+    bool hasUnread = false;
+
+    for (final e in entries) {
+      final eId = e['id']?.toString() ?? '';
+      final isRead = e['read'] == true ||
+          e['isRead'] == true ||
+          _localReadNotificationIds.contains(eId) ||
+          ApiService.localReadRequestIds.contains(eId);
+      if (!isRead) {
+        hasUnread = true;
+      }
+
+      final rawDt = e['updatedAt'] ?? e['createdAt'] ?? e['partyDate'] ?? e['bookingDate'];
+      if (rawDt != null) {
+        try {
+          final dt = DateTime.parse(rawDt.toString()).toLocal();
+          if (dt.isAfter(latestTime)) {
+            latestTime = dt;
+          }
+        } catch (_) {}
+      }
+    }
+    if (latestTime.millisecondsSinceEpoch == 0) {
+      latestTime = DateTime.now();
+    }
+
+    // Construct Title, Body, Badge, and Actions
+    String cardTitle = '👥 Group Party';
+    String cardBody = 'Your group party of $guestCount friends at $venueName.';
+    Color accentColor = const Color(0xFF7C3AED);
+    String badgeText = 'BOOKING';
+    String? actionButtonText;
+    VoidCallback? onActionTap;
+
+    bool isExpired = false;
+    final rawPartyDate = partyMap['partyDate'] ?? partyMap['bookingDate'] ?? partyMap['eventDateTime'];
+    if (rawPartyDate != null) {
+      try {
+        final pTime = DateTime.parse(rawPartyDate.toString()).toLocal();
+        if (pTime.isBefore(DateTime.now())) {
+          isExpired = true;
+        }
+      } catch (_) {}
+    }
+
+    if (isExpired) {
+      accentColor = const Color(0xFF9CA3AF);
+      badgeText = 'EXPIRED';
+    } else if (overallStatus == 'confirmed') {
+      cardTitle = 'Group Party Confirmed! 🎉';
+      cardBody = 'Your group party of $guestCount friends at $venueName is fully confirmed. Get ready!';
+      badgeText = 'CONFIRMED';
+      accentColor = const Color(0xFF10B981);
+      actionButtonText = 'View Ticket';
+      onActionTap = () {
+        _markGroupPartyAsRead(entries);
+        final venueMap = (partyMap['venue'] is Map) ? partyMap['venue'] as Map<dynamic, dynamic> : {'name': venueName};
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => LargePartyTicketScreen(
+              booking: partyMap,
+              venue: venueMap,
+            ),
+          ),
+        );
+      };
+    } else if (overallStatus == 'approved') {
+      cardTitle = 'Group Party Approved! 💳';
+      cardBody = 'Your request for $guestCount guests at $venueName is approved. Complete payment now.';
+      badgeText = 'ACTION REQUIRED';
+      accentColor = const Color(0xFFF59E0B);
+      actionButtonText = 'Pay Now';
+      onActionTap = () {
+        _markGroupPartyAsRead(entries);
+        _initiateLargePartyPayment(partyMap);
+      };
+    } else if (overallStatus == 'cancelled') {
+      cardTitle = 'Group Party Cancelled ❌';
+      cardBody = 'Your group party at $venueName was cancelled.';
+      badgeText = 'CANCELLED';
+      accentColor = const Color(0xFFEF4444);
+    } else {
+      cardTitle = 'Group Party Request Pending ⏳';
+      cardBody = 'Your party request of $guestCount friends at $venueName is pending admin verification.';
+      badgeText = 'PENDING';
+      accentColor = const Color(0xFF8B5CF6);
+    }
+
+    List<NotificationAction>? actions;
+    if (!isExpired && actionButtonText != null && onActionTap != null) {
+      actions = [
+        NotificationAction(
+          label: actionButtonText,
+          onTap: onActionTap,
+          isPrimary: true,
+          icon: overallStatus == 'approved' ? Icons.payment_rounded : Icons.confirmation_number_rounded,
+        ),
+      ];
+    }
+
+    return UnifiedNotificationItem(
+      id: 'group_party_timeline_$partyId',
+      category: 'booking',
+      title: cardTitle,
+      body: cardBody,
+      createdAt: latestTime,
+      timeAgo: _formatTimeAgo(latestTime.toIso8601String()),
+      isRead: !hasUnread,
+      isExpired: isExpired,
+      badgeText: badgeText,
+      accentColor: accentColor,
+      categoryIcon: Icons.groups_rounded,
+      actionButtonText: actionButtonText,
+      onActionTap: onActionTap,
+      actions: isExpired ? null : actions,
+      rawData: partyMap,
+    );
+  }
+
+  void _markGroupPartyAsRead(List<Map<String, dynamic>> entries) {
+    for (final e in entries) {
+      final eId = e['id']?.toString() ?? '';
+      if (eId.isNotEmpty) {
+        ApiService.localReadRequestIds.add(eId);
+        ApiService.localReadNotificationIds.add(eId);
+        ApiService.markNotificationRead(eId);
+      }
+    }
+    ApiService.saveLocalReadRequestIds();
+    ApiService.saveLocalReadNotificationIds();
+    if (mounted) setState(() {});
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

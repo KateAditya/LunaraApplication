@@ -60,18 +60,30 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     final syncRequested = ApiService.isPartyPlanRequestedSync(targetPlanId);
     final syncReqData = ApiService.getCachedPartyPlanRequestSync(targetPlanId);
 
-    _alreadyRequested = widget.plan['hasRequested'] == true || syncRequested;
+    String? initialReqStatus = (syncReqData?['status'] ?? syncReqData?['joinerPaymentStatus'] ?? 'pending')?.toString().toLowerCase();
+    bool initialRequested = syncRequested;
+    if (initialReqStatus == 'cancelled' || initialReqStatus == 'rejected' || initialReqStatus == 'declined' || initialReqStatus == 'payment_failed') {
+      initialRequested = false;
+      ApiService.markPartyPlanAsCancelledLocal(targetPlanId);
+    }
+
+    _alreadyRequested = (widget.plan['hasRequested'] == true || initialRequested) &&
+        initialReqStatus != 'payment_failed' &&
+        initialReqStatus != 'cancelled';
     if (syncReqData != null) {
       _activeRequestId = syncReqData['id']?.toString() ?? syncReqData['requestId']?.toString();
-      _requestStatus = (syncReqData['status'] ?? syncReqData['joinerPaymentStatus'] ?? 'pending').toString().toLowerCase();
+      _requestStatus = initialReqStatus;
     }
 
     if (widget.plan['isInvite'] == true || widget.plan['isInvitedUser'] == true || widget.plan['type'] == 'party_plan_invitation' || widget.plan['eventType'] == 'party_plan_invitation') {
       _isInvitedUser = true;
     }
     if (widget.plan['requestId'] != null || widget.plan['activeRequestId'] != null) {
-      _activeRequestId = (widget.plan['requestId'] ?? widget.plan['activeRequestId']).toString();
-      _alreadyRequested = true;
+      final rStatus = (widget.plan['status'] ?? widget.plan['requestStatus'] ?? '').toString().toLowerCase();
+      if (rStatus != 'cancelled' && rStatus != 'payment_failed' && rStatus != 'rejected') {
+        _activeRequestId = (widget.plan['requestId'] ?? widget.plan['activeRequestId']).toString();
+        _alreadyRequested = true;
+      }
     }
     _checkRequestStatus();
     _loadVenueDetailsIfNeeded();
@@ -1137,8 +1149,30 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         if (planId == targetPlanId) {
           reqId = req['id']?.toString();
           reqStatus = (req['status'] ?? req['joinerPaymentStatus'] ?? 'pending').toString().toLowerCase();
-          if (reqStatus != 'cancelled' && reqStatus != 'rejected' && reqStatus != 'declined') {
+
+          bool isPaymentExpired = false;
+          final paymentTimeoutAtStr = req['paymentTimeoutAt'] ?? req['paymentDeadlineAt'];
+          if (paymentTimeoutAtStr != null) {
+            try {
+              final timeout = DateTime.parse(paymentTimeoutAtStr.toString()).toUtc();
+              if (timeout.isBefore(DateTime.now().toUtc())) {
+                isPaymentExpired = true;
+              }
+            } catch (_) {}
+          }
+
+          if (reqStatus != 'cancelled' &&
+              reqStatus != 'rejected' &&
+              reqStatus != 'declined' &&
+              reqStatus != 'payment_failed' &&
+              !isPaymentExpired) {
             requested = true;
+          } else {
+            // Cleared or expired request: clean up local cache so user can send a fresh request
+            ApiService.markPartyPlanAsCancelledLocal(targetPlanId);
+            requested = false;
+            reqId = null;
+            reqStatus = isPaymentExpired ? 'payment_failed' : reqStatus;
           }
 
           final reqIsInvite = req['isPrivateInvite'] == true ||
@@ -1381,6 +1415,18 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
               ),
             );
             return true;
+          } else if (mounted) {
+            String msg = 'Payment Confirmation Failed';
+            try {
+              final b = jsonDecode(confirmRes.body);
+              msg = b['message'] ?? b['error'] ?? msg;
+            } catch (_) {}
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Payment Failed: $msg'),
+                backgroundColor: Colors.redAccent,
+              ),
+            );
           }
         } else if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1410,6 +1456,18 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
             const SnackBar(
               content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
               backgroundColor: Colors.green,
+            ),
+          );
+        } else if (mounted) {
+          String msg = 'Payment Failed';
+          try {
+            final b = jsonDecode(res.body);
+            msg = b['message'] ?? b['error'] ?? msg;
+          } catch (_) {}
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Payment Failed: $msg'),
+              backgroundColor: Colors.redAccent,
             ),
           );
         }

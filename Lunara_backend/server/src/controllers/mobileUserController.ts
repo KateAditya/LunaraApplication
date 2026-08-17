@@ -308,47 +308,33 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
             return res.status(401).json({ success: false, message: 'Unauthorized: userId query param is required' });
         }
 
-        // Fetch user base info — include all relevant fields for a complete profile response
-        const user = await User.findByPk(userId, {
-            attributes: [
-                'id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl',
-                'role', 'isVerified', 'isActive', 'mfaEnabled',
-                'createdAt', 'updatedAt', 'lastLoginAt', 'dateOfBirth',
-            ],
-        });
+        // Fetch all profile components concurrently in parallel
+        const [user, profile, preferences, allPhotos] = await Promise.all([
+            User.findByPk(userId, {
+                attributes: [
+                    'id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl',
+                    'role', 'isVerified', 'isActive', 'mfaEnabled',
+                    'createdAt', 'updatedAt', 'lastLoginAt', 'dateOfBirth',
+                ],
+            }),
+            UserProfile.findOne({ where: { userId } }),
+            UserPreference.findOne({ where: { userId } }),
+            UserPhoto.findAll({
+                where: { userId },
+                order: [
+                    ['isPrimary', 'DESC'],
+                    ['displayOrder', 'ASC'],
+                    ['uploadedAt', 'DESC'],
+                ],
+                attributes: ['id', 'filePath', 'fileSize', 'mimeType', 'isPrimary', 'displayOrder', 'uploadedAt'],
+            }),
+        ]);
 
         if (!user) {
             return res.status(404).json({ success: false, message: 'User not found' });
         }
 
-        // Fetch extended profile (all fields)
-        const profile = await UserProfile.findOne({ where: { userId } });
-
-        // Fetch user preferences (all fields)
-        const preferences = await UserPreference.findOne({ where: { userId } });
-
-        // Fetch primary/best profile photo
-        // Priority: 1) isPrimary=true  2) lowest displayOrder  3) most recent uploadedAt
-        const photoRecord = await UserPhoto.findOne({
-            where: { userId },
-            order: [
-                ['isPrimary', 'DESC'],
-                ['displayOrder', 'ASC'],
-                ['uploadedAt', 'DESC'],
-            ],
-            attributes: ['id', 'filePath', 'isPrimary', 'displayOrder', 'uploadedAt'],
-        });
-
-        // Fetch ALL gallery photos ordered for display
-        const allPhotos = await UserPhoto.findAll({
-            where: { userId },
-            order: [
-                ['isPrimary', 'DESC'],
-                ['displayOrder', 'ASC'],
-                ['uploadedAt', 'DESC'],
-            ],
-            attributes: ['id', 'filePath', 'fileSize', 'mimeType', 'isPrimary', 'displayOrder', 'uploadedAt'],
-        });
+        const photoRecord = allPhotos.length > 0 ? allPhotos[0] : null;
 
         // Build primary profile photo URL
         let profilePhotoUrl: string | null = null;
@@ -654,68 +640,91 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
         if (allUserIds.length > 0) {
             const recencyDate = new Date(Date.now() - (RankingConfig.RECENCY_WINDOW_DAYS * 24 * 60 * 60 * 1000));
 
-            const allLikesCounts = await UserMatch.findAll({
-                attributes: [
-                    'user2Id',
-                    [sequelize.fn('COUNT', sequelize.col('id')), 'count']
-                ],
-                where: {
-                    user2Id: { [Op.in]: allUserIds },
-                    createdAt: { [Op.gte]: recencyDate }
-                },
-                group: ['user2Id']
-            });
-
-            const superLikesCounts = await UserMatch.findAll({
-                attributes: [
-                    'user2Id',
-                    [sequelize.fn('COUNT', sequelize.col('id')), 'count']
-                ],
-                where: {
-                    user2Id: { [Op.in]: allUserIds },
-                    matchReason: 'superlike',
-                    status: { [Op.in]: ['pending', 'connected'] },
-                    createdAt: { [Op.gte]: recencyDate }
-                },
-                group: ['user2Id']
-            });
-
-            const plansCounts = await PartyPlan.findAll({
-                attributes: [
-                    'userId',
-                    [sequelize.fn('COUNT', sequelize.col('id')), 'count']
-                ],
-                where: {
-                    userId: { [Op.in]: allUserIds },
-                    status: 'active',
-                    createdAt: { [Op.gte]: recencyDate }
-                },
-                group: ['userId']
-            });
-
-            const groupPartyCounts = await GroupParty.findAll({
-                attributes: [
-                    'userId',
-                    [sequelize.fn('COUNT', sequelize.col('id')), 'count']
-                ],
-                where: {
-                    userId: { [Op.in]: allUserIds },
-                    createdAt: { [Op.gte]: recencyDate }
-                },
-                group: ['userId']
-            });
-
-            const strangersMeetCounts = await StrangersMeetRequest.findAll({
-                attributes: [
-                    'userId',
-                    [sequelize.fn('COUNT', sequelize.col('id')), 'count']
-                ],
-                where: {
-                    userId: { [Op.in]: allUserIds },
-                    createdAt: { [Op.gte]: recencyDate }
-                },
-                group: ['userId']
-            });
+            const [
+                allLikesCounts,
+                superLikesCounts,
+                plansCounts,
+                groupPartyCounts,
+                strangersMeetCounts,
+                activeSubs,
+                mySwipes
+            ] = await Promise.all([
+                UserMatch.findAll({
+                    attributes: [
+                        'user2Id',
+                        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+                    ],
+                    where: {
+                        user2Id: { [Op.in]: allUserIds },
+                        createdAt: { [Op.gte]: recencyDate }
+                    },
+                    group: ['user2Id']
+                }),
+                UserMatch.findAll({
+                    attributes: [
+                        'user2Id',
+                        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+                    ],
+                    where: {
+                        user2Id: { [Op.in]: allUserIds },
+                        matchReason: 'superlike',
+                        status: { [Op.in]: ['pending', 'connected'] },
+                        createdAt: { [Op.gte]: recencyDate }
+                    },
+                    group: ['user2Id']
+                }),
+                PartyPlan.findAll({
+                    attributes: [
+                        'userId',
+                        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+                    ],
+                    where: {
+                        userId: { [Op.in]: allUserIds },
+                        status: 'active',
+                        createdAt: { [Op.gte]: recencyDate }
+                    },
+                    group: ['userId']
+                }),
+                GroupParty.findAll({
+                    attributes: [
+                        'userId',
+                        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+                    ],
+                    where: {
+                        userId: { [Op.in]: allUserIds },
+                        createdAt: { [Op.gte]: recencyDate }
+                    },
+                    group: ['userId']
+                }),
+                StrangersMeetRequest.findAll({
+                    attributes: [
+                        'userId',
+                        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+                    ],
+                    where: {
+                        userId: { [Op.in]: allUserIds },
+                        createdAt: { [Op.gte]: recencyDate }
+                    },
+                    group: ['userId']
+                }),
+                UserSubscription.findAll({
+                    where: {
+                        userId: { [Op.in]: allUserIds },
+                        status: SubscriptionStatus.ACTIVE,
+                        endDate: { [Op.gt]: new Date() },
+                    },
+                    include: [{ model: SubscriptionPackage, as: 'package', attributes: ['tier'] }],
+                    order: [['createdAt', 'DESC']],
+                }),
+                currentUserId
+                    ? UserMatch.findAll({
+                        where: {
+                            user1Id: currentUserId,
+                            user2Id: { [Op.in]: allUserIds }
+                        }
+                    })
+                    : Promise.resolve([])
+            ]);
 
             allLikesCounts.forEach((c: any) => {
                 likesMap[c.getDataValue('user2Id')] = parseInt(c.getDataValue('count')) || 0;
@@ -736,16 +745,6 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                 plansMap[uId] = (plansMap[uId] || 0) + (parseInt(c.getDataValue('count')) || 0);
             });
 
-            // ── Batch-fetch real subscription tiers & current user swipes ─────────────
-            const activeSubs = await UserSubscription.findAll({
-                where: {
-                    userId: { [Op.in]: allUserIds },
-                    status: SubscriptionStatus.ACTIVE,
-                    endDate: { [Op.gt]: new Date() },
-                },
-                include: [{ model: SubscriptionPackage, as: 'package', attributes: ['tier'] }],
-                order: [['createdAt', 'DESC']],
-            });
             const seenUsers = new Set<string>();
             for (const sub of activeSubs) {
                 if (!seenUsers.has(sub.userId)) {
@@ -755,13 +754,7 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                 }
             }
 
-            if (currentUserId) {
-                const mySwipes = await UserMatch.findAll({
-                    where: {
-                        user1Id: currentUserId,
-                        user2Id: { [Op.in]: allUserIds }
-                    }
-                });
+            if (mySwipes && Array.isArray(mySwipes)) {
                 mySwipes.forEach((s: any) => {
                     mySwipesMap[s.user2Id] = {
                         status: s.status,

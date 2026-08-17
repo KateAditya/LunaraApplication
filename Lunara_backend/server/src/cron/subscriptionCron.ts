@@ -4,9 +4,15 @@ import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription
 import { logger } from '../config/logger';
 import { SubscriptionService } from '../services/subscriptionService';
 
+let isSubscriptionCronRunning = false;
+
 export const startSubscriptionCron = () => {
     // Run every minute to accurately activate/expire subscriptions
     cron.schedule('* * * * *', async () => {
+        if (isSubscriptionCronRunning) {
+            return;
+        }
+        isSubscriptionCronRunning = true;
         try {
             const now = new Date();
 
@@ -73,6 +79,8 @@ export const startSubscriptionCron = () => {
             }
         } catch (error) {
             logger.error('[SubscriptionCron] Error running subscription cron:', error);
+        } finally {
+            isSubscriptionCronRunning = false;
         }
     });
 };

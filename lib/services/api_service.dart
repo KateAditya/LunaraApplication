@@ -23,6 +23,13 @@ class ApiService {
   // Toggle this to true to use your local backend, false for production
   static const bool isLocal = false;
 
+  /// Reusable HTTP client instance for connection pooling & Keep-Alive
+  static final http.Client _httpClient = http.Client();
+
+  /// Concurrent in-flight GET request deduplication pool to prevent duplicate network calls
+  static final Map<String, Future<http.Response>> _inFlightGets = {};
+  static DateTime? _lastProfileFetchTime;
+
   // Uses your machine's local IP (192.168.0.150) for local dev on a real device
   static String get baseUrl {
     if (!isLocal) {
@@ -290,7 +297,7 @@ class ApiService {
 
   static String? get authToken => _authToken;
 
-  static Future<User?> fetchProfile({String? userId}) async {
+  static Future<User?> fetchProfile({String? userId, bool forceRefresh = false}) async {
     try {
       if (_authToken == null) {
         await initAuthToken();
@@ -300,6 +307,13 @@ class ApiService {
         targetUserId = null;
       }
       targetUserId ??= currentUserId ?? cachedCurrentUser?.id;
+
+      final isSelf = targetUserId == null || targetUserId == currentUserId || (cachedCurrentUser != null && targetUserId == cachedCurrentUser!.id);
+      if (isSelf && !forceRefresh && cachedCurrentUser != null && _lastProfileFetchTime != null) {
+        if (DateTime.now().difference(_lastProfileFetchTime!) < const Duration(seconds: 15)) {
+          return cachedCurrentUser;
+        }
+      }
 
       final Map<String, String> queryParams = {};
       if (targetUserId != null && targetUserId != 'undefined' && targetUserId != 'null' && targetUserId.trim().isNotEmpty) {
@@ -315,8 +329,9 @@ class ApiService {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
           final user = User.fromJson(data);
-          if (userId == null || userId == currentUserId || (cachedCurrentUser != null && user.id == cachedCurrentUser!.id) || cachedCurrentUser == null) {
+          if (isSelf) {
             cachedCurrentUser = user;
+            _lastProfileFetchTime = DateTime.now();
           }
           return user;
         }
@@ -734,26 +749,59 @@ class ApiService {
           final List rawList = data['data'];
           for (final gp in rawList) {
             if (gp is Map) {
+              final gpStatus = gp['status']?.toString().toLowerCase() ?? 'pending';
+              // Only show confirmed/paid group parties in ticket pocket
+              if (gpStatus != 'confirmed' && gpStatus != 'paid') continue;
+
               final key = 'gp_${gp['id']}';
+              final rawAmount = gp['totalAmount'] ?? gp['tableBookingCharge'];
+              final double parsedAmount = double.tryParse(rawAmount?.toString() ?? '') ?? 0.0;
+
+              // Build eventStartAt and eventEndAt for timeline bar
+              String? eventStartAt;
+              String? eventEndAt;
+              final rawPartyDate = gp['partyDate'];
+              if (rawPartyDate != null) {
+                try {
+                  final partyDt = DateTime.parse(rawPartyDate.toString()).toLocal();
+                  final timeStr = gp['startTime']?.toString() ?? '20:00';
+                  final parts = timeStr.split(':');
+                  final h = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 20 : 20;
+                  final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+                  final eventStart = DateTime(partyDt.year, partyDt.month, partyDt.day, h, m);
+                  final eventEnd = eventStart.add(const Duration(hours: 12));
+                  eventStartAt = eventStart.toIso8601String();
+                  eventEndAt = eventEnd.toIso8601String();
+                } catch (_) {}
+              }
+
               ticketMap[key] = {
                 'id': gp['id'],
                 'bookingId': gp['id'],
-                'ticketCode': gp['ticketCode'] ?? 'GP-${gp['id'].toString().substring(0, 8)}',
+                'ticketCode': gp['ticketCode'] ?? 'GP-${gp['id'].toString().substring(0, 8).toUpperCase()}',
+                'ticketUrl': gp['ticketUrl'],
+                'ticket_url': gp['ticketUrl'],
                 'venue': gp['venue'],
                 'venueName': gp['venue']?['name'] ?? 'Group Party Venue',
-                'status': gp['status']?.toString().toLowerCase() ?? 'pending',
-                'bookingStatus': gp['status']?.toString().toLowerCase() ?? 'pending',
+                'status': gpStatus,
+                'bookingStatus': gpStatus,
+                'paymentStatus': gp['paymentStatus']?.toString() ?? (parsedAmount <= 0 ? 'FREE' : 'paid'),
                 'numberOfGuests': gp['numberOfFriends'] ?? 1,
                 'tablePackage': 'GROUP PARTY (${gp['numberOfFriends'] ?? 1} FRIENDS)',
                 'bookingDate': gp['partyDate'],
+                'eventStartAt': eventStartAt,
+                'eventEndAt': eventEndAt,
+                'expiresAt': eventEndAt,
                 'startTime': gp['startTime'] ?? '08:00 PM',
-                'totalAmount': gp['totalAmount'] ?? gp['tableBookingCharge'],
+                'totalAmount': parsedAmount == 0 ? '0' : rawAmount?.toString(),
+                'paymentAmount': parsedAmount == 0 ? '0' : rawAmount?.toString(),
                 'createdAt': gp['createdAt'],
                 'mobileNumber': gp['mobileNumber'],
                 'optionalMobileNumber': gp['optionalMobileNumber'],
                 'foodPreference': gp['foodPreference'],
                 'drinkPreference': gp['drinkPreference'],
                 'isGroupParty': true,
+                'isSmallGroupParty': true,
               };
             }
           }
@@ -2050,19 +2098,35 @@ class ApiService {
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
 
-    http.Response response;
     if (body != null) {
       final request = http.Request('GET', uri);
       request.headers.addAll(headers);
       request.body = jsonEncode(body);
-      final streamedResponse = await request.send();
-      response = await http.Response.fromStream(streamedResponse);
-    } else {
-      response = await http.get(uri, headers: headers);
+      final streamedResponse = await _httpClient.send(request);
+      final response = await http.Response.fromStream(streamedResponse);
+      _checkAutoblockedResponse(response);
+      return response;
     }
 
-    _checkAutoblockedResponse(response);
-    return response;
+    // In-flight deduplication for identical concurrent GET calls
+    final inFlightKey = uri.toString();
+    if (_inFlightGets.containsKey(inFlightKey)) {
+      return await _inFlightGets[inFlightKey]!;
+    }
+
+    final future = () async {
+      final res = await _httpClient.get(uri, headers: headers);
+      _checkAutoblockedResponse(res);
+      return res;
+    }();
+
+    _inFlightGets[inFlightKey] = future;
+    try {
+      final response = await future;
+      return response;
+    } finally {
+      _inFlightGets.remove(inFlightKey);
+    }
   }
 
   static Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> data) async {
@@ -2198,7 +2262,7 @@ class ApiService {
       'Content-Type': 'application/json',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
-    final response = await http.put(
+    final response = await _httpClient.put(
       uri,
       headers: headers,
       body: jsonEncode(body),
@@ -2217,7 +2281,7 @@ class ApiService {
       'Content-Type': 'application/json',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
-    final response = await http.post(
+    final response = await _httpClient.post(
       uri,
       headers: headers,
       body: jsonEncode(body),
@@ -2236,7 +2300,7 @@ class ApiService {
       'Content-Type': 'application/json',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
-    final response = await http.patch(
+    final response = await _httpClient.patch(
       uri,
       headers: headers,
       body: jsonEncode(body),
@@ -2258,7 +2322,7 @@ class ApiService {
     final request = http.Request('DELETE', uri);
     request.headers.addAll(headers);
     if (body != null) request.body = jsonEncode(body);
-    final streamed = await request.send();
+    final streamed = await _httpClient.send(request);
     final response = await http.Response.fromStream(streamed);
     _checkAutoblockedResponse(response);
     return response;
@@ -3003,7 +3067,7 @@ class ApiService {
       request.files.addAll(files);
     }
 
-    final streamedResponse = await request.send();
+    final streamedResponse = await _httpClient.send(request);
     return await http.Response.fromStream(streamedResponse);
   }
 
@@ -4101,12 +4165,12 @@ class ApiService {
 
   static Future<http.Response> _get(String path) async {
     final uri = Uri.parse('$baseUrl$path');
-    return await http.get(uri, headers: _authHeaders);
+    return await _httpClient.get(uri, headers: _authHeaders);
   }
 
   static Future<http.Response> _post(String path, Map<String, dynamic> body) async {
     final uri = Uri.parse('$baseUrl$path');
-    return await http.post(uri, headers: _authHeaders, body: jsonEncode(body));
+    return await _httpClient.post(uri, headers: _authHeaders, body: jsonEncode(body));
   }
 
   /// Fetch user tickets with tab filtering ('upcoming', 'active', 'used', 'expired', 'cancelled')

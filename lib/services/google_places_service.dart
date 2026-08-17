@@ -51,12 +51,12 @@ class GooglePlacesService {
       return _roadDistanceCache[key]!;
     }
 
-    // Trigger async exact fetch in the background
-    fetchRoadDistanceMeters(startLat, startLng, endLat, endLng);
-
-    // Initial estimate based on straight-line distance with regional urban road multiplier
+    // High-performance geodesic distance calculation with regional urban road multiplier (1.30x)
     final straightMeters = Geolocator.distanceBetween(startLat, startLng, endLat, endLng);
-    return straightMeters * 1.30;
+    final estimatedMeters = straightMeters * 1.30;
+    _roadDistanceCache[key] = estimatedMeters;
+    _roadDistanceTextCache[key] = formatDistanceDirect(estimatedMeters);
+    return estimatedMeters;
   }
 
   /// Formats road driving distance for UI display (e.g. "450 m" or "24.0 km").

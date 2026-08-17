@@ -498,7 +498,8 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
     final cleanHostName = hostUser != null ? '${hostUser.firstName} ${hostUser.lastName}'.trim() : 'Guest User';
     final hostUsername = hostUser != null ? '@${hostUser.firstName.toLowerCase()}.${hostUser.lastName.toLowerCase()}' : '@guest';
 
-    final double amountPaid = double.tryParse((widget.totalPrice ?? '').replaceAll(RegExp(r'[^0-9.]'), '')) ?? 199.0;
+    final double amountPaid = double.tryParse((widget.totalPrice ?? '').replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0.0;
+    final bool isFreeTicket = amountPaid <= 0;
 
     final latVal = widget.venue?['latitude'];
     final lngVal = widget.venue?['longitude'];
@@ -880,7 +881,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                           Row(
                             children: [
                               Text(
-                                '₹${amountPaid.toStringAsFixed(0)}',
+                                isFreeTicket ? 'FREE' : '₹${amountPaid.toStringAsFixed(0)}',
                                 style: TextStyle(
                                   color: isDark ? Colors.green[400] : const Color(0xFF2E7D32),
                                   fontSize: 13,
@@ -891,13 +892,15 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                                 decoration: BoxDecoration(
-                                  color: Colors.green[50]?.withValues(alpha: isDark ? 0.15 : 1.0),
+                                  color: (isFreeTicket ? Colors.blue[50] : Colors.green[50])?.withValues(alpha: isDark ? 0.15 : 1.0),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
-                                  'PAID',
+                                  isFreeTicket ? 'FREE' : 'PAID',
                                   style: TextStyle(
-                                    color: isDark ? Colors.green[300] : Colors.green[700],
+                                    color: isDark
+                                        ? (isFreeTicket ? Colors.blue[300] : Colors.green[300])
+                                        : (isFreeTicket ? Colors.blue[700] : Colors.green[700]),
                                     fontSize: 7,
                                     fontWeight: FontWeight.bold,
                                   ),

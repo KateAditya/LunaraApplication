@@ -12,11 +12,11 @@ const sequelize = new Sequelize({
     username: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || '',
     pool: {
-        min: parseInt(process.env.DB_POOL_MIN || '2'),
-        max: parseInt(process.env.DB_POOL_MAX || '25'),
+        min: parseInt(process.env.DB_POOL_MIN || '5'),
+        max: parseInt(process.env.DB_POOL_MAX || '30'),
         acquire: 60000,
-        idle: 10000,
-        evict: 1000,
+        idle: 30000,
+        evict: 10000,
     },
     dialectOptions: {
         ssl: process.env.DB_SSL === 'true' ? {
@@ -51,384 +51,232 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
     }
 
     if (connected) {
-
-        // Always ensure new columns are added safely
+        // Run all additive table & column migrations + schema upgrades in a single round-trip
         try {
-            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_status VARCHAR(50) DEFAULT 'none';`);
-            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS bank_details TEXT;`);
-            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_transaction_id VARCHAR(100);`);
-            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_amount DECIMAL(10,2);`);
-            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_date TIMESTAMP WITH TIME ZONE;`);
-            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_method VARCHAR(50);`);
-
-            // v2: Structured bank/UPI details provided at time of request creation
-            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS bank_name VARCHAR(100);`);
-            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS account_number VARCHAR(50);`);
-            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS account_holder_name VARCHAR(100);`);
-            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS ifsc_code VARCHAR(20);`);
-            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS upi_id VARCHAR(100);`);
-            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS upi_number VARCHAR(20);`);
-            // Platform per-seat charge (set by admin on approval, auto-calculated from paymentAmount/numberOfPersons)
-            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS platform_charge_per_seat DECIMAL(10,2) DEFAULT 0;`);
-
-            await sequelize.query(`ALTER TABLE strangers_meet_joiners ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'pending';`);
-
-            await sequelize.query(`ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS food_preference VARCHAR(100);`);
-            await sequelize.query(`ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS drink_preference VARCHAR(100);`);
-            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS food_preference VARCHAR(100);`);
-            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS drink_preference VARCHAR(100);`);
-            await sequelize.query(`ALTER TABLE strangers_meet_joiners ADD COLUMN IF NOT EXISTS food_preference VARCHAR(100);`);
-            await sequelize.query(`ALTER TABLE strangers_meet_joiners ADD COLUMN IF NOT EXISTS drink_preference VARCHAR(100);`);
-
-            // ── UserSubscriptions: expiration alert tracking ──────────────────
-            await sequelize.query(`ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS expiration_alert_sent BOOLEAN NOT NULL DEFAULT FALSE;`);
-
-            // ── Users table: soft-delete, wallet & moderation columns ──────────────
-            // These are referenced by the Sequelize User model but may be missing
-            // on older production databases. ADD COLUMN IF NOT EXISTS is idempotent.
-            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_secret VARCHAR(255);`);
-            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image_url VARCHAR(500);`);
-            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP WITH TIME ZONE;`);
-            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_online BOOLEAN NOT NULL DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMP WITH TIME ZONE;`);
-            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS fcm_token VARCHAR(500);`);
-            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00;`);
-            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE;`);
-            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS deletion_reason TEXT;`);
-            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS block_count INTEGER NOT NULL DEFAULT 0;`);
-            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_autoblocked BOOLEAN NOT NULL DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS autoblocked_reason TEXT;`);
-            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS cleared_notifications_at TIMESTAMP WITH TIME ZONE;`);
-            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS no_show_count INTEGER NOT NULL DEFAULT 0;`);
-            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS facebook_id VARCHAR(100);`);
-            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(100);`);
-            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS reliability_score INTEGER DEFAULT 70;`);
-            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS reward_points INTEGER DEFAULT 0;`);
-            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS login_streak_days INTEGER DEFAULT 0;`);
-            await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_streak_date TIMESTAMP WITH TIME ZONE;`);
-
-            await sequelize.query(`
-                CREATE TABLE IF NOT EXISTS reliability_history (
-                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    old_score INTEGER NOT NULL,
-                    new_score INTEGER NOT NULL,
-                    change INTEGER NOT NULL,
-                    reason VARCHAR(255) NOT NULL,
-                    action VARCHAR(255) NOT NULL,
-                    booking_id UUID,
-                    party_plan_id UUID,
-                    metadata JSONB,
-                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-                );
-            `);
-
-            await sequelize.query(`
-                CREATE TABLE IF NOT EXISTS reward_point_ledgers (
-                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    points INTEGER NOT NULL,
-                    type VARCHAR(50) NOT NULL,
-                    balance_after INTEGER NOT NULL,
-                    reason VARCHAR(255) NOT NULL,
-                    reference VARCHAR(255),
-                    metadata JSONB,
-                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-                );
-            `);
-
-            await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS ticket_url VARCHAR(500);`);
-            await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS is_upcoming_night BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS ticket_url VARCHAR(500);`);
-            await sequelize.query(`ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS ticket_url VARCHAR(500);`);
-            await sequelize.query(`ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS ticket_code VARCHAR(100);`);
-            await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS client_message_id VARCHAR(255);`);
-            await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_url TEXT;`);
-            await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_mime_type VARCHAR(50);`);
-            await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS duration INTEGER;`);
-            await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS file_size INTEGER;`);
-            await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS waveform_data TEXT;`);
-            await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_message_id UUID;`);
-            await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS invitation_ref UUID;`);
-            await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS invitation_ref_type VARCHAR(20);`);
-            await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS invitation_time VARCHAR(100);`);
-            await sequelize.query(`ALTER TABLE venues ADD COLUMN IF NOT EXISTS closed_dates TEXT[];`);
-            await sequelize.query(`ALTER TABLE venues ADD COLUMN IF NOT EXISTS days_open TEXT[];`);
-            await sequelize.query(`ALTER TABLE venues ADD COLUMN IF NOT EXISTS opening_time VARCHAR(50);`);
-            await sequelize.query(`ALTER TABLE venues ADD COLUMN IF NOT EXISTS closing_time VARCHAR(50);`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS show_profile_photo BOOLEAN DEFAULT TRUE;`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS show_host_name BOOLEAN DEFAULT TRUE;`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS show_venue_details BOOLEAN DEFAULT TRUE;`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS show_date_details BOOLEAN DEFAULT TRUE;`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_24h_sent BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_3h_sent BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_10m_sent BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_arrival_confirmed BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_arrival_time TIMESTAMP WITH TIME ZONE;`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_lat_lang_check_in VARCHAR(255);`);
-
-            // ── Reminder columns for Bookings (Venue Bookings / Large Party) ──────
-            await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;`);
-
-            // ── Reminder columns for Group Parties ────────────────────────────────
-            await sequelize.query(`ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;`);
-
-            // ── Reminder columns for Strangers Meet Requests ──────────────────────
-            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;`);
-
-            // ── Reminder columns for Night Partner Requests & Matches ─────────────
-            await sequelize.query(`ALTER TABLE night_partner_requests ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE night_partner_requests ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE night_partner_requests ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE night_partner_matches ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE night_partner_matches ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE night_partner_matches ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;`);
-
-            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_arrival_confirmed BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_arrival_time TIMESTAMP WITH TIME ZONE;`);
-            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS lat_lang_check_in VARCHAR(255);`);
-
-            // ── Party Plan Engine V2 — Lifecycle State Machine Migrations ─────────────
-            // Add lifecycle_status enum type (PostgreSQL requires explicit type creation)
             await sequelize.query(`
                 DO $$ BEGIN
-                    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_party_plans_lifecycle_status') THEN
-                        CREATE TYPE "enum_party_plans_lifecycle_status" AS ENUM (
-                            'draft', 'posted', 'request_received', 'host_reviewing',
-                            'user_accepted', 'payment_pending', 'host_payment_completed',
-                            'guest_payment_completed', 'match_confirmed', 'chat_enabled',
-                            'event_reminder', 'arrival_confirmation', 'completed',
-                            'cancelled', 'expired', 'failed'
-                        );
-                    END IF;
+                    -- strangers_meet_requests columns
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='settlement_status') THEN ALTER TABLE strangers_meet_requests ADD COLUMN settlement_status VARCHAR(50) DEFAULT 'none'; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='bank_details') THEN ALTER TABLE strangers_meet_requests ADD COLUMN bank_details TEXT; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='settlement_transaction_id') THEN ALTER TABLE strangers_meet_requests ADD COLUMN settlement_transaction_id VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='settlement_amount') THEN ALTER TABLE strangers_meet_requests ADD COLUMN settlement_amount DECIMAL(10,2); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='settlement_date') THEN ALTER TABLE strangers_meet_requests ADD COLUMN settlement_date TIMESTAMP WITH TIME ZONE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='settlement_method') THEN ALTER TABLE strangers_meet_requests ADD COLUMN settlement_method VARCHAR(50); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='bank_name') THEN ALTER TABLE strangers_meet_requests ADD COLUMN bank_name VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='account_number') THEN ALTER TABLE strangers_meet_requests ADD COLUMN account_number VARCHAR(50); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='account_holder_name') THEN ALTER TABLE strangers_meet_requests ADD COLUMN account_holder_name VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='ifsc_code') THEN ALTER TABLE strangers_meet_requests ADD COLUMN ifsc_code VARCHAR(20); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='upi_id') THEN ALTER TABLE strangers_meet_requests ADD COLUMN upi_id VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='upi_number') THEN ALTER TABLE strangers_meet_requests ADD COLUMN upi_number VARCHAR(20); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='platform_charge_per_seat') THEN ALTER TABLE strangers_meet_requests ADD COLUMN platform_charge_per_seat DECIMAL(10,2) DEFAULT 0; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='food_preference') THEN ALTER TABLE strangers_meet_requests ADD COLUMN food_preference VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='drink_preference') THEN ALTER TABLE strangers_meet_requests ADD COLUMN drink_preference VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='ticket_url') THEN ALTER TABLE strangers_meet_requests ADD COLUMN ticket_url VARCHAR(500); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='reminder_2h_sent') THEN ALTER TABLE strangers_meet_requests ADD COLUMN reminder_2h_sent BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='reminder_1h_sent') THEN ALTER TABLE strangers_meet_requests ADD COLUMN reminder_1h_sent BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='reminder_30m_sent') THEN ALTER TABLE strangers_meet_requests ADD COLUMN reminder_30m_sent BOOLEAN DEFAULT FALSE; END IF;
+
+                    -- strangers_meet_joiners columns
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_joiners' AND column_name='status') THEN ALTER TABLE strangers_meet_joiners ADD COLUMN status VARCHAR(50) DEFAULT 'pending'; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_joiners' AND column_name='food_preference') THEN ALTER TABLE strangers_meet_joiners ADD COLUMN food_preference VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_joiners' AND column_name='drink_preference') THEN ALTER TABLE strangers_meet_joiners ADD COLUMN drink_preference VARCHAR(100); END IF;
+
+                    -- group_parties columns
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='food_preference') THEN ALTER TABLE group_parties ADD COLUMN food_preference VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='drink_preference') THEN ALTER TABLE group_parties ADD COLUMN drink_preference VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='ticket_url') THEN ALTER TABLE group_parties ADD COLUMN ticket_url VARCHAR(500); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='ticket_code') THEN ALTER TABLE group_parties ADD COLUMN ticket_code VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='reminder_2h_sent') THEN ALTER TABLE group_parties ADD COLUMN reminder_2h_sent BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='reminder_1h_sent') THEN ALTER TABLE group_parties ADD COLUMN reminder_1h_sent BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='reminder_30m_sent') THEN ALTER TABLE group_parties ADD COLUMN reminder_30m_sent BOOLEAN DEFAULT FALSE; END IF;
+
+                    -- UserSubscriptions columns
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='UserSubscriptions' AND column_name='expiration_alert_sent') THEN ALTER TABLE "UserSubscriptions" ADD COLUMN expiration_alert_sent BOOLEAN NOT NULL DEFAULT FALSE; END IF;
+
+                    -- users columns
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='mfa_enabled') THEN ALTER TABLE users ADD COLUMN mfa_enabled BOOLEAN NOT NULL DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='mfa_secret') THEN ALTER TABLE users ADD COLUMN mfa_secret VARCHAR(255); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='profile_image_url') THEN ALTER TABLE users ADD COLUMN profile_image_url VARCHAR(500); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='last_login_at') THEN ALTER TABLE users ADD COLUMN last_login_at TIMESTAMP WITH TIME ZONE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='is_online') THEN ALTER TABLE users ADD COLUMN is_online BOOLEAN NOT NULL DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='last_active_at') THEN ALTER TABLE users ADD COLUMN last_active_at TIMESTAMP WITH TIME ZONE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='fcm_token') THEN ALTER TABLE users ADD COLUMN fcm_token VARCHAR(500); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='wallet_balance') THEN ALTER TABLE users ADD COLUMN wallet_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='is_deleted') THEN ALTER TABLE users ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='deleted_at') THEN ALTER TABLE users ADD COLUMN deleted_at TIMESTAMP WITH TIME ZONE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='deletion_reason') THEN ALTER TABLE users ADD COLUMN deletion_reason TEXT; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='block_count') THEN ALTER TABLE users ADD COLUMN block_count INTEGER NOT NULL DEFAULT 0; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='is_autoblocked') THEN ALTER TABLE users ADD COLUMN is_autoblocked BOOLEAN NOT NULL DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='autoblocked_reason') THEN ALTER TABLE users ADD COLUMN autoblocked_reason TEXT; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='cleared_notifications_at') THEN ALTER TABLE users ADD COLUMN cleared_notifications_at TIMESTAMP WITH TIME ZONE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='no_show_count') THEN ALTER TABLE users ADD COLUMN no_show_count INTEGER NOT NULL DEFAULT 0; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='facebook_id') THEN ALTER TABLE users ADD COLUMN facebook_id VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='google_id') THEN ALTER TABLE users ADD COLUMN google_id VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='reliability_score') THEN ALTER TABLE users ADD COLUMN reliability_score INTEGER DEFAULT 70; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='reward_points') THEN ALTER TABLE users ADD COLUMN reward_points INTEGER DEFAULT 0; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='login_streak_days') THEN ALTER TABLE users ADD COLUMN login_streak_days INTEGER DEFAULT 0; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='last_login_streak_date') THEN ALTER TABLE users ADD COLUMN last_login_streak_date TIMESTAMP WITH TIME ZONE; END IF;
+
+                    -- bookings columns
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='party_event_id') THEN ALTER TABLE bookings ADD COLUMN party_event_id UUID; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='going_mode') THEN ALTER TABLE bookings ADD COLUMN going_mode VARCHAR(20) DEFAULT 'SOLO'; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='table_package') THEN ALTER TABLE bookings ADD COLUMN table_package VARCHAR(20); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='payment_mode') THEN ALTER TABLE bookings ADD COLUMN payment_mode VARCHAR(50); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='ticket_code') THEN ALTER TABLE bookings ADD COLUMN ticket_code VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='ticket_url') THEN ALTER TABLE bookings ADD COLUMN ticket_url VARCHAR(500); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='added_to_wallet') THEN ALTER TABLE bookings ADD COLUMN added_to_wallet BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='party_subject') THEN ALTER TABLE bookings ADD COLUMN party_subject VARCHAR(255); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='party_requirement') THEN ALTER TABLE bookings ADD COLUMN party_requirement TEXT; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='party_description') THEN ALTER TABLE bookings ADD COLUMN party_description TEXT; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='is_large_party_request') THEN ALTER TABLE bookings ADD COLUMN is_large_party_request BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='is_upcoming_night') THEN ALTER TABLE bookings ADD COLUMN is_upcoming_night BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='admin_approval_status') THEN ALTER TABLE bookings ADD COLUMN admin_approval_status VARCHAR(50) DEFAULT 'none'; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='mobile_number') THEN ALTER TABLE bookings ADD COLUMN mobile_number VARCHAR(20); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='optional_mobile_number') THEN ALTER TABLE bookings ADD COLUMN optional_mobile_number VARCHAR(20); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='admin_payment_link') THEN ALTER TABLE bookings ADD COLUMN admin_payment_link TEXT; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='admin_payment_amount') THEN ALTER TABLE bookings ADD COLUMN admin_payment_amount DECIMAL(10,2); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='razorpay_order_id') THEN ALTER TABLE bookings ADD COLUMN razorpay_order_id VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='reminder_2h_sent') THEN ALTER TABLE bookings ADD COLUMN reminder_2h_sent BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='reminder_1h_sent') THEN ALTER TABLE bookings ADD COLUMN reminder_1h_sent BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='reminder_30m_sent') THEN ALTER TABLE bookings ADD COLUMN reminder_30m_sent BOOLEAN DEFAULT FALSE; END IF;
+
+                    -- ads columns
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ads' AND column_name='event_date') THEN ALTER TABLE ads ADD COLUMN event_date TIMESTAMP WITH TIME ZONE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ads' AND column_name='entry_price') THEN ALTER TABLE ads ADD COLUMN entry_price DECIMAL(10,2); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ads' AND column_name='seat_limit') THEN ALTER TABLE ads ADD COLUMN seat_limit INTEGER; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ads' AND column_name='is_unlimited') THEN ALTER TABLE ads ADD COLUMN is_unlimited BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ads' AND column_name='filled_seats') THEN ALTER TABLE ads ADD COLUMN filled_seats INTEGER DEFAULT 0; END IF;
+
+                    -- messages columns
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='client_message_id') THEN ALTER TABLE messages ADD COLUMN client_message_id VARCHAR(255); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='media_url') THEN ALTER TABLE messages ADD COLUMN media_url TEXT; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='media_mime_type') THEN ALTER TABLE messages ADD COLUMN media_mime_type VARCHAR(50); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='duration') THEN ALTER TABLE messages ADD COLUMN duration INTEGER; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='file_size') THEN ALTER TABLE messages ADD COLUMN file_size INTEGER; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='waveform_data') THEN ALTER TABLE messages ADD COLUMN waveform_data TEXT; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='reply_to_message_id') THEN ALTER TABLE messages ADD COLUMN reply_to_message_id UUID; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='invitation_ref') THEN ALTER TABLE messages ADD COLUMN invitation_ref UUID; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='invitation_ref_type') THEN ALTER TABLE messages ADD COLUMN invitation_ref_type VARCHAR(20); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='invitation_time') THEN ALTER TABLE messages ADD COLUMN invitation_time VARCHAR(100); END IF;
+
+                    -- venues columns
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='venues' AND column_name='closed_dates') THEN ALTER TABLE venues ADD COLUMN closed_dates TEXT[]; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='venues' AND column_name='days_open') THEN ALTER TABLE venues ADD COLUMN days_open TEXT[]; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='venues' AND column_name='opening_time') THEN ALTER TABLE venues ADD COLUMN opening_time VARCHAR(50); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='venues' AND column_name='closing_time') THEN ALTER TABLE venues ADD COLUMN closing_time VARCHAR(50); END IF;
+
+                    -- party_plans columns
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='lifecycle_status') THEN ALTER TABLE party_plans ADD COLUMN lifecycle_status VARCHAR(50) DEFAULT 'posted'; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='matched_request_id') THEN ALTER TABLE party_plans ADD COLUMN matched_request_id UUID; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='accepted_at') THEN ALTER TABLE party_plans ADD COLUMN accepted_at TIMESTAMP WITH TIME ZONE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='payment_deadline_at') THEN ALTER TABLE party_plans ADD COLUMN payment_deadline_at TIMESTAMP WITH TIME ZONE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='host_razorpay_order_id') THEN ALTER TABLE party_plans ADD COLUMN host_razorpay_order_id VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='host_razorpay_payment_id') THEN ALTER TABLE party_plans ADD COLUMN host_razorpay_payment_id VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='payment_type') THEN ALTER TABLE party_plans ADD COLUMN payment_type VARCHAR(50) DEFAULT 'split'; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='deposit_amount') THEN ALTER TABLE party_plans ADD COLUMN deposit_amount DECIMAL(10,2) DEFAULT 99.00; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='mobile_number') THEN ALTER TABLE party_plans ADD COLUMN mobile_number VARCHAR(50); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='optional_mobile_number') THEN ALTER TABLE party_plans ADD COLUMN optional_mobile_number VARCHAR(50); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='food_preference') THEN ALTER TABLE party_plans ADD COLUMN food_preference VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='drink_preference') THEN ALTER TABLE party_plans ADD COLUMN drink_preference VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='show_profile_photo') THEN ALTER TABLE party_plans ADD COLUMN show_profile_photo BOOLEAN DEFAULT TRUE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='show_host_name') THEN ALTER TABLE party_plans ADD COLUMN show_host_name BOOLEAN DEFAULT TRUE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='show_venue_details') THEN ALTER TABLE party_plans ADD COLUMN show_venue_details BOOLEAN DEFAULT TRUE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='show_date_details') THEN ALTER TABLE party_plans ADD COLUMN show_date_details BOOLEAN DEFAULT TRUE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='reminder_24h_sent') THEN ALTER TABLE party_plans ADD COLUMN reminder_24h_sent BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='reminder_3h_sent') THEN ALTER TABLE party_plans ADD COLUMN reminder_3h_sent BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='reminder_1h_sent') THEN ALTER TABLE party_plans ADD COLUMN reminder_1h_sent BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='reminder_30m_sent') THEN ALTER TABLE party_plans ADD COLUMN reminder_30m_sent BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='reminder_2h_sent') THEN ALTER TABLE party_plans ADD COLUMN reminder_2h_sent BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='reminder_10m_sent') THEN ALTER TABLE party_plans ADD COLUMN reminder_10m_sent BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='host_arrival_confirmed') THEN ALTER TABLE party_plans ADD COLUMN host_arrival_confirmed BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='host_arrival_time') THEN ALTER TABLE party_plans ADD COLUMN host_arrival_time TIMESTAMP WITH TIME ZONE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='host_lat_lang_check_in') THEN ALTER TABLE party_plans ADD COLUMN host_lat_lang_check_in VARCHAR(255); END IF;
+
+                    -- party_plan_requests columns
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plan_requests' AND column_name='joiner_razorpay_order_id') THEN ALTER TABLE party_plan_requests ADD COLUMN joiner_razorpay_order_id VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plan_requests' AND column_name='joiner_razorpay_payment_id') THEN ALTER TABLE party_plan_requests ADD COLUMN joiner_razorpay_payment_id VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plan_requests' AND column_name='payment_timeout_at') THEN ALTER TABLE party_plan_requests ADD COLUMN payment_timeout_at TIMESTAMP WITH TIME ZONE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plan_requests' AND column_name='cancelled_at') THEN ALTER TABLE party_plan_requests ADD COLUMN cancelled_at TIMESTAMP WITH TIME ZONE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plan_requests' AND column_name='cancelled_by') THEN ALTER TABLE party_plan_requests ADD COLUMN cancelled_by UUID; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plan_requests' AND column_name='cancellation_reason') THEN ALTER TABLE party_plan_requests ADD COLUMN cancellation_reason VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plan_requests' AND column_name='previous_status') THEN ALTER TABLE party_plan_requests ADD COLUMN previous_status VARCHAR(50); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plan_requests' AND column_name='lat_lang_check_in') THEN ALTER TABLE party_plan_requests ADD COLUMN lat_lang_check_in VARCHAR(255); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plan_requests' AND column_name='guest_arrival_confirmed') THEN ALTER TABLE party_plan_requests ADD COLUMN guest_arrival_confirmed BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plan_requests' AND column_name='guest_arrival_time') THEN ALTER TABLE party_plan_requests ADD COLUMN guest_arrival_time TIMESTAMP WITH TIME ZONE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plan_requests' AND column_name='joiner_payment_status') THEN ALTER TABLE party_plan_requests ADD COLUMN joiner_payment_status VARCHAR(50) DEFAULT 'unpaid'; END IF;
+
+                    -- SubscriptionPackages columns
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='display_name') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN display_name VARCHAR(200); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='badge') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN badge VARCHAR(50); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='theme_color') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN theme_color VARCHAR(20) DEFAULT '#7F00FF'; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='is_popular') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN is_popular BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='is_recommended') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN is_recommended BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='is_archived') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN is_archived BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='display_order') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN display_order INTEGER DEFAULT 0; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='trial_days') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN trial_days INTEGER DEFAULT 0; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='grace_period_days') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN grace_period_days INTEGER DEFAULT 0; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='currency') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN currency VARCHAR(5) DEFAULT 'INR'; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='discount_percent') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN discount_percent DECIMAL(5,2) DEFAULT 0; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='description') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN description TEXT; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='icon') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN icon VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='visibility') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN visibility VARCHAR(20) DEFAULT 'public'; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='created_by') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN created_by UUID; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='updated_by') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN updated_by UUID; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='backtrack_limit') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN backtrack_limit INTEGER DEFAULT 3; END IF;
+
+                    -- night_partner columns
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_requests' AND column_name='reminder_2h_sent') THEN ALTER TABLE night_partner_requests ADD COLUMN reminder_2h_sent BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_requests' AND column_name='reminder_1h_sent') THEN ALTER TABLE night_partner_requests ADD COLUMN reminder_1h_sent BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_requests' AND column_name='reminder_30m_sent') THEN ALTER TABLE night_partner_requests ADD COLUMN reminder_30m_sent BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_matches' AND column_name='reminder_2h_sent') THEN ALTER TABLE night_partner_matches ADD COLUMN reminder_2h_sent BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_matches' AND column_name='reminder_1h_sent') THEN ALTER TABLE night_partner_matches ADD COLUMN reminder_1h_sent BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_matches' AND column_name='reminder_30m_sent') THEN ALTER TABLE night_partner_matches ADD COLUMN reminder_30m_sent BOOLEAN DEFAULT FALSE; END IF;
+
+                    -- smart_wallets columns
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='smart_wallets' AND column_name='locked_balance') THEN ALTER TABLE smart_wallets ADD COLUMN locked_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='smart_wallets' AND column_name='pending_balance') THEN ALTER TABLE smart_wallets ADD COLUMN pending_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='smart_wallets' AND column_name='reward_balance') THEN ALTER TABLE smart_wallets ADD COLUMN reward_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='smart_wallets' AND column_name='lifetime_rewards') THEN ALTER TABLE smart_wallets ADD COLUMN lifetime_rewards DECIMAL(10,2) NOT NULL DEFAULT 0.00; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='smart_wallets' AND column_name='lifetime_refunds') THEN ALTER TABLE smart_wallets ADD COLUMN lifetime_refunds DECIMAL(10,2) NOT NULL DEFAULT 0.00; END IF;
+
+                    -- wallet_transactions columns
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='wallet_transactions' AND column_name='wallet_id') THEN ALTER TABLE wallet_transactions ADD COLUMN wallet_id UUID; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='wallet_transactions' AND column_name='source') THEN ALTER TABLE wallet_transactions ADD COLUMN source VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='wallet_transactions' AND column_name='destination') THEN ALTER TABLE wallet_transactions ADD COLUMN destination VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='wallet_transactions' AND column_name='created_by') THEN ALTER TABLE wallet_transactions ADD COLUMN created_by VARCHAR(100); END IF;
                 END $$;
             `);
-            // Add lifecycle_status column to party_plans
-            await sequelize.query(`
-                DO $$ BEGIN
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plans' AND column_name='lifecycle_status') THEN
-                        ALTER TABLE party_plans ADD COLUMN lifecycle_status "enum_party_plans_lifecycle_status" NOT NULL DEFAULT 'posted';
-                    END IF;
-                END $$;
-            `);
-            // Backfill existing rows: active+isLive=true → posted, inactive → match_confirmed, cancelled → cancelled
-            await sequelize.query(`
-                UPDATE party_plans SET lifecycle_status = 'match_confirmed'
-                WHERE lifecycle_status = 'posted' AND status = 'inactive' AND host_payment_status = 'paid';
-            `);
-            await sequelize.query(`
-                UPDATE party_plans SET lifecycle_status = 'cancelled'
-                WHERE lifecycle_status = 'posted' AND status = 'cancelled';
-            `);
 
-            // Add lifecycle timestamp columns to party_plans
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS accepted_at TIMESTAMP WITH TIME ZONE;`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS payment_deadline_at TIMESTAMP WITH TIME ZONE;`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS matched_request_id UUID;`);
-
-            // Add WAITING value to party_plan_request status enum if not already present
+            // Create performance indexes to speed up all queries (Users, Plans, Requests, Bookings, Messages, etc.)
             await sequelize.query(`
-                DO $$ BEGIN
-                    IF NOT EXISTS (
-                        SELECT 1 FROM pg_enum
-                        WHERE enumlabel = 'waiting'
-                        AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'enum_party_plan_requests_status')
-                    ) THEN
-                        ALTER TYPE "enum_party_plan_requests_status" ADD VALUE 'waiting';
-                    END IF;
-                END $$;
+                CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+                CREATE INDEX IF NOT EXISTS idx_users_is_active ON users(is_active);
+                CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+                CREATE INDEX IF NOT EXISTS idx_party_plans_user_id ON party_plans(user_id);
+                CREATE INDEX IF NOT EXISTS idx_party_plans_status ON party_plans(status);
+                CREATE INDEX IF NOT EXISTS idx_party_plans_plan_date_time ON party_plans(plan_date_time);
+                CREATE INDEX IF NOT EXISTS idx_party_plan_requests_plan_id ON party_plan_requests(plan_id);
+                CREATE INDEX IF NOT EXISTS idx_party_plan_requests_requester_id ON party_plan_requests(requester_id);
+                CREATE INDEX IF NOT EXISTS idx_party_plan_requests_status ON party_plan_requests(status);
+                CREATE INDEX IF NOT EXISTS idx_bookings_user_id ON bookings(user_id);
+                CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings(status);
+                CREATE INDEX IF NOT EXISTS idx_bookings_booking_date ON bookings(booking_date);
+                CREATE INDEX IF NOT EXISTS idx_group_parties_user_id ON group_parties(user_id);
+                CREATE INDEX IF NOT EXISTS idx_group_parties_status ON group_parties(status);
+                CREATE INDEX IF NOT EXISTS idx_sm_requests_user_id ON strangers_meet_requests(user_id);
+                CREATE INDEX IF NOT EXISTS idx_sm_requests_status ON strangers_meet_requests(status);
+                CREATE INDEX IF NOT EXISTS idx_sm_joiners_user_id ON strangers_meet_joiners(user_id);
+                CREATE INDEX IF NOT EXISTS idx_sm_joiners_req_id ON strangers_meet_joiners(strangers_meet_request_id);
+                CREATE INDEX IF NOT EXISTS idx_user_matches_u1 ON user_matches(user1_id);
+                CREATE INDEX IF NOT EXISTS idx_user_matches_u2 ON user_matches(user2_id);
+                CREATE INDEX IF NOT EXISTS idx_messages_conv_id ON messages(conversation_id);
+                CREATE INDEX IF NOT EXISTS idx_messages_sender_id ON messages(sender_id);
+                CREATE INDEX IF NOT EXISTS idx_venues_is_active ON venues(is_active);
+                CREATE INDEX IF NOT EXISTS idx_ads_is_active ON ads(is_active);
+                CREATE INDEX IF NOT EXISTS idx_notifs_recipient ON notifications(recipient_user_id, is_read);
             `);
 
-            // Automatically unblock any users previously autoblocked due to no-shows (only 10+ user blocks should trigger autoblock)
-            await sequelize.query(`UPDATE users SET is_autoblocked = false, autoblocked_reason = NULL, is_active = true WHERE is_autoblocked = true AND (block_count IS NULL OR block_count < 10);`);
-
-            logger.info('users, messages, and party_plans table columns verified/migrated successfully.');
-
-
-
-
-
-            // Additive Subscription tables
-            await sequelize.query(`
-                CREATE TABLE IF NOT EXISTS "SubscriptionFeatures" (
-                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    key VARCHAR(100) UNIQUE NOT NULL,
-                    name VARCHAR(200) NOT NULL,
-                    description TEXT,
-                    category VARCHAR(50) NOT NULL DEFAULT 'general',
-                    value_type VARCHAR(20) NOT NULL DEFAULT 'boolean',
-                    display_order INTEGER NOT NULL DEFAULT 0,
-                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-                    icon VARCHAR(100),
-                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-                );
-            `);
-
-            await sequelize.query(`
-                CREATE TABLE IF NOT EXISTS "SubscriptionPlanFeatures" (
-                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    package_id UUID NOT NULL REFERENCES "SubscriptionPackages"(id) ON DELETE CASCADE,
-                    feature_id UUID NOT NULL REFERENCES "SubscriptionFeatures"(id) ON DELETE CASCADE,
-                    value JSONB NOT NULL DEFAULT '{"enabled": false}',
-                    is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                    UNIQUE (package_id, feature_id)
-                );
-            `);
-
-            await sequelize.query(`
-                CREATE TABLE IF NOT EXISTS "SubscriptionUsage" (
-                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    feature_key VARCHAR(100) NOT NULL,
-                    period VARCHAR(20) NOT NULL,
-                    used INTEGER NOT NULL DEFAULT 0,
-                    reset_at TIMESTAMP,
-                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                    UNIQUE (user_id, feature_key, period)
-                );
-            `);
-
-            await sequelize.query(`
-                CREATE TABLE IF NOT EXISTS "SubscriptionTransactions" (
-                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    package_id UUID REFERENCES "SubscriptionPackages"(id),
-                    type VARCHAR(30) NOT NULL,
-                    amount DECIMAL(10,2) NOT NULL DEFAULT 0,
-                    currency VARCHAR(5) NOT NULL DEFAULT 'INR',
-                    payment_method VARCHAR(50),
-                    payment_gateway VARCHAR(50) NOT NULL DEFAULT 'razorpay',
-                    gateway_order_id VARCHAR(200),
-                    gateway_payment_id VARCHAR(200),
-                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
-                    invoice_number VARCHAR(50) UNIQUE,
-                    refund_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
-                    refunded_at TIMESTAMP,
-                    metadata JSONB,
-                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-                );
-            `);
-
-            // Additive columns for SubscriptionPackages
-            const addCols = [
-                'display_name VARCHAR(200)',
-                'badge VARCHAR(50)',
-                "theme_color VARCHAR(20) DEFAULT '#7F00FF'",
-                'is_popular BOOLEAN DEFAULT FALSE',
-                'is_recommended BOOLEAN DEFAULT FALSE',
-                'is_archived BOOLEAN DEFAULT FALSE',
-                'display_order INTEGER DEFAULT 0',
-                'trial_days INTEGER DEFAULT 0',
-                'grace_period_days INTEGER DEFAULT 0',
-                "currency VARCHAR(5) DEFAULT 'INR'",
-                'discount_percent DECIMAL(5,2) DEFAULT 0',
-                'description TEXT',
-                'icon VARCHAR(100)',
-                "visibility VARCHAR(20) DEFAULT 'public'",
-                'created_by UUID',
-                'updated_by UUID',
-                'backtrack_limit INTEGER DEFAULT 3'
-            ];
-
-            for (const colDef of addCols) {
-                const colName = colDef.split(' ')[0];
-                try {
-                    await sequelize.query(`ALTER TABLE "SubscriptionPackages" ADD COLUMN IF NOT EXISTS ${colDef};`);
-                } catch (colErr: any) {
-                    logger.debug(`Column ${colName} might already exist: ` + colErr.message);
-                }
-            }
-
-            // Seed default features if they do not exist
-            await sequelize.query(`
-                INSERT INTO "SubscriptionFeatures" (key, name, description, category, value_type, display_order, icon, created_at, updated_at) VALUES
-                    ('daily_likes', 'Daily Likes', 'Number of profiles you can like per day', 'matching', 'integer', 1, 'heart', NOW(), NOW()),
-                    ('daily_match_requests', 'Daily Match Requests', 'Number of match requests you can send per day', 'matching', 'integer', 2, 'handshake', NOW(), NOW()),
-                    ('daily_posts', 'Daily Posts', 'Number of posts you can create per day', 'social', 'integer', 3, 'camera', NOW(), NOW()),
-                    ('super_likes', 'Super Likes (per cycle)', 'Super likes included in each subscription cycle', 'matching', 'integer', 4, 'star', NOW(), NOW()),
-                    ('boosts', 'Profile Boosts (per cycle)', 'Profile boost credits included per cycle', 'visibility', 'integer', 5, 'rocket', NOW(), NOW()),
-                    ('hide_profile', 'Hide Profile', 'Ability to hide your profile from others', 'privacy', 'boolean', 6, 'eye-off', NOW(), NOW()),
-                    ('priority_visibility', 'Priority Visibility', 'Appear at the top of discovery feeds', 'visibility', 'boolean', 7, 'trending-up', NOW(), NOW()),
-                    ('trust_badge', 'Trust Badge', 'Display a verified trust badge on your profile', 'badge', 'boolean', 8, 'shield', NOW(), NOW()),
-                    ('elite_badge', 'Elite Badge', 'Exclusive elite member badge', 'badge', 'boolean', 9, 'crown', NOW(), NOW()),
-                    ('who_liked_me', 'See Who Liked Me', 'View profiles of people who liked you', 'insights', 'boolean', 10, 'eye', NOW(), NOW()),
-                    ('who_viewed_me', 'See Who Viewed Me', 'View profiles of people who visited your profile', 'insights', 'boolean', 11, 'binoculars', NOW(), NOW()),
-                    ('ai_features', 'AI-Powered Features', 'Access to AI-driven matching and suggestions', 'ai', 'boolean', 12, 'brain', NOW(), NOW()),
-                    ('voice_calls', 'Voice Calls', 'Make voice calls with your matches', 'communication', 'boolean', 13, 'phone', NOW(), NOW()),
-                    ('video_calls', 'Video Calls', 'Make video calls with your matches', 'communication', 'boolean', 14, 'video', NOW(), NOW()),
-                    ('stranger_meet', 'Stranger Meet Access', 'Access the Stranger Meet feature', 'social', 'boolean', 15, 'users', NOW(), NOW()),
-                    ('party_creation', 'Party Creation', 'Create group party plans on the live feed', 'events', 'boolean', 16, 'party-popper', NOW(), NOW()),
-                    ('advanced_search', 'Advanced Search', 'Use advanced filters to find specific profiles', 'discovery', 'boolean', 17, 'search', NOW(), NOW()),
-                    ('premium_filters', 'Premium Filters', 'Access premium discovery filters', 'discovery', 'boolean', 18, 'filter', NOW(), NOW()),
-                    ('profile_boost', 'Profile Boost Purchase', 'Ability to purchase additional profile boosts', 'visibility', 'boolean', 19, 'zap', NOW(), NOW()),
-                    ('storage', 'Photo Storage (GB)', 'Amount of storage for photos and media', 'storage', 'decimal', 20, 'database', NOW(), NOW()),
-                    ('daily_backtracks', 'Daily Backtracks', 'Number of times you can backtrack per day', 'matching', 'integer', 21, 'rotate-left', NOW(), NOW())
-                ON CONFLICT (key) DO NOTHING;
-            `);
-
-            // Seed default subscription packages if none exist
-            const [pkgCountResult]: any = await sequelize.query(`SELECT count(*) as count FROM "SubscriptionPackages";`);
-            const pkgCount = parseInt(pkgCountResult[0]?.count || '0');
-            if (pkgCount === 0) {
-                logger.info('No subscription packages found. Seeding default subscription packages...');
-                await sequelize.query(`
-                    INSERT INTO "SubscriptionPackages" (
-                        id, name, tier, price, duration_days, 
-                        daily_match_requests, daily_likes, daily_posts, 
-                        superlikes_per_cycle, boosts_per_cycle, backtrack_limit,
-                        has_hide_profile, has_priority_visibility, has_trust_badge, 
-                        has_elite_badge, can_see_who_liked, is_active, 
-                        display_order, theme_color, created_at, updated_at
-                    ) VALUES 
-                        (gen_random_uuid(), 'Free Service (Basic Access)', 'FREE', 0.00, 3650, 3, 7, 5, 0, 0, 3, false, false, false, false, false, true, 0, '#6c757d', NOW(), NOW()),
-                        (gen_random_uuid(), 'Lunara Core', 'CORE', 199.00, 7, -1, -1, -1, 3, 0, 5, false, false, false, false, true, true, 1, '#00A9FF', NOW(), NOW()),
-                        (gen_random_uuid(), 'Lunara Plus', 'PLUS', 299.00, 7, -1, -1, -1, 10, 2, 10, true, false, false, false, true, true, 2, '#7F00FF', NOW(), NOW()),
-                        (gen_random_uuid(), 'Lunara Pro', 'PRO', 599.00, 14, -1, -1, -1, 14, 4, 15, true, true, true, false, true, true, 3, '#E100FF', NOW(), NOW()),
-                        (gen_random_uuid(), 'Lunara Elite - 15 Days', 'ELITE', 999.00, 15, -1, -1, -1, 9999, 9999, 9999, true, true, true, true, true, true, 4, '#FFB703', NOW(), NOW()),
-                        (gen_random_uuid(), 'Lunara Elite - 30 Days', 'ELITE', 1699.00, 30, -1, -1, -1, 9999, 9999, 9999, true, true, true, true, true, true, 5, '#FFB703', NOW(), NOW());
-                `);
-                logger.info('Default subscription packages seeded successfully.');
-            }
-
-            // ── Additive party_safety_checks table migration ──────────────────
-            await sequelize.query(`
-                CREATE TABLE IF NOT EXISTS party_safety_checks (
-                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    plan_id UUID NOT NULL,
-                    plan_type VARCHAR(50) NOT NULL DEFAULT 'party_plan',
-                    user_id UUID NOT NULL,
-                    partner_user_id UUID,
-                    venue_name VARCHAR(255) NOT NULL DEFAULT 'Venue',
-                    party_date TIMESTAMP WITH TIME ZONE NOT NULL,
-                    party_time VARCHAR(50),
-                    safety_status VARCHAR(50) NOT NULL DEFAULT 'NO_RESPONSE',
-                    notes TEXT,
-                    location_lat FLOAT,
-                    location_lng FLOAT,
-                    alert_triggered BOOLEAN NOT NULL DEFAULT FALSE,
-                    notification_sent_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-                    responded_at TIMESTAMP WITH TIME ZONE,
-                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-                );
-            `);
-            logger.info('party_safety_checks table verified/migrated successfully.');
+            logger.info('Database schema and performance indexes verified successfully.');
         } catch (alterError: any) {
             logger.warn('Dynamic table migration warning: ' + alterError.message);
         }
@@ -502,7 +350,7 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
             logger.warn('Failed to seed default admin user: ' + seedError.message);
         }
 
-        // ── Create Plan Time Lock & Cooldown Engine Tables ──
+        // ── Seed Default Time Lock Configurations ──
         try {
             await sequelize.query(`
                 CREATE TABLE IF NOT EXISTS plan_time_lock_configs (
@@ -524,51 +372,6 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                 );
             `);
 
-            await sequelize.query(`
-                CREATE TABLE IF NOT EXISTS plan_time_locks (
-                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    source_plan_id UUID NOT NULL,
-                    source_plan_type VARCHAR(100) NOT NULL,
-                    lock_start_at TIMESTAMP WITH TIME ZONE NOT NULL,
-                    lock_end_at TIMESTAMP WITH TIME ZONE NOT NULL,
-                    status VARCHAR(50) NOT NULL DEFAULT 'active',
-                    reason TEXT,
-                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-                );
-            `);
-
-            await sequelize.query(`
-                CREATE TABLE IF NOT EXISTS plan_time_lock_config_histories (
-                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    config_id UUID NOT NULL REFERENCES plan_time_lock_configs(id) ON DELETE CASCADE,
-                    admin_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    scope VARCHAR(100) NOT NULL,
-                    previous_value JSONB NOT NULL,
-                    new_value JSONB NOT NULL,
-                    change_reason TEXT,
-                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-                );
-            `);
-
-            await sequelize.query(`
-                CREATE TABLE IF NOT EXISTS notification_jobs (
-                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    send_at TIMESTAMP WITH TIME ZONE NOT NULL,
-                    title VARCHAR(255) NOT NULL,
-                    body TEXT NOT NULL,
-                    status VARCHAR(50) NOT NULL DEFAULT 'pending',
-                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-                );
-            `);
-
-            logger.info('Time Lock tables verified/migrated successfully.');
-
-            // Seed default configs if not existing
             const defaultConfigs = [
                 { scope: 'global', time_lock_enabled: true, default_cooldown_hours: 4, max_active_plans: 3, max_daily_plans: 3, max_weekly_plans: 10, allow_overlapping_plans: false, overlap_policy: 'NO_OVERLAP' },
                 { scope: 'subscription:FREE', time_lock_enabled: true, default_cooldown_hours: 6, max_active_plans: 2, max_daily_plans: 2, max_weekly_plans: 5, allow_overlapping_plans: false, overlap_policy: 'NO_OVERLAP' },
@@ -592,54 +395,11 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                         max_daily_plans = EXCLUDED.max_daily_plans;
                 `, { replacements: cfg });
             }
-            // Update existing tables to ensure max_active_plans is at least max_daily_plans
-            await sequelize.query(`
-                UPDATE plan_time_lock_configs 
-                SET max_active_plans = max_daily_plans 
-                WHERE max_active_plans < max_daily_plans;
-            `);
-            logger.info('Default Time Lock configurations seeded.');
         } catch (dbErr: any) {
             logger.warn('Failed to verify/seed Time Lock schema: ' + dbErr.message);
         }
 
-        // ── Party Plans & Party Plan Requests Column Migrations ────────────────
-        try {
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_arrival_confirmed BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_arrival_time TIMESTAMP WITH TIME ZONE;`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_24h_sent BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_3h_sent BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS show_profile_photo BOOLEAN DEFAULT TRUE;`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS show_host_name BOOLEAN DEFAULT TRUE;`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS show_venue_details BOOLEAN DEFAULT TRUE;`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS show_date_details BOOLEAN DEFAULT TRUE;`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS mobile_number VARCHAR(50);`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS optional_mobile_number VARCHAR(50);`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS food_preference VARCHAR(100);`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS drink_preference VARCHAR(100);`);
-            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_lat_lang_check_in BOOLEAN DEFAULT FALSE;`);
-
-            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_arrival_confirmed BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_arrival_time TIMESTAMP WITH TIME ZONE;`);
-            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS lat_lang_check_in BOOLEAN DEFAULT FALSE;`);
-            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS payment_timeout_at TIMESTAMP WITH TIME ZONE;`);
-            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS joiner_payment_status VARCHAR(50) DEFAULT 'unpaid';`);
-            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS joiner_razorpay_order_id VARCHAR(255);`);
-            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS joiner_razorpay_payment_id VARCHAR(255);`);
-            // Request cancellation metadata is selected by PartyPlanRequest on every query.
-            // Keep this additive migration here because this project deploys schema updates at
-            // startup instead of through a Sequelize migrations directory.
-            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP WITH TIME ZONE;`);
-            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancelled_by UUID;`);
-            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancellation_reason VARCHAR(100);`);
-            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS previous_status VARCHAR(50);`);
-        } catch (planErr: any) {
-            logger.warn('Failed to migrate party_plans / party_plan_requests columns: ' + planErr.message);
-        }
-
-        // ── Smart Credit Wallet Tables & Migration ─────────────────────────────
+        // ── Seed Default Smart Wallet Config if none exists ──
         try {
             await sequelize.query(`
                 CREATE TABLE IF NOT EXISTS smart_wallets (
@@ -665,19 +425,6 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                 );
             `);
 
-            // Idempotent column additions for smart_wallets
-            await sequelize.query(`ALTER TABLE smart_wallets ADD COLUMN IF NOT EXISTS locked_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00;`);
-            await sequelize.query(`ALTER TABLE smart_wallets ADD COLUMN IF NOT EXISTS pending_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00;`);
-            await sequelize.query(`ALTER TABLE smart_wallets ADD COLUMN IF NOT EXISTS reward_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00;`);
-            await sequelize.query(`ALTER TABLE smart_wallets ADD COLUMN IF NOT EXISTS lifetime_rewards DECIMAL(10,2) NOT NULL DEFAULT 0.00;`);
-            await sequelize.query(`ALTER TABLE smart_wallets ADD COLUMN IF NOT EXISTS lifetime_refunds DECIMAL(10,2) NOT NULL DEFAULT 0.00;`);
-
-            // Idempotent column additions for wallet_transactions
-            await sequelize.query(`ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS wallet_id UUID;`);
-            await sequelize.query(`ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS source VARCHAR(100);`);
-            await sequelize.query(`ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS destination VARCHAR(100);`);
-            await sequelize.query(`ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS created_by VARCHAR(100);`);
-
             await sequelize.query(`
                 CREATE TABLE IF NOT EXISTS smart_wallet_configs (
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -694,53 +441,15 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
             `);
 
             await sequelize.query(`
-                CREATE TABLE IF NOT EXISTS wallet_promotional_campaigns (
-                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    campaign_code VARCHAR(50) NOT NULL UNIQUE,
-                    title VARCHAR(200) NOT NULL,
-                    description TEXT,
-                    credit_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-                    expiry_days INTEGER NOT NULL DEFAULT 30,
-                    max_uses INTEGER NOT NULL DEFAULT 1000,
-                    used_count INTEGER NOT NULL DEFAULT 0,
-                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-                    start_date TIMESTAMP WITH TIME ZONE,
-                    end_date TIMESTAMP WITH TIME ZONE,
-                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-                );
-            `);
-
-            await sequelize.query(`
-                CREATE TABLE IF NOT EXISTS wallet_cashback_rules (
-                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    rule_name VARCHAR(200) NOT NULL,
-                    trigger_type VARCHAR(50) NOT NULL,
-                    min_spend DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-                    cashback_type VARCHAR(20) NOT NULL DEFAULT 'percentage',
-                    cashback_value DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-                    max_cashback DECIMAL(10,2) NOT NULL DEFAULT 500.00,
-                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-                    expiry_days INTEGER NOT NULL DEFAULT 30,
-                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-                );
-            `);
-
-            // Seed default global config if none exists
-            await sequelize.query(`
                 INSERT INTO smart_wallet_configs (id, scope, min_recharge_amount, max_recharge_amount, suggested_amounts, daily_recharge_limit, monthly_recharge_limit, is_wallet_active, created_at, updated_at)
                 VALUES (gen_random_uuid(), 'global', 100.00, 50000.00, '[100, 250, 500, 1000, 2000]'::jsonb, 100000.00, 500000.00, true, NOW(), NOW())
                 ON CONFLICT (scope) DO NOTHING;
             `);
-
-            logger.info('Smart Credit Wallet schema & default configurations verified.');
         } catch (walletErr: any) {
             logger.warn('Failed to verify/seed Smart Credit Wallet schema: ' + walletErr.message);
         }
 
         if (process.env.NODE_ENV === 'development') {
-            // Sync models in development (be careful in production)
             try {
                 await sequelize.sync();
                 logger.info('Database models synchronized');

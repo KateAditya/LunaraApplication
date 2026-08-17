@@ -432,22 +432,23 @@ export async function generateTicketPDF(options: TicketPDFOptions): Promise<stri
 
         // ─── DEPOSIT STATUS & PAYMENT CARD ───
         const payY = 418;
+        const isFree = options.paymentAmount <= 0;
         doc.roundedRect(30, payY, 320, 54, 14)
-           .fillColor('#F0FDF4')
-           .strokeColor('#DCFCE7')
+           .fillColor(isFree ? '#EFF6FF' : '#F0FDF4')
+           .strokeColor(isFree ? '#DBEAFE' : '#DCFCE7')
            .lineWidth(1)
            .fillAndStroke();
 
         drawCheckmarkIcon(doc, 52, payY + 27, 12);
 
         doc.fillColor('#64748B').fontSize(7.5).font('Helvetica-Bold').text('DEPOSIT STATUS', 74, payY + 13);
-        doc.fillColor('#0F172A').fontSize(11).font('Helvetica-Bold').text('Lunara Secure Pay', 74, payY + 26);
+        doc.fillColor('#0F172A').fontSize(11).font('Helvetica-Bold').text(isFree ? 'FREE (Complimentary)' : 'Lunara Secure Pay', 74, payY + 26);
 
         doc.fillColor('#64748B').fontSize(7.5).font('Helvetica-Bold').text('AMOUNT PAID', 200, payY + 13, { width: 90, align: 'right' });
-        doc.fillColor('#16A34A').fontSize(12.5).font('Helvetica-Bold').text(`₹${Math.round(options.paymentAmount)}`, 190, payY + 26, { width: 95, align: 'right' });
+        doc.fillColor(isFree ? '#1D4ED8' : '#16A34A').fontSize(12.5).font('Helvetica-Bold').text(isFree ? 'FREE' : `₹${Math.round(options.paymentAmount)}`, 190, payY + 26, { width: 95, align: 'right' });
 
-        doc.roundedRect(290, payY + 26, 45, 18, 9).fillColor('#DCFCE7').fill();
-        doc.fillColor('#15803D').fontSize(7.5).font('Helvetica-Bold').text('PAID', 290, payY + 31, { width: 45, align: 'center' });
+        doc.roundedRect(290, payY + 26, 45, 18, 9).fillColor(isFree ? '#DBEAFE' : '#DCFCE7').fill();
+        doc.fillColor(isFree ? '#1D4ED8' : '#15803D').fontSize(7.5).font('Helvetica-Bold').text(isFree ? 'FREE' : 'PAID', 290, payY + 31, { width: 45, align: 'center' });
 
         // ─── VENUE LOCATION BOX ───
         const venueY = 482;

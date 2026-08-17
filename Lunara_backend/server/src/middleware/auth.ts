@@ -46,8 +46,10 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
         // Verify token
         const decoded = verifyAccessToken(token);
 
-        // Get user from database
-        const user = await User.findByPk(decoded.userId);
+        // Get user from database with lean attributes (fast index lookup)
+        const user = await User.findByPk(decoded.userId, {
+            attributes: ['id', 'email', 'role', 'isActive', 'isAutoblocked', 'autoblockedReason', 'lastLoginAt'],
+        });
         if (!user) {
             return res.status(401).json({
                 success: false,
@@ -78,9 +80,11 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
             role: user.role,
         };
 
-        // Update last seen
-        user.lastLoginAt = new Date();
-        await user.save({ fields: ['lastLoginAt'] });
+        // Non-blocking, throttled last-active update (at most once every 15 minutes, fire-and-forget)
+        const fifteenMinutesAgo = Date.now() - 15 * 60 * 1000;
+        if (!user.lastLoginAt || new Date(user.lastLoginAt).getTime() < fifteenMinutesAgo) {
+            User.update({ lastLoginAt: new Date() }, { where: { id: user.id } }).catch(() => {});
+        }
 
         next();
     } catch (error: any) {
@@ -110,7 +114,9 @@ export async function optionalAuth(req: Request, _res: Response, next: NextFunct
             const token = authHeader.substring(7);
             const decoded = verifyAccessToken(token);
 
-            const user = await User.findByPk(decoded.userId);
+            const user = await User.findByPk(decoded.userId, {
+                attributes: ['id', 'email', 'role', 'isActive'],
+            });
             if (user && user.isActive) {
                 req.user = {
                     id: user.id,

@@ -483,9 +483,10 @@ export class GroupPartyService {
      * Consolidates all Group Party notifications into ONE single card per party.
      * Card ID: group_party_timeline_${partyId}
      */
-    public static async enrichGroupPartyNotificationCard(partyId: string, _recipientUserId: string): Promise<any | null> {
+    public static async enrichGroupPartyNotificationCard(partyId: string, _recipientUserId: string, preloadedGp?: any): Promise<any | null> {
         try {
-            let gp = await GroupParty.findByPk(partyId, {
+            // Use pre-loaded record if provided to avoid N+1 DB hit
+            let gp = preloadedGp ?? await GroupParty.findByPk(partyId, {
                 include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city'] }]
             });
 
@@ -508,7 +509,8 @@ export class GroupPartyService {
             const guestCount = isLargeBooking ? bookingRecord.numberOfGuests : gp?.numberOfFriends;
             const isConfirmed = isLargeBooking 
                 ? (bookingRecord.status === 'confirmed' || bookingRecord.adminApprovalStatus === 'payment_done')
-                : (gp?.status === GroupPartyStatus.CONFIRMED && gp?.paymentStatus === GroupPartyPaymentStatus.PAID);
+                // Free parties: status=CONFIRMED even if paymentStatus=pending; paid parties: need PAID too
+                : (gp?.status === GroupPartyStatus.CONFIRMED && (gp?.paymentStatus === GroupPartyPaymentStatus.PAID || Number(gp?.totalAmount ?? 0) <= 0));
             const isPending = isLargeBooking 
                 ? (bookingRecord.adminApprovalStatus === 'pending')
                 : (gp?.status === GroupPartyStatus.PENDING);
@@ -598,6 +600,13 @@ export class GroupPartyService {
                 read: false,
                 isRead: false,
                 category: 'bookings',
+                // Top-level status fields so Flutter can resolve status without parsing data
+                status: isConfirmed ? 'confirmed' : (isCompleted ? 'completed' : (isApproved ? 'approved' : (isCancelled ? 'cancelled' : 'pending'))),
+                paymentStatus: isLargeBooking
+                    ? (bookingRecord?.paymentStatus || 'pending')
+                    : (gp?.paymentStatus || 'pending'),
+                totalAmount: isLargeBooking ? 0 : Number(gp?.totalAmount || 0),
+                isSmallGroupParty: !isLargeBooking,
                 data: {
                     type: 'group_party_timeline',
                     partyId,
@@ -605,6 +614,12 @@ export class GroupPartyService {
                     guestCount,
                     partyDate,
                     statusText,
+                    status: isConfirmed ? 'confirmed' : (isCompleted ? 'completed' : (isApproved ? 'approved' : (isCancelled ? 'cancelled' : 'pending'))),
+                    paymentStatus: isLargeBooking
+                        ? (bookingRecord?.paymentStatus || 'pending')
+                        : (gp?.paymentStatus || 'pending'),
+                    totalAmount: isLargeBooking ? 0 : Number(gp?.totalAmount || 0),
+                    isSmallGroupParty: !isLargeBooking,
                     timelineProgress: progressPercentage,
                     currentStatusStep: isCompleted ? 10 : (isConfirmed ? 6 : (isApproved ? 4 : 2)),
                     timelineSteps,

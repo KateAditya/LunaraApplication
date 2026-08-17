@@ -267,50 +267,55 @@ async function getUserNotifications(
     }
 
     // Build/Enrich Unified Party Plan Timeline Cards
-    const timelineCards: any[] = [];
-    for (const planId of partyPlanIds) {
-        const card = await enrichPartyPlanNotificationCard(planId, uId);
-        if (card && card.currentStatus !== 'Waiting other user') {
-            // Find all DB notifications associated with this plan
-            const planNotifs = notifications.filter(n => {
-                const metadata = n.data || {};
-                const pId = metadata.planId || metadata.partyPlanId || (n.entityType === 'party_plan' ? n.entityId : null);
-                return pId === planId;
-            });
+    // Build/Enrich Unified Party Plan Timeline Cards in parallel
+    const planCardResults = await Promise.all(
+        Array.from(partyPlanIds).map(async (planId) => {
+            try {
+                const card = await enrichPartyPlanNotificationCard(planId, uId);
+                if (card && card.currentStatus !== 'Waiting other user') {
+                    // Find all DB notifications associated with this plan
+                    const planNotifs = notifications.filter(n => {
+                        const metadata = n.data || {};
+                        const pId = metadata.planId || metadata.partyPlanId || (n.entityType === 'party_plan' ? n.entityId : null);
+                        return pId === planId;
+                    });
 
-            // Timeline card is unread if ANY database notification for this plan is unread
-            const hasUnread = planNotifs.length > 0 ? planNotifs.some(n => !n.read) : false;
-            
-            // The timestamp is the max of the plan's update time and latest notification's time
-            let maxTime = new Date(card.lastUpdated).getTime();
-            for (const pn of planNotifs) {
-                const pt = new Date(pn.createdAt).getTime();
-                if (pt > maxTime) maxTime = pt;
+                    const hasUnread = planNotifs.length > 0 ? planNotifs.some(n => !n.read) : false;
+                    let maxTime = new Date(card.lastUpdated).getTime();
+                    for (const pn of planNotifs) {
+                        const pt = new Date(pn.createdAt).getTime();
+                        if (pt > maxTime) maxTime = pt;
+                    }
+
+                    return {
+                        id: `party_plan_timeline_${planId}`,
+                        title: card.planTitle,
+                        body: card.currentStatus,
+                        category: 'events',
+                        type: 'party_plan_timeline',
+                        createdAt: new Date(maxTime).toISOString(),
+                        read: !hasUnread,
+                        isRead: !hasUnread,
+                        imageUrl: card.partyImage || card.hostProfilePhotoUrl || card.guestProfilePhotoUrl,
+                        host: card.host,
+                        creator: card.creator,
+                        user: card.user,
+                        actor: card.host || card.creator || card.user,
+                        sender: card.host || card.creator || card.user,
+                        hostProfilePhotoUrl: card.hostProfilePhotoUrl,
+                        guestProfilePhotoUrl: card.guestProfilePhotoUrl,
+                        data: card,
+                        plan: card,
+                        deepLink: `/party-plans/${planId}`,
+                    };
+                }
+            } catch (err) {
+                console.error(`Error enriching party plan ${planId}:`, err);
             }
-
-            timelineCards.push({
-                id: `party_plan_timeline_${planId}`,
-                title: card.planTitle,
-                body: card.currentStatus,
-                category: 'events',
-                type: 'party_plan_timeline',
-                createdAt: new Date(maxTime).toISOString(),
-                read: !hasUnread,
-                isRead: !hasUnread,
-                imageUrl: card.partyImage || card.hostProfilePhotoUrl || card.guestProfilePhotoUrl,
-                host: card.host,
-                creator: card.creator,
-                user: card.user,
-                actor: card.host || card.creator || card.user,
-                sender: card.host || card.creator || card.user,
-                hostProfilePhotoUrl: card.hostProfilePhotoUrl,
-                guestProfilePhotoUrl: card.guestProfilePhotoUrl,
-                data: card,
-                plan: card,
-                deepLink: `/party-plans/${planId}`,
-            });
-        }
-    }
+            return null;
+        })
+    );
+    const timelineCards = planCardResults.filter(Boolean);
 
     // Filter out raw party plan notifications (they are now unified in timelineCards)
     const otherNotifs = notifications.filter(n => {
@@ -331,7 +336,47 @@ async function getUserNotifications(
             order: [['createdAt', 'DESC']],
             limit: 20
         });
-        for (const match of matches) {
+
+        // Batch-fetch all active plans for all superlike senders in a single query (eliminates N+1)
+        const superlikeSenderIds = matches
+            .filter((m: any) => (m.matchReason === 'superlike' || m.isSuperLike) && m.user1?.id)
+            .map((m: any) => m.user1.id);
+
+        const plansBySender = new Map<string, any[]>();
+        if (superlikeSenderIds.length > 0) {
+            try {
+                const superlikePlans = await PartyPlan.findAll({
+                    where: {
+                        userId: { [Op.in]: superlikeSenderIds },
+                        status: 'active',
+                        isLive: true,
+                        planDateTime: { [Op.gte]: new Date() },
+                        visibility: 'public',
+                    },
+                    include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }],
+                    order: [['planDateTime', 'ASC']],
+                    limit: 30,
+                });
+                for (const p of superlikePlans) {
+                    const list = plansBySender.get((p as any).userId) || [];
+                    if (list.length < 3) {
+                        list.push({
+                            id: p.id,
+                            title: `Let's party at ${(p as any).venue?.name || 'Venue'}! 🚀`,
+                            venueName: (p as any).venue?.name || 'Venue',
+                            planDateTime: (p as any).planDateTime,
+                            status: (p as any).status,
+                            isLive: (p as any).isLive,
+                        });
+                        plansBySender.set((p as any).userId, list);
+                    }
+                }
+            } catch (pErr) {
+                console.error('Error batch-fetching superlike sender plans:', pErr);
+            }
+        }
+
+        const matchCards = matches.map((match) => {
             const m = match as any;
             const firstUser = m.user1;
             const notificationId = `match_${match.id}`;
@@ -342,43 +387,16 @@ async function getUserNotifications(
                 n.entityId === match.id || 
                 (n.data && n.data.matchId === match.id)
             );
-            if (alreadyExists) continue;
+            if (alreadyExists) return null;
 
             const mCreatedTime = match.createdAt ? new Date(match.createdAt).getTime() : 0;
             const isCleared = clearedAt > 0 && mCreatedTime <= clearedAt;
             const isRead = isCleared || activeReadNotificationIds.has(notificationId);
             const isSuper = m.matchReason === 'superlike' || m.isSuperLike;
             const senderName = `${firstUser?.firstName || 'Someone'} ${firstUser?.lastName || ''}`.trim();
+            const postedPlans = firstUser?.id ? (plansBySender.get(firstUser.id) || []) : [];
 
-            let postedPlans: any[] = [];
-            if (isSuper && firstUser?.id) {
-                try {
-                    const activePlans = await PartyPlan.findAll({
-                        where: {
-                            userId: firstUser.id,
-                            status: 'active',
-                            isLive: true,
-                            planDateTime: { [Op.gte]: new Date() },
-                            visibility: 'public',
-                        },
-                        include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }],
-                        order: [['planDateTime', 'ASC']],
-                        limit: 3,
-                    });
-                    postedPlans = activePlans.map((p: any) => ({
-                        id: p.id,
-                        title: `Let's party at ${p.venue?.name || 'Venue'}! 🚀`,
-                        venueName: p.venue?.name || 'Venue',
-                        planDateTime: p.planDateTime,
-                        status: p.status,
-                        isLive: p.isLive,
-                    }));
-                } catch (pErr) {
-                    console.error('Error fetching superlike sender plans:', pErr);
-                }
-            }
-
-            notifications.push({
+            return {
                 id: notificationId,
                 title: isSuper ? '⭐ Super Like!' : '💖 New Connection!',
                 body: isSuper ? `${senderName} sent you a Super Like! 💜` : `${senderName} liked your profile ❤️`,
@@ -401,8 +419,9 @@ async function getUserNotifications(
                     postedPlans,
                     action: isSuper ? 'superlike' : 'like',
                 }
-            });
-        }
+            };
+        });
+        notifications.push(...matchCards.filter(Boolean));
     } catch (matchErr) {
         console.error('Error fetching match notifications:', matchErr);
     }
@@ -432,55 +451,64 @@ async function getUserNotifications(
         console.error('Error fetching payment notifications:', payErr);
     }
 
-    // 3. Fetch Stranger Meet Cards (Unified Timeline Card Engine)
+    // 3. Fetch Stranger Meet Cards (Unified Timeline Card Engine) in parallel
     try {
         const { StrangersMeetService } = await import('../services/StrangersMeetService');
 
-        const hostMeets = await StrangersMeetRequest.findAll({
-            where: { userId: uId },
-            attributes: ['id']
-        });
-
-        const joinedRecords = await StrangersMeetJoiner.findAll({
-            where: { userId: uId },
-            attributes: ['strangersMeetRequestId']
-        });
+        const [hostMeets, joinedRecords] = await Promise.all([
+            StrangersMeetRequest.findAll({
+                where: { userId: uId },
+                attributes: ['id']
+            }),
+            StrangersMeetJoiner.findAll({
+                where: { userId: uId },
+                attributes: ['strangersMeetRequestId']
+            })
+        ]);
 
         const meetIds = Array.from(new Set([
             ...hostMeets.map(m => m.id),
             ...joinedRecords.map(j => j.strangersMeetRequestId)
         ]));
 
-        for (const mId of meetIds) {
-            const card = await StrangersMeetService.enrichStrangersMeetNotificationCard(mId, uId);
-            if (card) {
-                const notificationId = card.id;
-                const isRead = activeReadNotificationIds.has(notificationId);
-                notifications.push({
-                    id: notificationId,
-                    title: card.title,
-                    body: `${card.currentStatusText} — ${card.venueName} (${card.venueArea})`,
-                    createdAt: card.updatedAt,
-                    read: isRead,
-                    isRead: isRead,
-                    category: 'bookings',
-                    sender: card.host,
-                    eventDetails: {
-                        subject: card.title,
-                        tagline: card.tagline,
-                        venue: card.venueName,
-                        eventDate: card.eventDate,
-                        slotsFilled: card.slotsFilled,
-                        totalSlots: card.totalSlots
-                    },
-                    data: {
-                        type: 'strangers_meet_timeline',
-                        strangersMeetId: card.meetId,
-                        cardPayload: card
+        const smCards = await Promise.all(
+            meetIds.map(async (mId) => {
+                try {
+                    const card = await StrangersMeetService.enrichStrangersMeetNotificationCard(mId, uId);
+                    if (card) {
+                        const notificationId = card.id;
+                        const isRead = activeReadNotificationIds.has(notificationId);
+                        return {
+                            id: notificationId,
+                            title: card.title,
+                            body: `${card.currentStatusText} — ${card.venueName} (${card.venueArea})`,
+                            createdAt: card.updatedAt,
+                            read: isRead,
+                            isRead: isRead,
+                            category: 'bookings',
+                            sender: card.host,
+                            eventDetails: {
+                                subject: card.title,
+                                tagline: card.tagline,
+                                venue: card.venueName,
+                                eventDate: card.eventDate,
+                                slotsFilled: card.slotsFilled,
+                                totalSlots: card.totalSlots
+                            },
+                            data: {
+                                type: 'strangers_meet_timeline',
+                                strangersMeetId: card.meetId,
+                                cardPayload: card
+                            }
+                        };
                     }
-                });
-            }
-        }
+                } catch (err) {
+                    console.error(`Error enriching strangers meet ${mId}:`, err);
+                }
+                return null;
+            })
+        );
+        notifications.push(...smCards.filter(Boolean));
     } catch (smErr) {
         console.error('Error fetching strangers meet notifications:', smErr);
     }
@@ -517,7 +545,7 @@ async function getUserNotifications(
         console.error('Error fetching safety check feedbacks:', err);
     }
 
-    // 5. Fetch Booking records (goingMode = party_request or solo)
+    // 5. Fetch Booking records (goingMode = party_request or solo) in parallel
     try {
         const bookings = await Booking.findAll({
             where: { userId: uId },
@@ -525,71 +553,97 @@ async function getUserNotifications(
             order: [['createdAt', 'DESC']],
             limit: 30
         });
-        for (const booking of bookings) {
-            if (booking.goingMode === 'party_request' || booking.isLargePartyRequest) {
-                const { GroupPartyService } = await import('../services/GroupPartyService');
-                const enrichedCard = await GroupPartyService.enrichLargePartyNotificationCard(booking.id, uId);
-                if (enrichedCard) {
-                    enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
-                    enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);
-                    notifications.push(enrichedCard);
+        const bookingCards = await Promise.all(
+            bookings.map(async (booking) => {
+                try {
+                    if (booking.goingMode === 'party_request' || booking.isLargePartyRequest) {
+                        const { GroupPartyService } = await import('../services/GroupPartyService');
+                        const enrichedCard = await GroupPartyService.enrichLargePartyNotificationCard(booking.id, uId);
+                        if (enrichedCard) {
+                            enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
+                            enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);
+                            return enrichedCard;
+                        }
+                    } else {
+                        const { VenueBookingService } = await import('../services/VenueBookingService');
+                        const enrichedCard = await VenueBookingService.enrichVenueBookingNotificationCard(booking.id, uId);
+                        if (enrichedCard) {
+                            enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
+                            enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);
+                            return enrichedCard;
+                        }
+                    }
+                } catch (err) {
+                    console.error(`Error enriching booking ${booking.id}:`, err);
                 }
-            } else {
-                const { VenueBookingService } = await import('../services/VenueBookingService');
-                const enrichedCard = await VenueBookingService.enrichVenueBookingNotificationCard(booking.id, uId);
-                if (enrichedCard) {
-                    enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
-                    enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);
-                    notifications.push(enrichedCard);
-                }
-            }
-        }
+                return null;
+            })
+        );
+        notifications.push(...bookingCards.filter(Boolean));
     } catch (bookingErr) {
         console.error('Error fetching booking notifications:', bookingErr);
     }
 
-    // 6. Fetch GroupParty records (Unified Timeline Card per Party)
+    // 6. Fetch GroupParty records (Unified Timeline Card per Party) — with venue pre-loaded to avoid N+1
     try {
         const { GroupPartyService } = await import('../services/GroupPartyService');
+        const Venue = (await import('../models/Venue')).default;
+        // Single query with venue included — eliminates N+1 (was: 1 query + N findByPk calls)
         const groupParties = await GroupParty.findAll({
-            where: { userId: uId },
+            where: {
+                userId: uId,
+                // Exclude dead-end states to reduce unnecessary processing
+                status: { [Op.notIn]: ['cancelled', 'rejected'] }
+            },
+            include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city'] }],
             order: [['createdAt', 'DESC']],
             limit: 20
         });
-        for (const gp of groupParties) {
-            const enrichedCard = await GroupPartyService.enrichGroupPartyNotificationCard(gp.id, uId);
-            if (enrichedCard) {
-                enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
-                enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);
-                notifications.push(enrichedCard);
-            }
-        }
+        const gpCards = await Promise.all(
+            groupParties.map(async (gp) => {
+                try {
+                    // Pass preloadedGp to skip redundant GroupParty.findByPk inside enrichGroupPartyNotificationCard
+                    const enrichedCard = await GroupPartyService.enrichGroupPartyNotificationCard(gp.id, uId, gp);
+                    if (enrichedCard) {
+                        enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
+                        enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);
+                        return enrichedCard;
+                    }
+                } catch (err) {
+                    console.error(`Error enriching group party ${gp.id}:`, err);
+                }
+                return null;
+            })
+        );
+        notifications.push(...gpCards.filter(Boolean));
     } catch (gpErr) {
         console.error('Error fetching group party notifications:', gpErr);
     }
 
-    // 7. Fetch Upcoming Night records (Unified Timeline Card per Night)
+    // 7. Fetch Upcoming Night records (Unified Timeline Card per Night) in parallel
     try {
         const { NightPartnerService } = await import('../services/NightPartnerService');
         const NightPartnerRequest = (await import('../models/NightPartnerRequest')).default;
         const NightPartnerMatch = (await import('../models/NightPartnerMatch')).default;
 
-        const hostRequests = await NightPartnerRequest.findAll({
-            where: { hostId: uId },
-            attributes: ['id']
-        });
-        const partnerRequests = await NightPartnerRequest.findAll({
-            where: { partnerId: uId },
-            attributes: ['id']
-        });
-        const hostMatches = await NightPartnerMatch.findAll({
-            where: { hostId: uId },
-            attributes: ['id']
-        });
-        const partnerMatches = await NightPartnerMatch.findAll({
-            where: { partnerId: uId },
-            attributes: ['id']
-        });
+        const [hostRequests, partnerRequests, hostMatches, partnerMatches] = await Promise.all([
+            NightPartnerRequest.findAll({
+                where: { hostId: uId },
+                attributes: ['id']
+            }),
+            NightPartnerRequest.findAll({
+                where: { partnerId: uId },
+                attributes: ['id']
+            }),
+            NightPartnerMatch.findAll({
+                where: { hostId: uId },
+                attributes: ['id']
+            }),
+            NightPartnerMatch.findAll({
+                where: { partnerId: uId },
+                attributes: ['id']
+            })
+        ]);
 
         const nightIds = Array.from(new Set([
             ...hostRequests.map(r => r.id),
@@ -598,14 +652,22 @@ async function getUserNotifications(
             ...partnerMatches.map(m => m.id)
         ]));
 
-        for (const nId of nightIds) {
-            const enrichedCard = await NightPartnerService.enrichUpcomingNightNotificationCard(nId, uId);
-            if (enrichedCard) {
-                enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
-                enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);
-                notifications.push(enrichedCard);
-            }
-        }
+        const nightCards = await Promise.all(
+            nightIds.map(async (nId) => {
+                try {
+                    const enrichedCard = await NightPartnerService.enrichUpcomingNightNotificationCard(nId, uId);
+                    if (enrichedCard) {
+                        enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
+                        enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);
+                        return enrichedCard;
+                    }
+                } catch (err) {
+                    console.error(`Error enriching night card ${nId}:`, err);
+                }
+                return null;
+            })
+        );
+        notifications.push(...nightCards.filter(Boolean));
     } catch (unErr) {
         console.error('Error fetching upcoming night notifications:', unErr);
     }
@@ -617,10 +679,25 @@ async function getUserNotifications(
     const entityKeys = new Map<string, any>();
     const deduplicatedNotifications: any[] = [];
 
-    for (const n of notifications) {
+    // Prioritize timeline cards first so they win during deduplication
+    const sortedForDedup = [...notifications].sort((a, b) => {
+        const aIsTimeline = a.type?.endsWith('_timeline') || a.id?.includes('_timeline_') ? 1 : 0;
+        const bIsTimeline = b.type?.endsWith('_timeline') || b.id?.includes('_timeline_') ? 1 : 0;
+        return bIsTimeline - aIsTimeline;
+    });
+
+    for (const n of sortedForDedup) {
         const data = n.data || {};
+        const titleLower = (n.title || '').toLowerCase();
+        const bodyLower = (n.body || '').toLowerCase();
+        const typeLower = (n.type || n.eventType || '').toLowerCase();
+        const isGp = typeLower.startsWith('group_party') || n.entityType === 'group_party' || n.entityType === 'GroupParty' || titleLower.includes('group party') || bodyLower.includes('group party');
+
         const groupPartyId = data.partyId?.toString() || data.groupPartyId?.toString() ||
-            (n.id?.startsWith('group_party_') ? n.id.replace(/^group_party_([^_]+).*/, '$1') : null);
+            (n.entityType === 'group_party' || n.entityType === 'GroupParty' ? n.entityId?.toString() : null) ||
+            (n.id?.startsWith('group_party_') ? n.id.replace(/^group_party_(?:timeline_)?([^_]+).*/, '$1') : null) ||
+            (isGp ? (data.bookingId?.toString() || n.entityId?.toString()) : null);
+
         const bookingId = data.bookingId?.toString() ||
             (n.id?.startsWith('solo_booking_') ? n.id.replace(/^solo_booking_([^_]+).*/, '$1') : null) ||
             (n.id?.startsWith('large_party_') ? n.id.replace(/^large_party_([^_]+).*/, '$1') : null);
@@ -840,7 +917,7 @@ router.post('/notifications/clear-all', authenticate, async (req, res) => {
         return res.json({ success: true, message: 'All notifications cleared successfully' });
     } catch (error: any) {
         console.error('Error clearing notifications:', error);
-        return res.status(500).json({ success: false, message: 'Failed to clear notifications' });
+        return res.status(500).json({ success: false, message: 'Failed to fetch notifications' });
     }
 });
 
@@ -900,30 +977,9 @@ router.get('/badge-counts', authenticate, async (req, res) => {
             ...getReadNotificationIds(uId),
         ]);
 
-        // 1. General notifications count
-        const notifications = await getUserNotifications(uId, 'all', '', activeReadNotificationIds, getReadNotificationIds(uId));
-        const unreadNotificationsCount = notifications.filter(n => n.read !== true).length;
-
-        // 2. Incoming Stranger Meet requests
-        const myTablePlans = await Plan.findAll({ where: { userId: uId }, attributes: ['id'] });
-        const myTablePlanIds = myTablePlans.map(p => p.id);
-        const unreadIncomingTableRequestsCount = myTablePlanIds.length > 0
-            ? (await PlanJoinRequest.findAll({ where: { planId: { [Op.in]: myTablePlanIds }, status: 'pending' } }))
-                .filter(r => !activeReadRequestIds.has(r.id)).length
-            : 0;
-
-        // 3. Incoming Party Plan requests
-        const myPartyPlans = await PartyPlan.findAll({ where: { userId: uId }, attributes: ['id'] });
-        const myPartyPlanIds = myPartyPlans.map(p => p.id);
-        const unreadIncomingPartyRequestsCount = myPartyPlanIds.length > 0
-            ? (await PartyPlanRequest.findAll({ where: { planId: { [Op.in]: myPartyPlanIds }, status: 'pending' } }))
-                .filter(r => !activeReadRequestIds.has(r.id)).length
-            : 0;
-
         const isUUID = (str: string) => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(str);
         const validReadRequestUUIDs = Array.from(activeReadRequestIds).filter(isUUID);
 
-        // 4. Outgoing accepted requests (waiting for user payment)
         const partyReqWhere: any = {
             requesterId: uId,
             status: { [Op.in]: ['accepted', 'payment_pending'] },
@@ -932,7 +988,6 @@ router.get('/badge-counts', authenticate, async (req, res) => {
         if (validReadRequestUUIDs.length > 0) {
             partyReqWhere.id = { [Op.notIn]: validReadRequestUUIDs };
         }
-        const unreadPartyRequestsCount = await PartyPlanRequest.count({ where: partyReqWhere });
 
         const planReqWhere: any = {
             requesterId: uId,
@@ -942,35 +997,68 @@ router.get('/badge-counts', authenticate, async (req, res) => {
         if (validReadRequestUUIDs.length > 0) {
             planReqWhere.id = { [Op.notIn]: validReadRequestUUIDs };
         }
-        const unreadPlanRequestsCount = await PlanJoinRequest.count({ where: planReqWhere });
+
+        // Execute phase 1 independent queries in parallel
+        const [
+            notifications,
+            myTablePlans,
+            myPartyPlans,
+            unreadPartyRequestsCount,
+            unreadPlanRequestsCount,
+            userConversations
+        ] = await Promise.all([
+            getUserNotifications(uId, 'all', '', activeReadNotificationIds, getReadNotificationIds(uId)),
+            Plan.findAll({ where: { userId: uId }, attributes: ['id'] }),
+            PartyPlan.findAll({ where: { userId: uId }, attributes: ['id'] }),
+            PartyPlanRequest.count({ where: partyReqWhere }),
+            PlanJoinRequest.count({ where: planReqWhere }),
+            Conversation.findAll({
+                where: {
+                    [Op.or]: [
+                        { participantOne: uId },
+                        { participantTwo: uId }
+                    ]
+                },
+                attributes: ['id']
+            })
+        ]);
+
+        const unreadNotificationsCount = notifications.filter(n => n.read !== true).length;
+        const myTablePlanIds = myTablePlans.map(p => p.id);
+        const myPartyPlanIds = myPartyPlans.map(p => p.id);
+        const conversationIds = userConversations.map(c => c.id);
+
+        // Execute phase 2 dependent queries in parallel
+        const [
+            incomingTableReqs,
+            incomingPartyReqs,
+            chatCount
+        ] = await Promise.all([
+            myTablePlanIds.length > 0
+                ? PlanJoinRequest.findAll({ where: { planId: { [Op.in]: myTablePlanIds }, status: 'pending' }, attributes: ['id'] })
+                : Promise.resolve([]),
+            myPartyPlanIds.length > 0
+                ? PartyPlanRequest.findAll({ where: { planId: { [Op.in]: myPartyPlanIds }, status: 'pending' }, attributes: ['id'] })
+                : Promise.resolve([]),
+            conversationIds.length > 0
+                ? Message.count({
+                    where: {
+                        conversationId: { [Op.in]: conversationIds },
+                        senderId: { [Op.ne]: uId },
+                        status: { [Op.ne]: 'read' }
+                    }
+                })
+                : Promise.resolve(0)
+        ]);
+
+        const unreadIncomingTableRequestsCount = incomingTableReqs.filter(r => !activeReadRequestIds.has(r.id)).length;
+        const unreadIncomingPartyRequestsCount = incomingPartyReqs.filter(r => !activeReadRequestIds.has(r.id)).length;
 
         const liveFeedCount = unreadNotificationsCount + 
                               unreadIncomingTableRequestsCount + 
                               unreadIncomingPartyRequestsCount + 
                               unreadPartyRequestsCount + 
                               unreadPlanRequestsCount;
-
-        const userConversations = await Conversation.findAll({
-            where: {
-                [Op.or]: [
-                    { participantOne: uId },
-                    { participantTwo: uId }
-                ]
-            }
-        });
-
-        const conversationIds = userConversations.map(c => c.id);
-
-        let chatCount = 0;
-        if (conversationIds.length > 0) {
-            chatCount = await Message.count({
-                where: {
-                    conversationId: { [Op.in]: conversationIds },
-                    senderId: { [Op.ne]: uId },
-                    status: { [Op.ne]: 'read' }
-                }
-            });
-        }
 
         return res.json({
             success: true,
@@ -985,11 +1073,6 @@ router.get('/badge-counts', authenticate, async (req, res) => {
         return res.status(500).json({ success: false, message: 'Failed to fetch badge counts' });
     }
 });
-
-/**
- * POST /api/mobile/user/swipe
- * Processes a profile swipe (like, superlike, nope)
- */
 router.post('/swipe', mobileUserController.swipeUser);
 
 /**

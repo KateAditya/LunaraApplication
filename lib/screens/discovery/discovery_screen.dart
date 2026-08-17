@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 import 'package:geolocator/geolocator.dart';
 import '../../services/google_places_service.dart';
@@ -198,19 +199,23 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         );
   }
 
-  void _fetchGoogleRatingsForVenues(List<Venue> venues) {
-    for (final venue in venues) {
+  void _fetchGoogleRatingsForVenues(List<Venue> venues) async {
+    if (kIsWeb || venues.isEmpty) return;
+    final Map<String, Map<String, dynamic>> newRatings = {};
+    for (final venue in venues.take(10)) {
       if (venue.name.isNotEmpty && !_googleRatings.containsKey(venue.id)) {
-        GooglePlacesService.fetchGoogleRating(venue.name, venue.city).then((
-          result,
-        ) {
-          if (result != null && mounted) {
-            setState(() {
-              _googleRatings[venue.id] = result;
-            });
+        try {
+          final result = await GooglePlacesService.fetchGoogleRating(venue.name, venue.city);
+          if (result != null) {
+            newRatings[venue.id] = result;
           }
-        });
+        } catch (_) {}
       }
+    }
+    if (newRatings.isNotEmpty && mounted) {
+      setState(() {
+        _googleRatings.addAll(newRatings);
+      });
     }
   }
 
