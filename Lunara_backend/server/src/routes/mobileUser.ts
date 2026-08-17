@@ -899,7 +899,7 @@ router.post('/notifications/clear-all', authenticate, async (req, res) => {
         return res.json({ success: true, message: 'All notifications cleared successfully' });
     } catch (error: any) {
         console.error('Error clearing notifications:', error);
-        return res.status(500).json({ success: false, message: 'Failed to clear notifications' });
+        return res.status(500).json({ success: false, message: 'Failed to fetch notifications' });
     }
 });
 
@@ -959,30 +959,9 @@ router.get('/badge-counts', authenticate, async (req, res) => {
             ...getReadNotificationIds(uId),
         ]);
 
-        // 1. General notifications count
-        const notifications = await getUserNotifications(uId, 'all', '', activeReadNotificationIds, getReadNotificationIds(uId));
-        const unreadNotificationsCount = notifications.filter(n => n.read !== true).length;
-
-        // 2. Incoming Stranger Meet requests
-        const myTablePlans = await Plan.findAll({ where: { userId: uId }, attributes: ['id'] });
-        const myTablePlanIds = myTablePlans.map(p => p.id);
-        const unreadIncomingTableRequestsCount = myTablePlanIds.length > 0
-            ? (await PlanJoinRequest.findAll({ where: { planId: { [Op.in]: myTablePlanIds }, status: 'pending' } }))
-                .filter(r => !activeReadRequestIds.has(r.id)).length
-            : 0;
-
-        // 3. Incoming Party Plan requests
-        const myPartyPlans = await PartyPlan.findAll({ where: { userId: uId }, attributes: ['id'] });
-        const myPartyPlanIds = myPartyPlans.map(p => p.id);
-        const unreadIncomingPartyRequestsCount = myPartyPlanIds.length > 0
-            ? (await PartyPlanRequest.findAll({ where: { planId: { [Op.in]: myPartyPlanIds }, status: 'pending' } }))
-                .filter(r => !activeReadRequestIds.has(r.id)).length
-            : 0;
-
         const isUUID = (str: string) => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(str);
         const validReadRequestUUIDs = Array.from(activeReadRequestIds).filter(isUUID);
 
-        // 4. Outgoing accepted requests (waiting for user payment)
         const partyReqWhere: any = {
             requesterId: uId,
             status: { [Op.in]: ['accepted', 'payment_pending'] },
@@ -991,7 +970,6 @@ router.get('/badge-counts', authenticate, async (req, res) => {
         if (validReadRequestUUIDs.length > 0) {
             partyReqWhere.id = { [Op.notIn]: validReadRequestUUIDs };
         }
-        const unreadPartyRequestsCount = await PartyPlanRequest.count({ where: partyReqWhere });
 
         const planReqWhere: any = {
             requesterId: uId,
@@ -1001,35 +979,68 @@ router.get('/badge-counts', authenticate, async (req, res) => {
         if (validReadRequestUUIDs.length > 0) {
             planReqWhere.id = { [Op.notIn]: validReadRequestUUIDs };
         }
-        const unreadPlanRequestsCount = await PlanJoinRequest.count({ where: planReqWhere });
+
+        // Execute phase 1 independent queries in parallel
+        const [
+            notifications,
+            myTablePlans,
+            myPartyPlans,
+            unreadPartyRequestsCount,
+            unreadPlanRequestsCount,
+            userConversations
+        ] = await Promise.all([
+            getUserNotifications(uId, 'all', '', activeReadNotificationIds, getReadNotificationIds(uId)),
+            Plan.findAll({ where: { userId: uId }, attributes: ['id'] }),
+            PartyPlan.findAll({ where: { userId: uId }, attributes: ['id'] }),
+            PartyPlanRequest.count({ where: partyReqWhere }),
+            PlanJoinRequest.count({ where: planReqWhere }),
+            Conversation.findAll({
+                where: {
+                    [Op.or]: [
+                        { participantOne: uId },
+                        { participantTwo: uId }
+                    ]
+                },
+                attributes: ['id']
+            })
+        ]);
+
+        const unreadNotificationsCount = notifications.filter(n => n.read !== true).length;
+        const myTablePlanIds = myTablePlans.map(p => p.id);
+        const myPartyPlanIds = myPartyPlans.map(p => p.id);
+        const conversationIds = userConversations.map(c => c.id);
+
+        // Execute phase 2 dependent queries in parallel
+        const [
+            incomingTableReqs,
+            incomingPartyReqs,
+            chatCount
+        ] = await Promise.all([
+            myTablePlanIds.length > 0
+                ? PlanJoinRequest.findAll({ where: { planId: { [Op.in]: myTablePlanIds }, status: 'pending' }, attributes: ['id'] })
+                : Promise.resolve([]),
+            myPartyPlanIds.length > 0
+                ? PartyPlanRequest.findAll({ where: { planId: { [Op.in]: myPartyPlanIds }, status: 'pending' }, attributes: ['id'] })
+                : Promise.resolve([]),
+            conversationIds.length > 0
+                ? Message.count({
+                    where: {
+                        conversationId: { [Op.in]: conversationIds },
+                        senderId: { [Op.ne]: uId },
+                        status: { [Op.ne]: 'read' }
+                    }
+                })
+                : Promise.resolve(0)
+        ]);
+
+        const unreadIncomingTableRequestsCount = incomingTableReqs.filter(r => !activeReadRequestIds.has(r.id)).length;
+        const unreadIncomingPartyRequestsCount = incomingPartyReqs.filter(r => !activeReadRequestIds.has(r.id)).length;
 
         const liveFeedCount = unreadNotificationsCount + 
                               unreadIncomingTableRequestsCount + 
                               unreadIncomingPartyRequestsCount + 
                               unreadPartyRequestsCount + 
                               unreadPlanRequestsCount;
-
-        const userConversations = await Conversation.findAll({
-            where: {
-                [Op.or]: [
-                    { participantOne: uId },
-                    { participantTwo: uId }
-                ]
-            }
-        });
-
-        const conversationIds = userConversations.map(c => c.id);
-
-        let chatCount = 0;
-        if (conversationIds.length > 0) {
-            chatCount = await Message.count({
-                where: {
-                    conversationId: { [Op.in]: conversationIds },
-                    senderId: { [Op.ne]: uId },
-                    status: { [Op.ne]: 'read' }
-                }
-            });
-        }
 
         return res.json({
             success: true,
@@ -1044,11 +1055,6 @@ router.get('/badge-counts', authenticate, async (req, res) => {
         return res.status(500).json({ success: false, message: 'Failed to fetch badge counts' });
     }
 });
-
-/**
- * POST /api/mobile/user/swipe
- * Processes a profile swipe (like, superlike, nope)
- */
 router.post('/swipe', mobileUserController.swipeUser);
 
 /**

@@ -26,6 +26,10 @@ class ApiService {
   /// Reusable HTTP client instance for connection pooling & Keep-Alive
   static final http.Client _httpClient = http.Client();
 
+  /// Concurrent in-flight GET request deduplication pool to prevent duplicate network calls
+  static final Map<String, Future<http.Response>> _inFlightGets = {};
+  static DateTime? _lastProfileFetchTime;
+
   // Uses your machine's local IP (192.168.0.150) for local dev on a real device
   static String get baseUrl {
     if (!isLocal) {
@@ -293,7 +297,7 @@ class ApiService {
 
   static String? get authToken => _authToken;
 
-  static Future<User?> fetchProfile({String? userId}) async {
+  static Future<User?> fetchProfile({String? userId, bool forceRefresh = false}) async {
     try {
       if (_authToken == null) {
         await initAuthToken();
@@ -303,6 +307,13 @@ class ApiService {
         targetUserId = null;
       }
       targetUserId ??= currentUserId ?? cachedCurrentUser?.id;
+
+      final isSelf = targetUserId == null || targetUserId == currentUserId || (cachedCurrentUser != null && targetUserId == cachedCurrentUser!.id);
+      if (isSelf && !forceRefresh && cachedCurrentUser != null && _lastProfileFetchTime != null) {
+        if (DateTime.now().difference(_lastProfileFetchTime!) < const Duration(seconds: 15)) {
+          return cachedCurrentUser;
+        }
+      }
 
       final Map<String, String> queryParams = {};
       if (targetUserId != null && targetUserId != 'undefined' && targetUserId != 'null' && targetUserId.trim().isNotEmpty) {
@@ -318,8 +329,9 @@ class ApiService {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
           final user = User.fromJson(data);
-          if (userId == null || userId == currentUserId || (cachedCurrentUser != null && user.id == cachedCurrentUser!.id) || cachedCurrentUser == null) {
+          if (isSelf) {
             cachedCurrentUser = user;
+            _lastProfileFetchTime = DateTime.now();
           }
           return user;
         }
@@ -2053,19 +2065,35 @@ class ApiService {
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
 
-    http.Response response;
     if (body != null) {
       final request = http.Request('GET', uri);
       request.headers.addAll(headers);
       request.body = jsonEncode(body);
       final streamedResponse = await _httpClient.send(request);
-      response = await http.Response.fromStream(streamedResponse);
-    } else {
-      response = await _httpClient.get(uri, headers: headers);
+      final response = await http.Response.fromStream(streamedResponse);
+      _checkAutoblockedResponse(response);
+      return response;
     }
 
-    _checkAutoblockedResponse(response);
-    return response;
+    // In-flight deduplication for identical concurrent GET calls
+    final inFlightKey = uri.toString();
+    if (_inFlightGets.containsKey(inFlightKey)) {
+      return await _inFlightGets[inFlightKey]!;
+    }
+
+    final future = () async {
+      final res = await _httpClient.get(uri, headers: headers);
+      _checkAutoblockedResponse(res);
+      return res;
+    }();
+
+    _inFlightGets[inFlightKey] = future;
+    try {
+      final response = await future;
+      return response;
+    } finally {
+      _inFlightGets.remove(inFlightKey);
+    }
   }
 
   static Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> data) async {

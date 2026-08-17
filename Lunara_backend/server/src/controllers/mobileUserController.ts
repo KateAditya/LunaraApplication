@@ -308,47 +308,33 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
             return res.status(401).json({ success: false, message: 'Unauthorized: userId query param is required' });
         }
 
-        // Fetch user base info — include all relevant fields for a complete profile response
-        const user = await User.findByPk(userId, {
-            attributes: [
-                'id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl',
-                'role', 'isVerified', 'isActive', 'mfaEnabled',
-                'createdAt', 'updatedAt', 'lastLoginAt', 'dateOfBirth',
-            ],
-        });
+        // Fetch all profile components concurrently in parallel
+        const [user, profile, preferences, allPhotos] = await Promise.all([
+            User.findByPk(userId, {
+                attributes: [
+                    'id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl',
+                    'role', 'isVerified', 'isActive', 'mfaEnabled',
+                    'createdAt', 'updatedAt', 'lastLoginAt', 'dateOfBirth',
+                ],
+            }),
+            UserProfile.findOne({ where: { userId } }),
+            UserPreference.findOne({ where: { userId } }),
+            UserPhoto.findAll({
+                where: { userId },
+                order: [
+                    ['isPrimary', 'DESC'],
+                    ['displayOrder', 'ASC'],
+                    ['uploadedAt', 'DESC'],
+                ],
+                attributes: ['id', 'filePath', 'fileSize', 'mimeType', 'isPrimary', 'displayOrder', 'uploadedAt'],
+            }),
+        ]);
 
         if (!user) {
             return res.status(404).json({ success: false, message: 'User not found' });
         }
 
-        // Fetch extended profile (all fields)
-        const profile = await UserProfile.findOne({ where: { userId } });
-
-        // Fetch user preferences (all fields)
-        const preferences = await UserPreference.findOne({ where: { userId } });
-
-        // Fetch primary/best profile photo
-        // Priority: 1) isPrimary=true  2) lowest displayOrder  3) most recent uploadedAt
-        const photoRecord = await UserPhoto.findOne({
-            where: { userId },
-            order: [
-                ['isPrimary', 'DESC'],
-                ['displayOrder', 'ASC'],
-                ['uploadedAt', 'DESC'],
-            ],
-            attributes: ['id', 'filePath', 'isPrimary', 'displayOrder', 'uploadedAt'],
-        });
-
-        // Fetch ALL gallery photos ordered for display
-        const allPhotos = await UserPhoto.findAll({
-            where: { userId },
-            order: [
-                ['isPrimary', 'DESC'],
-                ['displayOrder', 'ASC'],
-                ['uploadedAt', 'DESC'],
-            ],
-            attributes: ['id', 'filePath', 'fileSize', 'mimeType', 'isPrimary', 'displayOrder', 'uploadedAt'],
-        });
+        const photoRecord = allPhotos.length > 0 ? allPhotos[0] : null;
 
         // Build primary profile photo URL
         let profilePhotoUrl: string | null = null;

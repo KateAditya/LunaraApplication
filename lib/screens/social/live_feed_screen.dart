@@ -128,7 +128,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   void refreshFeed() {
     _loadFeed(showLoader: false);
-    _loadGroupPartyBookings();
   }
 
   int get totalUnreadCount {
@@ -141,14 +140,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   void _onPlanPostedNotify() {
     if (mounted) {
       _loadFeed(showLoader: false);
-      _loadGroupPartyBookings();
     }
   }
 
   void _onProfileUpdateNotify() {
     if (mounted) {
       _loadFeed(showLoader: false);
-      _loadGroupPartyBookings();
     }
   }
 
@@ -162,7 +159,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     )..repeat(reverse: true);
 
     _loadFeed();
-    _loadGroupPartyBookings();
     _initSocketListeners();
 
     // Razorpay setup
@@ -171,10 +167,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     _razorpay!.on(Razorpay.EVENT_PAYMENT_ERROR, _onLargePartyPaymentError);
     _razorpay!.on(Razorpay.EVENT_EXTERNAL_WALLET, _onLargePartyExternalWallet);
 
-    // Fast polling every 15 seconds
-    _pollingTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+    // Background sync timer every 45 seconds (WebSockets handle real-time events)
+    _pollingTimer = Timer.periodic(const Duration(seconds: 45), (_) {
       _loadFeed(showLoader: false);
-      _loadGroupPartyBookings();
     });
 
     ApiService.planPostedNotifier.addListener(_onPlanPostedNotify);
