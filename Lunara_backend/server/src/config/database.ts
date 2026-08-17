@@ -139,8 +139,33 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                 );
             `);
 
+            // ── Bookings table columns (Events, Large Party, Table Booking) ───────
+            await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS party_event_id UUID;`);
+            await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS going_mode VARCHAR(20) DEFAULT 'SOLO';`);
+            await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS table_package VARCHAR(20);`);
+            await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payment_mode VARCHAR(50);`);
+            await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS ticket_code VARCHAR(100);`);
             await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS ticket_url VARCHAR(500);`);
+            await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS added_to_wallet BOOLEAN DEFAULT FALSE;`);
+            await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS party_subject VARCHAR(255);`);
+            await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS party_requirement TEXT;`);
+            await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS party_description TEXT;`);
+            await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS is_large_party_request BOOLEAN DEFAULT FALSE;`);
             await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS is_upcoming_night BOOLEAN DEFAULT FALSE;`);
+            await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS admin_approval_status VARCHAR(50) DEFAULT 'none';`);
+            await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS mobile_number VARCHAR(20);`);
+            await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS optional_mobile_number VARCHAR(20);`);
+            await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS admin_payment_link TEXT;`);
+            await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS admin_payment_amount DECIMAL(10,2);`);
+            await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS razorpay_order_id VARCHAR(100);`);
+
+            // ── Ads / Party Events table columns ─────────────────────────────────
+            await sequelize.query(`ALTER TABLE ads ADD COLUMN IF NOT EXISTS event_date TIMESTAMP WITH TIME ZONE;`);
+            await sequelize.query(`ALTER TABLE ads ADD COLUMN IF NOT EXISTS entry_price DECIMAL(10,2);`);
+            await sequelize.query(`ALTER TABLE ads ADD COLUMN IF NOT EXISTS seat_limit INTEGER;`);
+            await sequelize.query(`ALTER TABLE ads ADD COLUMN IF NOT EXISTS is_unlimited BOOLEAN DEFAULT FALSE;`);
+            await sequelize.query(`ALTER TABLE ads ADD COLUMN IF NOT EXISTS filled_seats INTEGER DEFAULT 0;`);
+
             await sequelize.query(`ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS ticket_url VARCHAR(500);`);
             await sequelize.query(`ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS ticket_url VARCHAR(500);`);
             await sequelize.query(`ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS ticket_code VARCHAR(100);`);
