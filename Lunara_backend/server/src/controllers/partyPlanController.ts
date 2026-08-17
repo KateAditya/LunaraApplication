@@ -1810,15 +1810,6 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
                     io.to(`user_${plan.userId}`).emit('party_plan_request_received', { planId: plan.id, requestId: newReq.id });
                     io.to(`user_${plan.userId}`).emit('party_plan_request_updated', { planId: plan.id, requestId: newReq.id });
                     io.to(`user_${callerUserId}`).emit('party_plan_request_updated', { planId: plan.id, requestId: newReq.id });
-
-                    io.to('admin_notifications').to('admin').emit('admin_notification_created', {
-                        type: 'party_request',
-                        title: '🎉 New Party Plan Request Posted!',
-                        body: `${requester?.firstName || 'User'} requested to join party plan at ${(plan as any)?.venue?.name || 'Venue'}`,
-                        path: '/party-requests',
-                        entityId: newReq.id,
-                        createdAt: new Date().toISOString(),
-                    });
                 }
             } catch (notifErr: any) {
                 logger.warn('Failed to dispatch party plan request notifications:', notifErr.message);

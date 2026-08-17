@@ -3366,17 +3366,31 @@ class ApiService {
   }
 
 
-  static Future<Map<String, dynamic>?> payNowBooking(String bookingId) async {
+  static Future<Map<String, dynamic>?> payNowBooking(
+    String bookingId, {
+    String? paymentMethod,
+    String? transactionId,
+    String? razorpayOrderId,
+    String? razorpayPaymentId,
+    String? razorpaySignature,
+  }) async {
     final userId = currentUserId;
     try {
       final response = await post(
         '/api/mobile/bookings/$bookingId/pay-now',
-        body: {'userId': userId},
+        body: {
+          'userId': userId,
+          ...?paymentMethod == null ? null : {'paymentMethod': paymentMethod},
+          ...?transactionId == null ? null : {'transactionId': transactionId},
+          ...?razorpayOrderId == null ? null : {'razorpay_order_id': razorpayOrderId},
+          ...?razorpayPaymentId == null ? null : {'razorpay_payment_id': razorpayPaymentId},
+          ...?razorpaySignature == null ? null : {'razorpay_signature': razorpaySignature},
+        },
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true && data['data'] != null) {
-          return Map<String, dynamic>.from(data['data']);
+        if (data['success'] == true) {
+          return Map<String, dynamic>.from(data['data'] ?? data);
         }
       }
     } catch (e) {

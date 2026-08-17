@@ -24,6 +24,8 @@ const razorpay = new Razorpay({
     key_secret: process.env.RAZORPAY_KEY_SECRET || 'secret123',
 });
 
+
+
 // ─── Shared attributes ────────────────────────────────────────────────────────
 const USER_ATTRS = ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'];
 const VENUE_ATTRS = ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone'];
@@ -70,6 +72,7 @@ function buildIncludes() {
                     as: 'user',
                     attributes: USER_ATTRS,
                     include: [
+                        { model: UserProfile, as: 'profile', attributes: PROFILE_ATTRS, required: false },
                         { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary'], required: false }
                     ]
                 }
@@ -108,8 +111,6 @@ function formatRequest(r: StrangersMeetRequest) {
         venueImageUrl = cleanPath.startsWith('/') ? cleanPath : '/' + cleanPath;
     }
 
-
-
     // Dynamic calculations
     const joinedJoiners = joiners.filter((j: any) => j.status === 'accepted' || j.status === 'paid' || j.paymentStatus === 'paid');
     const paidJoiners = joiners.filter((j: any) => j.status === 'paid' || j.paymentStatus === 'paid');
@@ -140,16 +141,16 @@ function formatRequest(r: StrangersMeetRequest) {
 
     return {
         id: r.id,
+        userId: r.userId,
         subject: r.subject,
         tagline: r.tagline,
         coverImageUrl: venueImageUrl,
         venueImageUrl: venueImageUrl,
         bannerUrl: venueImageUrl,
         eventDateTime: r.eventDateTime,
-
         numberOfPersons: r.numberOfPersons,
         chargesPerHead: Number(r.chargesPerHead || 0),
-        slotsFilled: joinedCount,  // Use live-computed count, not stale DB column
+        slotsFilled: joinedCount,
         status: r.status,
         paymentAmount: r.paymentAmount ?? null,
         paymentStatus: r.paymentStatus,
@@ -159,10 +160,6 @@ function formatRequest(r: StrangersMeetRequest) {
         ticketId: r.ticketId ?? null,
         ticketUrl: r.ticketUrl ?? null,
         settlementStatus: r.settlementStatus || 'none',
-        // Settlement/bank fields are deliberately never sent through the
-        // general mobile formatter. This formatter backs public discovery,
-        // notification cards, and meet detail reads, so returning them here
-        // would disclose host payment information to unrelated users.
         platformChargePerSeat: r.platformChargePerSeat ? Number(r.platformChargePerSeat) : null,
         settlementTransactionId: r.settlementTransactionId ?? null,
         settlementAmount: r.settlementAmount ? Number(r.settlementAmount) : null,
@@ -181,6 +178,7 @@ function formatRequest(r: StrangersMeetRequest) {
             email: user.email,
             phone: user.phone,
             photoUrl: userPhotoUrl,
+            profileImageUrl: userPhotoUrl,
             bio: user.profile?.bio ?? null,
             city: user.profile?.city ?? null,
         } : null,
@@ -207,13 +205,18 @@ function formatRequest(r: StrangersMeetRequest) {
                 status: j.status,
                 paymentStatus: j.paymentStatus,
                 paymentAmount: Number(j.paymentAmount || 0),
+                foodPreference: j.foodPreference ?? null,
+                drinkPreference: j.drinkPreference ?? null,
                 createdAt: j.createdAt,
                 user: ju ? {
                     id: ju.id,
                     firstName: ju.firstName,
                     lastName: ju.lastName,
                     photoUrl: juPhotoUrl,
+                    profileImageUrl: juPhotoUrl,
                     phone: ju.phone,
+                    bio: ju.profile?.bio ?? null,
+                    city: ju.profile?.city ?? null,
                 } : null
             };
         })

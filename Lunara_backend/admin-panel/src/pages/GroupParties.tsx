@@ -200,26 +200,29 @@ export const GroupParties: React.FC = () => {
         <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--vz-text-muted)' }}>Loading group parties…</div>
       ) : error ? (
         <div style={{ textAlign: 'center', padding: '3rem', color: '#dc2626' }}>{error}</div>
-      ) : parties.length === 0 ? (
+      ) : parties.filter(p => (p.numberOfFriends || 0) <= 20).length === 0 ? (
         <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--vz-text-muted)' }}>
           <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🎉</div>
           <div style={{ fontWeight: 600 }}>No {activeTab} group parties</div>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {parties.map(party => {
-            const sc = STATUS_COLORS[party.status] || STATUS_COLORS['pending'];
+          {parties.filter(p => (p.numberOfFriends || 0) <= 20).map(party => {
+            const isFree = Number(party.totalAmount) === 0;
+            const isPaid = party.paymentStatus === 'paid';
+            const effectiveStatus = (isFree || isPaid) ? 'confirmed' : party.status;
+            const sc = STATUS_COLORS[effectiveStatus] || STATUS_COLORS['pending'];
             return (
               <div key={party.id} style={{ background: 'var(--vz-card-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 14, padding: '1.25rem', display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1, minWidth: 200 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.4rem' }}>
                     <span style={{ fontWeight: 700, fontSize: '1rem' }}>Group Party at {party.venue?.name || 'Unknown'}</span>
                     <span style={{ padding: '0.15rem 0.65rem', borderRadius: 20, fontSize: '0.72rem', fontWeight: 700, background: sc.bg, color: sc.text, border: `1px solid ${sc.border}` }}>
-                      {party.status.toUpperCase()}
+                      {effectiveStatus.toUpperCase()}
                     </span>
-                    {party.paymentStatus === 'paid' && (
+                    {(isPaid || isFree) && (
                       <span style={{ padding: '0.15rem 0.65rem', borderRadius: 20, fontSize: '0.72rem', fontWeight: 700, background: 'rgba(16,185,129,0.12)', color: '#059669', border: '1px solid rgba(16,185,129,0.3)' }}>
-                        PAID ✓
+                        {isFree ? 'FREE ENTRY ✓' : 'PAID ✓'}
                       </span>
                     )}
                   </div>

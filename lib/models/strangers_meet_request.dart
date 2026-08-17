@@ -1,5 +1,6 @@
 class StrangersMeetRequest {
   final String id;
+  final String? userId;
   final String subject;
   final String tagline;
   final DateTime eventDateTime;
@@ -46,6 +47,7 @@ class StrangersMeetRequest {
 
   StrangersMeetRequest({
     required this.id,
+    this.userId,
     required this.subject,
     required this.tagline,
     required this.eventDateTime,
@@ -95,6 +97,7 @@ class StrangersMeetRequest {
 
     return StrangersMeetRequest(
       id: json['id'] ?? '',
+      userId: json['userId'] ?? json['user_id'] ?? json['user']?['id']?.toString(),
       subject: json['subject'] ?? '',
       tagline: json['tagline'] ?? '',
       eventDateTime: DateTime.parse(

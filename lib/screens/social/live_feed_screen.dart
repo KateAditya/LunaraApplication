@@ -961,7 +961,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                         ? req['user'] as Map<String, dynamic>
                         : (req['requester'] is Map ? req['requester'] as Map<String, dynamic> : <String, dynamic>{});
                     final reqUserName = '${reqUser["firstName"] ?? "User"} ${reqUser["lastName"] ?? ""}'.trim();
-                    final joinerId = req['id']?.toString() ?? req['userId']?.toString() ?? '';
+                    final joinerId = req['joinerId']?.toString() ?? req['id']?.toString() ?? req['userId']?.toString() ?? '';
                     final userBio = reqUser['profile']?['bio']?.toString() ?? reqUser['bio']?.toString() ?? '';
 
                     return Container(
@@ -2620,13 +2620,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
         actionsList = [
           NotificationAction(
-            label: countdownLabel,
+            label: 'Pay Deposit (₹99) • $countdownLabel',
             icon: Icons.payment_rounded,
             isPrimary: true,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
-            ).then((_) => _loadFeed(showLoader: false)),
+            onTap: () {
+              final enrichedPlan = Map<String, dynamic>.from(planMap);
+              if (reqId.isNotEmpty) {
+                enrichedPlan['requestId'] = reqId;
+                enrichedPlan['activeRequestId'] = reqId;
+              }
+              enrichedPlan['hasRequested'] = true;
+              enrichedPlan['status'] = 'payment_pending';
+              enrichedPlan['requestStatus'] = 'payment_pending';
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: enrichedPlan)),
+              ).then((_) => _loadFeed(showLoader: false));
+            },
           ),
           NotificationAction(
             label: 'Withdraw Request',

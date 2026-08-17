@@ -260,9 +260,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               }
 
               final bool isUnlimited = ad['isUnlimited'] == true;
-              final int seatLimit = ad['seatLimit'] ?? 0;
-              final int filledSeats = ad['filledSeats'] ?? 0;
+              final int seatLimit = ad['seatLimit'] is num ? (ad['seatLimit'] as num).toInt() : (int.tryParse(ad['seatLimit']?.toString() ?? '0') ?? 0);
+              final int filledSeats = ad['filledSeats'] is num ? (ad['filledSeats'] as num).toInt() : (int.tryParse(ad['filledSeats']?.toString() ?? '0') ?? 0);
               final int remainingSeats = isUnlimited ? 999999 : (seatLimit - filledSeats);
+              final double entryPrice = ad['entryPrice'] is num ? (ad['entryPrice'] as num).toDouble() : (double.tryParse(ad['entryPrice']?.toString() ?? '0') ?? 0.0);
 
               return {
                 'eventId': ad['id'],
@@ -275,7 +276,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                 'venueId': ad['venueId'],
                 'venueMap': venue,
                 'aboutEvent': ad['aboutEvent'],
-                'entryPrice': ad['entryPrice'] ?? 0,
+                'entryPrice': entryPrice,
                 'isUnlimited': isUnlimited,
                 'seatLimit': seatLimit,
                 'filledSeats': filledSeats,
