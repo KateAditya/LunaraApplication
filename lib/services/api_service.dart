@@ -23,6 +23,9 @@ class ApiService {
   // Toggle this to true to use your local backend, false for production
   static const bool isLocal = false;
 
+  /// Reusable HTTP client instance for connection pooling & Keep-Alive
+  static final http.Client _httpClient = http.Client();
+
   // Uses your machine's local IP (192.168.0.150) for local dev on a real device
   static String get baseUrl {
     if (!isLocal) {
@@ -2055,10 +2058,10 @@ class ApiService {
       final request = http.Request('GET', uri);
       request.headers.addAll(headers);
       request.body = jsonEncode(body);
-      final streamedResponse = await request.send();
+      final streamedResponse = await _httpClient.send(request);
       response = await http.Response.fromStream(streamedResponse);
     } else {
-      response = await http.get(uri, headers: headers);
+      response = await _httpClient.get(uri, headers: headers);
     }
 
     _checkAutoblockedResponse(response);
@@ -2198,7 +2201,7 @@ class ApiService {
       'Content-Type': 'application/json',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
-    final response = await http.put(
+    final response = await _httpClient.put(
       uri,
       headers: headers,
       body: jsonEncode(body),
@@ -2217,7 +2220,7 @@ class ApiService {
       'Content-Type': 'application/json',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
-    final response = await http.post(
+    final response = await _httpClient.post(
       uri,
       headers: headers,
       body: jsonEncode(body),
@@ -2236,7 +2239,7 @@ class ApiService {
       'Content-Type': 'application/json',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
-    final response = await http.patch(
+    final response = await _httpClient.patch(
       uri,
       headers: headers,
       body: jsonEncode(body),
@@ -2258,7 +2261,7 @@ class ApiService {
     final request = http.Request('DELETE', uri);
     request.headers.addAll(headers);
     if (body != null) request.body = jsonEncode(body);
-    final streamed = await request.send();
+    final streamed = await _httpClient.send(request);
     final response = await http.Response.fromStream(streamed);
     _checkAutoblockedResponse(response);
     return response;
@@ -3003,7 +3006,7 @@ class ApiService {
       request.files.addAll(files);
     }
 
-    final streamedResponse = await request.send();
+    final streamedResponse = await _httpClient.send(request);
     return await http.Response.fromStream(streamedResponse);
   }
 
@@ -4101,12 +4104,12 @@ class ApiService {
 
   static Future<http.Response> _get(String path) async {
     final uri = Uri.parse('$baseUrl$path');
-    return await http.get(uri, headers: _authHeaders);
+    return await _httpClient.get(uri, headers: _authHeaders);
   }
 
   static Future<http.Response> _post(String path, Map<String, dynamic> body) async {
     final uri = Uri.parse('$baseUrl$path');
-    return await http.post(uri, headers: _authHeaders, body: jsonEncode(body));
+    return await _httpClient.post(uri, headers: _authHeaders, body: jsonEncode(body));
   }
 
   /// Fetch user tickets with tab filtering ('upcoming', 'active', 'used', 'expired', 'cancelled')

@@ -208,9 +208,6 @@ export const getLiveFeed = async (req: Request, res: Response) => {
         }
         const viewerId = authenticatedUserId || undefined;
 
-        let myRequests: any[] = [];
-        let incomingRequests: any[] = [];
-
         const now = new Date();
         const serverTime = now.toISOString();
         const today = new Date();
@@ -224,42 +221,6 @@ export const getLiveFeed = async (req: Request, res: Response) => {
         } else {
             tablePlansWhere.planDate = { [Op.gte]: today };
         }
-
-        const tablePlans = await Plan.findAll({
-            where: tablePlansWhere,
-            include: [
-                {
-                    model: User,
-                    as: 'host',
-                    attributes: ['id', 'firstName', 'lastName', 'dateOfBirth', 'profileImageUrl'],
-                    include: [
-                        {
-                            model: UserProfile,
-                            as: 'profile',
-                            attributes: ['occupation', 'bio'],
-                        },
-                        {
-                            model: UserPhoto,
-                            as: 'photos',
-                            required: false,
-                            attributes: ['id', 'filePath', 'isPrimary', 'displayOrder']
-                        }
-                    ],
-                },
-                {
-                    model: Venue,
-                    as: 'venue',
-                    attributes: ['id', 'name', 'addressLine1', 'area', 'city'],
-                    include: [{
-                        model: VenueImage,
-                        as: 'images',
-                        attributes: ['filePath', 'imageType', 'isPrimary', 'displayOrder'],
-                        required: false,
-                    }],
-                },
-            ],
-            order: [['createdAt', 'DESC']],
-        });
 
         // Find users who have Super Liked viewerId (excluding blocked relationships)
         let superLikedUserIds: string[] = [];
@@ -320,37 +281,231 @@ export const getLiveFeed = async (req: Request, res: Response) => {
             partyPlansWhere.planDateTime = { [Op.gte]: now };
         }
 
-        const partyPlans = await PartyPlan.findAll({
-            where: partyPlansWhere,
-            include: [
-                {
-                    model: User,
-                    as: 'creator',
-                    attributes: ['id', 'firstName', 'lastName', 'dateOfBirth', 'profileImageUrl'],
+        const [
+            tablePlans,
+            partyPlans,
+            myTableReqs,
+            myPartyReqs,
+            myLargePartyBookings,
+            myGroupParties,
+            myStrangersMeetReqs,
+            myJoinMeets,
+            incomingTableReqs,
+            incomingPartyReqs,
+            incomingStrangerReqs
+        ] = await Promise.all([
+            // 1. Table Plans
+            Plan.findAll({
+                where: tablePlansWhere,
+                include: [
+                    {
+                        model: User,
+                        as: 'host',
+                        attributes: ['id', 'firstName', 'lastName', 'dateOfBirth', 'profileImageUrl'],
+                        include: [
+                            {
+                                model: UserProfile,
+                                as: 'profile',
+                                attributes: ['occupation', 'bio'],
+                            },
+                            {
+                                model: UserPhoto,
+                                as: 'photos',
+                                required: false,
+                                attributes: ['id', 'filePath', 'isPrimary', 'displayOrder']
+                            }
+                        ],
+                    },
+                    {
+                        model: Venue,
+                        as: 'venue',
+                        attributes: ['id', 'name', 'addressLine1', 'area', 'city'],
+                        include: [{
+                            model: VenueImage,
+                            as: 'images',
+                            attributes: ['filePath', 'imageType', 'isPrimary', 'displayOrder'],
+                            required: false,
+                        }],
+                    },
+                ],
+                order: [['createdAt', 'DESC']],
+                limit: 50,
+            }),
+
+            // 2. Party Plans
+            PartyPlan.findAll({
+                where: partyPlansWhere,
+                include: [
+                    {
+                        model: User,
+                        as: 'creator',
+                        attributes: ['id', 'firstName', 'lastName', 'dateOfBirth', 'profileImageUrl'],
+                        include: [
+                            {
+                                model: UserProfile,
+                                as: 'profile',
+                                attributes: ['occupation', 'bio'],
+                            },
+                            {
+                                model: UserPhoto,
+                                as: 'photos',
+                                required: false,
+                                attributes: ['id', 'filePath', 'isPrimary', 'displayOrder']
+                            }
+                        ],
+                    },
+                    {
+                        model: Venue,
+                        as: 'venue',
+                        attributes: ['id', 'name', 'addressLine1', 'area', 'city'],
+                    },
+                ],
+                order: [['createdAt', 'DESC']],
+                limit: 50,
+            }),
+
+            // 3. My outgoing requests for Table Plans
+            viewerId
+                ? PlanJoinRequest.findAll({
+                    where: { requesterId: viewerId as string, status: { [Op.ne]: JoinRequestStatus.CANCELLED } },
                     include: [
                         {
-                            model: UserProfile,
-                            as: 'profile',
-                            attributes: ['occupation', 'bio'],
-                        },
-                        {
-                            model: UserPhoto,
-                            as: 'photos',
-                            required: false,
-                            attributes: ['id', 'filePath', 'isPrimary', 'displayOrder']
+                            model: Plan, as: 'plan',
+                            include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }]
                         }
                     ],
-                },
-                {
-                    model: Venue,
-                    as: 'venue',
-                    attributes: ['id', 'name', 'addressLine1', 'area', 'city'],
-                },
-            ],
-            order: [['createdAt', 'DESC']],
-        });
+                    limit: 30,
+                })
+                : Promise.resolve([]),
 
-        // Map Table Plans to consistent payload structure
+            // 4. My outgoing requests for Party Plans
+            viewerId
+                ? PartyPlanRequest.findAll({
+                    where: { requesterId: viewerId as string, status: { [Op.ne]: PartyPlanRequestStatus.CANCELLED } },
+                    include: [
+                        {
+                            model: PartyPlan, as: 'plan',
+                            attributes: ['id', 'userId', 'message', 'planDateTime', 'hostPaymentStatus', 'hostRazorpayOrderId', 'depositAmount', 'status', 'isLive', 'paymentStatus', 'visibility', 'selectedUsers', 'paymentType'],
+                            include: [
+                                { model: User, as: 'creator', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] },
+                                { model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }
+                            ]
+                        }
+                    ],
+                    limit: 30,
+                })
+                : Promise.resolve([]),
+
+            // 5. My Large Party Requests
+            viewerId
+                ? Booking.findAll({
+                    where: {
+                        userId: viewerId as string,
+                        isLargePartyRequest: true,
+                        numberOfGuests: { [Op.gt]: 20 }
+                    },
+                    include: [
+                        { model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }
+                    ],
+                    limit: 20,
+                })
+                : Promise.resolve([]),
+
+            // 6. My Group Parties (<= 20 friends)
+            viewerId
+                ? GroupParty.findAll({
+                    where: { userId: viewerId as string },
+                    include: [
+                        { model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }
+                    ],
+                    limit: 20,
+                })
+                : Promise.resolve([]),
+
+            // 7. My Strangers Meet Requests
+            viewerId
+                ? StrangersMeetRequest.findAll({
+                    where: { userId: viewerId as string },
+                    include: [
+                        { model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }
+                    ],
+                    limit: 20,
+                })
+                : Promise.resolve([]),
+
+            // 8. My requests to join other Strangers Meets
+            viewerId
+                ? StrangersMeetJoiner.findAll({
+                    where: { userId: viewerId as string },
+                    include: [
+                        {
+                            model: StrangersMeetRequest,
+                            as: 'strangersMeetRequest',
+                            include: [
+                                { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] },
+                                { model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }
+                            ]
+                        }
+                    ],
+                    limit: 20,
+                })
+                : Promise.resolve([]),
+
+            // 9. Incoming Table Requests
+            viewerId
+                ? (async () => {
+                    const myPlans = await Plan.findAll({ where: { userId: viewerId as string }, attributes: ['id', 'planDate', 'startTime'] });
+                    if (myPlans.length === 0) return [];
+                    return await PlanJoinRequest.findAll({
+                        where: {
+                            planId: { [Op.in]: myPlans.map(p => p.id) },
+                            status: JoinRequestStatus.PENDING
+                        },
+                        include: [{
+                            model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'],
+                            include: [{ model: UserPhoto, as: 'photos', where: { isPrimary: true }, required: false, attributes: ['filePath'] }]
+                        }]
+                    });
+                })()
+                : Promise.resolve([]),
+
+            // 10. Incoming Party Requests
+            viewerId
+                ? (async () => {
+                    const myPlans = await PartyPlan.findAll({ where: { userId: viewerId as string } });
+                    if (myPlans.length === 0) return [];
+                    return await PartyPlanRequest.findAll({
+                        where: {
+                            planId: { [Op.in]: myPlans.map(p => p.id) },
+                            status: { [Op.in]: [PartyPlanRequestStatus.PENDING, PartyPlanRequestStatus.PAYMENT_PENDING, PartyPlanRequestStatus.ACCEPTED] }
+                        },
+                        include: [{
+                            model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'],
+                            include: [{ model: UserPhoto, as: 'photos', where: { isPrimary: true }, required: false, attributes: ['filePath'] }]
+                        }]
+                    });
+                })()
+                : Promise.resolve([]),
+
+            // 11. Incoming Stranger Requests
+            viewerId
+                ? (async () => {
+                    const myMeets = await StrangersMeetRequest.findAll({ where: { userId: viewerId as string } });
+                    if (myMeets.length === 0) return [];
+                    return await StrangersMeetJoiner.findAll({
+                        where: {
+                            strangersMeetRequestId: { [Op.in]: myMeets.map(sm => sm.id) },
+                        },
+                        include: [{
+                            model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'],
+                            include: [{ model: UserPhoto, as: 'photos', where: { isPrimary: true }, required: false, attributes: ['filePath'] }]
+                        }]
+                    });
+                })()
+                : Promise.resolve([])
+        ]);
+
+        // Map Table Plans
         const tableFeed = tablePlans.map(p => {
             const host = (p as any).host;
             const matchScore = viewerId
@@ -411,7 +566,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
             };
         });
 
-        // Map Party Plans to consistent payload structure
+        // Map Party Plans
         const partyFeed = partyPlans.map(p => {
             const creator = (p as any).creator;
             const isSuperLiked = superLikedUserIds.includes(p.userId) && p.userId !== viewerId;
@@ -419,9 +574,8 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 ? calcMatchScore(viewerId as string, p.userId)
                 : Math.floor(Math.random() * 46) + 50;
 
-            // Format startTime from planDateTime
             const planDateTime = new Date(p.planDateTime);
-            const planTimeStr = planDateTime.toTimeString().substring(0, 5); // "hh:mm"
+            const planTimeStr = planDateTime.toTimeString().substring(0, 5);
 
             let hostPhoto = creator?.profileImageUrl || null;
             if (!hostPhoto && creator?.photos && creator.photos.length > 0) {
@@ -483,83 +637,13 @@ export const getLiveFeed = async (req: Request, res: Response) => {
             };
         });
 
-        // Merge and sort combined list by postedAt descending
         const combinedFeed = [...tableFeed, ...partyFeed].sort((a, b) => {
             return new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime();
         });
 
+        let myRequests: any[] = [];
+        let incomingRequests: any[] = [];
         if (viewerId) {
-            // Fetch my outgoing requests for Table Plans
-            const myTableReqs = await PlanJoinRequest.findAll({
-                where: { requesterId: viewerId as string, status: { [Op.ne]: JoinRequestStatus.CANCELLED } },
-                include: [
-                    {
-                        model: Plan, as: 'plan',
-                        include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }]
-                    }
-                ]
-            });
-
-            // Fetch my outgoing requests for Party Plans
-            const myPartyReqs = await PartyPlanRequest.findAll({
-                where: { requesterId: viewerId as string, status: { [Op.ne]: PartyPlanRequestStatus.CANCELLED } },
-                include: [
-                    {
-                        model: PartyPlan, as: 'plan',
-                        attributes: ['id', 'userId', 'message', 'planDateTime', 'hostPaymentStatus', 'hostRazorpayOrderId', 'depositAmount', 'status', 'isLive', 'paymentStatus', 'visibility', 'selectedUsers', 'paymentType'],
-                        include: [
-                            { model: User, as: 'creator', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] },
-                            { model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }
-                        ]
-                    }
-                ]
-            });
-
-            // Fetch my Large Party Requests
-            const myLargePartyBookings = await Booking.findAll({
-                where: {
-                    userId: viewerId as string,
-                    isLargePartyRequest: true,
-                    numberOfGuests: { [Op.gt]: 20 }
-                },
-                include: [
-                    { model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }
-                ]
-            });
-
-            // Fetch my Group Parties (<= 20 friends)
-            const myGroupParties = await GroupParty.findAll({
-                where: {
-                    userId: viewerId as string,
-                },
-                include: [
-                    { model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }
-                ]
-            });
-
-            // Fetch my Strangers Meet Requests
-            const myStrangersMeetReqs = await StrangersMeetRequest.findAll({
-                where: { userId: viewerId as string },
-                include: [
-                    { model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }
-                ]
-            });
-
-            // Fetch my requests to join other Strangers Meets
-            const myJoinMeets = await StrangersMeetJoiner.findAll({
-                where: { userId: viewerId as string },
-                include: [
-                    {
-                        model: StrangersMeetRequest,
-                        as: 'strangersMeetRequest',
-                        include: [
-                            { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] },
-                            { model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }
-                        ]
-                    }
-                ]
-            });
-
             myRequests = [
                 ...myTableReqs.map((r: any) => ({
                     id: r.id,
@@ -676,182 +760,62 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 })
             ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-            // Fetch incoming requests for my Table Plans
-            const myTablePlans = await Plan.findAll({ where: { userId: viewerId as string }, attributes: ['id', 'planDate', 'startTime'] });
-            if (myTablePlans.length > 0) {
-                const incomingTableReqs = await PlanJoinRequest.findAll({
-                    where: {
-                        planId: { [Op.in]: myTablePlans.map(p => p.id) },
-                        status: JoinRequestStatus.PENDING
-                    },
-                    include: [{
-                        model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'],
-                        include: [{ model: UserPhoto, as: 'photos', where: { isPrimary: true }, required: false, attributes: ['filePath'] }]
-                    }]
-                });
-                incomingRequests.push(...incomingTableReqs.map((r: any) => {
-                    const plan = myTablePlans.find(p => p.id === r.planId);
-                    const reqUser = r.requester;
-                    const profileImageUrl = reqUser?.profileImageUrl ?? (reqUser?.photos?.[0]?.filePath ? '/' + reqUser.photos[0].filePath.replace(/\\/g, '/') : null);
-                    return {
-                        id: r.id,
-                        type: 'incoming_request',
-                        requestType: 'table_plan',
-                        planId: r.planId,
-                        status: r.status,
-                        createdAt: r.createdAt,
-                        requester: { ...reqUser?.toJSON(), profileImageUrl },
-                        planDetails: plan,
-                        plan: plan
-                    };
-                }));
-            }
-
-            // Fetch incoming requests for my Party Plans
-            const myPartyPlans = await PartyPlan.findAll({
-                where: { userId: viewerId as string },
-                include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }]
+            // Build incoming requests
+            const incomingTableMapped = incomingTableReqs.map((r: any) => {
+                const reqUser = r.requester;
+                const profileImageUrl = reqUser?.profileImageUrl ?? (reqUser?.photos?.[0]?.filePath ? '/' + reqUser.photos[0].filePath.replace(/\\/g, '/') : null);
+                return {
+                    id: r.id,
+                    type: 'incoming_request',
+                    requestType: 'table_plan',
+                    planId: r.planId,
+                    status: r.status,
+                    createdAt: r.createdAt,
+                    requester: { ...reqUser?.toJSON(), profileImageUrl },
+                };
             });
-            if (myPartyPlans.length > 0) {
-                const incomingPartyReqs = await PartyPlanRequest.findAll({
-                    where: {
-                        planId: { [Op.in]: myPartyPlans.map(p => p.id) },
-                        status: { [Op.in]: [PartyPlanRequestStatus.PENDING, PartyPlanRequestStatus.PAYMENT_PENDING, PartyPlanRequestStatus.ACCEPTED] }
-                    },
-                    include: [{
-                        model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'],
-                        include: [{ model: UserPhoto, as: 'photos', where: { isPrimary: true }, required: false, attributes: ['filePath'] }]
-                    }]
-                });
-                const filteredPartyReqs = incomingPartyReqs.filter((r: any) => {
-                    const plan = myPartyPlans.find(p => p.id === r.planId);
-                    if (!plan) return false;
-                    const isInvited = plan.selectedUsers && plan.selectedUsers.includes(r.requesterId);
-                    if (isInvited && r.status === PartyPlanRequestStatus.PENDING) {
-                        return false;
-                    }
-                    return true;
-                });
-                incomingRequests.push(...filteredPartyReqs.map((r: any) => {
-                    const plan = myPartyPlans.find(p => p.id === r.planId);
-                    const reqUser = r.requester;
-                    const profileImageUrl = reqUser?.profileImageUrl ?? (reqUser?.photos?.[0]?.filePath ? '/' + reqUser.photos[0].filePath.replace(/\\/g, '/') : null);
-                    const planVenue = plan ? (plan as any).venue : null;
-                    return {
-                        id: r.id,
-                        type: 'incoming_request',
-                        requestType: 'party_plan',
-                        planId: r.planId,
-                        status: r.status,
-                        createdAt: r.createdAt,
-                        paymentTimeoutAt: r.paymentTimeoutAt,
-                        paymentDeadlineAt: r.paymentTimeoutAt,
-                        serverTime,
-                        joinerPaymentStatus: r.joinerPaymentStatus,
-                        joinerRazorpayOrderId: r.joinerRazorpayOrderId,
-                        requester: { ...reqUser?.toJSON(), profileImageUrl },
-                        planDetails: plan ? plan.toJSON() : null,
-                        plan: plan ? {
-                            id: plan.id,
-                            planId: plan.id,
-                            planDateTime: plan.planDateTime,
-                            message: plan.message,
-                            hostPaymentStatus: plan.hostPaymentStatus,
-                            hostRazorpayOrderId: plan.hostRazorpayOrderId,
-                            depositAmount: plan.depositAmount,
-                            status: plan.status,
-                            isLive: plan.isLive,
-                            paymentStatus: plan.paymentStatus,
-                            userId: plan.userId,
-                            visibility: plan.visibility,
-                            selectedUsers: plan.selectedUsers,
-                            paymentType: plan.paymentType,
-                            venue: planVenue ? {
-                                id: planVenue.id,
-                                name: planVenue.name,
-                                addressLine1: planVenue.addressLine1,
-                                area: planVenue.area,
-                                city: planVenue.city,
-                            } : null,
-                        } : null
-                    };
-                }));
 
-            }
-
-            // Fetch incoming requests for my Strangers Meets
-            const myStrangersMeets = await StrangersMeetRequest.findAll({
-                where: { userId: viewerId as string },
-                include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }]
+            const incomingPartyMapped = incomingPartyReqs.map((r: any) => {
+                const reqUser = r.requester;
+                const profileImageUrl = reqUser?.profileImageUrl ?? (reqUser?.photos?.[0]?.filePath ? '/' + reqUser.photos[0].filePath.replace(/\\/g, '/') : null);
+                return {
+                    id: r.id,
+                    type: 'incoming_request',
+                    requestType: 'party_plan',
+                    planId: r.planId,
+                    status: r.status,
+                    createdAt: r.createdAt,
+                    paymentTimeoutAt: r.paymentTimeoutAt,
+                    paymentDeadlineAt: r.paymentTimeoutAt,
+                    serverTime,
+                    joinerPaymentStatus: r.joinerPaymentStatus,
+                    joinerRazorpayOrderId: r.joinerRazorpayOrderId,
+                    requester: { ...reqUser?.toJSON(), profileImageUrl },
+                };
             });
-            if (myStrangersMeets.length > 0) {
-                const incomingStrangerReqs = await StrangersMeetJoiner.findAll({
-                    where: {
-                        strangersMeetRequestId: { [Op.in]: myStrangersMeets.map(sm => sm.id) },
-                    },
-                    include: [{
-                        model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'],
-                        include: [{ model: UserPhoto, as: 'photos', where: { isPrimary: true }, required: false, attributes: ['filePath'] }]
-                    }]
-                });
-                incomingRequests.push(...incomingStrangerReqs.map((r: any) => {
-                    const meet = myStrangersMeets.find(sm => sm.id === r.strangersMeetRequestId);
-                    const reqUser = r.user;
-                    const profileImageUrl = reqUser?.profileImageUrl ?? (reqUser?.photos?.[0]?.filePath ? '/' + reqUser.photos[0].filePath.replace(/\\/g, '/') : null);
-                    const meetVenue = meet ? (meet as any).venue : null;
-                    return {
-                        id: r.id,
-                        type: 'incoming_request',
-                        requestType: 'stranger_meet',
-                        planId: r.strangersMeetRequestId,
-                        status: r.status,
-                        createdAt: r.createdAt,
-                        joinerPaymentStatus: r.paymentStatus,
-                        requester: {
-                            id: reqUser?.id,
-                            firstName: reqUser?.firstName,
-                            lastName: reqUser?.lastName,
-                            profileImageUrl,
-                        },
-                        planDetails: meet ? {
-                            id: meet.id,
-                            subject: meet.subject,
-                            tagline: meet.tagline,
-                            eventDateTime: meet.eventDateTime,
-                            numberOfPersons: meet.numberOfPersons,
-                            chargesPerHead: meet.chargesPerHead,
-                            paymentAmount: meet.paymentAmount,
-                            paymentStatus: meet.paymentStatus,
-                            venue: meetVenue ? {
-                                id: meetVenue.id,
-                                name: meetVenue.name,
-                                addressLine1: meetVenue.addressLine1,
-                                area: meetVenue.area,
-                                city: meetVenue.city,
-                            } : null,
-                        } : null,
-                        plan: meet ? {
-                            id: meet.id,
-                            planId: meet.id,
-                            planDateTime: meet.eventDateTime,
-                            message: meet.subject,
-                            hostPaymentStatus: meet.paymentStatus,
-                            depositAmount: meet.paymentAmount,
-                            status: meet.status,
-                            userId: meet.userId,
-                            venue: meetVenue ? {
-                                id: meetVenue.id,
-                                name: meetVenue.name,
-                                addressLine1: meetVenue.addressLine1,
-                                area: meetVenue.area,
-                                city: meetVenue.city,
-                            } : null,
-                        } : null
-                    };
-                }));
-            }
 
-            incomingRequests.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+            const incomingStrangerMapped = incomingStrangerReqs.map((r: any) => {
+                const reqUser = r.user;
+                const profileImageUrl = reqUser?.profileImageUrl ?? (reqUser?.photos?.[0]?.filePath ? '/' + reqUser.photos[0].filePath.replace(/\\/g, '/') : null);
+                return {
+                    id: r.id,
+                    type: 'incoming_request',
+                    requestType: 'stranger_meet',
+                    planId: r.strangersMeetRequestId,
+                    status: r.status,
+                    createdAt: r.createdAt,
+                    joinerPaymentStatus: r.paymentStatus,
+                    requester: {
+                        id: reqUser?.id,
+                        firstName: reqUser?.firstName,
+                        lastName: reqUser?.lastName,
+                        profileImageUrl,
+                    },
+                };
+            });
+
+            incomingRequests = [...incomingTableMapped, ...incomingPartyMapped, ...incomingStrangerMapped]
+                .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         }
 
         return res.json({
