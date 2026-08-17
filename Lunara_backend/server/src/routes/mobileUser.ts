@@ -337,80 +337,90 @@ async function getUserNotifications(
             limit: 20
         });
 
-        const matchCards = await Promise.all(
-            matches.map(async (match) => {
-                const m = match as any;
-                const firstUser = m.user1;
-                const notificationId = `match_${match.id}`;
+        // Batch-fetch all active plans for all superlike senders in a single query (eliminates N+1)
+        const superlikeSenderIds = matches
+            .filter((m: any) => (m.matchReason === 'superlike' || m.isSuperLike) && m.user1?.id)
+            .map((m: any) => m.user1.id);
 
-                // Check if already in notifications list from stored DB records
-                const alreadyExists = notifications.some(n => 
-                    n.id === notificationId || 
-                    n.entityId === match.id || 
-                    (n.data && n.data.matchId === match.id)
-                );
-                if (alreadyExists) return null;
-
-                const mCreatedTime = match.createdAt ? new Date(match.createdAt).getTime() : 0;
-                const isCleared = clearedAt > 0 && mCreatedTime <= clearedAt;
-                const isRead = isCleared || activeReadNotificationIds.has(notificationId);
-                const isSuper = m.matchReason === 'superlike' || m.isSuperLike;
-                const senderName = `${firstUser?.firstName || 'Someone'} ${firstUser?.lastName || ''}`.trim();
-
-                let postedPlans: any[] = [];
-                if (isSuper && firstUser?.id) {
-                    try {
-                        const activePlans = await PartyPlan.findAll({
-                            where: {
-                                userId: firstUser.id,
-                                status: 'active',
-                                isLive: true,
-                                planDateTime: { [Op.gte]: new Date() },
-                                visibility: 'public',
-                            },
-                            include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }],
-                            order: [['planDateTime', 'ASC']],
-                            limit: 3,
-                        });
-                        postedPlans = activePlans.map((p: any) => ({
+        const plansBySender = new Map<string, any[]>();
+        if (superlikeSenderIds.length > 0) {
+            try {
+                const superlikePlans = await PartyPlan.findAll({
+                    where: {
+                        userId: { [Op.in]: superlikeSenderIds },
+                        status: 'active',
+                        isLive: true,
+                        planDateTime: { [Op.gte]: new Date() },
+                        visibility: 'public',
+                    },
+                    include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }],
+                    order: [['planDateTime', 'ASC']],
+                    limit: 30,
+                });
+                for (const p of superlikePlans) {
+                    const list = plansBySender.get((p as any).userId) || [];
+                    if (list.length < 3) {
+                        list.push({
                             id: p.id,
-                            title: `Let's party at ${p.venue?.name || 'Venue'}! 🚀`,
-                            venueName: p.venue?.name || 'Venue',
-                            planDateTime: p.planDateTime,
-                            status: p.status,
-                            isLive: p.isLive,
-                        }));
-                    } catch (pErr) {
-                        console.error('Error fetching superlike sender plans:', pErr);
+                            title: `Let's party at ${(p as any).venue?.name || 'Venue'}! 🚀`,
+                            venueName: (p as any).venue?.name || 'Venue',
+                            planDateTime: (p as any).planDateTime,
+                            status: (p as any).status,
+                            isLive: (p as any).isLive,
+                        });
+                        plansBySender.set((p as any).userId, list);
                     }
                 }
+            } catch (pErr) {
+                console.error('Error batch-fetching superlike sender plans:', pErr);
+            }
+        }
 
-                return {
-                    id: notificationId,
-                    title: isSuper ? '⭐ Super Like!' : '💖 New Connection!',
-                    body: isSuper ? `${senderName} sent you a Super Like! 💜` : `${senderName} liked your profile ❤️`,
-                    category: isSuper ? 'super_like' : 'likes',
-                    type: isSuper ? 'super_like' : 'like',
-                    createdAt: match.createdAt ? match.createdAt.toISOString() : new Date().toISOString(),
-                    read: isRead,
-                    isRead: isRead,
-                    sender: firstUser ? {
-                        id: firstUser.id,
-                        firstName: firstUser.firstName,
-                        lastName: firstUser.lastName,
-                        profileImageUrl: firstUser.profileImageUrl,
-                    } : null,
-                    data: {
-                        matchId: match.id,
-                        senderId: firstUser?.id,
-                        senderName,
-                        senderImage: firstUser?.profileImageUrl || '',
-                        postedPlans,
-                        action: isSuper ? 'superlike' : 'like',
-                    }
-                };
-            })
-        );
+        const matchCards = matches.map((match) => {
+            const m = match as any;
+            const firstUser = m.user1;
+            const notificationId = `match_${match.id}`;
+
+            // Check if already in notifications list from stored DB records
+            const alreadyExists = notifications.some(n => 
+                n.id === notificationId || 
+                n.entityId === match.id || 
+                (n.data && n.data.matchId === match.id)
+            );
+            if (alreadyExists) return null;
+
+            const mCreatedTime = match.createdAt ? new Date(match.createdAt).getTime() : 0;
+            const isCleared = clearedAt > 0 && mCreatedTime <= clearedAt;
+            const isRead = isCleared || activeReadNotificationIds.has(notificationId);
+            const isSuper = m.matchReason === 'superlike' || m.isSuperLike;
+            const senderName = `${firstUser?.firstName || 'Someone'} ${firstUser?.lastName || ''}`.trim();
+            const postedPlans = firstUser?.id ? (plansBySender.get(firstUser.id) || []) : [];
+
+            return {
+                id: notificationId,
+                title: isSuper ? '⭐ Super Like!' : '💖 New Connection!',
+                body: isSuper ? `${senderName} sent you a Super Like! 💜` : `${senderName} liked your profile ❤️`,
+                category: isSuper ? 'super_like' : 'likes',
+                type: isSuper ? 'super_like' : 'like',
+                createdAt: match.createdAt ? match.createdAt.toISOString() : new Date().toISOString(),
+                read: isRead,
+                isRead: isRead,
+                sender: firstUser ? {
+                    id: firstUser.id,
+                    firstName: firstUser.firstName,
+                    lastName: firstUser.lastName,
+                    profileImageUrl: firstUser.profileImageUrl,
+                } : null,
+                data: {
+                    matchId: match.id,
+                    senderId: firstUser?.id,
+                    senderName,
+                    senderImage: firstUser?.profileImageUrl || '',
+                    postedPlans,
+                    action: isSuper ? 'superlike' : 'like',
+                }
+            };
+        });
         notifications.push(...matchCards.filter(Boolean));
     } catch (matchErr) {
         console.error('Error fetching match notifications:', matchErr);
@@ -574,18 +584,26 @@ async function getUserNotifications(
         console.error('Error fetching booking notifications:', bookingErr);
     }
 
-    // 6. Fetch GroupParty records (Unified Timeline Card per Party) in parallel
+    // 6. Fetch GroupParty records (Unified Timeline Card per Party) — with venue pre-loaded to avoid N+1
     try {
         const { GroupPartyService } = await import('../services/GroupPartyService');
+        const Venue = (await import('../models/Venue')).default;
+        // Single query with venue included — eliminates N+1 (was: 1 query + N findByPk calls)
         const groupParties = await GroupParty.findAll({
-            where: { userId: uId },
+            where: {
+                userId: uId,
+                // Exclude dead-end states to reduce unnecessary processing
+                status: { [Op.notIn]: ['cancelled', 'rejected'] }
+            },
+            include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city'] }],
             order: [['createdAt', 'DESC']],
             limit: 20
         });
         const gpCards = await Promise.all(
             groupParties.map(async (gp) => {
                 try {
-                    const enrichedCard = await GroupPartyService.enrichGroupPartyNotificationCard(gp.id, uId);
+                    // Pass preloadedGp to skip redundant GroupParty.findByPk inside enrichGroupPartyNotificationCard
+                    const enrichedCard = await GroupPartyService.enrichGroupPartyNotificationCard(gp.id, uId, gp);
                     if (enrichedCard) {
                         enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
                         enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);

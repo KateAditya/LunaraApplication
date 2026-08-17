@@ -451,57 +451,63 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 })
                 : Promise.resolve([]),
 
-            // 9. Incoming Table Requests
+            // 9. Incoming Table Requests — single JOIN query (no pre-fetch needed)
             viewerId
-                ? (async () => {
-                    const myPlans = await Plan.findAll({ where: { userId: viewerId as string }, attributes: ['id', 'planDate', 'startTime'] });
-                    if (myPlans.length === 0) return [];
-                    return await PlanJoinRequest.findAll({
-                        where: {
-                            planId: { [Op.in]: myPlans.map(p => p.id) },
-                            status: JoinRequestStatus.PENDING
+                ? PlanJoinRequest.findAll({
+                    where: { status: JoinRequestStatus.PENDING },
+                    include: [
+                        {
+                            model: Plan, as: 'plan',
+                            where: { userId: viewerId as string },
+                            attributes: ['id', 'planDate', 'startTime'],
+                            required: true,
                         },
-                        include: [{
+                        {
                             model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'],
                             include: [{ model: UserPhoto, as: 'photos', where: { isPrimary: true }, required: false, attributes: ['filePath'] }]
-                        }]
-                    });
-                })()
+                        }
+                    ],
+                    limit: 20,
+                })
                 : Promise.resolve([]),
 
-            // 10. Incoming Party Requests
+            // 10. Incoming Party Requests — single JOIN query
             viewerId
-                ? (async () => {
-                    const myPlans = await PartyPlan.findAll({ where: { userId: viewerId as string } });
-                    if (myPlans.length === 0) return [];
-                    return await PartyPlanRequest.findAll({
-                        where: {
-                            planId: { [Op.in]: myPlans.map(p => p.id) },
-                            status: { [Op.in]: [PartyPlanRequestStatus.PENDING, PartyPlanRequestStatus.PAYMENT_PENDING, PartyPlanRequestStatus.ACCEPTED] }
+                ? PartyPlanRequest.findAll({
+                    where: { status: { [Op.in]: [PartyPlanRequestStatus.PENDING, PartyPlanRequestStatus.PAYMENT_PENDING, PartyPlanRequestStatus.ACCEPTED] } },
+                    include: [
+                        {
+                            model: PartyPlan, as: 'plan',
+                            where: { userId: viewerId as string },
+                            attributes: ['id', 'userId', 'message', 'planDateTime', 'depositAmount', 'status'],
+                            required: true,
                         },
-                        include: [{
+                        {
                             model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'],
                             include: [{ model: UserPhoto, as: 'photos', where: { isPrimary: true }, required: false, attributes: ['filePath'] }]
-                        }]
-                    });
-                })()
+                        }
+                    ],
+                    limit: 20,
+                })
                 : Promise.resolve([]),
 
-            // 11. Incoming Stranger Requests
+            // 11. Incoming Stranger Requests — single JOIN query
             viewerId
-                ? (async () => {
-                    const myMeets = await StrangersMeetRequest.findAll({ where: { userId: viewerId as string } });
-                    if (myMeets.length === 0) return [];
-                    return await StrangersMeetJoiner.findAll({
-                        where: {
-                            strangersMeetRequestId: { [Op.in]: myMeets.map(sm => sm.id) },
+                ? StrangersMeetJoiner.findAll({
+                    include: [
+                        {
+                            model: StrangersMeetRequest,
+                            as: 'strangersMeetRequest',
+                            where: { userId: viewerId as string },
+                            required: true,
                         },
-                        include: [{
+                        {
                             model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'],
                             include: [{ model: UserPhoto, as: 'photos', where: { isPrimary: true }, required: false, attributes: ['filePath'] }]
-                        }]
-                    });
-                })()
+                        }
+                    ],
+                    limit: 20,
+                })
                 : Promise.resolve([])
         ]);
 

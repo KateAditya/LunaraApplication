@@ -29,9 +29,9 @@ export default function AdForm({ ad, defaultType = 'Ads', onClose, onSuccess }: 
 
     // Party Event specific fields
     const [eventDate, setEventDate] = useState(ad?.eventDate ? format(new Date(ad.eventDate), 'yyyy-MM-dd') : '');
-    const [entryPrice, setEntryPrice] = useState<string>(ad?.entryPrice !== undefined ? ad.entryPrice.toString() : '');
+    const [entryPrice, setEntryPrice] = useState<string>(ad?.entryPrice != null ? String(ad.entryPrice) : '');
     const [isUnlimited, setIsUnlimited] = useState<boolean>(ad?.isUnlimited || false);
-    const [seatLimit, setSeatLimit] = useState<string>(ad?.seatLimit !== undefined ? ad.seatLimit.toString() : '');
+    const [seatLimit, setSeatLimit] = useState<string>(ad?.seatLimit != null ? String(ad.seatLimit) : '');
 
     // YYYY-MM-DD formatting for date inputs
     const [fromDate, setFromDate] = useState(ad?.fromDate ? format(new Date(ad.fromDate), 'yyyy-MM-dd') : '');

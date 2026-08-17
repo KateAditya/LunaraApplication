@@ -327,8 +327,11 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
       );
     }
 
-    final paymentMethodLabel = _freshPaymentMethod ??
-        (widget.booking['paymentId']?.toString().startsWith('wallet_') == true ? 'LUNARA Wallet' : 'Lunara Secure Pay');
+    final bool isFreeParty = totalAmount <= 0;
+    final paymentMethodLabel = isFreeParty
+        ? 'FREE (Complimentary)'
+        : (_freshPaymentMethod ??
+            (widget.booking['paymentId']?.toString().startsWith('wallet_') == true ? 'LUNARA Wallet' : 'Lunara Secure Pay'));
 
     const lightBgColor = Color(0xFFF6F7FB);
     const darkTextColor = Color(0xFF0F172A);
@@ -721,9 +724,9 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Text(
-                                      '₹${totalAmount.toStringAsFixed(totalAmount.truncateToDouble() == totalAmount ? 0 : 2)}',
-                                      style: const TextStyle(
-                                        color: Color(0xFF15803D),
+                                      isFreeParty ? 'FREE' : '₹${totalAmount.toStringAsFixed(totalAmount.truncateToDouble() == totalAmount ? 0 : 2)}',
+                                      style: TextStyle(
+                                        color: isFreeParty ? const Color(0xFF1D4ED8) : const Color(0xFF15803D),
                                         fontSize: 14,
                                         fontWeight: FontWeight.w900,
                                       ),
@@ -732,13 +735,13 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFDCFCE7),
+                                        color: isFreeParty ? const Color(0xFFDEEBFF) : const Color(0xFFDCFCE7),
                                         borderRadius: BorderRadius.circular(6),
                                       ),
-                                      child: const Text(
-                                        'PAID',
+                                      child: Text(
+                                        isFreeParty ? 'FREE' : 'PAID',
                                         style: TextStyle(
-                                          color: Color(0xFF15803D),
+                                          color: isFreeParty ? const Color(0xFF1D4ED8) : const Color(0xFF15803D),
                                           fontSize: 8,
                                           fontWeight: FontWeight.w900,
                                           letterSpacing: 0.5,

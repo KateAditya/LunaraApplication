@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import GroupParty, { GroupPartyPaymentStatus } from '../models/GroupParty';
+import GroupParty, { GroupPartyStatus, GroupPartyPaymentStatus } from '../models/GroupParty';
 import Venue from '../models/Venue';
 import VenueImage from '../models/VenueImage';
 import User from '../models/User';
@@ -210,7 +210,8 @@ export const getGroupPartyTicket = async (req: Request, res: Response): Promise<
         let ticketUrl = groupParty.ticketUrl ?? null;
         let ticketCode = groupParty.ticketCode || groupParty.paymentId || `GP-${groupParty.id.substring(0, 8).toUpperCase()}`;
 
-        if (!ticketUrl && groupParty.paymentStatus === GroupPartyPaymentStatus.PAID) {
+        // Generate ticket on-the-fly for confirmed parties (PAID status covers both paid and free confirmed)
+        if (!ticketUrl && (groupParty.paymentStatus === GroupPartyPaymentStatus.PAID || groupParty.status === GroupPartyStatus.CONFIRMED)) {
             try {
                 ticketUrl = await generateTicketForGroupPartyHelper(groupParty.id);
             } catch (tErr: any) {

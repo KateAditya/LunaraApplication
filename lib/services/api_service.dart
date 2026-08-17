@@ -749,26 +749,59 @@ class ApiService {
           final List rawList = data['data'];
           for (final gp in rawList) {
             if (gp is Map) {
+              final gpStatus = gp['status']?.toString().toLowerCase() ?? 'pending';
+              // Only show confirmed/paid group parties in ticket pocket
+              if (gpStatus != 'confirmed' && gpStatus != 'paid') continue;
+
               final key = 'gp_${gp['id']}';
+              final rawAmount = gp['totalAmount'] ?? gp['tableBookingCharge'];
+              final double parsedAmount = double.tryParse(rawAmount?.toString() ?? '') ?? 0.0;
+
+              // Build eventStartAt and eventEndAt for timeline bar
+              String? eventStartAt;
+              String? eventEndAt;
+              final rawPartyDate = gp['partyDate'];
+              if (rawPartyDate != null) {
+                try {
+                  final partyDt = DateTime.parse(rawPartyDate.toString()).toLocal();
+                  final timeStr = gp['startTime']?.toString() ?? '20:00';
+                  final parts = timeStr.split(':');
+                  final h = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 20 : 20;
+                  final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+                  final eventStart = DateTime(partyDt.year, partyDt.month, partyDt.day, h, m);
+                  final eventEnd = eventStart.add(const Duration(hours: 12));
+                  eventStartAt = eventStart.toIso8601String();
+                  eventEndAt = eventEnd.toIso8601String();
+                } catch (_) {}
+              }
+
               ticketMap[key] = {
                 'id': gp['id'],
                 'bookingId': gp['id'],
-                'ticketCode': gp['ticketCode'] ?? 'GP-${gp['id'].toString().substring(0, 8)}',
+                'ticketCode': gp['ticketCode'] ?? 'GP-${gp['id'].toString().substring(0, 8).toUpperCase()}',
+                'ticketUrl': gp['ticketUrl'],
+                'ticket_url': gp['ticketUrl'],
                 'venue': gp['venue'],
                 'venueName': gp['venue']?['name'] ?? 'Group Party Venue',
-                'status': gp['status']?.toString().toLowerCase() ?? 'pending',
-                'bookingStatus': gp['status']?.toString().toLowerCase() ?? 'pending',
+                'status': gpStatus,
+                'bookingStatus': gpStatus,
+                'paymentStatus': gp['paymentStatus']?.toString() ?? (parsedAmount <= 0 ? 'FREE' : 'paid'),
                 'numberOfGuests': gp['numberOfFriends'] ?? 1,
                 'tablePackage': 'GROUP PARTY (${gp['numberOfFriends'] ?? 1} FRIENDS)',
                 'bookingDate': gp['partyDate'],
+                'eventStartAt': eventStartAt,
+                'eventEndAt': eventEndAt,
+                'expiresAt': eventEndAt,
                 'startTime': gp['startTime'] ?? '08:00 PM',
-                'totalAmount': gp['totalAmount'] ?? gp['tableBookingCharge'],
+                'totalAmount': parsedAmount == 0 ? '0' : rawAmount?.toString(),
+                'paymentAmount': parsedAmount == 0 ? '0' : rawAmount?.toString(),
                 'createdAt': gp['createdAt'],
                 'mobileNumber': gp['mobileNumber'],
                 'optionalMobileNumber': gp['optionalMobileNumber'],
                 'foodPreference': gp['foodPreference'],
                 'drinkPreference': gp['drinkPreference'],
                 'isGroupParty': true,
+                'isSmallGroupParty': true,
               };
             }
           }
