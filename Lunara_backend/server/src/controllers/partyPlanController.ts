@@ -492,16 +492,17 @@ export async function reopenPlan(plan: PartyPlan, failedRequestId: string, failR
 
         logger.info(`[reopenPlan] Plan ${plan.id} reopened. ${pendingCount} waiting requests reactivated. New lifecycle: ${newLifecycle}`);
 
-        // Notify host and emit socket relisted event
+        // Notify host and joiner, and emit socket relisted event
         setImmediate(async () => {
             try {
                 const { io } = require('../server');
                 if (plan.visibility !== 'private') {
-                    io.emit('party_plan_relisted', { planId: plan.id });
+                    io.emit('party_plan_relisted', { planId: plan.id, isLive: true, lifecycleStatus: newLifecycle });
                 } else {
-                    io.to(`user_${plan.userId}`).emit('party_plan_relisted', { planId: plan.id });
+                    io.to(`user_${plan.userId}`).emit('party_plan_relisted', { planId: plan.id, isLive: true, lifecycleStatus: newLifecycle });
                 }
 
+                // Notify host that plan is live again
                 await NotificationService.dispatch({
                     recipientUserId: plan.userId,
                     actorUserId: plan.userId,
@@ -510,10 +511,34 @@ export async function reopenPlan(plan: PartyPlan, failedRequestId: string, failR
                     entityType: 'party_plan',
                     entityId: plan.id,
                     title: '⚡ Plan Live Again',
-                    body: 'The payment session expired. Your Party Plan is live again and accepting requests.',
-                    metadata: { planId: plan.id },
+                    body: 'The 30-minute payment window has expired. Your Party Plan is live again on Discovery for new joiners to send requests!',
+                    metadata: { planId: plan.id, isLive: true, lifecycleStatus: newLifecycle },
                     idempotencyKey: `plan_relisted_${plan.id}_${failedRequestId}`,
                 });
+
+                // Notify joiner that payment window expired and they can re-request
+                if (failedReq && failedReq.requesterId) {
+                    io.to(`user_${failedReq.requesterId}`).emit('party_plan_request_updated', {
+                        planId: plan.id,
+                        requestId: failedReq.id,
+                        status: failReason === 'payment_failed' ? 'payment_failed' : 'cancelled',
+                        isLive: true
+                    });
+                    io.to(`user_${failedReq.requesterId}`).emit('party_plan_relisted', { planId: plan.id, isLive: true });
+
+                    await NotificationService.dispatch({
+                        recipientUserId: failedReq.requesterId,
+                        actorUserId: plan.userId,
+                        eventType: 'payment_window_expired',
+                        category: 'events',
+                        entityType: 'party_plan',
+                        entityId: plan.id,
+                        title: '⏱️ Payment Window Expired',
+                        body: 'Your 30-minute safety deposit payment window expired. You can submit a new request if you would still like to join!',
+                        metadata: { planId: plan.id, requestId: failedReq.id, status: 'payment_failed' },
+                        idempotencyKey: `payment_expired_${plan.id}_${failedReq.id}`,
+                    });
+                }
             } catch (err: any) {
                 logger.warn('reopenPlan: notification failed:', err.message);
             }
@@ -1576,7 +1601,28 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
             return;
         }
 
-        // Check if there is already a request on the plan that is accepted or in active payment_pending status
+        // Auto-expire any stale PAYMENT_PENDING requests on this plan whose 30m timeout passed
+        const expiredPendingReqs = await PartyPlanRequest.findAll({
+            where: {
+                planId: plan.id,
+                status: PartyPlanRequestStatus.PAYMENT_PENDING,
+                paymentTimeoutAt: { [Op.lte]: new Date() }
+            },
+            transaction
+        });
+        for (const expReq of expiredPendingReqs) {
+            await expReq.update({ status: PartyPlanRequestStatus.PAYMENT_FAILED }, { transaction });
+            if (plan.matchedRequestId === expReq.id) {
+                await plan.update({
+                    matchedRequestId: null,
+                    isLive: plan.visibility !== 'private',
+                    status: PartyPlanStatus.ACTIVE,
+                    lifecycleStatus: PartyPlanLifecycleStatus.REQUEST_RECEIVED
+                }, { transaction });
+            }
+        }
+
+        // Check if there is still an active unexpired accepted/payment_pending request
         const acceptedOrPendingReq = await PartyPlanRequest.findOne({
             where: {
                 planId: plan.id,
@@ -1614,8 +1660,8 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
             }
         }
 
-        // Check ONLY for currently ACTIVE requests from this user on this plan.
-        // Historical cancelled, rejected, or expired requests do NOT block sending a new request.
+        // Check ONLY for currently ACTIVE, UNEXPIRED requests from this user on this plan.
+        // Historical cancelled, rejected, payment_failed, or expired requests do NOT block sending a new request.
         const activeExistingReq = await PartyPlanRequest.findOne({
             where: {
                 planId: id,
@@ -1632,9 +1678,16 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
             transaction
         });
         if (activeExistingReq) {
-            await transaction.rollback();
-            res.status(409).json({ success: false, message: 'You already have an active request to join this plan' });
-            return;
+            // If the user's prior request was payment_pending but expired, mark it as failed and permit the new request
+            if (activeExistingReq.status === PartyPlanRequestStatus.PAYMENT_PENDING &&
+                activeExistingReq.paymentTimeoutAt &&
+                new Date(activeExistingReq.paymentTimeoutAt).getTime() <= Date.now()) {
+                await activeExistingReq.update({ status: PartyPlanRequestStatus.PAYMENT_FAILED }, { transaction });
+            } else {
+                await transaction.rollback();
+                res.status(409).json({ success: false, message: 'You already have an active request to join this plan' });
+                return;
+            }
         }
 
         const newReq = await PartyPlanRequest.create({

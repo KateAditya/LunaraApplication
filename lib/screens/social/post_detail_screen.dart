@@ -53,26 +53,39 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Future<void> _loadPartyPlanDetails() async {
     try {
       final targetPlanId = widget.post['id']?.toString() ?? '';
-      if (ApiService.isPartyPlanRequestedSync(targetPlanId)) {
-        if (mounted) {
-          setState(() {
-            _alreadyRequested = true;
-          });
-        }
-      }
       final myRequests = await ApiService.fetchMyPartyPlanRequests();
       bool requested = false;
       for (final req in myRequests) {
         final planId =
             req['partyPlanId']?.toString() ?? req['planId']?.toString();
         if (planId == targetPlanId) {
-          requested = true;
+          final reqStatus = (req['status'] ?? req['joinerPaymentStatus'] ?? 'pending').toString().toLowerCase();
+          bool isPaymentExpired = false;
+          final paymentTimeoutAtStr = req['paymentTimeoutAt'] ?? req['paymentDeadlineAt'];
+          if (paymentTimeoutAtStr != null) {
+            try {
+              final timeout = DateTime.parse(paymentTimeoutAtStr.toString()).toUtc();
+              if (timeout.isBefore(DateTime.now().toUtc())) {
+                isPaymentExpired = true;
+              }
+            } catch (_) {}
+          }
+          if (reqStatus != 'cancelled' &&
+              reqStatus != 'rejected' &&
+              reqStatus != 'declined' &&
+              reqStatus != 'payment_failed' &&
+              !isPaymentExpired) {
+            requested = true;
+          } else {
+            ApiService.markPartyPlanAsCancelledLocal(targetPlanId);
+            requested = false;
+          }
           break;
         }
       }
       if (mounted) {
         setState(() {
-          _alreadyRequested = requested || ApiService.isPartyPlanRequestedSync(targetPlanId);
+          _alreadyRequested = requested;
         });
       }
     } catch (e) {
