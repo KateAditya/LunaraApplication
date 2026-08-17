@@ -291,26 +291,42 @@ export const createPartyBooking = async (req: Request, res: Response): Promise<v
 export const payNow = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
-        const { userId } = req.body;
+        const { userId, paymentMethod, transactionId, razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
         const booking = await Booking.findByPk(id);
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
-        if (booking.status === BookingStatus.CONFIRMED) {
-            return res.status(400).json({ success: false, message: 'Booking already confirmed' });
+        
+        if (booking.status === BookingStatus.CONFIRMED && booking.paymentStatus === PaymentStatus.PAID) {
+            const venue = await Venue.findByPk(booking.venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
+            return res.json({
+                success: true,
+                message: 'Booking is already confirmed',
+                data: buildTicket(booking, venue as any, booking.ticketCode || uuidv4()),
+            });
         }
 
-        // Simulate successful payment
+        const isWallet = paymentMethod === 'WALLET' || razorpay_payment_id?.startsWith('wallet_');
+        const finalMethod = isWallet ? PaymentMethod.WALLET : PaymentMethod.CARD;
+        const finalGateway = isWallet ? 'WALLET' : (razorpay_payment_id ? 'RAZORPAY' : 'DUMMY_PAY_NOW');
+
+        // Record Payment transaction
         await Payment.create({
             bookingId: id,
             userId: userId || booking.userId,
             amount: booking.totalAmount,
-            paymentMethod: PaymentMethod.CARD,
-            paymentGateway: 'DUMMY_PAY_NOW',
+            paymentMethod: finalMethod,
+            paymentGateway: finalGateway,
             status: TxnStatus.SUCCESSFUL,
-            gatewayResponse: { mode: 'test', simulatedAt: new Date().toISOString() },
+            gatewayResponse: { 
+                mode: isWallet ? 'wallet' : 'gateway',
+                transactionId: transactionId || razorpay_payment_id,
+                razorpayOrderId: razorpay_order_id || booking.razorpayOrderId,
+                razorpaySignature: razorpay_signature || null,
+                paidAt: new Date().toISOString()
+            },
         } as any);
 
-        const ticketCode = uuidv4();
+        const ticketCode = booking.ticketCode || uuidv4();
         await (booking as any).update({
             paymentStatus: PaymentStatus.PAID,
             paymentMode: BookingPaymentMode.PAY_NOW,

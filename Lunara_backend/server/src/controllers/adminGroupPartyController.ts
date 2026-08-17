@@ -3,14 +3,26 @@ import GroupParty from '../models/GroupParty';
 import Venue from '../models/Venue';
 import User from '../models/User';
 import { logger } from '../config/logger';
+import { Op } from 'sequelize';
 
 export const getAdminGroupParties = async (req: Request, res: Response): Promise<void> => {
     try {
         const { venueId, status, paymentStatus, page = '1', limit = '20' } = req.query;
 
-        const where: any = {};
+        const where: any = {
+            numberOfFriends: { [Op.lte]: 20 }
+        };
         if (venueId) where.venueId = venueId;
-        if (status) where.status = status;
+        if (status) {
+            if (status === 'confirmed') {
+                where[Op.or] = [
+                    { status: 'confirmed' },
+                    { paymentStatus: 'paid' }
+                ];
+            } else {
+                where.status = status;
+            }
+        }
         if (paymentStatus) where.paymentStatus = paymentStatus;
 
         const pageNum = Math.max(1, parseInt(page as string));

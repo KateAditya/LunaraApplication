@@ -244,21 +244,32 @@ export const getWalletLedger = async (req: Request, res: Response): Promise<void
             offset: format === 'csv' ? 0 : offset,
         });
 
-        // Comprehensive Summary Statistics & Cost Estimation
+        // Comprehensive Summary Statistics & Cost Estimation (executed in parallel)
         const SmartWalletModel = (await import('../models/SmartWallet')).default;
 
-        const totalRecharge = (await WalletTransaction.sum('amount', { where: { transactionType: 'recharge', status: 'success' } })) || 0;
-        const totalSpent = (await WalletTransaction.sum('amount', { where: { status: 'success', transactionType: { [Op.in]: ['vip_purchase', 'super_like_purchase', 'boost_purchase', 'booking_payment'] } } })) || 0;
-        const totalPromotional = (await WalletTransaction.sum('amount', { where: { transactionType: 'promotional_credit', status: 'success' } })) || 0;
-        const totalCashback = (await WalletTransaction.sum('amount', { where: { transactionType: { [Op.in]: ['cashback', 'cashback_credit'] }, status: 'success' } })) || 0;
-        const totalRewards = (await WalletTransaction.sum('amount', { where: { transactionType: 'reward_credit', status: 'success' } })) || 0;
-        const totalRefunds = (await WalletTransaction.sum('amount', { where: { transactionType: 'refund', status: 'success' } })) || 0;
-
-        const totalLockedDeposits = (await SmartWalletModel.sum('lockedBalance')) || 0;
-        const totalAvailablePool = (await SmartWalletModel.sum('balance')) || 0;
-
-        const activeWalletsCount = await SmartWalletModel.count({ where: { isFrozen: false } });
-        const frozenWalletsCount = await SmartWalletModel.count({ where: { isFrozen: true } });
+        const [
+            totalRecharge,
+            totalSpent,
+            totalPromotional,
+            totalCashback,
+            totalRewards,
+            totalRefunds,
+            totalLockedDeposits,
+            totalAvailablePool,
+            activeWalletsCount,
+            frozenWalletsCount,
+        ] = await Promise.all([
+            WalletTransaction.sum('amount', { where: { transactionType: 'recharge', status: 'success' } }).then(v => v || 0).catch(() => 0),
+            WalletTransaction.sum('amount', { where: { status: 'success', transactionType: { [Op.in]: ['vip_purchase', 'super_like_purchase', 'boost_purchase', 'booking_payment'] } } }).then(v => v || 0).catch(() => 0),
+            WalletTransaction.sum('amount', { where: { transactionType: 'promotional_credit', status: 'success' } }).then(v => v || 0).catch(() => 0),
+            WalletTransaction.sum('amount', { where: { transactionType: { [Op.in]: ['cashback', 'cashback_credit'] }, status: 'success' } }).then(v => v || 0).catch(() => 0),
+            WalletTransaction.sum('amount', { where: { transactionType: 'reward_credit', status: 'success' } }).then(v => v || 0).catch(() => 0),
+            WalletTransaction.sum('amount', { where: { transactionType: 'refund', status: 'success' } }).then(v => v || 0).catch(() => 0),
+            SmartWalletModel.sum('lockedBalance').then(v => v || 0).catch(() => 0),
+            SmartWalletModel.sum('balance').then(v => v || 0).catch(() => 0),
+            SmartWalletModel.count({ where: { isFrozen: false } }).catch(() => 0),
+            SmartWalletModel.count({ where: { isFrozen: true } }).catch(() => 0),
+        ]);
 
         if (format === 'csv') {
             let csv = 'Transaction ID,User ID,User Email,Type,Amount,Opening Bal,Closing Bal,Status,Reference,Created At\n';

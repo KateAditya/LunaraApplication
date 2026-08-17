@@ -64,6 +64,12 @@ import WalletCashbackRule from './WalletCashbackRule';
 User.hasOne(SmartWallet, { foreignKey: 'userId', as: 'smartWallet' });
 SmartWallet.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
+User.hasMany(WalletTransaction, { foreignKey: 'userId', as: 'walletTransactions' });
+WalletTransaction.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
+SmartWallet.hasMany(WalletTransaction, { foreignKey: 'walletId', as: 'transactions' });
+WalletTransaction.belongsTo(SmartWallet, { foreignKey: 'walletId', as: 'smartWallet' });
+
 // ============================================================================
 // Notification Associations
 // ============================================================================
@@ -491,6 +497,7 @@ UserPenalty.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
 User.hasMany(GroupParty, { foreignKey: 'userId', as: 'groupParties' });
 GroupParty.belongsTo(User, { foreignKey: 'userId', as: 'creator' });
+GroupParty.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
 Venue.hasMany(GroupParty, { foreignKey: 'venueId', as: 'groupParties', onDelete: 'CASCADE' });
 GroupParty.belongsTo(Venue, { foreignKey: 'venueId', as: 'venue' });

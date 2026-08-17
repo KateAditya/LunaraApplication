@@ -1385,6 +1385,56 @@ export const getPartyPlanById = async (req: Request, res: Response): Promise<voi
         const venueData = buildVenueData(plan);
         const userData = buildUserData(plan);
 
+        // Fetch active requests for this plan
+        const requests = await PartyPlanRequest.findAll({
+            where: {
+                planId: plan.id,
+                status: {
+                    [Op.in]: [
+                        PartyPlanRequestStatus.PENDING,
+                        PartyPlanRequestStatus.WAITING,
+                        PartyPlanRequestStatus.PAYMENT_PENDING,
+                        PartyPlanRequestStatus.ACCEPTED,
+                    ]
+                }
+            },
+            include: [
+                {
+                    model: User,
+                    as: 'requester',
+                    attributes: USER_ATTRS,
+                    include: [
+                        { model: UserProfile, as: 'profile', attributes: PROFILE_ATTRS, required: false },
+                        { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary', 'displayOrder'], required: false },
+                    ],
+                }
+            ],
+            order: [['createdAt', 'DESC']],
+        });
+
+        const formattedRequests = requests.map(r => {
+            const reqData = r.toJSON() as any;
+            reqData.isInvite = !!(plan.selectedUsers && plan.selectedUsers.includes(r.requesterId));
+            if (reqData.requester) {
+                let photoUrl = reqData.requester.profileImageUrl ?? null;
+                if (reqData.requester.photos && reqData.requester.photos.length > 0) {
+                    const primary = reqData.requester.photos.find((p: any) => p.isPrimary) || reqData.requester.photos[0];
+                    if (primary && primary.filePath) {
+                        photoUrl = '/' + primary.filePath.replace(/\\/g, '/');
+                    }
+                }
+                reqData.requester = {
+                    id: reqData.requester.id,
+                    firstName: reqData.requester.firstName,
+                    lastName: reqData.requester.lastName,
+                    profilePhotoUrl: photoUrl,
+                    bio: reqData.requester.profile?.bio ?? null,
+                    city: reqData.requester.profile?.city ?? null,
+                };
+            }
+            return reqData;
+        });
+
         res.json({
             success: true,
             data: {
@@ -1421,6 +1471,7 @@ export const getPartyPlanById = async (req: Request, res: Response): Promise<voi
                 hostProfilePhotoUrl: userData?.profilePhotoUrl || userData?.photoUrl,
                 venue: venueData,
                 venueImageUrl: venueData?.coverImageUrl || venueData?.imageUrl,
+                requests: formattedRequests,
             },
         });
     } catch (err: any) {
@@ -1759,15 +1810,6 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
                     io.to(`user_${plan.userId}`).emit('party_plan_request_received', { planId: plan.id, requestId: newReq.id });
                     io.to(`user_${plan.userId}`).emit('party_plan_request_updated', { planId: plan.id, requestId: newReq.id });
                     io.to(`user_${callerUserId}`).emit('party_plan_request_updated', { planId: plan.id, requestId: newReq.id });
-
-                    io.to('admin_notifications').to('admin').emit('admin_notification_created', {
-                        type: 'party_request',
-                        title: '🎉 New Party Plan Request Posted!',
-                        body: `${requester?.firstName || 'User'} requested to join party plan at ${(plan as any)?.venue?.name || 'Venue'}`,
-                        path: '/party-requests',
-                        entityId: newReq.id,
-                        createdAt: new Date().toISOString(),
-                    });
                 }
             } catch (notifErr: any) {
                 logger.warn('Failed to dispatch party plan request notifications:', notifErr.message);
