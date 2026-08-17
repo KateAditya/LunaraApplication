@@ -297,7 +297,16 @@ async function getUserNotifications(
                 createdAt: new Date(maxTime).toISOString(),
                 read: !hasUnread,
                 isRead: !hasUnread,
+                imageUrl: card.partyImage || card.hostProfilePhotoUrl || card.guestProfilePhotoUrl,
+                host: card.host,
+                creator: card.creator,
+                user: card.user,
+                actor: card.host || card.creator || card.user,
+                sender: card.host || card.creator || card.user,
+                hostProfilePhotoUrl: card.hostProfilePhotoUrl,
+                guestProfilePhotoUrl: card.guestProfilePhotoUrl,
                 data: card,
+                plan: card,
                 deepLink: `/party-plans/${planId}`,
             });
         }

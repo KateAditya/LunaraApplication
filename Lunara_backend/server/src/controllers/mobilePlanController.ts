@@ -241,9 +241,8 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                         {
                             model: UserPhoto,
                             as: 'photos',
-                            where: { isPrimary: true },
                             required: false,
-                            attributes: ['filePath']
+                            attributes: ['id', 'filePath', 'isPrimary', 'displayOrder']
                         }
                     ],
                 },
@@ -256,7 +255,6 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                         as: 'images',
                         attributes: ['filePath', 'imageType', 'isPrimary', 'displayOrder'],
                         required: false,
-                        where: { isPrimary: true },
                     }],
                 },
             ],
@@ -278,7 +276,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 const blockedIds = new Set<string>();
                 for (const bc of blockedConnections) {
                     if (bc.requesterId === viewerId) blockedIds.add(bc.receiverId);
-                    else blockedIds.add(bc.requesterId);
+                    if (bc.receiverId === viewerId) blockedIds.add(bc.requesterId);
                 }
 
                 const superLikes = await UserMatch.findAll({
@@ -297,9 +295,6 @@ export const getLiveFeed = async (req: Request, res: Response) => {
         }
 
         // Party Plans are personal workflow cards, not public Live Feed posts.
-        // A host sees their plan here; invitees/requesters receive only their
-        // explicit invitation/request timeline records below. This prevents a
-        // newly created Party Plan from appearing in every user's Live Feed.
         const partyPlansWhere: any = viewerId
             ? {
                 status: PartyPlanStatus.ACTIVE,
@@ -341,9 +336,8 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                         {
                             model: UserPhoto,
                             as: 'photos',
-                            where: { isPrimary: true },
                             required: false,
-                            attributes: ['filePath']
+                            attributes: ['id', 'filePath', 'isPrimary', 'displayOrder']
                         }
                     ],
                 },
@@ -363,17 +357,45 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 ? calcMatchScore(viewerId as string, p.userId)
                 : Math.floor(Math.random() * 46) + 50;
 
+            let hostPhoto = host?.profileImageUrl || null;
+            if (!hostPhoto && host?.photos && host.photos.length > 0) {
+                const prim = host.photos.find((ph: any) => ph.isPrimary) || host.photos[0];
+                if (prim?.filePath) hostPhoto = prim.filePath;
+            }
+            if (hostPhoto && typeof hostPhoto === 'string' && !hostPhoto.startsWith('http') && !hostPhoto.startsWith('assets/')) {
+                const cl = hostPhoto.replace(/\\/g, '/');
+                hostPhoto = cl.startsWith('/') ? cl : '/' + cl;
+            }
+
             return {
                 planId: p.id,
                 type: 'table_plan',
                 host: {
                     id: host?.id,
                     name: host ? `${host.firstName} ${host.lastName?.charAt(0) ?? ''}.` : 'Unknown',
+                    firstName: host?.firstName,
+                    lastName: host?.lastName,
                     age: host?.dateOfBirth ? Math.floor((Date.now() - new Date(host.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null,
                     occupation: host?.profile?.occupation,
                     bio: host?.profile?.bio,
-                    profileImageUrl: host?.profileImageUrl ?? (host?.photos?.[0]?.filePath ? '/' + host.photos[0].filePath.replace(/\\/g, '/') : null),
+                    profileImageUrl: hostPhoto,
+                    profilePhotoUrl: hostPhoto,
+                    photos: host?.photos || [],
                 },
+                creator: {
+                    id: host?.id,
+                    name: host ? `${host.firstName} ${host.lastName?.charAt(0) ?? ''}.` : 'Unknown',
+                    firstName: host?.firstName,
+                    lastName: host?.lastName,
+                    profileImageUrl: hostPhoto,
+                    profilePhotoUrl: hostPhoto,
+                    photos: host?.photos || [],
+                },
+                hostName: host ? `${host.firstName} ${host.lastName ?? ''}`.trim() : 'Party Host',
+                hostProfilePhotoUrl: hostPhoto,
+                hostPhotoUrl: hostPhoto,
+                profileImageUrl: hostPhoto,
+                profilePhotoUrl: hostPhoto,
                 venue: (p as any).venue,
                 venueImageUrl: (p as any).venue?.images?.[0]?.filePath ?? null,
                 planDate: p.planDate,
@@ -401,6 +423,29 @@ export const getLiveFeed = async (req: Request, res: Response) => {
             const planDateTime = new Date(p.planDateTime);
             const planTimeStr = planDateTime.toTimeString().substring(0, 5); // "hh:mm"
 
+            let hostPhoto = creator?.profileImageUrl || null;
+            if (!hostPhoto && creator?.photos && creator.photos.length > 0) {
+                const prim = creator.photos.find((ph: any) => ph.isPrimary) || creator.photos[0];
+                if (prim?.filePath) hostPhoto = prim.filePath;
+            }
+            if (hostPhoto && typeof hostPhoto === 'string' && !hostPhoto.startsWith('http') && !hostPhoto.startsWith('assets/')) {
+                const cl = hostPhoto.replace(/\\/g, '/');
+                hostPhoto = cl.startsWith('/') ? cl : '/' + cl;
+            }
+
+            const hostObj = {
+                id: creator?.id,
+                name: creator ? `${creator.firstName} ${creator.lastName?.charAt(0) ?? ''}.` : 'Unknown',
+                firstName: creator?.firstName,
+                lastName: creator?.lastName,
+                age: creator?.dateOfBirth ? Math.floor((Date.now() - new Date(creator.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null,
+                occupation: creator?.profile?.occupation,
+                bio: creator?.profile?.bio,
+                profileImageUrl: hostPhoto,
+                profilePhotoUrl: hostPhoto,
+                photos: creator?.photos || [],
+            };
+
             return {
                 planId: p.id,
                 id: p.id,
@@ -408,16 +453,15 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 userId: p.userId,
                 role: viewerId && p.userId === viewerId ? 'host' : 'viewer',
                 superLikedYou: isSuperLiked,
-                host: {
-                    id: creator?.id,
-                    name: creator ? `${creator.firstName} ${creator.lastName?.charAt(0) ?? ''}.` : 'Unknown',
-                    age: creator?.dateOfBirth ? Math.floor((Date.now() - new Date(creator.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null,
-                    occupation: creator?.profile?.occupation,
-                    bio: creator?.profile?.bio,
-                    profileImageUrl: creator?.profileImageUrl ?? (creator?.photos?.[0]?.filePath ? '/' + creator.photos[0].filePath.replace(/\\/g, '/') : null),
-                },
+                host: hostObj,
+                creator: hostObj,
+                user: hostObj,
                 hostName: creator ? `${creator.firstName} ${creator.lastName ?? ''}`.trim() : 'Party Host',
-                hostProfilePhotoUrl: creator?.profileImageUrl ?? (creator?.photos?.[0]?.filePath ? '/' + creator.photos[0].filePath.replace(/\\/g, '/') : null),
+                hostProfilePhotoUrl: hostPhoto,
+                hostPhotoUrl: hostPhoto,
+                profileImageUrl: hostPhoto,
+                profilePhotoUrl: hostPhoto,
+                partyImage: hostPhoto,
                 venue: (p as any).venue,
                 planDate: p.planDateTime,
                 planDateTime: p.planDateTime,

@@ -44,7 +44,7 @@ class LunaraProfileImage extends StatelessWidget {
   String? get _profilePhoto {
     final resolved = _resolvedUser;
     final fromResolved = resolved?.profilePhoto;
-    if (fromResolved != null && fromResolved.isNotEmpty) return fromResolved;
+    if (fromResolved != null && fromResolved.trim().isNotEmpty && fromResolved != 'null') return fromResolved;
 
     if (userData != null) {
       String? photo =
@@ -52,18 +52,35 @@ class LunaraProfileImage extends StatelessWidget {
                   userData!['profileImageUrl'] ??
                   userData!['photoUrl'] ??
                   userData!['profilePhoto'] ??
+                  userData!['hostProfilePhotoUrl'] ??
+                  userData!['hostPhotoUrl'] ??
+                  userData!['senderImage'] ??
+                  userData!['senderPhoto'] ??
+                  userData!['imageUrl'] ??
                   userData!['userAvatar'] ??
                   userData!['image'] ??
+                  userData!['photo'] ??
                   userData!['avatar'])
               ?.toString();
 
       if (photo != null &&
-          photo.isNotEmpty &&
-          !photo.startsWith('http') &&
-          !photo.startsWith('assets')) {
-        return '${ApiService.baseUrl}${photo.startsWith('/') ? '' : '/'}$photo';
+          photo.trim().isNotEmpty &&
+          photo != 'null' &&
+          photo != 'undefined') {
+        if (!photo.startsWith('http') && !photo.startsWith('assets')) {
+          return '${ApiService.baseUrl}${photo.startsWith('/') ? '' : '/'}$photo';
+        }
+        return photo;
       }
-      return photo;
+
+      if (userData!['photos'] is List && (userData!['photos'] as List).isNotEmpty) {
+        final firstP = (userData!['photos'] as List).first;
+        final pUrl = (firstP is Map) ? (firstP['url'] ?? firstP['filePath']) : firstP?.toString();
+        if (pUrl != null && pUrl.toString().trim().isNotEmpty && pUrl.toString() != 'null') {
+          final s = pUrl.toString();
+          return s.startsWith('http') || s.startsWith('assets') ? s : '${ApiService.baseUrl}${s.startsWith('/') ? '' : '/'}$s';
+        }
+      }
     }
     return null;
   }

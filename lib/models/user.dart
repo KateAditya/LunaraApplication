@@ -165,28 +165,35 @@ class User {
 
     // Extract photo from various possible fields
     String? photo;
-    if (data['profilePhotoUrl'] != null) {
-      String url = data['profilePhotoUrl'].toString();
-      photo = url.startsWith('http')
-          ? url
-          : '${ApiService.baseUrl}${url.startsWith('/') ? '' : '/'}$url';
-    } else if (data['profileImageUrl'] != null) {
-      String url = data['profileImageUrl'].toString();
-      photo = url.startsWith('http')
-          ? url
-          : '${ApiService.baseUrl}${url.startsWith('/') ? '' : '/'}$url';
-    } else if (data['photoUrl'] != null) {
-      String url = data['photoUrl'].toString();
-      photo = url.startsWith('http')
-          ? url
-          : '${ApiService.baseUrl}${url.startsWith('/') ? '' : '/'}$url';
+    String? rawPhoto = (data['profilePhotoUrl'] ??
+            data['profileImageUrl'] ??
+            data['photoUrl'] ??
+            data['profilePhoto'] ??
+            data['photo'] ??
+            data['image'] ??
+            data['avatar'] ??
+            data['userAvatar'] ??
+            data['hostProfilePhotoUrl'] ??
+            data['hostPhotoUrl'] ??
+            data['senderImage'] ??
+            data['senderPhoto'] ??
+            data['imageUrl'])
+        ?.toString();
+
+    if (rawPhoto != null &&
+        rawPhoto.trim().isNotEmpty &&
+        rawPhoto != 'null' &&
+        rawPhoto != 'undefined') {
+      photo = rawPhoto.startsWith('http') || rawPhoto.startsWith('assets')
+          ? rawPhoto
+          : '${ApiService.baseUrl}${rawPhoto.startsWith('/') ? '' : '/'}$rawPhoto';
     } else if (data['images'] != null && (data['images'] as List).isNotEmpty) {
       final img = data['images'][0];
       if (img is Map && img['filePath'] != null) {
         photo =
             '${ApiService.baseUrl}/${img['filePath'].toString().replaceAll('\\', '/')}';
-      } else if (img is String) {
-        photo = img;
+      } else if (img is String && img.isNotEmpty && img != 'null') {
+        photo = img.startsWith('http') || img.startsWith('assets') ? img : '${ApiService.baseUrl}${img.startsWith('/') ? '' : '/'}$img';
       }
     }
 
@@ -197,17 +204,21 @@ class User {
       for (var p in data['photos']) {
         String? urlStr = (p is Map)
             ? (p['url']?.toString() ?? p['filePath']?.toString())
-            : null;
-        if (urlStr != null) {
-          String fullUrl = urlStr.startsWith('http')
+            : p?.toString();
+        if (urlStr != null && urlStr.trim().isNotEmpty && urlStr != 'null') {
+          String fullUrl = urlStr.startsWith('http') || urlStr.startsWith('assets')
               ? urlStr
               : '${ApiService.baseUrl}${urlStr.startsWith('/') ? '' : '/'}$urlStr';
           photoUrls.add(fullUrl);
 
-          String id = p['id']?.toString() ?? p['_id']?.toString() ?? '';
+          String id = (p is Map) ? (p['id']?.toString() ?? p['_id']?.toString() ?? '') : '';
           photoDetailsList.add({'id': id, 'url': fullUrl});
         }
       }
+    }
+
+    if (photo == null && photoUrls.isNotEmpty) {
+      photo = photoUrls.first;
     }
     // Extract minBudget & maxBudget with fallback to profile / data / budgetRange string
     int? parsedMinBudget = preferences['minBudget'] != null

@@ -866,6 +866,61 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
   }
 
+  static String? _extractUserPhoto(dynamic source) {
+    if (source == null) return null;
+    if (source is String) {
+      final s = source.trim();
+      if (s.isNotEmpty && s != 'null' && s != 'undefined') return s;
+      return null;
+    }
+    if (source is Map) {
+      final candidates = [
+        source['profilePhotoUrl'],
+        source['profileImageUrl'],
+        source['photoUrl'],
+        source['profilePhoto'],
+        source['hostProfilePhotoUrl'],
+        source['hostPhotoUrl'],
+        source['hostPhoto'],
+        source['hostImage'],
+        source['creatorPhoto'],
+        source['userPhotoUrl'],
+        source['userPhoto'],
+        source['senderImage'],
+        source['senderPhoto'],
+        source['imageUrl'],
+        source['image'],
+        source['photo'],
+        source['avatar'],
+        source['avatarUrl'],
+        source['userAvatar'],
+      ];
+      for (final c in candidates) {
+        if (c != null) {
+          final s = c.toString().trim();
+          if (s.isNotEmpty && s != 'null' && s != 'undefined') return s;
+        }
+      }
+      if (source['photos'] is List && (source['photos'] as List).isNotEmpty) {
+        final p = (source['photos'] as List).first;
+        final pUrl = (p is Map) ? (p['url'] ?? p['filePath']) : p?.toString();
+        if (pUrl != null) {
+          final s = pUrl.toString().trim();
+          if (s.isNotEmpty && s != 'null' && s != 'undefined') return s;
+        }
+      }
+      if (source['images'] is List && (source['images'] as List).isNotEmpty) {
+        final img = (source['images'] as List).first;
+        final imgUrl = (img is Map) ? (img['url'] ?? img['filePath']) : img?.toString();
+        if (imgUrl != null) {
+          final s = imgUrl.toString().trim();
+          if (s.isNotEmpty && s != 'null' && s != 'undefined') return s;
+        }
+      }
+    }
+    return null;
+  }
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Unified Item Builders & Mapping (1 PLAN / 1 MEET = 1 SMART CARD)
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1319,15 +1374,32 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       hostName = 'Party Host';
     }
 
-    String? hostPhoto = hostCreator['profileImageUrl']?.toString() ??
-        hostCreator['profilePhotoUrl']?.toString() ??
-        planMap['hostProfilePhotoUrl']?.toString() ??
-        planMap['hostPhotoUrl']?.toString() ??
-        planMap['profileImageUrl']?.toString() ??
-        planMap['userPhotoUrl']?.toString();
-    if (hostPhoto != null) {
-      hostPhoto = ApiService.formatImageUrl(hostPhoto);
+    String? rawHostPhoto = _extractUserPhoto(hostCreator) ??
+        _extractUserPhoto(planMap['creator']) ??
+        _extractUserPhoto(planMap['host']) ??
+        _extractUserPhoto(planMap['user']) ??
+        _extractUserPhoto(planMap['sender']) ??
+        _extractUserPhoto(planMap['actor']) ??
+        _extractUserPhoto(planMap);
+
+    if (rawHostPhoto == null || rawHostPhoto.isEmpty) {
+      for (final e in entries) {
+        rawHostPhoto = _extractUserPhoto(e['creator']) ??
+            _extractUserPhoto(e['host']) ??
+            _extractUserPhoto(e['user']) ??
+            _extractUserPhoto(e['sender']) ??
+            _extractUserPhoto(e['actor']) ??
+            _extractUserPhoto(e['data'] is Map ? _extractUserPhoto(e['data']['creator']) : null) ??
+            _extractUserPhoto(e['data'] is Map ? _extractUserPhoto(e['data']['host']) : null) ??
+            _extractUserPhoto(e['data'] is Map ? _extractUserPhoto(e['data']['user']) : null) ??
+            _extractUserPhoto(e['data'] is Map ? _extractUserPhoto(e['data']['sender']) : null) ??
+            _extractUserPhoto(e['data']) ??
+            _extractUserPhoto(e);
+        if (rawHostPhoto != null && rawHostPhoto.isNotEmpty) break;
+      }
     }
+
+    String? hostPhoto = rawHostPhoto != null ? ApiService.formatImageUrl(rawHostPhoto) : null;
 
     final String planHostId = (planMap['userId'] ?? hostCreator['id'] ?? '').toString();
     final bool isHost = currentUserId.isNotEmpty && (planHostId == currentUserId || planMap['role'] == 'host');
@@ -1339,13 +1411,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       'lastName': hostCreator['lastName'] ?? '',
       'profilePhotoUrl': hostPhoto,
       'profileImageUrl': hostPhoto,
+      'photoUrl': hostPhoto,
+      'profilePhoto': hostPhoto,
     };
     if (hostCreator.isNotEmpty) {
       hostUserObj.addAll(hostCreator);
       if (hostPhoto != null) {
         hostUserObj['profilePhotoUrl'] = hostPhoto;
         hostUserObj['profileImageUrl'] = hostPhoto;
+        hostUserObj['photoUrl'] = hostPhoto;
+        hostUserObj['profilePhoto'] = hostPhoto;
       }
+    }
+    if (hostPhoto != null) {
+      hostUserObj['photos'] = [{'url': hostPhoto, 'filePath': hostPhoto, 'isPrimary': true}];
     }
 
     // 3. Find requests involving current user or host
@@ -2097,7 +2176,28 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             ? meetMap['host'] as Map<String, dynamic>
             : <String, dynamic>{});
     final hostName = '${hostCreator["firstName"] ?? meetMap["hostName"] ?? "Host"} ${hostCreator["lastName"] ?? ""}'.trim();
-    final hostPhoto = hostCreator['profileImageUrl']?.toString() ?? hostCreator['profilePhotoUrl']?.toString() ?? hostCreator['photoUrl']?.toString();
+
+    String? rawMeetHostPhoto = _extractUserPhoto(hostCreator) ??
+        _extractUserPhoto(meetMap['user']) ??
+        _extractUserPhoto(meetMap['host']) ??
+        _extractUserPhoto(meetMap['creator']) ??
+        _extractUserPhoto(meetMap['sender']) ??
+        _extractUserPhoto(meetMap);
+
+    if (rawMeetHostPhoto == null || rawMeetHostPhoto.isEmpty) {
+      for (final e in entries) {
+        rawMeetHostPhoto = _extractUserPhoto(e['user']) ??
+            _extractUserPhoto(e['host']) ??
+            _extractUserPhoto(e['creator']) ??
+            _extractUserPhoto(e['sender']) ??
+            _extractUserPhoto(e['data'] is Map ? _extractUserPhoto(e['data']['user']) : null) ??
+            _extractUserPhoto(e['data'] is Map ? _extractUserPhoto(e['data']['host']) : null) ??
+            _extractUserPhoto(e['data']) ??
+            _extractUserPhoto(e);
+        if (rawMeetHostPhoto != null && rawMeetHostPhoto.isNotEmpty) break;
+      }
+    }
+    final hostPhoto = rawMeetHostPhoto != null ? ApiService.formatImageUrl(rawMeetHostPhoto) : null;
 
     final String meetHostId = (meetMap['userId'] ?? hostCreator['id'] ?? '').toString();
     final bool isHost = currentUserId.isNotEmpty && (meetHostId == currentUserId || meetMap['role'] == 'host');
@@ -3069,13 +3169,35 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                           children: [
                             // Avatar or Category Icon
                             if (item.senderUser != null || (item.avatarUrl != null && item.avatarUrl!.isNotEmpty))
-                              LunaraProfileImage(
-                                userData: item.senderUser ?? {
-                                  'profilePhotoUrl': item.avatarUrl,
-                                  'firstName': item.title,
+                              Builder(
+                                builder: (_) {
+                                  final String? resolvedPhoto = item.senderUser?['profilePhotoUrl']?.toString() ??
+                                      item.senderUser?['profileImageUrl']?.toString() ??
+                                      item.senderUser?['photoUrl']?.toString() ??
+                                      item.senderUser?['profilePhoto']?.toString() ??
+                                      item.avatarUrl;
+
+                                  final Map<String, dynamic> userMap = Map<String, dynamic>.from(item.senderUser ?? {});
+                                  if (resolvedPhoto != null && resolvedPhoto.isNotEmpty && resolvedPhoto != 'null') {
+                                    userMap['profilePhotoUrl'] = resolvedPhoto;
+                                    userMap['profileImageUrl'] = resolvedPhoto;
+                                    userMap['photoUrl'] = resolvedPhoto;
+                                    userMap['profilePhoto'] = resolvedPhoto;
+                                    userMap['photos'] = [{'url': resolvedPhoto, 'filePath': resolvedPhoto, 'isPrimary': true}];
+                                  }
+
+                                  return LunaraProfileImage(
+                                    userData: userMap.isNotEmpty
+                                        ? userMap
+                                        : {
+                                            'profilePhotoUrl': resolvedPhoto,
+                                            'profileImageUrl': resolvedPhoto,
+                                            'firstName': item.title,
+                                          },
+                                    radius: 18,
+                                    isInteractive: item.senderUser != null && item.senderUser!['id'] != null,
+                                  );
                                 },
-                                radius: 18,
-                                isInteractive: item.senderUser != null && item.senderUser!['id'] != null,
                               )
                             else
                               Container(
