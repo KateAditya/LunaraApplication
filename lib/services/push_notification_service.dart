@@ -20,6 +20,8 @@ import '../screens/social/host_party_plan_manager_screen.dart';
 import '../screens/social/party_plan_detail_screen.dart';
 import '../screens/social/notification_center_screen.dart';
 import '../widgets/ad_announcement_dialog.dart';
+import '../dialogs/strangers_meet_start_dialog.dart';
+import '../dialogs/strangers_meet_end_dialog.dart';
 
 /// Top-level background message handler.
 /// Must be a top-level function (not a class method) for Firebase.
@@ -104,6 +106,8 @@ class PushNotificationService {
     ApiService.addSocketListener('notification_received', _onSocketNotificationReceived);
     ApiService.addSocketListener('push_notification', _onSocketNotificationReceived);
     ApiService.addSocketListener('new_ad_published', _onSocketAdPublished);
+    ApiService.addSocketListener('strangers_meet_start_prompt', _onSocketStrangersMeetStartPrompt);
+    ApiService.addSocketListener('strangers_meet_end_prompt', _onSocketStrangersMeetEndPrompt);
 
     // 8. Notification tap handler (app in background, not terminated)
     FirebaseMessaging.onMessageOpenedApp.listen((message) {
@@ -266,6 +270,50 @@ class PushNotificationService {
     final context = NotificationNavigator.navigatorKey.currentContext;
     if (context != null) {
       AdAnnouncementDialog.show(context, adMap);
+    }
+  }
+
+  static void _onSocketStrangersMeetStartPrompt(dynamic data) {
+    if (data == null) return;
+    final Map<String, dynamic> meet = data is Map ? Map<String, dynamic>.from(data) : {};
+    final context = NotificationNavigator.navigatorKey.currentContext;
+    if (context != null) {
+      final meetId = meet['id']?.toString() ?? meet['meetId']?.toString() ?? '';
+      final subject = meet['subject']?.toString() ?? 'Strangers Meet';
+      final venueName = meet['venue']?['name']?.toString() ?? meet['venueName']?.toString() ?? 'Venue';
+      final rawDate = meet['eventDateTime']?.toString();
+      final eventDate = rawDate != null ? DateTime.tryParse(rawDate)?.toLocal() : null;
+      if (meetId.isNotEmpty) {
+        StrangersMeetStartDialog.show(
+          context,
+          meetId: meetId,
+          subject: subject,
+          venueName: venueName,
+          eventDateTime: eventDate ?? DateTime.now(),
+        );
+      }
+    }
+  }
+
+  static void _onSocketStrangersMeetEndPrompt(dynamic data) {
+    if (data == null) return;
+    final Map<String, dynamic> meet = data is Map ? Map<String, dynamic>.from(data) : {};
+    final context = NotificationNavigator.navigatorKey.currentContext;
+    if (context != null) {
+      final meetId = meet['id']?.toString() ?? meet['meetId']?.toString() ?? '';
+      final subject = meet['subject']?.toString() ?? 'Strangers Meet';
+      final venueName = meet['venue']?['name']?.toString() ?? meet['venueName']?.toString() ?? 'Venue';
+      final rawEnd = meet['expectedEndAt']?.toString();
+      final expectedEnd = rawEnd != null ? DateTime.tryParse(rawEnd)?.toLocal() : null;
+      if (meetId.isNotEmpty) {
+        StrangersMeetEndDialog.show(
+          context,
+          meetId: meetId,
+          subject: subject,
+          venueName: venueName,
+          expectedEndAt: expectedEnd,
+        );
+      }
     }
   }
 

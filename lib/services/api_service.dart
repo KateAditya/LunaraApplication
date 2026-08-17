@@ -1997,6 +1997,88 @@ class ApiService {
     return null;
   }
 
+  /// Host confirms Strangers Meet started + chooses meeting duration
+  static Future<Map<String, dynamic>?> confirmStrangersMeetStarted(
+    String id, {
+    double? durationHours,
+    String? customEndDateTime,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('User not logged in');
+
+    try {
+      final Map<String, dynamic> body = {'userId': userId};
+      if (durationHours != null) body['durationHours'] = durationHours;
+      if (customEndDateTime != null) body['customEndDateTime'] = customEndDateTime;
+
+      final response = await post(
+        '/api/mobile/strangers-meet/$id/start',
+        body: body,
+      );
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        return data['data'];
+      } else {
+        throw Exception(data['message'] ?? 'Failed to start meetup');
+      }
+    } catch (e) {
+      debugPrint('confirmStrangersMeetStarted error: $e');
+      rethrow;
+    }
+  }
+
+  /// Host extends Strangers Meet duration
+  static Future<Map<String, dynamic>?> extendStrangersMeetDuration(
+    String id, {
+    double? additionalHours,
+    String? customEndDateTime,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('User not logged in');
+
+    try {
+      final Map<String, dynamic> body = {'userId': userId};
+      if (additionalHours != null) body['additionalHours'] = additionalHours;
+      if (customEndDateTime != null) body['customEndDateTime'] = customEndDateTime;
+
+      final response = await post(
+        '/api/mobile/strangers-meet/$id/extend',
+        body: body,
+      );
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        return data['data'];
+      } else {
+        throw Exception(data['message'] ?? 'Failed to extend meetup duration');
+      }
+    } catch (e) {
+      debugPrint('extendStrangersMeetDuration error: $e');
+      rethrow;
+    }
+  }
+
+  /// Host confirms Strangers Meet ended
+  static Future<Map<String, dynamic>?> confirmStrangersMeetEnded(String id) async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('User not logged in');
+
+    try {
+      final response = await post(
+        '/api/mobile/strangers-meet/$id/confirm-ended',
+        body: {'userId': userId},
+      );
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        return data['data'];
+      } else {
+        throw Exception(data['message'] ?? 'Failed to confirm meetup ended');
+      }
+    } catch (e) {
+      debugPrint('confirmStrangersMeetEnded error: $e');
+      rethrow;
+    }
+  }
+
   // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   static Future<List<HelpArticle>> fetchHelpCenterArticles() async {
@@ -2552,6 +2634,70 @@ class ApiService {
     }
   }
 
+  /// DELETE /api/mobile/chat/conversations/:id/messages/:msgId
+  static Future<bool> deleteMessage({
+    required String conversationId,
+    required String messageId,
+    required String userId,
+    bool deleteForEveryone = true,
+  }) async {
+    try {
+      final response = await delete(
+        '/api/mobile/chat/conversations/$conversationId/messages/$messageId',
+        body: {'userId': userId, 'deleteForEveryone': deleteForEveryone},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      debugPrint('deleteMessage error: $e');
+    }
+    return false;
+  }
+
+  /// DELETE /api/mobile/chat/conversations/:id/messages (or POST .../clear)
+  static Future<bool> clearChat(
+    String conversationId,
+    String userId, {
+    bool clearForEveryone = false,
+  }) async {
+    try {
+      final response = await delete(
+        '/api/mobile/chat/conversations/$conversationId/messages',
+        body: {'userId': userId, 'clearForEveryone': clearForEveryone},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      debugPrint('clearChat error: $e');
+    }
+    return false;
+  }
+
+  /// DELETE /api/mobile/chat/conversations/:id
+  static Future<bool> deleteConversation(
+    String conversationId,
+    String userId, {
+    bool deleteForEveryone = false,
+  }) async {
+    try {
+      final response = await delete(
+        '/api/mobile/chat/conversations/$conversationId',
+        body: {'userId': userId, 'deleteForEveryone': deleteForEveryone},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      debugPrint('deleteConversation error: $e');
+    }
+    return false;
+  }
+
   /// GET /api/mobile/user/:otherUserId/status
   /// Returns the online status and last active timestamp for a specific user.
   static Future<Map<String, dynamic>?> getUserOnlineStatus(
@@ -2576,29 +2722,7 @@ class ApiService {
     return null;
   }
 
-  /// Step 8 â€” DELETE .../conversations/:id/messages/:messageId
-  static Future<bool> deleteMessage(
-    String conversationId,
-    String messageId,
-    String userId,
-  ) async {
-    try {
-      final response = await delete(
-        '/api/mobile/chat/conversations/$conversationId/messages/$messageId',
-        body: {'userId': userId},
-      );
-      // debugPrint('deleteMessage ${response.statusCode}: ${response.body}');
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data['success'] == true;
-      }
-    } catch (e) {
-      debugPrint('deleteMessage error: $e');
-    }
-    return false;
-  }
-
-  // â”€â”€â”€ Push Notification Token â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Push Notification Token ──────────────────────────────────────────
 
   /// Sends the FCM device token to the backend for push notification delivery.
   static Future<bool> registerFcmToken(String token) async {

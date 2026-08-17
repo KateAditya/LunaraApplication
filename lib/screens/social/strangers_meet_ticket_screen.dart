@@ -77,10 +77,19 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
             if (reqObj is Map && reqObj['host'] is Map) {
               _freshHostUser = Map<String, dynamic>.from(reqObj['host']);
             }
-            _canonicalTicketCode = ticketObj['ticketCode']?.toString();
-            _ticketUrl = ticketObj['ticketUrl']?.toString();
-            if (reqObj is Map && reqObj['numberOfPersons'] != null) {
-              _freshPersonsCount = int.tryParse(reqObj['numberOfPersons'].toString());
+            _canonicalTicketCode = ticketObj['ticketCode']?.toString() ?? reqObj?['ticketCode']?.toString();
+            _ticketUrl = ticketObj['ticketUrl']?.toString() ?? reqObj?['ticketUrl']?.toString();
+            if (reqObj is Map) {
+              final dynamicCount = ticketObj['actualParticipantsCount'] ??
+                  ticketObj['joinedCount'] ??
+                  ticketObj['numberOfPersons'] ??
+                  reqObj['actualParticipantsCount'] ??
+                  reqObj['joinedCount'] ??
+                  reqObj['slotsFilled'] ??
+                  reqObj['numberOfPersons'];
+              if (dynamicCount != null) {
+                _freshPersonsCount = int.tryParse(dynamicCount.toString());
+              }
             }
           });
         }
@@ -234,7 +243,10 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
 
     final ticketId = (_canonicalTicketCode ?? widget.request.ticketId ?? 'SM-TICKET').toUpperCase();
     final double amountPaid = (widget.request.paymentAmount ?? widget.request.chargesPerHead).toDouble();
-    final int personsCount = _freshPersonsCount ?? widget.request.numberOfPersons;
+    final int targetCapacity = widget.request.numberOfPersons;
+    final int dynamicCount = _freshPersonsCount ?? widget.request.actualParticipantsCount;
+    final String memberLabel = '$dynamicCount ${dynamicCount == 1 ? "Person" : "Persons"}';
+    final String memberSubtext = targetCapacity > dynamicCount ? '$dynamicCount Joined • Max $targetCapacity' : 'Confirmed';
     final DateTime eventDateTime = widget.request.eventDateTime;
 
     final hostUser = _resolveHostUser();
@@ -433,8 +445,8 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                               child: _buildLightDetailBox(
                                 icon: Icons.groups_rounded,
                                 label: 'MEMBERS',
-                                value: '$personsCount Persons',
-                                subtext: 'Confirmed',
+                                value: memberLabel,
+                                subtext: memberSubtext,
                               ),
                             ),
                           ],
@@ -550,7 +562,7 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
-                                    '$personsCount Persons',
+                                    memberLabel,
                                     style: const TextStyle(
                                       color: darkTextColor,
                                       fontWeight: FontWeight.bold,
@@ -560,9 +572,9 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                                     overflow: TextOverflow.ellipsis,
                                     textAlign: TextAlign.center,
                                   ),
-                                  const Text(
-                                    'Strangers Meet',
-                                    style: TextStyle(
+                                  Text(
+                                    targetCapacity > dynamicCount ? '$dynamicCount of $targetCapacity Joined' : 'Strangers Meet',
+                                    style: const TextStyle(
                                       color: grayTextColor,
                                       fontSize: 10.5,
                                     ),

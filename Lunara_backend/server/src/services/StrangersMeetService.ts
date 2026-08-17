@@ -419,15 +419,25 @@ export class StrangersMeetService {
 
             const now = new Date();
             const eventTime = new Date(request.eventDateTime);
-            const isCompleted = request.status === StrangersMeetStatus.COMPLETED || (eventTime.getTime() < now.getTime() - 2 * 60 * 60 * 1000);
-            const isConfirmed = request.status === StrangersMeetStatus.APPROVED && request.paymentStatus === StrangersMeetPaymentStatus.PAID;
+            const expectedEndTime = request.expectedEndAt ? new Date(request.expectedEndAt) : new Date(eventTime.getTime() + 2 * 60 * 60 * 1000);
+            
+            const isCompleted = request.status === StrangersMeetStatus.COMPLETED || request.settlementStatus === 'settled' || request.settlementStatus === 'paid';
+            const isAdminConfirmed = request.status === StrangersMeetStatus.ADMIN_CONFIRMED_ENDED;
+            const isHostEnded = request.status === StrangersMeetStatus.HOST_CONFIRMED_ENDED;
+            const isInProgress = request.status === StrangersMeetStatus.IN_PROGRESS;
+            const isConfirmed = (request.status === StrangersMeetStatus.APPROVED || isInProgress || isHostEnded || isAdminConfirmed || isCompleted) && request.paymentStatus === StrangersMeetPaymentStatus.PAID;
             const isHostPaid = request.paymentStatus === StrangersMeetPaymentStatus.PAID;
             const isApproved = request.status === StrangersMeetStatus.APPROVED;
 
             // Countdown calculation
-            const diffMs = eventTime.getTime() - now.getTime();
-            const diffHours = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60)));
-            const diffMins = Math.max(0, Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60)));
+            const diffStartMs = eventTime.getTime() - now.getTime();
+            const diffEndMs = expectedEndTime.getTime() - now.getTime();
+
+            const diffHours = Math.max(0, Math.floor(Math.abs(diffStartMs) / (1000 * 60 * 60)));
+            const diffMins = Math.max(0, Math.floor((Math.abs(diffStartMs) % (1000 * 60 * 60)) / (1000 * 60)));
+
+            const endDiffHours = Math.max(0, Math.floor(Math.abs(diffEndMs) / (1000 * 60 * 60)));
+            const endDiffMins = Math.max(0, Math.floor((Math.abs(diffEndMs) % (1000 * 60 * 60)) / (1000 * 60)));
 
             const timeline: any[] = [];
             const addStep = (title: string, completed: boolean, dateVal?: Date | null) => {
@@ -450,45 +460,96 @@ export class StrangersMeetService {
             // 4. Booking Confirmed
             addStep('Booking Confirmed', isConfirmed, request.updatedAt);
 
-            // 5. Chat Enabled
-            addStep('Chat Enabled', isConfirmed, request.updatedAt);
+            // 5. Started
+            addStep('Meetup Started', isInProgress || isHostEnded || isAdminConfirmed || isCompleted, request.startedAt);
 
-            // 6. 2 Hour Reminder
-            addStep('2 Hour Reminder', Boolean(request.reminder2hSent) || diffMs <= 2 * 60 * 60 * 1000);
+            // 6. Ended
+            addStep('Meetup Ended', isHostEnded || isAdminConfirmed || isCompleted, request.endedAt);
 
-            // 7. 1 Hour Reminder
-            addStep('1 Hour Reminder', Boolean(request.reminder1hSent) || diffMs <= 1 * 60 * 60 * 1000);
+            // 7. Admin Verified
+            addStep('Admin Verified', isAdminConfirmed || isCompleted, request.adminConfirmedEndedAt);
 
-            // 8. 30 Minute Reminder
-            addStep('30 Minute Reminder', Boolean(request.reminder30mSent) || diffMs <= 30 * 60 * 1000);
-
-            // 9. Completed
-            addStep('Completed', isCompleted);
+            // 8. Settled
+            addStep('Settled', isCompleted, request.settlementDate);
 
             let currentStatusText = 'Booking Requested';
             let primaryAction: string | null = null;
             let secondaryAction: string | null = null;
             let primaryActionUrl: string | null = null;
             let secondaryActionUrl: string | null = null;
+            let countdown = diffStartMs > 0 ? `${diffHours}h ${diffMins}m remaining` : 'Started / Past';
 
             if (isCompleted) {
-                currentStatusText = 'Completed';
+                currentStatusText = 'Meetup Completed • Settled';
                 primaryAction = 'View Details';
                 primaryActionUrl = `/strangers-meet/${request.id}`;
-            } else if (isConfirmed) {
-                if (diffMs <= 30 * 60 * 1000) {
-                    currentStatusText = 'Time to leave for your Stranger Meet';
-                } else if (diffMs <= 60 * 60 * 1000) {
-                    currentStatusText = 'Starts in 1 Hour';
-                } else if (diffMs <= 2 * 60 * 60 * 1000) {
-                    currentStatusText = 'Starts in 2 Hours';
-                } else {
-                    currentStatusText = 'Booking Confirmed • Chat Active';
-                }
+                countdown = 'Settled';
+            } else if (isAdminConfirmed) {
+                currentStatusText = 'Admin Confirmed • Settlement Pending (Within 24h)';
                 primaryAction = 'Open Chat';
                 primaryActionUrl = `/chat/strangers-meet-${request.id}`;
-                secondaryAction = 'View Ticket';
-                secondaryActionUrl = `/strangers-meet/${request.id}/ticket`;
+                secondaryAction = 'View Details';
+                secondaryActionUrl = `/strangers-meet/${request.id}`;
+                countdown = 'Settlement in progress';
+            } else if (isHostEnded) {
+                currentStatusText = 'Meetup Ended • Under Admin Review';
+                primaryAction = 'Open Chat';
+                primaryActionUrl = `/chat/strangers-meet-${request.id}`;
+                secondaryAction = 'View Details';
+                secondaryActionUrl = `/strangers-meet/${request.id}`;
+                countdown = 'Pending Admin Review';
+            } else if (isInProgress) {
+                currentStatusText = diffEndMs > 0 
+                    ? `In Progress • ${endDiffHours}h ${endDiffMins}m remaining`
+                    : 'In Progress • Ending time reached';
+                countdown = diffEndMs > 0 ? `${endDiffHours}h ${endDiffMins}m remaining` : 'Ending time reached';
+                if (isHost) {
+                    primaryAction = 'End Meetup';
+                    primaryActionUrl = `/strangers-meet/${request.id}/end`;
+                    secondaryAction = 'Open Chat';
+                    secondaryActionUrl = `/chat/strangers-meet-${request.id}`;
+                } else {
+                    primaryAction = 'Open Chat';
+                    primaryActionUrl = `/chat/strangers-meet-${request.id}`;
+                    secondaryAction = 'View Ticket';
+                    secondaryActionUrl = `/strangers-meet/${request.id}/ticket`;
+                }
+            } else if (isConfirmed) {
+                if (diffStartMs <= 0) {
+                    currentStatusText = isHost ? 'Start Time Reached • Confirm Start' : 'Meetup Time Reached';
+                    if (isHost) {
+                        primaryAction = 'Start Meetup';
+                        primaryActionUrl = `/strangers-meet/${request.id}/start`;
+                    } else {
+                        primaryAction = 'Open Chat';
+                        primaryActionUrl = `/chat/strangers-meet-${request.id}`;
+                    }
+                    countdown = 'Ready to Start';
+                } else if (diffStartMs <= 30 * 60 * 1000) {
+                    currentStatusText = 'Time to leave for your Stranger Meet';
+                    primaryAction = 'Open Chat';
+                    primaryActionUrl = `/chat/strangers-meet-${request.id}`;
+                    secondaryAction = 'View Ticket';
+                    secondaryActionUrl = `/strangers-meet/${request.id}/ticket`;
+                } else if (diffStartMs <= 60 * 60 * 1000) {
+                    currentStatusText = 'Starts in 1 Hour';
+                    primaryAction = 'Open Chat';
+                    primaryActionUrl = `/chat/strangers-meet-${request.id}`;
+                    secondaryAction = 'View Ticket';
+                    secondaryActionUrl = `/strangers-meet/${request.id}/ticket`;
+                } else if (diffStartMs <= 2 * 60 * 60 * 1000) {
+                    currentStatusText = 'Starts in 2 Hours';
+                    primaryAction = 'Open Chat';
+                    primaryActionUrl = `/chat/strangers-meet-${request.id}`;
+                    secondaryAction = 'View Ticket';
+                    secondaryActionUrl = `/strangers-meet/${request.id}/ticket`;
+                } else {
+                    currentStatusText = 'Booking Confirmed • Chat Active';
+                    primaryAction = 'Open Chat';
+                    primaryActionUrl = `/chat/strangers-meet-${request.id}`;
+                    secondaryAction = 'View Ticket';
+                    secondaryActionUrl = `/strangers-meet/${request.id}/ticket`;
+                }
             } else if (isApproved) {
                 if (isHost) {
                     if (!isHostPaid) {
@@ -538,7 +599,12 @@ export class StrangersMeetService {
                 chargesPerHead: request.chargesPerHead,
                 currentStatusText,
                 timeline,
-                countdown: diffMs > 0 ? `${diffHours}h ${diffMins}m remaining` : 'Started / Past',
+                countdown,
+                status: request.status,
+                settlementStatus: request.settlementStatus,
+                startedAt: request.startedAt,
+                expectedEndAt: request.expectedEndAt,
+                endedAt: request.endedAt,
                 primaryAction,
                 secondaryAction,
                 primaryActionUrl,
@@ -549,5 +615,308 @@ export class StrangersMeetService {
             logger.error('[StrangersMeetService] enrichStrangersMeetNotificationCard error:', err);
             return null;
         }
+    }
+
+    /**
+     * Database migration helper: creates lifecycle columns if missing
+     */
+    public static async ensureStrangersMeetLifecycleColumns(): Promise<void> {
+        try {
+            const sequelize = (await import('../config/database')).default;
+            await sequelize.query(`
+                ALTER TABLE strangers_meet_requests 
+                ADD COLUMN IF NOT EXISTS started_at TIMESTAMP WITH TIME ZONE,
+                ADD COLUMN IF NOT EXISTS started_by UUID,
+                ADD COLUMN IF NOT EXISTS duration_hours DOUBLE PRECISION,
+                ADD COLUMN IF NOT EXISTS expected_end_at TIMESTAMP WITH TIME ZONE,
+                ADD COLUMN IF NOT EXISTS ended_at TIMESTAMP WITH TIME ZONE,
+                ADD COLUMN IF NOT EXISTS ended_confirmed_by UUID,
+                ADD COLUMN IF NOT EXISTS ended_confirmed_at TIMESTAMP WITH TIME ZONE,
+                ADD COLUMN IF NOT EXISTS admin_confirmed_ended_at TIMESTAMP WITH TIME ZONE,
+                ADD COLUMN IF NOT EXISTS admin_confirmed_by UUID,
+                ADD COLUMN IF NOT EXISTS settlement_overdue BOOLEAN DEFAULT FALSE;
+            `);
+        } catch (err) {
+            logger.warn('[StrangersMeetService] ensureStrangersMeetLifecycleColumns warning:', err);
+        }
+    }
+
+    /**
+     * Host confirms meetup started and chooses duration
+     */
+    public static async confirmMeetupStarted(
+        meetId: string,
+        hostUserId: string,
+        durationHours: number,
+        customEndDateTime?: string
+    ): Promise<StrangersMeetRequest> {
+        await this.ensureStrangersMeetLifecycleColumns();
+        const request = await StrangersMeetRequest.findByPk(meetId);
+        if (!request) throw new Error('Strangers Meet not found');
+        if (request.userId !== hostUserId) throw new Error('Only the host can start this meetup');
+
+        if (request.status === StrangersMeetStatus.REJECTED || request.status === StrangersMeetStatus.COMPLETED) {
+            throw new Error('This meetup is already completed or cancelled.');
+        }
+
+        if (request.paymentStatus !== StrangersMeetPaymentStatus.PAID) {
+            throw new Error('Host deposit payment must be completed before starting meetup.');
+        }
+
+        const now = new Date();
+        const eventTime = new Date(request.eventDateTime);
+        if (now.getTime() < eventTime.getTime() - 15 * 60 * 1000) {
+            throw new Error('Scheduled start time has not been reached yet.');
+        }
+
+        if (request.status === StrangersMeetStatus.IN_PROGRESS && request.startedAt) {
+            throw new Error('Meetup has already started.');
+        }
+
+        let finalDuration = durationHours || 1;
+        let expectedEnd = new Date(now.getTime() + finalDuration * 60 * 60 * 1000);
+
+        if (customEndDateTime) {
+            const parsedCustom = new Date(customEndDateTime);
+            if (isNaN(parsedCustom.getTime()) || parsedCustom <= now) {
+                throw new Error('Custom end time must be in the future.');
+            }
+            expectedEnd = parsedCustom;
+            finalDuration = (expectedEnd.getTime() - now.getTime()) / (1000 * 60 * 60);
+        }
+
+        await request.update({
+            status: StrangersMeetStatus.IN_PROGRESS,
+            startedAt: now,
+            startedBy: hostUserId,
+            durationHours: Number(finalDuration.toFixed(2)),
+            expectedEndAt: expectedEnd,
+        });
+
+        await this.emitNotification({
+            recipientUserId: hostUserId,
+            entityId: meetId,
+            eventType: 'strangers_meet_started',
+            title: '🎉 Strangers Meet In Progress',
+            body: `Your meetup is active! Expected duration: ${finalDuration >= 1 ? finalDuration.toFixed(0) + ' hour(s)' : finalDuration.toFixed(1) + ' hours'}.`,
+            notifyAdmins: false,
+            metadata: { meetId, startedAt: now, expectedEndAt: expectedEnd }
+        });
+
+        return request;
+    }
+
+    /**
+     * Host extends in-progress meetup duration
+     */
+    public static async extendMeetupDuration(
+        meetId: string,
+        hostUserId: string,
+        additionalHours?: number,
+        customEndDateTime?: string
+    ): Promise<StrangersMeetRequest> {
+        await this.ensureStrangersMeetLifecycleColumns();
+        const request = await StrangersMeetRequest.findByPk(meetId);
+        if (!request) throw new Error('Strangers Meet not found');
+        if (request.userId !== hostUserId) throw new Error('Only the host can extend this meetup');
+
+        if (request.status !== StrangersMeetStatus.IN_PROGRESS) {
+            throw new Error('Only in-progress meetups can be extended.');
+        }
+
+        const now = new Date();
+        const currentEnd = request.expectedEndAt ? new Date(request.expectedEndAt) : now;
+        const baseTime = currentEnd > now ? currentEnd : now;
+
+        let newExpectedEnd = new Date(baseTime.getTime() + (additionalHours || 1) * 60 * 60 * 1000);
+        if (customEndDateTime) {
+            const parsedCustom = new Date(customEndDateTime);
+            if (isNaN(parsedCustom.getTime()) || parsedCustom <= now) {
+                throw new Error('Custom end time must be in the future.');
+            }
+            newExpectedEnd = parsedCustom;
+        }
+
+        const startRef = request.startedAt ? new Date(request.startedAt) : now;
+        const totalDuration = (newExpectedEnd.getTime() - startRef.getTime()) / (1000 * 60 * 60);
+
+        await request.update({
+            expectedEndAt: newExpectedEnd,
+            durationHours: Number(totalDuration.toFixed(2)),
+        });
+
+        await this.emitNotification({
+            recipientUserId: hostUserId,
+            entityId: meetId,
+            eventType: 'strangers_meet_duration_extended',
+            title: '⏱️ Meetup Duration Extended',
+            body: `Meetup expected end time updated to ${newExpectedEnd.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}.`,
+            notifyAdmins: false,
+            metadata: { meetId, expectedEndAt: newExpectedEnd }
+        });
+
+        return request;
+    }
+
+    /**
+     * Host confirms meetup ended
+     */
+    public static async confirmMeetupEnded(
+        meetId: string,
+        hostUserId: string
+    ): Promise<StrangersMeetRequest> {
+        await this.ensureStrangersMeetLifecycleColumns();
+        const request = await StrangersMeetRequest.findByPk(meetId);
+        if (!request) throw new Error('Strangers Meet not found');
+        if (request.userId !== hostUserId) throw new Error('Only the host can confirm the end of this meetup');
+
+        if (request.status === StrangersMeetStatus.HOST_CONFIRMED_ENDED || request.status === StrangersMeetStatus.ADMIN_CONFIRMED_ENDED || request.status === StrangersMeetStatus.COMPLETED) {
+            throw new Error('Meetup end has already been confirmed.');
+        }
+
+        const now = new Date();
+        await request.update({
+            status: StrangersMeetStatus.HOST_CONFIRMED_ENDED,
+            endedAt: now,
+            endedConfirmedBy: hostUserId,
+            endedConfirmedAt: now,
+        });
+
+        await this.emitNotification({
+            recipientUserId: hostUserId,
+            entityId: meetId,
+            eventType: 'strangers_meet_host_confirmed_ended',
+            title: '✅ Strangers Meet Ended',
+            body: 'You confirmed the meetup ended. Admin review & settlement verification is in progress.',
+            notifyAdmins: true,
+            metadata: { meetId, endedAt: now }
+        });
+
+        return request;
+    }
+
+    /**
+     * Admin verifies completed meetup
+     */
+    public static async adminConfirmMeetupEnded(
+        meetId: string,
+        adminId: string
+    ): Promise<StrangersMeetRequest> {
+        await this.ensureStrangersMeetLifecycleColumns();
+        const request = await StrangersMeetRequest.findByPk(meetId);
+        if (!request) throw new Error('Strangers Meet not found');
+
+        if (request.status !== StrangersMeetStatus.HOST_CONFIRMED_ENDED && request.status !== StrangersMeetStatus.IN_PROGRESS) {
+            if (request.status === StrangersMeetStatus.ADMIN_CONFIRMED_ENDED || request.status === StrangersMeetStatus.COMPLETED) {
+                throw new Error('Meetup has already been confirmed by admin.');
+            }
+        }
+
+        const now = new Date();
+        await request.update({
+            status: StrangersMeetStatus.ADMIN_CONFIRMED_ENDED,
+            adminConfirmedEndedAt: now,
+            adminConfirmedBy: adminId,
+            settlementStatus: 'settlement_pending',
+        });
+
+        // 21. Host Notification after Admin confirmation: 24 hours window
+        await this.emitNotification({
+            recipientUserId: request.userId,
+            entityId: meetId,
+            eventType: 'strangers_meet_admin_confirmed_ended',
+            title: '🎉 Strangers Meet Confirmed Completed',
+            body: 'Your Strangers Meet has been confirmed as completed. Your settlement will be processed within 24 hours.',
+            notifyAdmins: false,
+            metadata: { meetId, adminConfirmedEndedAt: now }
+        });
+
+        return request;
+    }
+
+    /**
+     * Admin executes payout and marks settlement as settled
+     */
+    public static async adminMarkSettled(
+        meetId: string,
+        adminId: string,
+        paymentReference: string,
+        settlementMethod: string = 'UPI',
+        amount?: number
+    ): Promise<StrangersMeetRequest> {
+        await this.ensureStrangersMeetLifecycleColumns();
+        const request = await StrangersMeetRequest.findByPk(meetId, {
+            include: [{ model: StrangersMeetJoiner, as: 'joiners' }]
+        });
+        if (!request) throw new Error('Strangers Meet not found');
+
+        if (request.settlementStatus === 'paid' || request.settlementStatus === 'settled') {
+            throw new Error('This meetup has already been settled.');
+        }
+
+        if (!paymentReference || !paymentReference.trim()) {
+            throw new Error('Payment reference is required.');
+        }
+
+        const reqAny = request as any;
+        const joiners: any[] = reqAny.joiners || [];
+        const paidJoiners = joiners.filter((j: any) => j.status === 'paid' || j.paymentStatus === 'paid');
+        const totalSeats = request.numberOfPersons;
+        const paidSlots = paidJoiners.length;
+        const unfilledSeats = Math.max(0, totalSeats - paidSlots);
+        const platformDepositTotal = Number(request.paymentAmount || 0);
+        const platformChargePerSeat = request.platformChargePerSeat ? Number(request.platformChargePerSeat) :
+            (platformDepositTotal > 0 && totalSeats > 0 ? platformDepositTotal / totalSeats : 0);
+        const hostChargePerHead = Number(request.chargesPerHead || 0);
+        const hostRevenueFromParticipants = paidSlots * hostChargePerHead;
+        const calculatedSettlement = (unfilledSeats * platformChargePerSeat) + hostRevenueFromParticipants;
+        const finalSettlementAmount = (amount !== undefined && amount !== null && !isNaN(amount)) ? Number(amount) : calculatedSettlement;
+
+        const now = new Date();
+        await request.update({
+            status: StrangersMeetStatus.COMPLETED,
+            settlementStatus: 'settled',
+            settlementAmount: finalSettlementAmount,
+            settlementTransactionId: paymentReference.trim(),
+            settlementMethod: settlementMethod.trim(),
+            settlementDate: now,
+            settlementOverdue: false,
+            adminConfirmedBy: adminId,
+        });
+
+        // Mask payout details
+        let maskedPayoutDetails = '';
+        if (request.upiId) {
+            maskedPayoutDetails = `UPI: ${request.upiId}`;
+        } else if (request.accountNumber) {
+            const acct = request.accountNumber;
+            const maskedAcct = acct.length > 4 ? `XXXXXX${acct.substring(acct.length - 4)}` : acct;
+            maskedPayoutDetails = `Bank: ${request.bankName || ''} (${maskedAcct})`;
+        } else if (request.bankDetails) {
+            maskedPayoutDetails = request.bankDetails;
+        }
+
+        const formattedDate = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+        // 29. Host Final Notification after amount settled
+        await this.emitNotification({
+            recipientUserId: request.userId,
+            entityId: meetId,
+            eventType: 'strangers_meet_settled',
+            title: '💰 Strangers Meet Settlement Completed',
+            body: `Your settlement of ₹${finalSettlementAmount.toFixed(0)} has been completed via ${settlementMethod}. Ref: ${paymentReference}. Date: ${formattedDate}.`,
+            notifyAdmins: false,
+            metadata: {
+                meetId,
+                totalAmount: hostRevenueFromParticipants,
+                settledAmount: finalSettlementAmount,
+                settlementMethod,
+                paymentReference,
+                settlementDate: now.toISOString(),
+                maskedPayoutDetails,
+            }
+        });
+
+        return request;
     }
 }

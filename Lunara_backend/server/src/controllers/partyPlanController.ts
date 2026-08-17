@@ -4123,6 +4123,21 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
             return;
         }
 
+        // Validate plan is not already finalized or cancelled
+        if (plan.lifecycleStatus === PartyPlanLifecycleStatus.PLAN_COMPLETED || plan.status === PartyPlanStatus.CANCELLED) {
+            await transaction.rollback();
+            res.status(400).json({ success: false, message: 'This Party Plan is already finalized and arrival status cannot be changed.' });
+            return;
+        }
+
+        // Validate 24-hour resolution deadline
+        const eventTime = plan.planDateTime ? new Date(plan.planDateTime).getTime() : 0;
+        if (eventTime > 0 && Date.now() > eventTime + 24 * 60 * 60 * 1000) {
+            await transaction.rollback();
+            res.status(400).json({ success: false, message: 'The 24-hour arrival confirmation window for this Party Plan has closed.' });
+            return;
+        }
+
         const acceptedReq = await PartyPlanRequest.findOne({
             where: {
                 planId: id,
@@ -4141,19 +4156,29 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
             return;
         }
 
+        // Validate that both required payments are verified before arrival confirmation can begin
+        const hostPaid = plan.hostPaymentStatus === 'paid' || plan.hostPaymentStatus === 'refunded';
+        const guestPaid = acceptedReq?.joinerPaymentStatus === 'paid' || acceptedReq?.joinerPaymentStatus === 'refunded';
+        if (!hostPaid || !guestPaid) {
+            await transaction.rollback();
+            res.status(400).json({ success: false, message: 'Arrival confirmation is only available for fully confirmed Party Plans with verified payments.' });
+            return;
+        }
+
         const choice = response ? response.toString().toUpperCase() : (hasArrived === false ? 'NO' : 'YES');
         const isYes = choice === 'YES' || hasArrived === true;
+        const nowStamp = new Date();
 
         if (isHost) {
             await plan.update({
                 hostArrivalConfirmed: isYes,
-                hostArrivalTime: isYes ? new Date() : null,
+                hostArrivalTime: nowStamp,
                 hostLatLangCheckIn: latitude && longitude ? true : plan.hostLatLangCheckIn
             }, { transaction });
         } else if (acceptedReq) {
             await acceptedReq.update({
                 guestArrivalConfirmed: isYes,
-                guestArrivalTime: isYes ? new Date() : null,
+                guestArrivalTime: nowStamp,
                 latLangCheckIn: latitude && longitude ? true : acceptedReq.latLangCheckIn
             }, { transaction });
         }
@@ -4166,22 +4191,29 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
             metadata: { isHost, response: choice, latitude, longitude, device, ip }
         });
 
-        // Check if BOTH participants have confirmed arrival
+        // Determine updated arrival states
         const hostArrived = isHost ? isYes : Boolean(plan.hostArrivalConfirmed);
         const guestArrived = !isHost ? isYes : Boolean(acceptedReq?.guestArrivalConfirmed);
+        const hostHasAnswered = isHost ? true : plan.hostArrivalTime !== null;
+        const guestHasAnswered = !isHost ? true : acceptedReq?.guestArrivalTime !== null;
+        const bothAnswered = hostHasAnswered && guestHasAnswered;
 
         let bothArrived = false;
+        let isFinalized = false;
         const hostDeposit = Number(plan.depositAmount || 99.00);
         const guestDeposit = plan.paymentType === 'self_pay' ? 0.00 : 99.00;
 
+        const WalletTransaction = (await import('../models/WalletTransaction')).default;
+        const WalletTransactionType = (await import('../models/WalletTransaction')).WalletTransactionType;
+        const { ReliabilityService, ReliabilityAction } = await import('../services/reliabilityService');
+
         if (hostArrived && guestArrived && acceptedReq) {
+            // ── CASE A: BOTH CONFIRMED YES ───────────────────────────────────────
             bothArrived = true;
+            isFinalized = true;
 
             const hostUser = await User.findByPk(plan.userId, { transaction, lock: transaction.LOCK.UPDATE });
             const guestUser = await User.findByPk(acceptedReq.requesterId, { transaction, lock: transaction.LOCK.UPDATE });
-            const WalletTransaction = (await import('../models/WalletTransaction')).default;
-            const WalletTransactionType = (await import('../models/WalletTransaction')).WalletTransactionType;
-            const { ReliabilityService, ReliabilityAction } = await import('../services/reliabilityService');
 
             // Idempotent Host Refund
             if (hostUser) {
@@ -4256,6 +4288,116 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
                 lifecycleStatus: PartyPlanLifecycleStatus.PLAN_COMPLETED,
                 paymentStatus: 'Completed (Both Refunded)'
             }, { transaction });
+        } else if (bothAnswered && acceptedReq) {
+            // Both users have submitted their final answers (Cases B, C, D)
+            isFinalized = true;
+            const hostUser = await User.findByPk(plan.userId, { transaction, lock: transaction.LOCK.UPDATE });
+            const guestUser = await User.findByPk(acceptedReq.requesterId, { transaction, lock: transaction.LOCK.UPDATE });
+
+            if (hostArrived && !guestArrived) {
+                // ── CASE B: Host YES, Guest NO ──
+                if (hostUser) {
+                    const hostRef = `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${hostUser.id}`;
+                    const existingHostTx = await WalletTransaction.findOne({
+                        where: { [Op.or]: [{ reference: hostRef }, { reference: `REFUND_HOST_${plan.id}` }] },
+                        transaction
+                    });
+                    if (!existingHostTx) {
+                        const hOld = Number(hostUser.walletBalance || 0);
+                        const hNew = hOld + hostDeposit;
+                        await hostUser.update({ walletBalance: hNew }, { transaction });
+                        await plan.update({ hostPaymentStatus: PartyPlanPaymentStatus.REFUNDED }, { transaction });
+                        await WalletTransaction.logTransaction({
+                            userId: hostUser.id,
+                            partyPlanId: plan.id,
+                            amount: hostDeposit,
+                            openingBalance: hOld,
+                            closingBalance: hNew,
+                            transactionType: WalletTransactionType.REFUND,
+                            reference: hostRef,
+                        });
+                        await ReliabilityService.updateScore({
+                            userId: hostUser.id,
+                            action: ReliabilityAction.CONFIRMED_ARRIVAL,
+                            partyPlanId: plan.id,
+                        });
+                    }
+                }
+                if (guestUser) {
+                    await ReliabilityService.updateScore({
+                        userId: guestUser.id,
+                        action: ReliabilityAction.NO_SHOW,
+                        partyPlanId: plan.id,
+                    });
+                }
+                await plan.update({
+                    status: PartyPlanStatus.INACTIVE,
+                    lifecycleStatus: PartyPlanLifecycleStatus.PLAN_COMPLETED,
+                    paymentStatus: 'Completed (Host Refunded, Guest No-Show)'
+                }, { transaction });
+            } else if (!hostArrived && guestArrived) {
+                // ── CASE C: Host NO, Guest YES ──
+                if (guestUser && guestDeposit > 0) {
+                    const guestRef = `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${guestUser.id}`;
+                    const existingGuestTx = await WalletTransaction.findOne({
+                        where: { [Op.or]: [{ reference: guestRef }, { reference: `REFUND_GUEST_${acceptedReq.id}` }] },
+                        transaction
+                    });
+                    if (!existingGuestTx) {
+                        const gOld = Number(guestUser.walletBalance || 0);
+                        const gNew = gOld + guestDeposit;
+                        await guestUser.update({ walletBalance: gNew }, { transaction });
+                        await acceptedReq.update({ joinerPaymentStatus: PartyPlanJoinerPaymentStatus.REFUNDED }, { transaction });
+                        await WalletTransaction.logTransaction({
+                            userId: guestUser.id,
+                            partyPlanId: plan.id,
+                            amount: guestDeposit,
+                            openingBalance: gOld,
+                            closingBalance: gNew,
+                            transactionType: WalletTransactionType.REFUND,
+                            reference: guestRef,
+                        });
+                        await ReliabilityService.updateScore({
+                            userId: guestUser.id,
+                            action: ReliabilityAction.CONFIRMED_ARRIVAL,
+                            partyPlanId: plan.id,
+                        });
+                    }
+                }
+                if (hostUser) {
+                    await ReliabilityService.updateScore({
+                        userId: hostUser.id,
+                        action: ReliabilityAction.NO_SHOW,
+                        partyPlanId: plan.id,
+                    });
+                }
+                await plan.update({
+                    status: PartyPlanStatus.INACTIVE,
+                    lifecycleStatus: PartyPlanLifecycleStatus.PLAN_COMPLETED,
+                    paymentStatus: 'Completed (Guest Refunded, Host No-Show)'
+                }, { transaction });
+            } else {
+                // ── CASE D: Both NO ──
+                if (hostUser) {
+                    await ReliabilityService.updateScore({
+                        userId: hostUser.id,
+                        action: ReliabilityAction.NO_SHOW,
+                        partyPlanId: plan.id,
+                    });
+                }
+                if (guestUser) {
+                    await ReliabilityService.updateScore({
+                        userId: guestUser.id,
+                        action: ReliabilityAction.NO_SHOW,
+                        partyPlanId: plan.id,
+                    });
+                }
+                await plan.update({
+                    status: PartyPlanStatus.INACTIVE,
+                    lifecycleStatus: PartyPlanLifecycleStatus.PLAN_COMPLETED,
+                    paymentStatus: 'Closed (Both No-Show)'
+                }, { transaction });
+            }
         }
 
         await transaction.commit();
@@ -4340,16 +4482,30 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
                 refundAmount: 99,
                 message: 'Both participants arrived! ₹99 commitment deposit refunded to your LUNARA Wallet.'
             });
+        } else if (isFinalized) {
+            const userRefunded = (isHost && hostArrived) || (!isHost && guestArrived);
+            res.json({
+                success: true,
+                bothArrived: false,
+                isHost,
+                confirmed: isYes,
+                isFinalized: true,
+                refundStatus: userRefunded ? 'SUCCESS' : 'NONE',
+                refundAmount: userRefunded ? 99 : 0,
+                message: userRefunded
+                    ? 'Arrival recorded. ₹99 deposit refunded to your wallet.'
+                    : 'Arrival recorded: Not reached.'
+            });
         } else {
             res.json({
                 success: true,
                 bothArrived: false,
                 isHost,
                 confirmed: isYes,
-                waitingForPartner: isYes,
+                waitingForPartner: true,
                 message: isYes
                     ? "Arrival confirmed! Waiting for your partner's confirmation."
-                    : "Arrival recorded: Not yet."
+                    : "Response recorded: Not reached. You can update your response until the window closes."
             });
         }
     } catch (err: any) {

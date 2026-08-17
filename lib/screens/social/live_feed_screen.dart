@@ -1,6 +1,7 @@
 // ignore_for_file: use_build_context_synchronously, unused_local_variable
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import 'party_plan_detail_screen.dart';
@@ -19,6 +20,8 @@ import '../../widgets/smart_checkout_sheet.dart';
 import '../../widgets/lunara_profile_image.dart';
 import '../profile/profile_screen.dart';
 import '../../models/user.dart';
+import '../../dialogs/strangers_meet_start_dialog.dart';
+import '../../dialogs/strangers_meet_end_dialog.dart';
 
 /// ─────────────────────────────────────────────────────────────────────────────
 /// Unified Notification Item Schema
@@ -209,6 +212,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.addSocketListener('group_party_payment_success', _onGroupPartyUpdated);
     ApiService.addSocketListener('large_party_status_update', _onGroupPartyUpdated);
     ApiService.addSocketListener('group_party_status_update', _onGroupPartyUpdated);
+    ApiService.addSocketListener('strangers_meet_started', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('strangers_meet_duration_extended', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('strangers_meet_host_confirmed_ended', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('strangers_meet_admin_confirmed_ended', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('strangers_meet_settled', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('strangers_meet_updated', _onPartyPlanRequestUpdated);
   }
 
   void _disposeSocketListeners() {
@@ -231,6 +240,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.removeSocketListener('group_party_payment_success', _onGroupPartyUpdated);
     ApiService.removeSocketListener('large_party_status_update', _onGroupPartyUpdated);
     ApiService.removeSocketListener('group_party_status_update', _onGroupPartyUpdated);
+    ApiService.removeSocketListener('strangers_meet_started', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('strangers_meet_duration_extended', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('strangers_meet_host_confirmed_ended', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('strangers_meet_admin_confirmed_ended', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('strangers_meet_settled', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('strangers_meet_updated', _onPartyPlanRequestUpdated);
   }
 
   void _onPartyPlanRequestUpdated(dynamic data) {
@@ -2306,8 +2321,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
       actionsList = [
         NotificationAction(
-          label: "I'M HERE",
-          icon: Icons.pin_drop_rounded,
+          label: "YES, REACHED",
+          icon: Icons.check_circle_rounded,
           isPrimary: true,
           onTap: () => PartyPlanArrivalDialog.showArrivalPrompt(
             context,
@@ -2317,23 +2332,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ),
         ),
         NotificationAction(
-          label: 'NOT YET',
-          icon: Icons.schedule_rounded,
+          label: 'NO, NOT REACHED',
+          icon: Icons.cancel_outlined,
           isPrimary: false,
           color: Colors.grey[200],
-          onTap: () async {
-            final uid = ApiService.currentUserId ?? '';
-            await ApiService.confirmArrival(planId: planId, userId: uid, hasArrived: false);
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Recorded: NOT YET. Confirm when you reach to unlock your ₹99 refund.'),
-                  backgroundColor: Colors.orange,
-                ),
-              );
-            }
-            _loadFeed(showLoader: false);
-          },
+          onTap: () => PartyPlanArrivalDialog.showArrivalPrompt(
+            context,
+            plan: planMap,
+            isHost: isHost,
+            onUpdate: () => _loadFeed(showLoader: false),
+          ),
         ),
       ];
     } else if (isHost) {
@@ -2926,7 +2934,168 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     String? partnerRoleLabel;
     String? statusSummary;
 
-    if (isExpired) {
+    final rawExpectedEnd = meetMap['expectedEndAt'] ?? meetMap['expected_end_at'];
+    final DateTime? expectedEnd = rawExpectedEnd != null ? DateTime.tryParse(rawExpectedEnd.toString())?.toLocal() : null;
+    final String endFormatted = expectedEnd != null ? DateFormat('hh:mm a').format(expectedEnd) : '';
+
+    if (meetStatus == 'in_progress') {
+      title = '🟢 Stranger Meet In Progress';
+      badge = 'LIVE / IN PROGRESS';
+      accent = const Color(0xFF3B82F6);
+      body = endFormatted.isNotEmpty
+          ? '🟢 Meetup is in progress at $venueName • Until $endFormatted'
+          : '🟢 Meetup is in progress at $venueName!';
+      statusSummary = 'Live • In Progress';
+
+      if (isHost) {
+        userRoleLabel = '👑 Your Stranger Meet';
+        actionsList = [
+          NotificationAction(
+            label: 'End / Extend',
+            icon: Icons.timer_outlined,
+            isPrimary: true,
+            color: const Color(0xFFF59E0B),
+            onTap: () {
+              StrangersMeetEndDialog.show(
+                context,
+                meetId: meetId,
+                subject: meetMap['subject']?.toString() ?? 'Strangers Meet',
+                venueName: venueName,
+                expectedEndAt: expectedEnd,
+                onEnded: () => _loadFeed(),
+                onExtended: () => _loadFeed(),
+              );
+            },
+          ),
+          NotificationAction(
+            label: 'View Ticket',
+            icon: Icons.confirmation_number_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () {
+              try {
+                final req = StrangersMeetRequest.fromJson(meetMap);
+                Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
+              } catch (e) {
+                debugPrint('Error parsing SM ticket: $e');
+              }
+            },
+          ),
+        ];
+      } else {
+        userRoleLabel = 'Hosted by';
+        partnerUser = hostCreator.isNotEmpty ? hostCreator : null;
+        partnerRoleLabel = 'Host:';
+        final otherId = meetHostId.isNotEmpty ? meetHostId : (hostCreator['id'] ?? '');
+
+        actionsList = [
+          NotificationAction(
+            label: 'Chat',
+            icon: Icons.chat_bubble_rounded,
+            isPrimary: true,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ChatScreen(
+                  user: {
+                    'id': otherId,
+                    'firstName': hostCreator['firstName'] ?? hostName,
+                    'lastName': hostCreator['lastName'] ?? '',
+                    'profilePhotoUrl': hostPhoto,
+                  },
+                ),
+              ),
+            ),
+          ),
+          NotificationAction(
+            label: 'View Ticket',
+            icon: Icons.confirmation_number_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () {
+              try {
+                final req = StrangersMeetRequest.fromJson(meetMap);
+                Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
+              } catch (e) {
+                debugPrint('Error parsing SM ticket: $e');
+              }
+            },
+          ),
+        ];
+      }
+    } else if (meetStatus == 'host_confirmed_ended') {
+      title = '🏁 Stranger Meet Ended';
+      badge = 'AWAITING ADMIN VERIFICATION';
+      accent = const Color(0xFFF59E0B);
+      body = isHost
+          ? 'You marked this meet as ended. Admin will verify and process host payout within 24 hours.'
+          : 'This Stranger Meet has ended. Hope you had a great time!';
+      statusSummary = isHost ? 'Awaiting Admin Verification' : 'Ended';
+      userRoleLabel = isHost ? '👑 Your Stranger Meet' : 'Hosted by';
+      actionsList = [
+        NotificationAction(
+          label: 'View Ticket',
+          icon: Icons.confirmation_number_rounded,
+          isPrimary: true,
+          onTap: () {
+            try {
+              final req = StrangersMeetRequest.fromJson(meetMap);
+              Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
+            } catch (e) {
+              debugPrint('Error parsing SM ticket: $e');
+            }
+          },
+        ),
+      ];
+    } else if (meetStatus == 'admin_confirmed_ended') {
+      title = '⏳ Meetup Verified';
+      badge = 'SETTLEMENT IN 24H';
+      accent = const Color(0xFF8B5CF6);
+      body = isHost
+          ? 'Admin verified meetup completion. Your payout will be settled to your account within 24 hours.'
+          : 'This Stranger Meet has concluded.';
+      statusSummary = isHost ? 'Settlement in 24 Hours' : 'Concluded';
+      userRoleLabel = isHost ? '👑 Your Stranger Meet' : 'Hosted by';
+      actionsList = [
+        NotificationAction(
+          label: 'View Ticket',
+          icon: Icons.confirmation_number_rounded,
+          isPrimary: true,
+          onTap: () {
+            try {
+              final req = StrangersMeetRequest.fromJson(meetMap);
+              Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
+            } catch (e) {
+              debugPrint('Error parsing SM ticket: $e');
+            }
+          },
+        ),
+      ];
+    } else if (meetStatus == 'completed') {
+      title = '✓ Meetup Completed & Settled';
+      badge = 'COMPLETED & SETTLED';
+      accent = const Color(0xFF10B981);
+      body = isHost
+          ? 'Your host payout has been settled to your account.'
+          : 'This Stranger Meet was successfully completed.';
+      statusSummary = 'Settled & Completed';
+      userRoleLabel = isHost ? '👑 Your Stranger Meet' : 'Hosted by';
+      actionsList = [
+        NotificationAction(
+          label: 'View Ticket',
+          icon: Icons.confirmation_number_rounded,
+          isPrimary: true,
+          onTap: () {
+            try {
+              final req = StrangersMeetRequest.fromJson(meetMap);
+              Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
+            } catch (e) {
+              debugPrint('Error parsing SM ticket: $e');
+            }
+          },
+        ),
+      ];
+    } else if (isExpired) {
       accent = const Color(0xFF9CA3AF);
       badge = 'EXPIRED';
       body = 'This Stranger Meet at $venueName has ended/expired.';
@@ -3030,10 +3199,26 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         statusSummary = 'Payment Done • Chat Unlocked';
 
         actionsList = [
+          if (meetMap['startedAt'] == null)
+            NotificationAction(
+              label: 'Start Meetup',
+              icon: Icons.play_circle_fill_rounded,
+              isPrimary: true,
+              onTap: () {
+                StrangersMeetStartDialog.show(
+                  context,
+                  meetId: meetId,
+                  subject: meetMap['subject']?.toString() ?? 'Strangers Meet',
+                  venueName: venueName,
+                  eventDateTime: parsedEventDate ?? DateTime.now(),
+                  onStarted: () => _loadFeed(),
+                );
+              },
+            ),
           NotificationAction(
             label: 'Chat',
             icon: Icons.chat_bubble_rounded,
-            isPrimary: true,
+            isPrimary: meetMap['startedAt'] != null,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
@@ -3071,10 +3256,26 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             : 'Your Stranger Meet at $venueName is live!';
         statusSummary = 'Live & Open';
         actionsList = [
+          if (meetMap['startedAt'] == null)
+            NotificationAction(
+              label: 'Start Meetup',
+              icon: Icons.play_circle_fill_rounded,
+              isPrimary: true,
+              onTap: () {
+                StrangersMeetStartDialog.show(
+                  context,
+                  meetId: meetId,
+                  subject: meetMap['subject']?.toString() ?? 'Strangers Meet',
+                  venueName: venueName,
+                  eventDateTime: parsedEventDate ?? DateTime.now(),
+                  onStarted: () => _loadFeed(),
+                );
+              },
+            ),
           NotificationAction(
             label: 'View Ticket',
             icon: Icons.confirmation_number_rounded,
-            isPrimary: true,
+            isPrimary: meetMap['startedAt'] != null,
             onTap: () {
               try {
                 final req = StrangersMeetRequest.fromJson(meetMap);

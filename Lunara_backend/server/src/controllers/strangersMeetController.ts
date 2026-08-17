@@ -1917,6 +1917,21 @@ export const getStrangersMeetTicket = async (req: Request, res: Response): Promi
             subscriptionTier: 'FREE',
         } : null;
 
+        // Dynamic participants calculation: count actual confirmed/paid joiners
+        const paidJoinersCount = await StrangersMeetJoiner.count({
+            where: {
+                strangersMeetRequestId: request.id,
+                [Op.or]: [
+                    { paymentStatus: StrangersMeetJoinerPaymentStatus.PAID },
+                    { status: 'paid' },
+                    { status: 'accepted' },
+                ],
+            },
+        });
+        const dynamicParticipantsCount = paidJoinersCount > 0
+            ? paidJoinersCount
+            : ((request.slotsFilled && request.slotsFilled > 0) ? request.slotsFilled : 1);
+
         let ticketUrl = request.ticketUrl ?? null;
         let ticketCode = request.ticketId || `SM-${request.id.substring(0, 8).toUpperCase()}`;
 
@@ -1937,7 +1952,12 @@ export const getStrangersMeetTicket = async (req: Request, res: Response): Promi
                     subject: request.subject,
                     tagline: request.tagline,
                     eventDateTime: request.eventDateTime,
-                    numberOfPersons: request.numberOfPersons,
+                    numberOfPersons: dynamicParticipantsCount,
+                    targetCapacity: request.numberOfPersons,
+                    capacity: request.numberOfPersons,
+                    slotsFilled: dynamicParticipantsCount,
+                    joinedCount: dynamicParticipantsCount,
+                    actualParticipantsCount: dynamicParticipantsCount,
                     paymentAmount: request.paymentAmount,
                     chargesPerHead: request.chargesPerHead,
                     status: request.status,
@@ -1949,11 +1969,147 @@ export const getStrangersMeetTicket = async (req: Request, res: Response): Promi
                 },
                 ticketCode: ticketCode,
                 ticketUrl: ticketUrl,
+                actualParticipantsCount: dynamicParticipantsCount,
+                joinedCount: dynamicParticipantsCount,
+                numberOfPersons: dynamicParticipantsCount,
+                targetCapacity: request.numberOfPersons,
             },
         });
     } catch (err: any) {
         logger.error('getStrangersMeetTicket error:', err);
         res.status(500).json({ success: false, error: err.message });
+    }
+};
+
+// POST /api/mobile/strangers-meet/:id/start
+export const startMeetup = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { userId, durationHours, customEndDateTime } = req.body;
+
+        if (!userId) {
+            res.status(400).json({ success: false, message: 'userId is required' });
+            return;
+        }
+
+        const request = await StrangersMeetService.confirmMeetupStarted(
+            id,
+            userId,
+            Number(durationHours || 1),
+            customEndDateTime ? String(customEndDateTime) : undefined
+        );
+
+        res.json({
+            success: true,
+            message: 'Strangers Meet started successfully!',
+            data: request,
+        });
+    } catch (err: any) {
+        logger.error('startMeetup error:', err);
+        res.status(500).json({ success: false, message: err.message || 'Failed to start strangers meet' });
+    }
+};
+
+// POST /api/mobile/strangers-meet/:id/extend
+export const extendMeetup = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { userId, additionalHours, customEndDateTime } = req.body;
+
+        if (!userId) {
+            res.status(400).json({ success: false, message: 'userId is required' });
+            return;
+        }
+
+        const request = await StrangersMeetService.extendMeetupDuration(
+            id,
+            userId,
+            Number(additionalHours || 1),
+            customEndDateTime ? String(customEndDateTime) : undefined
+        );
+
+        res.json({
+            success: true,
+            message: 'Strangers Meet duration extended successfully!',
+            data: request,
+        });
+    } catch (err: any) {
+        logger.error('extendMeetup error:', err);
+        res.status(500).json({ success: false, message: err.message || 'Failed to extend strangers meet duration' });
+    }
+};
+
+// POST /api/mobile/strangers-meet/:id/confirm-ended
+export const confirmEndedMeetup = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { userId } = req.body;
+
+        if (!userId) {
+            res.status(400).json({ success: false, message: 'userId is required' });
+            return;
+        }
+
+        const request = await StrangersMeetService.confirmMeetupEnded(id, userId);
+
+        res.json({
+            success: true,
+            message: 'Strangers Meet ended confirmation received. Payout settlement sent for Admin verification.',
+            data: request,
+        });
+    } catch (err: any) {
+        logger.error('confirmEndedMeetup error:', err);
+        res.status(500).json({ success: false, message: err.message || 'Failed to confirm strangers meet end' });
+    }
+};
+
+// PATCH /api/admin/strangers-meet/:id/confirm-ended
+export const adminConfirmEnded = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const adminId = (req as any).admin?.id || (req as any).user?.id || 'admin';
+
+        const request = await StrangersMeetService.adminConfirmMeetupEnded(id, adminId);
+
+        res.json({
+            success: true,
+            message: 'Strangers Meet end confirmed by Admin. Host will receive settlement within 24 hours.',
+            data: request,
+        });
+    } catch (err: any) {
+        logger.error('adminConfirmEnded error:', err);
+        res.status(500).json({ success: false, message: err.message || 'Failed to admin-confirm strangers meet end' });
+    }
+};
+
+// POST /api/admin/strangers-meet/:id/mark-settled
+export const adminMarkSettled = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { transactionId, paymentMethod, amount } = req.body;
+        const adminId = (req as any).admin?.id || (req as any).user?.id || 'admin';
+
+        if (!transactionId) {
+            res.status(400).json({ success: false, message: 'Payment transaction reference ID is required' });
+            return;
+        }
+
+        const request = await StrangersMeetService.adminMarkSettled(
+            id,
+            adminId,
+            String(transactionId),
+            paymentMethod ? String(paymentMethod) : 'UPI',
+            amount ? Number(amount) : undefined
+        );
+
+        res.json({
+            success: true,
+            message: 'Strangers Meet payout marked as settled successfully!',
+            data: request,
+        });
+    } catch (err: any) {
+        logger.error('adminMarkSettled error:', err);
+        res.status(500).json({ success: false, message: err.message || 'Failed to mark strangers meet payout as settled' });
     }
 };
 
