@@ -617,10 +617,25 @@ async function getUserNotifications(
     const entityKeys = new Map<string, any>();
     const deduplicatedNotifications: any[] = [];
 
-    for (const n of notifications) {
+    // Prioritize timeline cards first so they win during deduplication
+    const sortedForDedup = [...notifications].sort((a, b) => {
+        const aIsTimeline = a.type?.endsWith('_timeline') || a.id?.includes('_timeline_') ? 1 : 0;
+        const bIsTimeline = b.type?.endsWith('_timeline') || b.id?.includes('_timeline_') ? 1 : 0;
+        return bIsTimeline - aIsTimeline;
+    });
+
+    for (const n of sortedForDedup) {
         const data = n.data || {};
+        const titleLower = (n.title || '').toLowerCase();
+        const bodyLower = (n.body || '').toLowerCase();
+        const typeLower = (n.type || n.eventType || '').toLowerCase();
+        const isGp = typeLower.startsWith('group_party') || n.entityType === 'group_party' || n.entityType === 'GroupParty' || titleLower.includes('group party') || bodyLower.includes('group party');
+
         const groupPartyId = data.partyId?.toString() || data.groupPartyId?.toString() ||
-            (n.id?.startsWith('group_party_') ? n.id.replace(/^group_party_([^_]+).*/, '$1') : null);
+            (n.entityType === 'group_party' || n.entityType === 'GroupParty' ? n.entityId?.toString() : null) ||
+            (n.id?.startsWith('group_party_') ? n.id.replace(/^group_party_(?:timeline_)?([^_]+).*/, '$1') : null) ||
+            (isGp ? (data.bookingId?.toString() || n.entityId?.toString()) : null);
+
         const bookingId = data.bookingId?.toString() ||
             (n.id?.startsWith('solo_booking_') ? n.id.replace(/^solo_booking_([^_]+).*/, '$1') : null) ||
             (n.id?.startsWith('large_party_') ? n.id.replace(/^large_party_([^_]+).*/, '$1') : null);
