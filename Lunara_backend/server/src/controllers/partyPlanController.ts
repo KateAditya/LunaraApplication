@@ -2564,7 +2564,13 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
             await plan.reload({ lock: transaction.LOCK.UPDATE, transaction });
             await request.reload({ lock: transaction.LOCK.UPDATE, transaction });
 
-            if (plan.matchedRequestId !== request.id || request.status !== PartyPlanRequestStatus.PAYMENT_PENDING) {
+            const isMatchingRequest = !plan.matchedRequestId || plan.matchedRequestId === request.id;
+            const isPaymentPendingStatus =
+                request.status === PartyPlanRequestStatus.PAYMENT_PENDING ||
+                request.status === PartyPlanRequestStatus.ACCEPTED ||
+                request.status === PartyPlanRequestStatus.PENDING;
+
+            if (!isMatchingRequest || !isPaymentPendingStatus) {
                 await transaction.rollback();
                 res.status(409).json({ success: false, message: 'This payment window is no longer active.' });
                 return;
@@ -2581,15 +2587,24 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
                 PartyPlanLifecycleStatus.PAYMENT_PENDING,
                 PartyPlanLifecycleStatus.HOST_PAYMENT_COMPLETED,
                 PartyPlanLifecycleStatus.GUEST_PAYMENT_COMPLETED,
+                PartyPlanLifecycleStatus.REQUEST_RECEIVED,
+                PartyPlanLifecycleStatus.HOST_REVIEWING,
+                PartyPlanLifecycleStatus.USER_ACCEPTED,
             ];
-            if (!validPaymentStates.includes(plan.lifecycleStatus) || plan.status !== PartyPlanStatus.ACTIVE) {
+            if (plan.lifecycleStatus && !validPaymentStates.includes(plan.lifecycleStatus) && plan.status !== PartyPlanStatus.ACTIVE) {
                 await transaction.rollback();
                 res.status(400).json({ success: false, message: `This plan is not in a payment-accepting state (${plan.lifecycleStatus}).` });
                 return;
             }
 
+            // Ensure plan.matchedRequestId is set to this request
+            if (plan.matchedRequestId !== request.id) {
+                await plan.update({ matchedRequestId: request.id }, { transaction });
+            }
+
             // Record joiner payment
             await request.update({
+                status: PartyPlanRequestStatus.PAYMENT_PENDING,
                 joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
                 joinerRazorpayPaymentId: razorpay_payment_id,
             }, { transaction });

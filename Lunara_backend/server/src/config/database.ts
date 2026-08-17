@@ -183,6 +183,20 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
             await sequelize.query(`ALTER TABLE venues ADD COLUMN IF NOT EXISTS days_open TEXT[];`);
             await sequelize.query(`ALTER TABLE venues ADD COLUMN IF NOT EXISTS opening_time VARCHAR(50);`);
             await sequelize.query(`ALTER TABLE venues ADD COLUMN IF NOT EXISTS closing_time VARCHAR(50);`);
+
+            // ── Party Plans table columns ─────────────────────────────────────────
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS lifecycle_status VARCHAR(50) DEFAULT 'posted';`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS matched_request_id UUID;`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS accepted_at TIMESTAMP WITH TIME ZONE;`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS payment_deadline_at TIMESTAMP WITH TIME ZONE;`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_razorpay_order_id VARCHAR(100);`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_razorpay_payment_id VARCHAR(100);`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS payment_type VARCHAR(50) DEFAULT 'split';`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS deposit_amount DECIMAL(10,2) DEFAULT 99.00;`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS mobile_number VARCHAR(20);`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS optional_mobile_number VARCHAR(20);`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS food_preference VARCHAR(100);`);
+            await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS drink_preference VARCHAR(100);`);
             await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS show_profile_photo BOOLEAN DEFAULT TRUE;`);
             await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS show_host_name BOOLEAN DEFAULT TRUE;`);
             await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS show_venue_details BOOLEAN DEFAULT TRUE;`);
@@ -196,6 +210,18 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
             await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_arrival_confirmed BOOLEAN DEFAULT FALSE;`);
             await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_arrival_time TIMESTAMP WITH TIME ZONE;`);
             await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_lat_lang_check_in VARCHAR(255);`);
+
+            // ── Party Plan Requests table columns ──────────────────────────────────
+            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS joiner_razorpay_order_id VARCHAR(100);`);
+            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS joiner_razorpay_payment_id VARCHAR(100);`);
+            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS payment_timeout_at TIMESTAMP WITH TIME ZONE;`);
+            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP WITH TIME ZONE;`);
+            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancelled_by UUID;`);
+            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancellation_reason VARCHAR(100);`);
+            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS previous_status VARCHAR(50);`);
+            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS lat_lang_check_in BOOLEAN DEFAULT FALSE;`);
+            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_arrival_confirmed BOOLEAN DEFAULT FALSE;`);
+            await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_arrival_time TIMESTAMP WITH TIME ZONE;`);
 
             // ── Reminder columns for Bookings (Venue Bookings / Large Party) ──────
             await sequelize.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;`);

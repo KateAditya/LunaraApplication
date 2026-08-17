@@ -1381,6 +1381,18 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
               ),
             );
             return true;
+          } else if (mounted) {
+            String msg = 'Payment Confirmation Failed';
+            try {
+              final b = jsonDecode(confirmRes.body);
+              msg = b['message'] ?? b['error'] ?? msg;
+            } catch (_) {}
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Payment Failed: $msg'),
+                backgroundColor: Colors.redAccent,
+              ),
+            );
           }
         } else if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1410,6 +1422,18 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
             const SnackBar(
               content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
               backgroundColor: Colors.green,
+            ),
+          );
+        } else if (mounted) {
+          String msg = 'Payment Failed';
+          try {
+            final b = jsonDecode(res.body);
+            msg = b['message'] ?? b['error'] ?? msg;
+          } catch (_) {}
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Payment Failed: $msg'),
+              backgroundColor: Colors.redAccent,
             ),
           );
         }
