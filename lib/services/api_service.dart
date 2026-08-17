@@ -599,26 +599,47 @@ class ApiService {
     }
   }
 
-  static Future<List<dynamic>?> fetchBookings() async {
+  static Future<List<dynamic>?>? _inFlightBookings;
+  static DateTime? _bookingsCacheTime;
+  static List<dynamic>? _cachedBookings;
+
+  static Future<List<dynamic>?> fetchBookings({bool forceRefresh = false}) async {
     final userId = currentUserId;
     if (userId == null) return null;
 
-    try {
-      final response = await get(
-        '/api/mobile/bookings',
-        queryParameters: {'userId': userId},
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          return data['data'] as List<dynamic>;
-        }
-      }
-    } catch (e) {
-      debugPrint('fetchBookings error: $e');
+    final now = DateTime.now();
+    if (!forceRefresh && _cachedBookings != null && _bookingsCacheTime != null && now.difference(_bookingsCacheTime!).inSeconds < 4) {
+      return _cachedBookings;
     }
-    return null;
+
+    if (_inFlightBookings != null) {
+      return _inFlightBookings;
+    }
+
+    _inFlightBookings = () async {
+      try {
+        final response = await get(
+          '/api/mobile/bookings',
+          queryParameters: {'userId': userId},
+        );
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          if (data['success'] == true) {
+            _cachedBookings = data['data'] as List<dynamic>;
+            _bookingsCacheTime = DateTime.now();
+            return _cachedBookings;
+          }
+        }
+      } catch (e) {
+        debugPrint('fetchBookings error: $e');
+      } finally {
+        _inFlightBookings = null;
+      }
+      return _cachedBookings;
+    }();
+
+    return _inFlightBookings;
   }
 
   /// Fetches only the current user's large-party (group party) booking requests.
@@ -2872,47 +2893,70 @@ class ApiService {
     return [];
   }
 
-  static Future<Map<String, int>> fetchBadgeCounts() async {
+  static Future<Map<String, int>>? _inFlightBadgeCounts;
+  static DateTime? _badgeCountsCacheTime;
+  static Map<String, int>? _cachedBadgeCounts;
+
+  /// Fetches real unread count for badge indicators
+  static Future<Map<String, int>> fetchBadgeCounts({bool forceRefresh = false}) async {
     final userId = currentUserId;
     if (userId == null) {
       return {'liveFeedCount': 0, 'chatCount': 0, 'totalCount': 0};
     }
-    await loadLocalReadIds();
-    try {
-      // Limit to max 20 IDs in query parameters to avoid HTTP 414 / 400 URL length limits
-      final recentReqIds = localReadRequestIds.toList();
-      const maxSlice = 20;
-      final slicedReqIds = recentReqIds.length > maxSlice
-          ? recentReqIds.sublist(recentReqIds.length - maxSlice)
-          : recentReqIds;
 
-      final recentNotifIds = localReadNotificationIds.toList();
-      final slicedNotifIds = recentNotifIds.length > maxSlice
-          ? recentNotifIds.sublist(recentNotifIds.length - maxSlice)
-          : recentNotifIds;
-
-      final response = await get(
-        '/api/mobile/user/badge-counts',
-        queryParameters: {
-          'userId': userId,
-          'readRequestIds': slicedReqIds.join(','),
-          'readNotificationIds': slicedNotifIds.join(','),
-        },
-      );
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true && data['data'] != null) {
-          return {
-            'liveFeedCount': data['data']['liveFeedCount'] ?? 0,
-            'chatCount': data['data']['chatCount'] ?? 0,
-            'totalCount': data['data']['totalCount'] ?? 0,
-          };
-        }
-      }
-    } catch (e) {
-      debugPrint('fetchBadgeCounts error: $e');
+    final now = DateTime.now();
+    if (!forceRefresh && _cachedBadgeCounts != null && _badgeCountsCacheTime != null && now.difference(_badgeCountsCacheTime!).inSeconds < 3) {
+      return _cachedBadgeCounts!;
     }
-    return {'liveFeedCount': 0, 'chatCount': 0, 'totalCount': 0};
+
+    if (_inFlightBadgeCounts != null) {
+      return _inFlightBadgeCounts!;
+    }
+
+    _inFlightBadgeCounts = () async {
+      await loadLocalReadIds();
+      try {
+        // Limit to max 20 IDs in query parameters to avoid HTTP 414 / 400 URL length limits
+        final recentReqIds = localReadRequestIds.toList();
+        const maxSlice = 20;
+        final slicedReqIds = recentReqIds.length > maxSlice
+            ? recentReqIds.sublist(recentReqIds.length - maxSlice)
+            : recentReqIds;
+
+        final recentNotifIds = localReadNotificationIds.toList();
+        final slicedNotifIds = recentNotifIds.length > maxSlice
+            ? recentNotifIds.sublist(recentNotifIds.length - maxSlice)
+            : recentNotifIds;
+
+        final response = await get(
+          '/api/mobile/user/badge-counts',
+          queryParameters: {
+            'userId': userId,
+            'readRequestIds': slicedReqIds.join(','),
+            'readNotificationIds': slicedNotifIds.join(','),
+          },
+        );
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          if (data['success'] == true && data['data'] != null) {
+            _cachedBadgeCounts = {
+              'liveFeedCount': data['data']['liveFeedCount'] ?? 0,
+              'chatCount': data['data']['chatCount'] ?? 0,
+              'totalCount': data['data']['totalCount'] ?? 0,
+            };
+            _badgeCountsCacheTime = DateTime.now();
+            return _cachedBadgeCounts!;
+          }
+        }
+      } catch (e) {
+        debugPrint('fetchBadgeCounts error: $e');
+      } finally {
+        _inFlightBadgeCounts = null;
+      }
+      return _cachedBadgeCounts ?? {'liveFeedCount': 0, 'chatCount': 0, 'totalCount': 0};
+    }();
+
+    return _inFlightBadgeCounts!;
   }
 
   /// Mark a notification as read

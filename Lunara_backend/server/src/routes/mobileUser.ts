@@ -998,16 +998,25 @@ router.get('/badge-counts', authenticate, async (req, res) => {
             planReqWhere.id = { [Op.notIn]: validReadRequestUUIDs };
         }
 
-        // Execute phase 1 independent queries in parallel
+        const validReadNotifUUIDs = Array.from(activeReadNotificationIds).filter(isUUID);
+        const notifWhere: any = {
+            recipientUserId: uId,
+            isRead: false,
+        };
+        if (validReadNotifUUIDs.length > 0) {
+            notifWhere.id = { [Op.notIn]: validReadNotifUUIDs };
+        }
+
+        // Execute phase 1 independent queries in parallel using indexed count / id queries
         const [
-            notifications,
+            unreadNotificationsCount,
             myTablePlans,
             myPartyPlans,
             unreadPartyRequestsCount,
             unreadPlanRequestsCount,
             userConversations
         ] = await Promise.all([
-            getUserNotifications(uId, 'all', '', activeReadNotificationIds, getReadNotificationIds(uId)),
+            Notification.count({ where: notifWhere }),
             Plan.findAll({ where: { userId: uId }, attributes: ['id'] }),
             PartyPlan.findAll({ where: { userId: uId }, attributes: ['id'] }),
             PartyPlanRequest.count({ where: partyReqWhere }),
@@ -1023,7 +1032,6 @@ router.get('/badge-counts', authenticate, async (req, res) => {
             })
         ]);
 
-        const unreadNotificationsCount = notifications.filter(n => n.read !== true).length;
         const myTablePlanIds = myTablePlans.map(p => p.id);
         const myPartyPlanIds = myPartyPlans.map(p => p.id);
         const conversationIds = userConversations.map(c => c.id);
