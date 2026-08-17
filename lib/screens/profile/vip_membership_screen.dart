@@ -926,8 +926,8 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
   Widget _buildProfileBoostTab() {
     final selectedBoost = _boostOptions[_selectedBoostOption];
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final hasActiveBoosts =
-        _boostsRemaining > 0 || _activePackageTier == 'ELITE';
+    final isElite = _activePackageTier == 'ELITE';
+    final hasActiveBoosts = _boostsRemaining > 0 || isElite;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -986,115 +986,130 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
           ),
           const SizedBox(height: 24),
 
-          // Active Boost Credit Section
-          if (hasActiveBoosts) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: isDark
-                      ? [const Color(0xFF2E1A47), const Color(0xFF140D24)]
-                      : [Colors.purple.shade50, Colors.white],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(
-                  color: Colors.purple.withValues(alpha: 0.3),
-                  width: 1.5,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.purple.withValues(alpha: isDark ? 0.3 : 0.1),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
+          // Active Boost Credit Section — always visible
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: isDark
+                    ? [const Color(0xFF2E1A47), const Color(0xFF140D24)]
+                    : [Colors.purple.shade50, Colors.white],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'ACTIVE BOOST CREDITS',
-                            style: TextStyle(
-                              color: Colors.purpleAccent,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 1.5,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            _activePackageTier == 'ELITE'
-                                ? 'UNLIMITED BOOSTS'
-                                : '$_boostsRemaining BOOSTS AVAILABLE',
-                            style: TextStyle(
-                              color: isDark ? Colors.white : Colors.black87,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ],
-                      ),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.purple.withValues(alpha: 0.15),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.rocket_launch_rounded,
-                          color: Colors.purpleAccent,
-                          size: 26,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: ElevatedButton(
-                      onPressed: _isProcessing ? null : _useActiveBoost,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.purple,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        elevation: 4,
-                        shadowColor: Colors.purple.withValues(alpha: 0.5),
-                      ),
-                      child: _isProcessing
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.bolt, color: Colors.amber),
-                                SizedBox(width: 8),
-                                Text(
-                                  'ACTIVATE BOOST NOW',
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                              ],
-                            ),
-                    ),
-                  ),
-                ],
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: Colors.purple.withValues(alpha: 0.3),
+                width: 1.5,
               ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.purple.withValues(alpha: isDark ? 0.3 : 0.1),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
             ),
-            const SizedBox(height: 32),
-          ],
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'ACTIVE BOOST CREDITS',
+                          style: TextStyle(
+                            color: Colors.purpleAccent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          isElite
+                              ? 'UNLIMITED BOOSTS'
+                              : _boostsRemaining > 0
+                                  ? '$_boostsRemaining BOOSTS AVAILABLE'
+                                  : '0 BOOSTS AVAILABLE',
+                          style: TextStyle(
+                            color: isDark ? Colors.white : Colors.black87,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.withValues(
+                          alpha: hasActiveBoosts ? 0.15 : 0.07,
+                        ),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.rocket_launch_rounded,
+                        color: hasActiveBoosts
+                            ? Colors.purpleAccent
+                            : Colors.purpleAccent.withValues(alpha: 0.4),
+                        size: 26,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed:
+                        (_isProcessing || !hasActiveBoosts)
+                            ? null
+                            : _useActiveBoost,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor:
+                          hasActiveBoosts ? Colors.purple : Colors.grey[700],
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      elevation: hasActiveBoosts ? 4 : 0,
+                      shadowColor: Colors.purple.withValues(alpha: 0.5),
+                    ),
+                    child: _isProcessing
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.bolt,
+                                color: hasActiveBoosts
+                                    ? Colors.amber
+                                    : Colors.white54,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                hasActiveBoosts
+                                    ? 'ACTIVATE BOOST NOW'
+                                    : 'NO BOOSTS AVAILABLE',
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 32),
 
           Text(
             'SELECT BOOST PACKAGE',
