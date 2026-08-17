@@ -15,6 +15,14 @@ export interface Ad {
     imagePath: string;
     fromDate: string;
     toDate: string;
+    bannerFromDate?: string;
+    bannerToDate?: string;
+    eventDate?: string;
+    entryPrice?: number;
+    seatLimit?: number;
+    isUnlimited?: boolean;
+    filledSeats?: number;
+    remainingSeats?: number | null;
     isActive: boolean;
     socialLinks: SocialLink[];
     aboutEvent?: string;

@@ -29,6 +29,7 @@ import { VenueBookingSummary } from './pages/reports/VenueBookingSummary';
 import { CancelledPartyPlans } from './pages/CancelledPartyPlans';
 import { CancellationAnalytics } from './pages/CancellationAnalytics';
 import { WalletManagement } from './pages/WalletManagement';
+import { EventBookingPage } from './pages/EventBooking/EventBookingPage';
 import { ThemeProvider, useThemeMode } from './context/ThemeContext';
 
 // Create React Query client
@@ -90,6 +91,7 @@ function AppContent() {
             <Route path="venues" element={<Venues />} />
             <Route path="ads" element={<Ads />} />
             <Route path="bookings" element={<Bookings />} />
+            <Route path="event-bookings" element={<EventBookingPage />} />
             <Route path="party-requests" element={<LargePartyRequests />} />
             <Route path="group-parties" element={<GroupParties />} />
             <Route path="analytics" element={<Analytics />} />

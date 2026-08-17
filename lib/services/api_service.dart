@@ -3230,6 +3230,34 @@ class ApiService {
     return null;
   }
 
+  static Future<Map<String, dynamic>?> createPartyBooking({
+    required String partyEventId,
+    required int quantity,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) return null;
+    try {
+      final response = await post(
+        '/api/mobile/bookings/party-event',
+        body: {
+          'userId': userId,
+          'partyEventId': partyEventId,
+          'quantity': quantity,
+        },
+      );
+      try {
+        final data = jsonDecode(response.body);
+        if (data is Map<String, dynamic>) {
+          return data;
+        }
+      } catch (_) {}
+    } catch (e) {
+      debugPrint('createPartyBooking error: $e');
+    }
+    return null;
+  }
+
+
   static Future<Map<String, dynamic>?> payNowBooking(String bookingId) async {
     final userId = currentUserId;
     try {

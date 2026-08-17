@@ -245,11 +245,13 @@ export default function Ads() {
                                                         </span>
                                                     </td>
                                                     <td>
+                                                        {ad.eventDate && (
+                                                            <div style={{ fontSize: '0.75rem', color: '#7c3aed', whiteSpace: 'nowrap', marginBottom: '4px', fontWeight: 600 }}>
+                                                                <span style={{ fontWeight: 700 }}>Event:</span> {format(new Date(ad.eventDate), 'dd MMM yyyy')}
+                                                            </div>
+                                                        )}
                                                         <div style={{ fontSize: '0.75rem', color: 'var(--vz-text-muted)', whiteSpace: 'nowrap' }}>
-                                                            <span style={{ fontWeight: 500 }}>From:</span> {format(new Date(ad.fromDate), 'dd MMM yyyy')}
-                                                        </div>
-                                                        <div style={{ fontSize: '0.75rem', color: 'var(--vz-text-muted)', whiteSpace: 'nowrap' }}>
-                                                            <span style={{ fontWeight: 500 }}>To:</span> {format(new Date(ad.toDate), 'dd MMM yyyy')}
+                                                            <span style={{ fontWeight: 500 }}>Banner:</span> {format(new Date(ad.fromDate), 'dd MMM')} - {format(new Date(ad.toDate), 'dd MMM')}
                                                         </div>
                                                     </td>
                                                     <td>

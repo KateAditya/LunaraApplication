@@ -30,7 +30,12 @@ export const getAds = async (_req: Request, res: Response): Promise<Response> =>
                     json.socialLinks = [];
                 }
             }
-            return json;
+            return {
+                ...json,
+                bannerFromDate: json.fromDate,
+                bannerToDate: json.toDate,
+                remainingSeats: json.isUnlimited ? null : (json.seatLimit ? json.seatLimit - (json.filledSeats || 0) : null),
+            };
         });
 
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
@@ -105,6 +110,9 @@ export const getActiveAds = async (req: Request, res: Response): Promise<Respons
             return {
                 ...adJson,
                 imagePath: finalImagePath,
+                bannerFromDate: adJson.fromDate,
+                bannerToDate: adJson.toDate,
+                remainingSeats: adJson.isUnlimited ? null : (adJson.seatLimit ? adJson.seatLimit - (adJson.filledSeats || 0) : null),
             };
         });
 
@@ -122,7 +130,9 @@ export const getActiveAds = async (req: Request, res: Response): Promise<Respons
 // ─────────────────────────────────────────────────────────────────────────────
 export const createAd = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const { type, venueId, city, area, title, fromDate, toDate, isActive, aboutEvent } = req.body;
+        const { type, venueId, city, area, title, isActive, aboutEvent, eventDate, entryPrice, seatLimit, isUnlimited } = req.body;
+        const fromDateVal = req.body.bannerFromDate || req.body.fromDate;
+        const toDateVal = req.body.bannerToDate || req.body.toDate;
         let socialLinks = [];
         
         try {
@@ -146,11 +156,19 @@ export const createAd = async (req: Request, res: Response): Promise<Response> =
         const parsedCity = getValidValue(city);
         const parsedArea = getValidValue(area);
 
-        if (!type || !fromDate || !toDate) {
+        if (!type || !fromDateVal || !toDateVal) {
             return res.status(400).json({ success: false, message: 'Missing required fields' });
         }
-        if (type === 'Party' && (!parsedVenueId || !parsedCity || !parsedArea)) {
-            return res.status(400).json({ success: false, message: 'Missing required fields for Party ads' });
+        if (type === 'Party') {
+            if (!parsedVenueId || !parsedCity || !parsedArea) {
+                return res.status(400).json({ success: false, message: 'Missing required fields for Party ads' });
+            }
+            if (!eventDate) {
+                return res.status(400).json({ success: false, message: 'Event Date is mandatory for Party events' });
+            }
+            if (entryPrice === undefined || entryPrice === null) {
+                return res.status(400).json({ success: false, message: 'Entry Price is mandatory for Party events' });
+            }
         }
 
         const file = req.file;
@@ -176,8 +194,13 @@ export const createAd = async (req: Request, res: Response): Promise<Response> =
             area: parsedArea,
             title: getValidValue(title),
             imagePath: imagePath,
-            fromDate: new Date(fromDate),
-            toDate: new Date(toDate),
+            fromDate: new Date(fromDateVal),
+            toDate: new Date(toDateVal),
+            eventDate: eventDate ? new Date(eventDate) : undefined,
+            entryPrice: entryPrice !== undefined && entryPrice !== null ? Number(entryPrice) : undefined,
+            seatLimit: seatLimit !== undefined && seatLimit !== null ? Number(seatLimit) : undefined,
+            isUnlimited: isUnlimited === 'true' || isUnlimited === true,
+            filledSeats: 0,
             isActive: isActive === 'true' || isActive === true,
             aboutEvent: getValidValue(aboutEvent),
             socialLinks,
@@ -294,7 +317,9 @@ export const updateAd = async (req: Request, res: Response): Promise<Response> =
             return res.status(404).json({ success: false, message: 'Ad not found' });
         }
 
-        const { type, venueId, city, area, title, fromDate, toDate, isActive, aboutEvent } = req.body;
+        const { type, venueId, city, area, title, isActive, aboutEvent, eventDate, entryPrice, seatLimit, isUnlimited } = req.body;
+        const fromDateVal = req.body.bannerFromDate || req.body.fromDate;
+        const toDateVal = req.body.bannerToDate || req.body.toDate;
         
         const getValidValue = (val: any) => {
             if (typeof val === 'string') {
@@ -310,8 +335,14 @@ export const updateAd = async (req: Request, res: Response): Promise<Response> =
         if (city !== undefined) ad.city = getValidValue(city);
         if (area !== undefined) ad.area = getValidValue(area);
         if (title !== undefined) ad.title = getValidValue(title);
-        if (fromDate) ad.fromDate = new Date(fromDate);
-        if (toDate) ad.toDate = new Date(toDate);
+        if (fromDateVal) ad.fromDate = new Date(fromDateVal);
+        if (toDateVal) ad.toDate = new Date(toDateVal);
+        
+        if (eventDate !== undefined) ad.eventDate = eventDate ? new Date(eventDate) : undefined;
+        if (entryPrice !== undefined) ad.entryPrice = entryPrice !== null ? Number(entryPrice) : undefined;
+        if (seatLimit !== undefined) ad.seatLimit = seatLimit !== null ? Number(seatLimit) : undefined;
+        if (isUnlimited !== undefined) ad.isUnlimited = isUnlimited === 'true' || isUnlimited === true;
+        
         if (isActive !== undefined) ad.isActive = isActive === 'true' || isActive === true;
         if (aboutEvent !== undefined) ad.aboutEvent = getValidValue(aboutEvent);
 

@@ -244,7 +244,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                         : '${ApiService.baseUrl}${ad['imagePath']}')
                   : '';
 
-              String dateStr = ad['toDate'] ?? ad['fromDate'] ?? '';
+              String dateStr = ad['eventDate'] ?? ad['toDate'] ?? ad['fromDate'] ?? '';
               if (dateStr.isNotEmpty) {
                 try {
                   final dt = DateTime.parse(dateStr).toLocal();
@@ -254,18 +254,43 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                 dateStr = 'Upcoming';
               }
 
+              final bool isUnlimited = ad['isUnlimited'] == true;
+              final int seatLimit = ad['seatLimit'] ?? 0;
+              final int filledSeats = ad['filledSeats'] ?? 0;
+              final int remainingSeats = isUnlimited ? 999999 : (seatLimit - filledSeats);
+
               return {
+                'eventId': ad['id'],
                 'title': ad['title'] ?? ad['description'] ?? 'Special Event',
                 'date': dateStr,
-                'rawDate': ad['toDate'] ?? ad['fromDate'],
+                'rawDate': ad['eventDate'] ?? ad['toDate'] ?? ad['fromDate'],
                 'venue': venue['name'] ?? 'Unknown Venue',
                 'image': imageUrl,
                 'isAsset': false,
                 'venueId': ad['venueId'],
                 'venueMap': venue,
                 'aboutEvent': ad['aboutEvent'],
+                'entryPrice': ad['entryPrice'] ?? 0,
+                'isUnlimited': isUnlimited,
+                'seatLimit': seatLimit,
+                'filledSeats': filledSeats,
+                'remainingSeats': remainingSeats > 0 ? remainingSeats : 0,
               };
-            }).toList();
+            })
+            .where((night) {
+               // Filter out expired events
+               if (night['rawDate'] != null) {
+                 try {
+                   final dt = DateTime.parse(night['rawDate']).toLocal();
+                   // Keep if the event date is in the future or today
+                   if (dt.isBefore(DateTime.now().subtract(const Duration(days: 1)))) {
+                     return false;
+                   }
+                 } catch (_) {}
+               }
+               return true;
+            })
+            .toList();
           } else {
             _upcomingNights = [];
           }

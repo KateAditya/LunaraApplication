@@ -9,6 +9,7 @@ import GroupBooking from '../models/GroupBooking';
 import Payment, { PaymentMethod, PaymentStatus as TxnStatus } from '../models/Payment';
 import Venue from '../models/Venue';
 import VenueImage from '../models/VenueImage';
+import Ad from '../models/Ad';
 import { logger } from '../config/logger';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
@@ -172,6 +173,120 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
     }
 };
 
+// ─── POST /party-event — Create Party Event Booking ──────────────────────────
+export const createPartyBooking = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { userId, partyEventId, quantity } = req.body;
+        
+        const ad = await Ad.findByPk(partyEventId);
+        if (!ad || ad.type !== 'Party' || !ad.isActive) {
+            res.status(404).json({ success: false, message: 'Active Party Event not found' });
+            return;
+        }
+
+        // Check seat limit
+        const qty = Number(quantity);
+        if (!ad.isUnlimited) {
+            const seatsRemaining = (ad.seatLimit || 0) - (ad.filledSeats || 0);
+            if (seatsRemaining < qty) {
+                res.status(400).json({ success: false, message: 'Not enough seats available.' });
+                return;
+            }
+        }
+
+        const amount = (ad.entryPrice || 0) * qty;
+
+        const bookingNumber = `BKG-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+
+        let booking = await Booking.create({
+            bookingNumber,
+            userId,
+            venueId: ad.venueId || '',
+            bookingDate: ad.eventDate || new Date(),
+            startTime: '20:00', // Default start time
+            numberOfGuests: qty,
+            totalAmount: amount,
+            depositAmount: 0,
+            commissionAmount: 0,
+            status: amount === 0 ? BookingStatus.CONFIRMED : BookingStatus.PENDING,
+            paymentStatus: amount === 0 ? PaymentStatus.PAID : PaymentStatus.PENDING,
+            paymentMode: BookingPaymentMode.PAY_NOW,
+            isGroupBooking: qty > 1,
+            isUpcomingNight: true,
+            partyEventId: ad.id,
+        });
+
+        const venueDetails = await Venue.findByPk(ad.venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
+
+        if (amount === 0) {
+            // Free event flow
+            const ticketCode = uuidv4();
+            booking.ticketCode = ticketCode;
+            await booking.save();
+            
+            // Increment seats
+            ad.filledSeats = (ad.filledSeats || 0) + qty;
+            await ad.save();
+
+            setImmediate(async () => {
+                try {
+                    await generateTicketForBookingHelper(booking.id);
+                    await NotificationService.dispatch({
+                        recipientUserId: booking.userId,
+                        eventType: 'booking_confirmed',
+                        category: 'bookings',
+                        entityType: 'Booking',
+                        entityId: booking.id,
+                        title: '🎉 Free Booking Confirmed!',
+                        body: `Your booking for ${ad.title || 'Party Event'} is confirmed!`,
+                        priority: 'HIGH',
+                        idempotencyKey: `booking_free_${booking.id}`,
+                        actionType: 'view_ticket',
+                        deepLink: `/ticket/${booking.id}`,
+                    });
+                } catch (ticketErr) {
+                    logger.error(`Background ticket processing failed for free booking ${booking.id}:`, ticketErr);
+                }
+            });
+
+            res.status(201).json({
+                success: true,
+                data: booking,
+                ticket: buildTicket(booking, venueDetails as any, ticketCode),
+                message: 'Free registration successful'
+            });
+            return;
+        }
+
+        // Paid flow - Generate Razorpay Order
+        let razorpayOrder = null;
+        if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+            razorpayOrder = await razorpay.orders.create({
+                amount: Math.round(amount * 100), // in paise
+                currency: 'INR',
+                receipt: booking.id,
+            });
+            booking.razorpayOrderId = razorpayOrder.id;
+            await booking.save();
+        } else {
+            razorpayOrder = { id: 'dummy_order_' + booking.id, amount: amount * 100, currency: 'INR' };
+        }
+
+        res.status(201).json({
+            success: true,
+            data: booking,
+            razorpayOrderId: razorpayOrder.id,
+            razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
+            amount: razorpayOrder.amount,
+            currency: razorpayOrder.currency,
+        });
+
+    } catch (err: any) {
+        logger.error('createPartyBooking error:', err);
+        res.status(500).json({ success: false, message: err.message || 'Failed to create party booking' });
+    }
+};
+
 // ─── POST /:id/pay-now ────────────────────────────────────────────────────────
 export const payNow = async (req: Request, res: Response) => {
     try {
@@ -202,6 +317,18 @@ export const payNow = async (req: Request, res: Response) => {
             status: BookingStatus.CONFIRMED,
             ticketCode,
         });
+
+        if (booking.partyEventId) {
+            try {
+                const ad = await Ad.findByPk(booking.partyEventId);
+                if (ad) {
+                    ad.filledSeats = (ad.filledSeats || 0) + (booking.numberOfGuests || 1);
+                    await ad.save();
+                }
+            } catch (err) {
+                logger.error(`Failed to update filledSeats for ad ${booking.partyEventId}:`, err);
+            }
+        }
 
         // Generate digital ticket in background & dispatch notification
         setImmediate(async () => {
@@ -800,6 +927,7 @@ export default {
     getTablePackages,
     getTimeSlots,
     createBooking,
+    createPartyBooking,
     payNow,
     setupSplitBill,
     payMySplit,

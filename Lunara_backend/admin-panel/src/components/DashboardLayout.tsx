@@ -82,6 +82,7 @@ const navGroups: NavGroup[] = [
             { text: 'Venues', icon: <BiStore />, path: '/venues' },
             { text: 'Ads Management', icon: <BiImage />, path: '/ads' },
             { text: 'Bookings', icon: <BiCalendarEvent />, path: '/bookings' },
+            { text: 'Event Bookings', icon: <BiCalendarEvent />, path: '/event-bookings' },
             { text: 'Party Requests', icon: <BiGroup />, path: '/party-requests' },
             { text: 'Group Parties', icon: <BiGroup />, path: '/group-parties' },
             { text: 'Strangers Meet', icon: <BiUserPin />, path: '/strangers-meet' },

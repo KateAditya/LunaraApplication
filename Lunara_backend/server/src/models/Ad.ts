@@ -19,6 +19,11 @@ export interface AdAttributes {
     isActive: boolean;
     socialLinks: SocialLink[];
     aboutEvent?: string;
+    eventDate?: Date;
+    entryPrice?: number;
+    seatLimit?: number;
+    isUnlimited?: boolean;
+    filledSeats?: number;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -38,6 +43,12 @@ class Ad extends Model<AdAttributes, AdCreationAttributes> implements AdAttribut
     public isActive!: boolean;
     public socialLinks!: SocialLink[];
     public aboutEvent?: string;
+
+    public eventDate?: Date;
+    public entryPrice?: number;
+    public seatLimit?: number;
+    public isUnlimited!: boolean;
+    public filledSeats!: number;
 
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
@@ -101,6 +112,31 @@ Ad.init(
             type: DataTypes.TEXT,
             allowNull: true,
             field: 'about_event',
+        },
+        eventDate: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'event_date',
+        },
+        entryPrice: {
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            field: 'entry_price',
+        },
+        seatLimit: {
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            field: 'seat_limit',
+        },
+        isUnlimited: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            field: 'is_unlimited',
+        },
+        filledSeats: {
+            type: DataTypes.INTEGER,
+            defaultValue: 0,
+            field: 'filled_seats',
         },
     },
     {

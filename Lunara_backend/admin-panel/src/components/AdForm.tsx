@@ -27,6 +27,12 @@ export default function AdForm({ ad, defaultType = 'Ads', onClose, onSuccess }: 
     const [title, setTitle] = useState(ad?.title || '');
     const [aboutEvent, setAboutEvent] = useState(ad?.aboutEvent || '');
 
+    // Party Event specific fields
+    const [eventDate, setEventDate] = useState(ad?.eventDate ? format(new Date(ad.eventDate), 'yyyy-MM-dd') : '');
+    const [entryPrice, setEntryPrice] = useState<string>(ad?.entryPrice !== undefined ? ad.entryPrice.toString() : '');
+    const [isUnlimited, setIsUnlimited] = useState<boolean>(ad?.isUnlimited || false);
+    const [seatLimit, setSeatLimit] = useState<string>(ad?.seatLimit !== undefined ? ad.seatLimit.toString() : '');
+
     // YYYY-MM-DD formatting for date inputs
     const [fromDate, setFromDate] = useState(ad?.fromDate ? format(new Date(ad.fromDate), 'yyyy-MM-dd') : '');
     const [toDate, setToDate] = useState(ad?.toDate ? format(new Date(ad.toDate), 'yyyy-MM-dd') : '');
@@ -112,6 +118,9 @@ export default function AdForm({ ad, defaultType = 'Ads', onClose, onSuccess }: 
             if (!city) { toast.error('Please select a City'); return false; }
             if (!area) { toast.error('Please select an Area'); return false; }
             if (!venueId) { toast.error('Please select a Venue'); return false; }
+            if (!eventDate) { toast.error('Please select Event Date'); return false; }
+            if (entryPrice === '') { toast.error('Please enter Entry Price'); return false; }
+            if (!isUnlimited && seatLimit === '') { toast.error('Please enter Seat Limit'); return false; }
         }
         if (!fromDate) { toast.error('Please select From Date'); return false; }
         if (!toDate) { toast.error('Please select To Date'); return false; }
@@ -150,8 +159,16 @@ export default function AdForm({ ad, defaultType = 'Ads', onClose, onSuccess }: 
             if (title) formData.append('title', title);
             if (venueId) formData.append('venueId', venueId);
             formData.append('aboutEvent', aboutEvent);
-            formData.append('fromDate', fromDate);
-            formData.append('toDate', toDate);
+            formData.append('bannerFromDate', fromDate);
+            formData.append('bannerToDate', toDate);
+            if (type === 'Party') {
+                formData.append('eventDate', eventDate);
+                formData.append('entryPrice', entryPrice);
+                formData.append('isUnlimited', isUnlimited.toString());
+                if (!isUnlimited && seatLimit !== '') {
+                    formData.append('seatLimit', seatLimit);
+                }
+            }
             formData.append('isActive', isActive.toString());
             formData.append('socialLinks', JSON.stringify(socialLinks));
 
@@ -290,6 +307,74 @@ export default function AdForm({ ad, defaultType = 'Ads', onClose, onSuccess }: 
                             )}
                         </div>
                     </div>
+
+                    {/* Party Event Details Section */}
+                    {type === 'Party' && (
+                        <div className="vz-card" style={{ marginBottom: 0 }}>
+                            <div className="vz-card-body">
+                                <h5 style={{ margin: '0 0 1rem', fontSize: '1rem', color: 'var(--vz-text-primary)', borderBottom: '1px solid var(--vz-border-color)', paddingBottom: '0.5rem' }}>Event Details</h5>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--vz-text-primary)' }}>Event Date <span style={{ color: 'var(--vz-danger)' }}>*</span></label>
+                                        <input
+                                            type="date"
+                                            value={eventDate}
+                                            onChange={(e) => setEventDate(e.target.value)}
+                                            className="vz-form-control"
+                                            required={type === 'Party'}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--vz-text-primary)' }}>Entry Price (₹) <span style={{ color: 'var(--vz-danger)' }}>*</span></label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={entryPrice}
+                                            onChange={(e) => setEntryPrice(e.target.value)}
+                                            className="vz-form-control"
+                                            placeholder="e.g. 499 (0 for Free)"
+                                            required={type === 'Party'}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--vz-text-primary)' }}>Capacity <span style={{ color: 'var(--vz-danger)' }}>*</span></label>
+                                        <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer', fontSize: '0.875rem' }}>
+                                                <input
+                                                    type="radio"
+                                                    checked={!isUnlimited}
+                                                    onChange={() => setIsUnlimited(false)}
+                                                    name="capacityType"
+                                                /> Limited
+                                            </label>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer', fontSize: '0.875rem' }}>
+                                                <input
+                                                    type="radio"
+                                                    checked={isUnlimited}
+                                                    onChange={() => setIsUnlimited(true)}
+                                                    name="capacityType"
+                                                /> No Limit
+                                            </label>
+                                        </div>
+                                    </div>
+                                    {!isUnlimited && (
+                                        <div>
+                                            <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--vz-text-primary)' }}>Seat Limit <span style={{ color: 'var(--vz-danger)' }}>*</span></label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                value={seatLimit}
+                                                onChange={(e) => setSeatLimit(e.target.value)}
+                                                className="vz-form-control"
+                                                placeholder="e.g. 100"
+                                                required={type === 'Party' && !isUnlimited}
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Banner Settings */}
                     <div className="vz-card" style={{ marginBottom: 0 }}>

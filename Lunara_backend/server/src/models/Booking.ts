@@ -56,6 +56,7 @@ export interface BookingAttributes {
     cancellationReason?: string;
     cancelledAt?: Date;
     specialRequests?: string;
+    partyEventId?: string;
     // Mobile booking flow fields
     goingMode?: GoingMode;
     tablePackage?: string;
@@ -97,6 +98,7 @@ export interface BookingCreationAttributes
         | 'cancellationReason'
         | 'cancelledAt'
         | 'specialRequests'
+        | 'partyEventId'
         | 'goingMode'
         | 'tablePackage'
         | 'paymentMode'
@@ -139,6 +141,7 @@ class Booking extends Model<BookingAttributes, BookingCreationAttributes> implem
     public cancellationReason?: string;
     public cancelledAt?: Date;
     public specialRequests?: string;
+    public partyEventId?: string;
     // Mobile booking flow
     public goingMode?: GoingMode;
     public tablePackage?: string;
@@ -295,6 +298,11 @@ Booking.init(
             type: DataTypes.TEXT,
             allowNull: true,
             field: 'special_requests',
+        },
+        partyEventId: {
+            type: DataTypes.UUID,
+            allowNull: true,
+            field: 'party_event_id',
         },
         // Mobile booking flow fields
         goingMode: {
