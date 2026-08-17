@@ -150,6 +150,14 @@ class User {
     }
   }
 
+  static bool _parseBool(dynamic value) {
+    if (value == null) return false;
+    if (value is bool) return value;
+    if (value is String) return value.toLowerCase() == 'true' || value == '1';
+    if (value is num) return value.toInt() == 1;
+    return false;
+  }
+
   factory User.fromJson(Map<dynamic, dynamic> json) {
     // Traverse nested structures to find user fields
     Map<dynamic, dynamic> data = json;
@@ -357,8 +365,8 @@ class User {
           : (data['pointsCount'] != null
               ? int.tryParse(data['pointsCount'].toString()) ?? 0
               : 0),
-      isLiked: json['isLiked'] == true || data['isLiked'] == true,
-      isSuperLiked: json['isSuperLiked'] == true || data['isSuperLiked'] == true,
+      isLiked: _parseBool(json['isLiked']) || _parseBool(data['isLiked']),
+      isSuperLiked: _parseBool(json['isSuperLiked']) || _parseBool(data['isSuperLiked']),
     );
   }
 
