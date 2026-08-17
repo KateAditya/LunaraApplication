@@ -267,50 +267,55 @@ async function getUserNotifications(
     }
 
     // Build/Enrich Unified Party Plan Timeline Cards
-    const timelineCards: any[] = [];
-    for (const planId of partyPlanIds) {
-        const card = await enrichPartyPlanNotificationCard(planId, uId);
-        if (card && card.currentStatus !== 'Waiting other user') {
-            // Find all DB notifications associated with this plan
-            const planNotifs = notifications.filter(n => {
-                const metadata = n.data || {};
-                const pId = metadata.planId || metadata.partyPlanId || (n.entityType === 'party_plan' ? n.entityId : null);
-                return pId === planId;
-            });
+    // Build/Enrich Unified Party Plan Timeline Cards in parallel
+    const planCardResults = await Promise.all(
+        Array.from(partyPlanIds).map(async (planId) => {
+            try {
+                const card = await enrichPartyPlanNotificationCard(planId, uId);
+                if (card && card.currentStatus !== 'Waiting other user') {
+                    // Find all DB notifications associated with this plan
+                    const planNotifs = notifications.filter(n => {
+                        const metadata = n.data || {};
+                        const pId = metadata.planId || metadata.partyPlanId || (n.entityType === 'party_plan' ? n.entityId : null);
+                        return pId === planId;
+                    });
 
-            // Timeline card is unread if ANY database notification for this plan is unread
-            const hasUnread = planNotifs.length > 0 ? planNotifs.some(n => !n.read) : false;
-            
-            // The timestamp is the max of the plan's update time and latest notification's time
-            let maxTime = new Date(card.lastUpdated).getTime();
-            for (const pn of planNotifs) {
-                const pt = new Date(pn.createdAt).getTime();
-                if (pt > maxTime) maxTime = pt;
+                    const hasUnread = planNotifs.length > 0 ? planNotifs.some(n => !n.read) : false;
+                    let maxTime = new Date(card.lastUpdated).getTime();
+                    for (const pn of planNotifs) {
+                        const pt = new Date(pn.createdAt).getTime();
+                        if (pt > maxTime) maxTime = pt;
+                    }
+
+                    return {
+                        id: `party_plan_timeline_${planId}`,
+                        title: card.planTitle,
+                        body: card.currentStatus,
+                        category: 'events',
+                        type: 'party_plan_timeline',
+                        createdAt: new Date(maxTime).toISOString(),
+                        read: !hasUnread,
+                        isRead: !hasUnread,
+                        imageUrl: card.partyImage || card.hostProfilePhotoUrl || card.guestProfilePhotoUrl,
+                        host: card.host,
+                        creator: card.creator,
+                        user: card.user,
+                        actor: card.host || card.creator || card.user,
+                        sender: card.host || card.creator || card.user,
+                        hostProfilePhotoUrl: card.hostProfilePhotoUrl,
+                        guestProfilePhotoUrl: card.guestProfilePhotoUrl,
+                        data: card,
+                        plan: card,
+                        deepLink: `/party-plans/${planId}`,
+                    };
+                }
+            } catch (err) {
+                console.error(`Error enriching party plan ${planId}:`, err);
             }
-
-            timelineCards.push({
-                id: `party_plan_timeline_${planId}`,
-                title: card.planTitle,
-                body: card.currentStatus,
-                category: 'events',
-                type: 'party_plan_timeline',
-                createdAt: new Date(maxTime).toISOString(),
-                read: !hasUnread,
-                isRead: !hasUnread,
-                imageUrl: card.partyImage || card.hostProfilePhotoUrl || card.guestProfilePhotoUrl,
-                host: card.host,
-                creator: card.creator,
-                user: card.user,
-                actor: card.host || card.creator || card.user,
-                sender: card.host || card.creator || card.user,
-                hostProfilePhotoUrl: card.hostProfilePhotoUrl,
-                guestProfilePhotoUrl: card.guestProfilePhotoUrl,
-                data: card,
-                plan: card,
-                deepLink: `/party-plans/${planId}`,
-            });
-        }
-    }
+            return null;
+        })
+    );
+    const timelineCards = planCardResults.filter(Boolean);
 
     // Filter out raw party plan notifications (they are now unified in timelineCards)
     const otherNotifs = notifications.filter(n => {
@@ -331,78 +336,82 @@ async function getUserNotifications(
             order: [['createdAt', 'DESC']],
             limit: 20
         });
-        for (const match of matches) {
-            const m = match as any;
-            const firstUser = m.user1;
-            const notificationId = `match_${match.id}`;
 
-            // Check if already in notifications list from stored DB records
-            const alreadyExists = notifications.some(n => 
-                n.id === notificationId || 
-                n.entityId === match.id || 
-                (n.data && n.data.matchId === match.id)
-            );
-            if (alreadyExists) continue;
+        const matchCards = await Promise.all(
+            matches.map(async (match) => {
+                const m = match as any;
+                const firstUser = m.user1;
+                const notificationId = `match_${match.id}`;
 
-            const mCreatedTime = match.createdAt ? new Date(match.createdAt).getTime() : 0;
-            const isCleared = clearedAt > 0 && mCreatedTime <= clearedAt;
-            const isRead = isCleared || activeReadNotificationIds.has(notificationId);
-            const isSuper = m.matchReason === 'superlike' || m.isSuperLike;
-            const senderName = `${firstUser?.firstName || 'Someone'} ${firstUser?.lastName || ''}`.trim();
+                // Check if already in notifications list from stored DB records
+                const alreadyExists = notifications.some(n => 
+                    n.id === notificationId || 
+                    n.entityId === match.id || 
+                    (n.data && n.data.matchId === match.id)
+                );
+                if (alreadyExists) return null;
 
-            let postedPlans: any[] = [];
-            if (isSuper && firstUser?.id) {
-                try {
-                    const activePlans = await PartyPlan.findAll({
-                        where: {
-                            userId: firstUser.id,
-                            status: 'active',
-                            isLive: true,
-                            planDateTime: { [Op.gte]: new Date() },
-                            visibility: 'public',
-                        },
-                        include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }],
-                        order: [['planDateTime', 'ASC']],
-                        limit: 3,
-                    });
-                    postedPlans = activePlans.map((p: any) => ({
-                        id: p.id,
-                        title: `Let's party at ${p.venue?.name || 'Venue'}! 🚀`,
-                        venueName: p.venue?.name || 'Venue',
-                        planDateTime: p.planDateTime,
-                        status: p.status,
-                        isLive: p.isLive,
-                    }));
-                } catch (pErr) {
-                    console.error('Error fetching superlike sender plans:', pErr);
+                const mCreatedTime = match.createdAt ? new Date(match.createdAt).getTime() : 0;
+                const isCleared = clearedAt > 0 && mCreatedTime <= clearedAt;
+                const isRead = isCleared || activeReadNotificationIds.has(notificationId);
+                const isSuper = m.matchReason === 'superlike' || m.isSuperLike;
+                const senderName = `${firstUser?.firstName || 'Someone'} ${firstUser?.lastName || ''}`.trim();
+
+                let postedPlans: any[] = [];
+                if (isSuper && firstUser?.id) {
+                    try {
+                        const activePlans = await PartyPlan.findAll({
+                            where: {
+                                userId: firstUser.id,
+                                status: 'active',
+                                isLive: true,
+                                planDateTime: { [Op.gte]: new Date() },
+                                visibility: 'public',
+                            },
+                            include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }],
+                            order: [['planDateTime', 'ASC']],
+                            limit: 3,
+                        });
+                        postedPlans = activePlans.map((p: any) => ({
+                            id: p.id,
+                            title: `Let's party at ${p.venue?.name || 'Venue'}! 🚀`,
+                            venueName: p.venue?.name || 'Venue',
+                            planDateTime: p.planDateTime,
+                            status: p.status,
+                            isLive: p.isLive,
+                        }));
+                    } catch (pErr) {
+                        console.error('Error fetching superlike sender plans:', pErr);
+                    }
                 }
-            }
 
-            notifications.push({
-                id: notificationId,
-                title: isSuper ? '⭐ Super Like!' : '💖 New Connection!',
-                body: isSuper ? `${senderName} sent you a Super Like! 💜` : `${senderName} liked your profile ❤️`,
-                category: isSuper ? 'super_like' : 'likes',
-                type: isSuper ? 'super_like' : 'like',
-                createdAt: match.createdAt ? match.createdAt.toISOString() : new Date().toISOString(),
-                read: isRead,
-                isRead: isRead,
-                sender: firstUser ? {
-                    id: firstUser.id,
-                    firstName: firstUser.firstName,
-                    lastName: firstUser.lastName,
-                    profileImageUrl: firstUser.profileImageUrl,
-                } : null,
-                data: {
-                    matchId: match.id,
-                    senderId: firstUser?.id,
-                    senderName,
-                    senderImage: firstUser?.profileImageUrl || '',
-                    postedPlans,
-                    action: isSuper ? 'superlike' : 'like',
-                }
-            });
-        }
+                return {
+                    id: notificationId,
+                    title: isSuper ? '⭐ Super Like!' : '💖 New Connection!',
+                    body: isSuper ? `${senderName} sent you a Super Like! 💜` : `${senderName} liked your profile ❤️`,
+                    category: isSuper ? 'super_like' : 'likes',
+                    type: isSuper ? 'super_like' : 'like',
+                    createdAt: match.createdAt ? match.createdAt.toISOString() : new Date().toISOString(),
+                    read: isRead,
+                    isRead: isRead,
+                    sender: firstUser ? {
+                        id: firstUser.id,
+                        firstName: firstUser.firstName,
+                        lastName: firstUser.lastName,
+                        profileImageUrl: firstUser.profileImageUrl,
+                    } : null,
+                    data: {
+                        matchId: match.id,
+                        senderId: firstUser?.id,
+                        senderName,
+                        senderImage: firstUser?.profileImageUrl || '',
+                        postedPlans,
+                        action: isSuper ? 'superlike' : 'like',
+                    }
+                };
+            })
+        );
+        notifications.push(...matchCards.filter(Boolean));
     } catch (matchErr) {
         console.error('Error fetching match notifications:', matchErr);
     }
@@ -432,55 +441,64 @@ async function getUserNotifications(
         console.error('Error fetching payment notifications:', payErr);
     }
 
-    // 3. Fetch Stranger Meet Cards (Unified Timeline Card Engine)
+    // 3. Fetch Stranger Meet Cards (Unified Timeline Card Engine) in parallel
     try {
         const { StrangersMeetService } = await import('../services/StrangersMeetService');
 
-        const hostMeets = await StrangersMeetRequest.findAll({
-            where: { userId: uId },
-            attributes: ['id']
-        });
-
-        const joinedRecords = await StrangersMeetJoiner.findAll({
-            where: { userId: uId },
-            attributes: ['strangersMeetRequestId']
-        });
+        const [hostMeets, joinedRecords] = await Promise.all([
+            StrangersMeetRequest.findAll({
+                where: { userId: uId },
+                attributes: ['id']
+            }),
+            StrangersMeetJoiner.findAll({
+                where: { userId: uId },
+                attributes: ['strangersMeetRequestId']
+            })
+        ]);
 
         const meetIds = Array.from(new Set([
             ...hostMeets.map(m => m.id),
             ...joinedRecords.map(j => j.strangersMeetRequestId)
         ]));
 
-        for (const mId of meetIds) {
-            const card = await StrangersMeetService.enrichStrangersMeetNotificationCard(mId, uId);
-            if (card) {
-                const notificationId = card.id;
-                const isRead = activeReadNotificationIds.has(notificationId);
-                notifications.push({
-                    id: notificationId,
-                    title: card.title,
-                    body: `${card.currentStatusText} — ${card.venueName} (${card.venueArea})`,
-                    createdAt: card.updatedAt,
-                    read: isRead,
-                    isRead: isRead,
-                    category: 'bookings',
-                    sender: card.host,
-                    eventDetails: {
-                        subject: card.title,
-                        tagline: card.tagline,
-                        venue: card.venueName,
-                        eventDate: card.eventDate,
-                        slotsFilled: card.slotsFilled,
-                        totalSlots: card.totalSlots
-                    },
-                    data: {
-                        type: 'strangers_meet_timeline',
-                        strangersMeetId: card.meetId,
-                        cardPayload: card
+        const smCards = await Promise.all(
+            meetIds.map(async (mId) => {
+                try {
+                    const card = await StrangersMeetService.enrichStrangersMeetNotificationCard(mId, uId);
+                    if (card) {
+                        const notificationId = card.id;
+                        const isRead = activeReadNotificationIds.has(notificationId);
+                        return {
+                            id: notificationId,
+                            title: card.title,
+                            body: `${card.currentStatusText} — ${card.venueName} (${card.venueArea})`,
+                            createdAt: card.updatedAt,
+                            read: isRead,
+                            isRead: isRead,
+                            category: 'bookings',
+                            sender: card.host,
+                            eventDetails: {
+                                subject: card.title,
+                                tagline: card.tagline,
+                                venue: card.venueName,
+                                eventDate: card.eventDate,
+                                slotsFilled: card.slotsFilled,
+                                totalSlots: card.totalSlots
+                            },
+                            data: {
+                                type: 'strangers_meet_timeline',
+                                strangersMeetId: card.meetId,
+                                cardPayload: card
+                            }
+                        };
                     }
-                });
-            }
-        }
+                } catch (err) {
+                    console.error(`Error enriching strangers meet ${mId}:`, err);
+                }
+                return null;
+            })
+        );
+        notifications.push(...smCards.filter(Boolean));
     } catch (smErr) {
         console.error('Error fetching strangers meet notifications:', smErr);
     }
@@ -517,7 +535,7 @@ async function getUserNotifications(
         console.error('Error fetching safety check feedbacks:', err);
     }
 
-    // 5. Fetch Booking records (goingMode = party_request or solo)
+    // 5. Fetch Booking records (goingMode = party_request or solo) in parallel
     try {
         const bookings = await Booking.findAll({
             where: { userId: uId },
@@ -525,30 +543,38 @@ async function getUserNotifications(
             order: [['createdAt', 'DESC']],
             limit: 30
         });
-        for (const booking of bookings) {
-            if (booking.goingMode === 'party_request' || booking.isLargePartyRequest) {
-                const { GroupPartyService } = await import('../services/GroupPartyService');
-                const enrichedCard = await GroupPartyService.enrichLargePartyNotificationCard(booking.id, uId);
-                if (enrichedCard) {
-                    enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
-                    enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);
-                    notifications.push(enrichedCard);
+        const bookingCards = await Promise.all(
+            bookings.map(async (booking) => {
+                try {
+                    if (booking.goingMode === 'party_request' || booking.isLargePartyRequest) {
+                        const { GroupPartyService } = await import('../services/GroupPartyService');
+                        const enrichedCard = await GroupPartyService.enrichLargePartyNotificationCard(booking.id, uId);
+                        if (enrichedCard) {
+                            enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
+                            enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);
+                            return enrichedCard;
+                        }
+                    } else {
+                        const { VenueBookingService } = await import('../services/VenueBookingService');
+                        const enrichedCard = await VenueBookingService.enrichVenueBookingNotificationCard(booking.id, uId);
+                        if (enrichedCard) {
+                            enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
+                            enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);
+                            return enrichedCard;
+                        }
+                    }
+                } catch (err) {
+                    console.error(`Error enriching booking ${booking.id}:`, err);
                 }
-            } else {
-                const { VenueBookingService } = await import('../services/VenueBookingService');
-                const enrichedCard = await VenueBookingService.enrichVenueBookingNotificationCard(booking.id, uId);
-                if (enrichedCard) {
-                    enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
-                    enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);
-                    notifications.push(enrichedCard);
-                }
-            }
-        }
+                return null;
+            })
+        );
+        notifications.push(...bookingCards.filter(Boolean));
     } catch (bookingErr) {
         console.error('Error fetching booking notifications:', bookingErr);
     }
 
-    // 6. Fetch GroupParty records (Unified Timeline Card per Party)
+    // 6. Fetch GroupParty records (Unified Timeline Card per Party) in parallel
     try {
         const { GroupPartyService } = await import('../services/GroupPartyService');
         const groupParties = await GroupParty.findAll({
@@ -556,40 +582,50 @@ async function getUserNotifications(
             order: [['createdAt', 'DESC']],
             limit: 20
         });
-        for (const gp of groupParties) {
-            const enrichedCard = await GroupPartyService.enrichGroupPartyNotificationCard(gp.id, uId);
-            if (enrichedCard) {
-                enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
-                enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);
-                notifications.push(enrichedCard);
-            }
-        }
+        const gpCards = await Promise.all(
+            groupParties.map(async (gp) => {
+                try {
+                    const enrichedCard = await GroupPartyService.enrichGroupPartyNotificationCard(gp.id, uId);
+                    if (enrichedCard) {
+                        enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
+                        enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);
+                        return enrichedCard;
+                    }
+                } catch (err) {
+                    console.error(`Error enriching group party ${gp.id}:`, err);
+                }
+                return null;
+            })
+        );
+        notifications.push(...gpCards.filter(Boolean));
     } catch (gpErr) {
         console.error('Error fetching group party notifications:', gpErr);
     }
 
-    // 7. Fetch Upcoming Night records (Unified Timeline Card per Night)
+    // 7. Fetch Upcoming Night records (Unified Timeline Card per Night) in parallel
     try {
         const { NightPartnerService } = await import('../services/NightPartnerService');
         const NightPartnerRequest = (await import('../models/NightPartnerRequest')).default;
         const NightPartnerMatch = (await import('../models/NightPartnerMatch')).default;
 
-        const hostRequests = await NightPartnerRequest.findAll({
-            where: { hostId: uId },
-            attributes: ['id']
-        });
-        const partnerRequests = await NightPartnerRequest.findAll({
-            where: { partnerId: uId },
-            attributes: ['id']
-        });
-        const hostMatches = await NightPartnerMatch.findAll({
-            where: { hostId: uId },
-            attributes: ['id']
-        });
-        const partnerMatches = await NightPartnerMatch.findAll({
-            where: { partnerId: uId },
-            attributes: ['id']
-        });
+        const [hostRequests, partnerRequests, hostMatches, partnerMatches] = await Promise.all([
+            NightPartnerRequest.findAll({
+                where: { hostId: uId },
+                attributes: ['id']
+            }),
+            NightPartnerRequest.findAll({
+                where: { partnerId: uId },
+                attributes: ['id']
+            }),
+            NightPartnerMatch.findAll({
+                where: { hostId: uId },
+                attributes: ['id']
+            }),
+            NightPartnerMatch.findAll({
+                where: { partnerId: uId },
+                attributes: ['id']
+            })
+        ]);
 
         const nightIds = Array.from(new Set([
             ...hostRequests.map(r => r.id),
@@ -598,14 +634,22 @@ async function getUserNotifications(
             ...partnerMatches.map(m => m.id)
         ]));
 
-        for (const nId of nightIds) {
-            const enrichedCard = await NightPartnerService.enrichUpcomingNightNotificationCard(nId, uId);
-            if (enrichedCard) {
-                enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
-                enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);
-                notifications.push(enrichedCard);
-            }
-        }
+        const nightCards = await Promise.all(
+            nightIds.map(async (nId) => {
+                try {
+                    const enrichedCard = await NightPartnerService.enrichUpcomingNightNotificationCard(nId, uId);
+                    if (enrichedCard) {
+                        enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
+                        enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);
+                        return enrichedCard;
+                    }
+                } catch (err) {
+                    console.error(`Error enriching night card ${nId}:`, err);
+                }
+                return null;
+            })
+        );
+        notifications.push(...nightCards.filter(Boolean));
     } catch (unErr) {
         console.error('Error fetching upcoming night notifications:', unErr);
     }

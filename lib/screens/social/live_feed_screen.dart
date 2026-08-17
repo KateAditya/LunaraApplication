@@ -336,11 +336,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   Future<void> _loadFeed({bool showLoader = true}) async {
     final requestUserId = _sessionUserId;
-    if (showLoader) setState(() => _isLoading = true);
+    if (showLoader && _feedItems.isEmpty && _notifications.isEmpty) {
+      setState(() => _isLoading = true);
+    }
     try {
       await ApiService.loadLocalReadIds();
-      final data = await ApiService.fetchLiveFeedData();
-      final notifs = await ApiService.fetchNotifications();
+      final responses = await Future.wait([
+        ApiService.fetchLiveFeedData(),
+        ApiService.fetchNotifications(),
+        ApiService.fetchMyLargePartyBookings(),
+      ]);
+
+      final data = responses[0] as Map<String, dynamic>;
+      final notifs = responses[1] as List<Map<String, dynamic>>;
+      final largeParties = responses[2] as List<Map<String, dynamic>>;
 
       List<Map<String, dynamic>> combined = [
         ...List<Map<String, dynamic>>.from(data['feed'] ?? []),
@@ -351,6 +360,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (mounted && requestUserId == ApiService.currentUserId && requestUserId == _sessionUserId) {
         setState(() {
           _feedItems = combined;
+          _largePartyBookings = largeParties;
           _notifications = notifs.map((n) {
             final nId = n['id']?.toString() ?? '';
             if (_localReadNotificationIds.contains(nId) || ApiService.localReadRequestIds.contains(nId)) {
