@@ -268,6 +268,16 @@ Booking.belongsTo(Venue, {
     as: 'venue',
 });
 
+// Booking -> Ad (Party Event)
+Booking.belongsTo(Ad, {
+    foreignKey: 'partyEventId',
+    as: 'partyEvent',
+});
+Ad.hasMany(Booking, {
+    foreignKey: 'partyEventId',
+    as: 'bookings',
+});
+
 Booking.hasOne(GroupBooking, {
     foreignKey: 'bookingId',
     as: 'groupBooking',

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import 'venue_detail_screen.dart';
-import 'booking_process_screen.dart';
+import 'party_event_booking_sheet.dart';
 
 class UpcomingPartyScreen extends StatefulWidget {
   final Map<String, dynamic> party;
@@ -579,34 +579,17 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                         flex: 6,
                         child: InkWell(
                           onTap: () {
-                            if (widget.venueMap != null) {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => BookingProcessScreen(
-                                    venue: widget.venueMap!,
-                                    isUpcomingNight: true,
-                                    upcomingNightDate:
-                                        widget.party['rawDate'] ??
-                                        widget.party['date'],
-                                    upcomingNightTime: '20:00',
-                                  ),
+                            showModalBottomSheet(
+                              context: context,
+                              isScrollControlled: true,
+                              backgroundColor: Colors.transparent,
+                              builder: (context) => Padding(
+                                padding: EdgeInsets.only(
+                                  bottom: MediaQuery.of(context).viewInsets.bottom,
                                 ),
-                              );
-                            } else {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: const Text(
-                                    'Venue details not available for booking.',
-                                  ),
-                                  backgroundColor: LunaraTheme.electricViolet,
-                                  behavior: SnackBarBehavior.floating,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                ),
-                              );
-                            }
+                                child: PartyEventBookingSheet(event: widget.party),
+                              ),
+                            );
                           },
                           borderRadius: BorderRadius.circular(16),
                           child: Container(

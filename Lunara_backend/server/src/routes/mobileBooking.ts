@@ -66,6 +66,21 @@ router.post(
 );
 
 /**
+ * POST /api/mobile/bookings/party-event
+ * Creates a Party Event booking
+ */
+router.post(
+    '/party-event',
+    [
+        body('userId').notEmpty().withMessage('userId is required'),
+        body('partyEventId').notEmpty().withMessage('partyEventId is required'),
+        body('quantity').isInt({ min: 1 }).withMessage('quantity must be at least 1'),
+        validate,
+    ],
+    ctrl.createPartyBooking
+);
+
+/**
  * GET /api/mobile/bookings
  * List all bookings for a user. Query: ?userId=<uuid>
  */

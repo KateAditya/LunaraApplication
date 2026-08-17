@@ -146,6 +146,7 @@ import mobileWalletRoutes from './routes/mobileWallet';
 import mobileTicketRoutes from './routes/mobileTicket';
 import adminPaymentsRoutes from './routes/adminPayments';
 import adminNotificationRoutes from './routes/adminNotificationRoutes';
+import adminEventBookingRoutes from './routes/adminEventBooking';
 import { ExpiredTicketCleanupWorker } from './services/ExpiredTicketCleanupWorker';
 import { getAdminChatSettings, updateAdminChatSettings } from './controllers/chatSubscriptionController';
 import { getAdminTimeLockSettings, updateAdminTimeLockSettings } from './controllers/mobilePlanController';
@@ -191,6 +192,7 @@ app.use('/api/profile', profileRoutes);                    // Edit Profile & Pas
 app.use('/api/mobile/strangers-meet', mobileStrangersMeetRoutes); // Strangers Meet (Mobile)
 app.use('/api/admin/strangers-meet', adminStrangersMeetRoutes);
 app.use('/api/admin/bookings', adminBookingsRoutes);   // Strangers Meet (Admin)
+app.use('/api/admin/event-bookings', adminEventBookingRoutes); // Event Bookings (Admin)
 app.use('/api/mobile/cities', mobileCityRoutes);                   // Cities (Mobile App)
 app.use('/api/areas', areaRoutes);                                 // Areas API (Admin & App)
 app.use('/api/admin/subscriptions', adminSubscriptionRoutes); // Subscriptions (Admin)
