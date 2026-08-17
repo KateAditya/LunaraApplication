@@ -14,9 +14,15 @@ import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription
 import SubscriptionPackage from '../models/SubscriptionPackage';
 import PartySafetyCheck, { SafetyStatus } from '../models/PartySafetyCheck';
 
-// Run every 5 minutes
+// Run every 5 minutes with overlap protection
+let isPartyPlanCronRunning = false;
 export const startPartyPlanCron = () => {
     cron.schedule('*/5 * * * *', async () => {
+        if (isPartyPlanCronRunning) {
+            logger.warn('[Cron] Party Plan Cron already running, skipping overlapping tick.');
+            return;
+        }
+        isPartyPlanCronRunning = true;
         try {
             logger.info('Running Party Plan Cron Jobs...');
             
@@ -109,18 +115,6 @@ export const startPartyPlanCron = () => {
 
 
             // ── 2. Event Countdown Engine (24h, 3h, 1h, 30m Reminders) ─────────
-            try {
-                const sequelize = (await import('../config/database')).default;
-                await sequelize.query(`
-                    ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_24h_sent BOOLEAN DEFAULT FALSE;
-                    ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_3h_sent BOOLEAN DEFAULT FALSE;
-                    ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;
-                    ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;
-                    ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;
-                    ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_10m_sent BOOLEAN DEFAULT FALSE;
-                `).catch(() => {});
-            } catch (_) {}
-
             const next25h = new Date(now.getTime() + 25 * 60 * 60 * 1000);
             const next23h = new Date(now.getTime() + 23 * 60 * 60 * 1000);
             const upcoming24hPlans = await PartyPlan.findAll({
@@ -1370,6 +1364,8 @@ export const startPartyPlanCron = () => {
             
         } catch (error) {
             logger.error('Error running party plan cron jobs:', error);
+        } finally {
+            isPartyPlanCronRunning = false;
         }
     });
 };
@@ -1467,8 +1463,13 @@ import StrangersMeetRequest from '../models/StrangersMeetRequest';
 import StrangersMeetJoiner from '../models/StrangersMeetJoiner';
 import PlanTimeLock from '../models/PlanTimeLock';
 
+let isNotificationJobCronRunning = false;
 export const startNotificationJobCron = () => {
     cron.schedule('* * * * *', async () => {
+        if (isNotificationJobCronRunning) {
+            return;
+        }
+        isNotificationJobCronRunning = true;
         try {
             const now = new Date();
             const NotificationJob = require('../models/NotificationJob').default;
@@ -1506,13 +1507,20 @@ export const startNotificationJobCron = () => {
             }
         } catch (cronErr: any) {
             logger.error('Notification Job Cron error:', cronErr);
+        } finally {
+            isNotificationJobCronRunning = false;
         }
     });
 };
 
+let isExpiringPlanAlertCronRunning = false;
 export const startExpiringPlanAlertCron = () => {
     // Run every 3 minutes
     cron.schedule('*/3 * * * *', async () => {
+        if (isExpiringPlanAlertCronRunning) {
+            return;
+        }
+        isExpiringPlanAlertCronRunning = true;
         try {
             const now = new Date();
             const in15Mins = new Date(now.getTime() + 15 * 60 * 1000);
@@ -1680,6 +1688,8 @@ export const startExpiringPlanAlertCron = () => {
             await checkAndTriggerPartySafetyChecks();
         } catch (alertErr: any) {
             logger.error('Expiring Plan Alert Cron Error:', alertErr);
+        } finally {
+            isExpiringPlanAlertCronRunning = false;
         }
     });
 };
