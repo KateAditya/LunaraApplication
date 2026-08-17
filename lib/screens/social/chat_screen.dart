@@ -817,50 +817,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _confirmDelete(String messageId) async {
-    final convId = _conversationId;
-    final userId = _currentUserId;
-    if (convId == null || userId == null) return;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'Delete message?',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-        content: const Text('This message will be removed for everyone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-
-    final ok = await ApiService.deleteMessage(convId, messageId, userId);
-    if (ok && mounted) {
-      setState(() {
-        final idx = _messages.indexWhere((m) => m['id'] == messageId);
-        if (idx != -1) {
-          _messages[idx] = {
-            ..._messages[idx],
-            'isDeleted': true,
-            'text': '[Message deleted]',
-          };
-        }
-      });
-    }
-  }
-
   // ── Build ────────────────────────────────────────────────────────────────────
 
   /// Builds a CircleAvatar that gracefully falls back to a gradient + initial
@@ -2070,7 +2026,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       onTap: handleTap,
       onLongPress: handleLongPress,
       child: Container(
-        color: isSelected ? const Color(0xFF7C3AED).withOpacity(0.15) : Colors.transparent,
+        color: isSelected ? const Color(0xFF7C3AED).withValues(alpha: 0.15) : Colors.transparent,
         padding: const EdgeInsets.symmetric(vertical: 2), // removed horizontal padding
         child: Align(
           alignment: isSent ? Alignment.centerRight : Alignment.centerLeft,
@@ -2140,6 +2096,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   isIcebreaker,
                   status,
                 ),
+          ),
         ),
       ),
     );
