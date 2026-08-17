@@ -38,6 +38,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   bool _isRecipientTyping = false;
   Timer? _typingDebounceTimer;
+  final Set<String> _selectedMessageIds = {};
 
   // ── Chat Session / Subscription state ───────────────────────────────────────
   bool _chatSessionLoaded = false;
@@ -755,6 +756,66 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   // ── Delete ───────────────────────────────────────────────────────────────────
+
+  Future<void> _deleteSelectedMessages() async {
+    final convId = _conversationId;
+    final userId = _currentUserId;
+    if (convId == null || userId == null || _selectedMessageIds.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Delete ${_selectedMessageIds.length} message(s)?',
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+        content: const Text('These messages will be removed for everyone. You can only delete your own messages.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final idsToDelete = _selectedMessageIds.toList();
+    setState(() {
+      _selectedMessageIds.clear();
+    });
+
+    bool anyDeleted = false;
+    for (final messageId in idsToDelete) {
+      // Find the message in our list to ensure it's sent by current user
+      final msg = _messages.firstWhere(
+        (m) => m['id'] == messageId,
+        orElse: () => <String, dynamic>{},
+      );
+
+      if (msg.isNotEmpty && msg['isSent'] == true) {
+        final ok = await ApiService.deleteMessage(convId, messageId, userId);
+        if (ok) {
+          anyDeleted = true;
+          final index = _messages.indexWhere((m) => m['id'] == messageId);
+          if (index != -1) {
+            _messages[index]['isDeleted'] = true;
+            _messages[index]['text'] = '';
+          }
+        }
+      }
+    }
+
+    if (anyDeleted && mounted) {
+      setState(() {});
+    }
+  }
 
   Future<void> _confirmDelete(String messageId) async {
     final convId = _conversationId;
@@ -1571,6 +1632,34 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   PreferredSizeWidget _buildAppBar(BuildContext context) {
+    if (_selectedMessageIds.isNotEmpty) {
+      return AppBar(
+        backgroundColor: const Color(0xFF7C3AED),
+        leading: IconButton(
+          icon: const Icon(Icons.close, color: Colors.white),
+          onPressed: () {
+            setState(() {
+              _selectedMessageIds.clear();
+            });
+          },
+        ),
+        title: Text(
+          '${_selectedMessageIds.length}',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.delete, color: Colors.white),
+            onPressed: _deleteSelectedMessages,
+          ),
+        ],
+      );
+    }
+
     return AppBar(
       backgroundColor: Colors.white,
       surfaceTintColor: Colors.transparent,
@@ -1952,51 +2041,73 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final msgId = _safeString(msg['id']);
     final status = _safeString(msg['status'], 'sent');
     final timeStr = _formatMessageTime(msg['createdAt']?.toString());
+    
+    final bool isSelected = _selectedMessageIds.contains(msgId);
+    final bool selectionMode = _selectedMessageIds.isNotEmpty;
+    final bool canSelect = !isDeleted && msgId.isNotEmpty && !msgId.startsWith('temp_');
+
+    void handleTap() {
+      if (selectionMode && canSelect) {
+        setState(() {
+          if (isSelected) {
+            _selectedMessageIds.remove(msgId);
+          } else {
+            _selectedMessageIds.add(msgId);
+          }
+        });
+      }
+    }
+
+    void handleLongPress() {
+      if (!selectionMode && canSelect) {
+        setState(() {
+          _selectedMessageIds.add(msgId);
+        });
+      }
+    }
 
     return GestureDetector(
-      onLongPress:
-          (isSent &&
-              !isDeleted &&
-              msgId.isNotEmpty &&
-              !msgId.startsWith('temp_'))
-          ? () => _confirmDelete(msgId)
-          : null,
-      child: Align(
-        alignment: isSent ? Alignment.centerRight : Alignment.centerLeft,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 6),
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.76,
-          ),
-          decoration: BoxDecoration(
-            color: isDeleted
-                ? const Color(0xFFF1F5F9)
-                : (isSent ? const Color(0xFF7C3AED) : Colors.white),
-            borderRadius: isSent
-                ? const BorderRadius.only(
-                    topLeft: Radius.circular(18),
-                    topRight: Radius.circular(18),
-                    bottomLeft: Radius.circular(18),
-                    bottomRight: Radius.circular(4),
-                  )
-                : const BorderRadius.only(
-                    topLeft: Radius.circular(18),
-                    topRight: Radius.circular(18),
-                    bottomLeft: Radius.circular(4),
-                    bottomRight: Radius.circular(18),
-                  ),
-            border: isSent
-                ? null
-                : Border.all(color: const Color(0xFFE2E8F0), width: 1),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x06000000),
-                blurRadius: 8,
-                offset: Offset(0, 2),
-              ),
-            ],
-          ),
-          child: isDeleted
+      onTap: handleTap,
+      onLongPress: handleLongPress,
+      child: Container(
+        color: isSelected ? const Color(0xFF7C3AED).withOpacity(0.15) : Colors.transparent,
+        padding: const EdgeInsets.symmetric(vertical: 2), // removed horizontal padding
+        child: Align(
+          alignment: isSent ? Alignment.centerRight : Alignment.centerLeft,
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 6),
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.76,
+            ),
+            decoration: BoxDecoration(
+              color: isDeleted
+                  ? const Color(0xFFF1F5F9)
+                  : (isSent ? const Color(0xFF7C3AED) : Colors.white),
+              borderRadius: isSent
+                  ? const BorderRadius.only(
+                      topLeft: Radius.circular(18),
+                      topRight: Radius.circular(18),
+                      bottomLeft: Radius.circular(18),
+                      bottomRight: Radius.circular(4),
+                    )
+                  : const BorderRadius.only(
+                      topLeft: Radius.circular(18),
+                      topRight: Radius.circular(18),
+                      bottomLeft: Radius.circular(4),
+                      bottomRight: Radius.circular(18),
+                    ),
+              border: isSent
+                  ? null
+                  : Border.all(color: const Color(0xFFE2E8F0), width: 1),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x06000000),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            child: isDeleted
               ? Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 14,

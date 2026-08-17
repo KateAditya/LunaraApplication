@@ -105,7 +105,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (widget.allProfiles != null && widget.allProfiles!.isNotEmpty) {
         if (mounted) {
           setState(() {
-            _allProfiles = List<User>.from(widget.allProfiles!);
+            _allProfiles = widget.allProfiles!;
+            
+            // Initialize local swipedActions map from backend state to ensure correct UI init
+            for (var u in _allProfiles) {
+              if (u.isSuperLiked) {
+                _swipedActions[u.id] = 'superlike';
+              } else if (u.isLiked) {
+                _swipedActions[u.id] = 'like';
+              }
+            }
+
             _isProfilesLoading = false;
             _updateCurrentProfileIndex();
           });
@@ -129,6 +139,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (mounted) {
         setState(() {
           _allProfiles = resolvedUsers;
+          
+          // Initialize local swipedActions map from backend state to ensure correct UI init
+          for (var u in _allProfiles) {
+            if (u.isSuperLiked) {
+              _swipedActions[u.id] = 'superlike';
+            } else if (u.isLiked) {
+              _swipedActions[u.id] = 'like';
+            }
+          }
+
           _isProfilesLoading = false;
           _updateCurrentProfileIndex();
         });

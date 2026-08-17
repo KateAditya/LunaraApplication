@@ -95,7 +95,9 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
       if (mounted && status.isNotEmpty) {
         final action = status['actionType']?.toString() ??
             (status['alreadySuperLiked'] == true ? 'superlike' : (status['alreadyLiked'] == true ? 'like' : null));
-        setState(() => _localSwipedAction = action);
+        if (action != null) {
+          setState(() => _localSwipedAction = action);
+        }
       }
     } catch (_) {}
   }
@@ -922,8 +924,8 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
             ? 'superlike'
             : (_currentUser.isLiked ? 'like' : null));
 
-    final isLiked = effectiveSwipedAction == 'like' || _currentUser.isLiked;
     final isSuperLiked = effectiveSwipedAction == 'superlike' || _currentUser.isSuperLiked;
+    final isLiked = !isSuperLiked && (effectiveSwipedAction == 'like' || _currentUser.isLiked);
     final isActed = isLiked || isSuperLiked; // already acted on this profile
     final likeDisabled = widget.isLikeDisabled && !isActed;
     final superLikeDisabled = widget.isSuperLikeDisabled && !isSuperLiked;
