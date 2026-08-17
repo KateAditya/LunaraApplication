@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getPartyEvents, getEventSummary } from '../../api/eventBookings';
 import { Container, Row, Col, Card, Form, Spinner } from 'react-bootstrap';
 import { format } from 'date-fns';
 import { EventBookingTable } from './EventBookingTable';
-import { BiCalendarEvent, BiGroup, BiDollarCircle, BiActivity, BiMap } from 'react-icons/bi';
+import { BiCalendarEvent, BiGroup, BiDollarCircle, BiCalendar, BiMap } from 'react-icons/bi';
 import { useThemeMode } from '../../context/ThemeContext';
 
 export function EventBookingPage() {
@@ -167,7 +167,7 @@ export function EventBookingPage() {
       {!selectedEventId && (
         <Card className={`text-center py-5 ${cardBg}`}>
           <Card.Body>
-            <BiActivity size={48} className="text-muted mb-3 opacity-50" />
+            <BiCalendar size={48} className="text-muted mb-3 opacity-50" />
             <h5 className="text-muted">Select an event to view bookings</h5>
           </Card.Body>
         </Card>

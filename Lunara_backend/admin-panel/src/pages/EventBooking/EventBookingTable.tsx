@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getEventBookings } from '../../api/eventBookings';
 import { Card, Table, Badge, Form, Row, Col, Button, Spinner, Pagination } from 'react-bootstrap';
 import { format } from 'date-fns';
 import { useThemeMode } from '../../context/ThemeContext';
 import { EventBookingDetailModal } from './EventBookingDetailModal';
-import { Search } from 'lucide-react';
+import { BiSearch } from 'react-icons/bi';
 
 interface EventBookingTableProps {
   eventId: string;
@@ -23,7 +23,7 @@ export function EventBookingTable({ eventId, event }: EventBookingTableProps) {
   // debounced search state
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
-  const handleSearch = (e: React.FormEvent) => {
+  const handleSearch = (e: FormEvent) => {
     e.preventDefault();
     setDebouncedSearch(search);
     setPage(1);
@@ -83,7 +83,7 @@ export function EventBookingTable({ eventId, event }: EventBookingTableProps) {
                   className={mode === 'dark' ? 'bg-dark text-white border-secondary' : ''}
                 />
                 <Button type="submit" variant="primary" className="ms-2">
-                  <Search size={18} />
+                  <BiSearch size={18} />
                 </Button>
               </div>
             </Col>

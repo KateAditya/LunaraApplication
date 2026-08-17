@@ -1,4 +1,3 @@
-import React from 'react';
 import { Modal, Button, Row, Col, Badge } from 'react-bootstrap';
 import { format } from 'date-fns';
 import { useThemeMode } from '../../context/ThemeContext';
