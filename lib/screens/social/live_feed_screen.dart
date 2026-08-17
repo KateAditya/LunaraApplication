@@ -657,6 +657,415 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
   }
 
+  void _showReviewPartyPlanRequestsModal(
+    Map<String, dynamic> planMap,
+    List<Map<String, dynamic>> requests,
+  ) {
+    final venueName = planMap['venueName'] ?? planMap['venue']?['name'] ?? 'Venue';
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.85,
+          ),
+          decoration: const BoxDecoration(
+            color: Color(0xFF13131A),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            border: Border(top: BorderSide(color: Color(0xFF2D2D3D), width: 1)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF7C3AED), Color(0xFF9333EA)],
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(Icons.people_alt_rounded, color: Colors.white, size: 20),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Join Requests (${requests.length})',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Party Plan at $venueName',
+                            style: const TextStyle(
+                              color: Colors.white60,
+                              fontSize: 12,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, color: Colors.white60),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(color: Color(0xFF222230), height: 24),
+              Flexible(
+                child: ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                  shrinkWrap: true,
+                  itemCount: requests.length,
+                  separatorBuilder: (context, index) => const SizedBox(height: 12),
+                  itemBuilder: (context, index) {
+                    final req = requests[index];
+                    final reqUser = (req['requester'] is Map)
+                        ? req['requester'] as Map<String, dynamic>
+                        : (req['user'] is Map ? req['user'] as Map<String, dynamic> : <String, dynamic>{});
+                    final reqUserName = '${reqUser["firstName"] ?? "User"} ${reqUser["lastName"] ?? ""}'.trim();
+                    final reqId = req['id']?.toString() ?? '';
+                    final userBio = reqUser['profile']?['bio']?.toString() ?? reqUser['bio']?.toString() ?? '';
+                    final foodPref = req['foodPreference']?.toString() ?? reqUser['foodPreference']?.toString();
+                    final drinkPref = req['drinkPreference']?.toString() ?? reqUser['drinkPreference']?.toString();
+
+                    return Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E1E2A),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: const Color(0xFF2A2A3C)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              LunaraProfileImage(
+                                userData: reqUser,
+                                radius: 24,
+                                showGradientBorder: true,
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      reqUserName.isNotEmpty ? reqUserName : 'Lunara Member',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    if (userBio.isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 2),
+                                        child: Text(
+                                          userBio,
+                                          style: const TextStyle(
+                                            color: Colors.white60,
+                                            fontSize: 12,
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    if (foodPref != null || drinkPref != null)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(
+                                          'Food: ${foodPref ?? "Any"} • Drink: ${drinkPref ?? "Any"}',
+                                          style: const TextStyle(
+                                            color: Color(0xFFA855F7),
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () {
+                                    Navigator.pop(ctx);
+                                    _handleAcceptPartyPlan(reqId);
+                                  },
+                                  icon: const Icon(Icons.check_circle_rounded, size: 16),
+                                  label: const Text('Approve', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF7C3AED),
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () {
+                                    Navigator.pop(ctx);
+                                    _handleRejectPartyPlan(reqId);
+                                  },
+                                  icon: const Icon(Icons.cancel_rounded, size: 16, color: Colors.redAccent),
+                                  label: const Text('Decline', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                                  style: OutlinedButton.styleFrom(
+                                    side: const BorderSide(color: Color(0x40EF4444)),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showReviewStrangersMeetRequestsModal(
+    Map<String, dynamic> meetMap,
+    List<Map<String, dynamic>> requests,
+  ) {
+    final venueName = meetMap['venueName'] ?? meetMap['venue']?['name'] ?? 'Venue';
+    final meetId = meetMap['id']?.toString() ?? meetMap['meetId']?.toString() ?? '';
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.85,
+          ),
+          decoration: const BoxDecoration(
+            color: Color(0xFF13131A),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            border: Border(top: BorderSide(color: Color(0xFF2D2D3D), width: 1)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF7C3AED), Color(0xFF9333EA)],
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(Icons.people_alt_rounded, color: Colors.white, size: 20),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Join Requests (${requests.length})',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Stranger Meet at $venueName',
+                            style: const TextStyle(
+                              color: Colors.white60,
+                              fontSize: 12,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, color: Colors.white60),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(color: Color(0xFF222230), height: 24),
+              Flexible(
+                child: ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                  shrinkWrap: true,
+                  itemCount: requests.length,
+                  separatorBuilder: (context, index) => const SizedBox(height: 12),
+                  itemBuilder: (context, index) {
+                    final req = requests[index];
+                    final reqUser = (req['user'] is Map)
+                        ? req['user'] as Map<String, dynamic>
+                        : (req['requester'] is Map ? req['requester'] as Map<String, dynamic> : <String, dynamic>{});
+                    final reqUserName = '${reqUser["firstName"] ?? "User"} ${reqUser["lastName"] ?? ""}'.trim();
+                    final joinerId = req['id']?.toString() ?? req['userId']?.toString() ?? '';
+                    final userBio = reqUser['profile']?['bio']?.toString() ?? reqUser['bio']?.toString() ?? '';
+
+                    return Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E1E2A),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: const Color(0xFF2A2A3C)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              LunaraProfileImage(
+                                userData: reqUser,
+                                radius: 24,
+                                showGradientBorder: true,
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      reqUserName.isNotEmpty ? reqUserName : 'Lunara Member',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    if (userBio.isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 2),
+                                        child: Text(
+                                          userBio,
+                                          style: const TextStyle(
+                                            color: Colors.white60,
+                                            fontSize: 12,
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () {
+                                    Navigator.pop(ctx);
+                                    _handleStrangersMeetJoinAction(meetId, joinerId, 'accept');
+                                  },
+                                  icon: const Icon(Icons.check_circle_rounded, size: 16),
+                                  label: const Text('Approve', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF7C3AED),
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () {
+                                    Navigator.pop(ctx);
+                                    _handleStrangersMeetJoinAction(meetId, joinerId, 'reject');
+                                  },
+                                  icon: const Icon(Icons.cancel_rounded, size: 16, color: Colors.redAccent),
+                                  label: const Text('Decline', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                                  style: OutlinedButton.styleFrom(
+                                    side: const BorderSide(color: Color(0x40EF4444)),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   /// Cancels the CURRENT USER's own pending join request (joiner cancels their own request).
   Future<void> _handleCancelMyRequest(String reqId) async {
     showDialog(
@@ -780,8 +1189,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     _markItemAsRead(item);
     final status = (item.rawData['status'] ?? item.rawData['paymentStatus'] ?? '').toString().toLowerCase();
     final category = item.category.toLowerCase();
+    final pendingReqs = item.rawData['pendingIncomingRequests'];
 
     if (category.contains('stranger') || category.contains('meet')) {
+      if (pendingReqs is List && pendingReqs.length > 1) {
+        final meetData = item.rawData['plan'] is Map ? item.rawData['plan'] : item.rawData;
+        _showReviewStrangersMeetRequestsModal(
+          Map<String, dynamic>.from(meetData),
+          pendingReqs.cast<Map<String, dynamic>>(),
+        );
+        return;
+      }
       try {
         final req = StrangersMeetRequest.fromJson(item.rawData['plan'] ?? item.rawData);
         if (status == 'accepted' || status == 'payment_pending') {
@@ -829,6 +1247,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     } else if (category.contains('party') || category.contains('plan')) {
       final planData = item.rawData['plan'] is Map ? item.rawData['plan'] : item.rawData;
+      if (pendingReqs is List && pendingReqs.length > 1) {
+        _showReviewPartyPlanRequestsModal(
+          Map<String, dynamic>.from(planData),
+          pendingReqs.cast<Map<String, dynamic>>(),
+        );
+        return;
+      }
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -2085,10 +2510,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               label: 'Review Requests (${pendingIncomingRequests.length})',
               icon: Icons.people_alt_rounded,
               isPrimary: true,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
-              ).then((_) => _loadFeed(showLoader: false)),
+              onTap: () => _showReviewPartyPlanRequestsModal(planMap, pendingIncomingRequests),
             ),
           ];
         }
@@ -2347,7 +2769,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       avatarUrl: avatarUrl,
       senderUser: senderUser,
       actions: isExpired ? null : actionsList,
-      rawData: {'id': planId, 'plan': planMap, ...planMap},
+      rawData: {
+        'id': planId,
+        'plan': planMap,
+        'pendingIncomingRequests': pendingIncomingRequests,
+        ...planMap,
+      },
       userRoleLabel: userRoleLabel,
       partnerUser: partnerUser,
       partnerRoleLabel: partnerRoleLabel,
@@ -2568,10 +2995,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           statusSummary = '${pendingIncomingRequests.length} Pending Requests';
           actionsList = [
             NotificationAction(
-              label: 'Review Requests',
+              label: 'Review Requests (${pendingIncomingRequests.length})',
               icon: Icons.people_alt_rounded,
               isPrimary: true,
-              onTap: () => _loadFeed(showLoader: false),
+              onTap: () => _showReviewStrangersMeetRequestsModal(meetMap, pendingIncomingRequests),
             ),
           ];
         }
@@ -2791,7 +3218,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       avatarUrl: avatarUrl,
       senderUser: senderUser,
       actions: isExpired ? null : actionsList,
-      rawData: {'id': meetId, 'plan': meetMap, ...meetMap},
+      rawData: {
+        'id': meetId,
+        'plan': meetMap,
+        'pendingIncomingRequests': pendingIncomingRequests,
+        ...meetMap,
+      },
       userRoleLabel: userRoleLabel,
       partnerUser: partnerUser,
       partnerRoleLabel: partnerRoleLabel,

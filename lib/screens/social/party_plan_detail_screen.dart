@@ -1,3 +1,4 @@
+// ignore_for_file: use_build_context_synchronously
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:intl/intl.dart';
@@ -52,6 +53,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   bool _isWindowClosed = false;
   bool _isLoadingCancellation = false;
   String? _currentUserId;
+  List<Map<String, dynamic>> _pendingRequests = [];
 
   @override
   void initState() {
@@ -75,6 +77,11 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       _requestStatus = initialReqStatus;
     }
 
+    final initialReqs = widget.plan['pendingIncomingRequests'] ?? widget.plan['requests'];
+    if (initialReqs is List) {
+      _pendingRequests = initialReqs.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    }
+
     if (widget.plan['isInvite'] == true || widget.plan['isInvitedUser'] == true || widget.plan['type'] == 'party_plan_invitation' || widget.plan['eventType'] == 'party_plan_invitation') {
       _isInvitedUser = true;
     }
@@ -89,6 +96,101 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     _loadVenueDetailsIfNeeded();
     _refreshPlanDetails();
     _fetchCurrentUserAndCancellationState();
+    _fetchRequestsIfNeeded();
+  }
+
+  Future<void> _fetchRequestsIfNeeded() async {
+    if (!_isHostPlan(widget.plan)) return;
+    final planId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
+    if (planId.isEmpty) return;
+
+    try {
+      final res = await ApiService.get('/api/mobile/party-plans/$planId/requests');
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data is Map && data['success'] == true && data['data'] is List) {
+          if (mounted) {
+            setState(() {
+              _pendingRequests = (data['data'] as List)
+                  .whereType<Map>()
+                  .map((e) => Map<String, dynamic>.from(e))
+                  .where((r) => (r['status'] ?? '').toString().toLowerCase() == 'pending')
+                  .toList();
+            });
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error fetching party plan requests: $e');
+    }
+  }
+
+  Future<void> _handleAcceptPartyPlanRequest(String reqId) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+      ),
+    );
+    try {
+      final res = await ApiService.acceptPartyPlanRequest(reqId);
+      Navigator.pop(context);
+      if (res != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Request accepted successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _refreshPlanDetails();
+        _fetchRequestsIfNeeded();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to accept request.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      Navigator.pop(context);
+      debugPrint('Error accepting request: $e');
+    }
+  }
+
+  Future<void> _handleRejectPartyPlanRequest(String reqId) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+      ),
+    );
+    try {
+      final success = await ApiService.rejectPartyPlanRequest(reqId);
+      Navigator.pop(context);
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Request declined.'),
+            backgroundColor: Colors.grey,
+          ),
+        );
+        _refreshPlanDetails();
+        _fetchRequestsIfNeeded();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to decline request.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      Navigator.pop(context);
+      debugPrint('Error rejecting request: $e');
+    }
   }
 
   Future<void> _refreshPlanDetails() async {
@@ -98,18 +200,24 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     final plan = await ApiService.fetchPartyPlanDetail(planId);
     if (!mounted || plan == null) return;
     setState(() {
-      // Preserve notification-only metadata (requestId, invitation state) while
-      // replacing stale or partial card data with the server-authoritative plan.
       widget.plan.addAll(plan);
       widget.plan['planId'] = planId;
       final freshImg = _getVenueImageUrl();
       if (freshImg != null && freshImg.isNotEmpty) {
         _fetchedVenueImageUrl = freshImg;
       }
+      if (plan['requests'] is List) {
+        _pendingRequests = (plan['requests'] as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .where((r) => (r['status'] ?? '').toString().toLowerCase() == 'pending')
+            .toList();
+      }
     });
     _checkRequestStatus();
     _loadVenueDetailsIfNeeded();
     _fetchCurrentUserAndCancellationState();
+    _fetchRequestsIfNeeded();
   }
 
   Future<void> _fetchCurrentUserAndCancellationState() async {
@@ -117,12 +225,16 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       final uid = await ApiService.getCurrentUserId();
       final targetPlanId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
       
-      final rawDateTime = widget.plan['planDateTime'] ?? widget.plan['planDate'];
+      final rawDateTime = widget.plan['planDateTime'] ??
+          widget.plan['eventDateTime'] ??
+          widget.plan['planDate'] ??
+          widget.plan['partyDate'] ??
+          widget.plan['bookingDate'];
       if (rawDateTime != null) {
         try {
           final eventTime = DateTime.parse(rawDateTime.toString()).toLocal();
           final diff = eventTime.difference(DateTime.now());
-          if (diff.inHours < 3) {
+          if (diff.inMinutes < 180) {
             if (mounted) setState(() => _isWindowClosed = true);
           }
         } catch (_) {}
@@ -2098,6 +2210,10 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                     const SizedBox(height: 24),
                   ],
 
+                  // Pending Requests Section (For Host)
+                  if (isMyPost && _pendingRequests.isNotEmpty)
+                    _buildPendingRequestsSection(),
+
                   // Date / Time Card
                   _infoCard(
                     icon: Icons.calendar_today_rounded,
@@ -2298,35 +2414,37 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: _isLoadingCancellation ? null : _showCancellationStep1Dialog,
-                          child: Container(
-                            height: 54,
-                            decoration: BoxDecoration(
-                              color: Colors.redAccent.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
-                            ),
-                            child: const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 18),
-                                SizedBox(width: 6),
-                                Text(
-                                  'CANCEL PLAN',
-                                  style: TextStyle(
-                                    color: Colors.redAccent,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
+                      if (!_isWindowClosed) ...[
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: _isLoadingCancellation ? null : _showCancellationStep1Dialog,
+                            child: Container(
+                              height: 54,
+                              decoration: BoxDecoration(
+                                color: Colors.redAccent.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
+                              ),
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 18),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    'CANCEL PLAN',
+                                    style: TextStyle(
+                                      color: Colors.redAccent,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
+                      ],
                     ],
                   )
             : (_alreadyRequested && _isInvitedUser && (_requestStatus == 'pending' || _requestStatus == 'invited'))
@@ -2563,21 +2681,23 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
-              // Cancel
-              GestureDetector(
-                onTap: _isLoadingCancellation ? null : _showCancellationStep1Dialog,
-                child: Container(
-                  height: 54,
-                  width: 54,
-                  decoration: BoxDecoration(
-                    color: Colors.redAccent.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
+              // Cancel (Only when cancellation window is open)
+              if (!_isWindowClosed) ...[
+                const SizedBox(width: 10),
+                GestureDetector(
+                  onTap: _isLoadingCancellation ? null : _showCancellationStep1Dialog,
+                  child: Container(
+                    height: 54,
+                    width: 54,
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
+                    ),
+                    child: const Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 22),
                   ),
-                  child: const Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 22),
                 ),
-              ),
+              ],
             ],
           ),
         ),
@@ -2626,7 +2746,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       );
     }
 
-    // Host Paid — show host label + CANCEL PLAN button
+    // Host Paid — show host label (+ CANCEL PLAN button only if window not closed)
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
@@ -2660,33 +2780,35 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                 ),
               ),
             ),
-            const SizedBox(width: 10),
-            GestureDetector(
-              onTap: _isLoadingCancellation ? null : _showCancellationStep1Dialog,
-              child: Container(
-                height: 54,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  color: Colors.redAccent.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 20),
-                    SizedBox(width: 6),
-                    Text(
-                      'CANCEL',
-                      style: TextStyle(
-                        color: Colors.redAccent,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
+            if (!_isWindowClosed) ...[
+              const SizedBox(width: 10),
+              GestureDetector(
+                onTap: _isLoadingCancellation ? null : _showCancellationStep1Dialog,
+                child: Container(
+                  height: 54,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 20),
+                      SizedBox(width: 6),
+                      Text(
+                        'CANCEL',
+                        style: TextStyle(
+                          color: Colors.redAccent,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
+            ],
           ],
         ),
       ),
@@ -2749,6 +2871,161 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     );
   }
 
+
+  Widget _buildPendingRequestsSection() {
+    if (_pendingRequests.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E2A),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF7C3AED), Color(0xFF9333EA)],
+                  ),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.people_alt_rounded, color: Colors.white, size: 18),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'JOIN REQUESTS (${_pendingRequests.length})',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          ListView.separated(
+            padding: EdgeInsets.zero,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _pendingRequests.length,
+            separatorBuilder: (context, index) => const Divider(color: Color(0xFF2E2E3E), height: 20),
+            itemBuilder: (context, index) {
+              final req = _pendingRequests[index];
+              final reqUser = (req['requester'] is Map)
+                  ? req['requester'] as Map<String, dynamic>
+                  : (req['user'] is Map ? req['user'] as Map<String, dynamic> : <String, dynamic>{});
+              final reqUserName = '${reqUser["firstName"] ?? "User"} ${reqUser["lastName"] ?? ""}'.trim();
+              final reqId = req['id']?.toString() ?? '';
+              final userBio = reqUser['profile']?['bio']?.toString() ?? reqUser['bio']?.toString() ?? '';
+              final foodPref = req['foodPreference']?.toString() ?? reqUser['foodPreference']?.toString();
+              final drinkPref = req['drinkPreference']?.toString() ?? reqUser['drinkPreference']?.toString();
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      LunaraProfileImage(
+                        userData: reqUser,
+                        radius: 22,
+                        showGradientBorder: true,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              reqUserName.isNotEmpty ? reqUserName : 'Lunara Member',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            if (userBio.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  userBio,
+                                  style: const TextStyle(
+                                    color: Colors.white60,
+                                    fontSize: 11,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            if (foodPref != null || drinkPref != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  'Food: ${foodPref ?? "Any"} • Drink: ${drinkPref ?? "Any"}',
+                                  style: const TextStyle(
+                                    color: Color(0xFFA855F7),
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => _handleAcceptPartyPlanRequest(reqId),
+                          icon: const Icon(Icons.check_circle_rounded, size: 15),
+                          label: const Text('Approve', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF7C3AED),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _handleRejectPartyPlanRequest(reqId),
+                          icon: const Icon(Icons.cancel_rounded, size: 15, color: Colors.redAccent),
+                          label: const Text('Decline', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.redAccent)),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Color(0x40EF4444)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _chip({
     required IconData icon,
