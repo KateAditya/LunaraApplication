@@ -928,7 +928,9 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
     final isLiked = !isSuperLiked && (effectiveSwipedAction == 'like' || _currentUser.isLiked);
     final isActed = isLiked || isSuperLiked; // already acted on this profile
     final likeDisabled = widget.isLikeDisabled && !isActed;
-    final superLikeDisabled = widget.isSuperLikeDisabled && !isSuperLiked;
+    // Super Like is disabled only when credits are exhausted AND not already superliked.
+    // If the user has already liked (isLiked), Super Like is still enabled to allow upgrade.
+    final superLikeDisabled = widget.isSuperLikeDisabled && !isSuperLiked && !isLiked;
 
     if (widget.isMe) {
       return Padding(
@@ -1205,7 +1207,8 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                     isSuperLiked ? Icons.star : Icons.star_border,
                     color: Colors.white,
                   ),
-                  onPressed: (isActed || superLikeDisabled)
+                  // Allow tap if: not already superliked, AND (not acted at all OR user only liked — to upgrade)
+                  onPressed: (isSuperLiked || superLikeDisabled)
                       ? null
                       : () async {
                           setState(() => _localSwipedAction = 'superlike');
