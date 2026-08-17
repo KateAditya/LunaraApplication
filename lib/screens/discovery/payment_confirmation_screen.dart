@@ -1,3 +1,4 @@
+// ignore_for_file: use_build_context_synchronously
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../widgets/action_button.dart';
@@ -5,7 +6,7 @@ import 'split_payment_screen.dart';
 import 'digital_ticket_screen.dart';
 import '../../services/api_service.dart';
 import '../../widgets/top_notification_banner.dart';
-
+import '../../widgets/smart_checkout_sheet.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 class PaymentConfirmationScreen extends StatefulWidget {
@@ -440,6 +441,175 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
   }
 
   void _handlePayment(BuildContext context) {
+    int amountInPaise = 0;
+    if (widget.totalPrice != null) {
+      final cleanPrice = widget.totalPrice!.replaceAll(RegExp(r'[^\d]'), '');
+      final parsed = int.tryParse(cleanPrice);
+      if (parsed != null) {
+        amountInPaise = parsed * 100;
+      }
+    }
+    if (amountInPaise == 0 && widget.razorpayAmount != null && widget.razorpayAmount! > 0) {
+      amountInPaise = widget.razorpayAmount!;
+    }
+
+    bool isFree = amountInPaise == 0 ||
+        (widget.totalPrice != null &&
+            (widget.totalPrice!.toLowerCase().contains('free') ||
+                widget.totalPrice!.replaceAll(RegExp(r'[^\d]'), '') == '0'));
+
+    if (isFree) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Center(
+          child: Container(
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(32),
+              boxShadow: LunaraTheme.premiumShadow,
+            ),
+            child: const Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(
+                  color: LunaraTheme.electricViolet,
+                  strokeWidth: 3,
+                ),
+                SizedBox(height: 24),
+                Text(
+                  'PROCESSING',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 3,
+                    color: Colors.black,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      Future.delayed(const Duration(milliseconds: 500), () async {
+        if (!context.mounted) return;
+        if (widget.bookingId != null && widget.bookingId!.isNotEmpty) {
+          await ApiService.payNowBooking(widget.bookingId!);
+        }
+        if (widget.onRazorpayPaymentSuccess != null) {
+          await widget.onRazorpayPaymentSuccess!('free_booking', 'free_signature');
+        } else if (widget.onPaymentSuccess != null) {
+          await widget.onPaymentSuccess!();
+        }
+        if (!context.mounted) return;
+        Navigator.pop(context); // Close processing dialog
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => DigitalTicketScreen(
+              venue: widget.venue,
+              date: widget.date,
+              package: widget.package,
+              time: widget.time,
+              table: widget.table,
+              guests: widget.guests,
+              totalPrice: 'FREE (₹0)',
+              ticketId: widget.bookingId ?? 'FREE_TICKET',
+            ),
+          ),
+        );
+      });
+      return;
+    }
+
+    final double itemPrice = amountInPaise / 100.0;
+
+    SmartCheckoutSheet.show(
+      context: context,
+      title: widget.venue['name']?.toString() ?? 'Lunara Booking',
+      subtitle: widget.package,
+      itemPrice: itemPrice,
+      onWalletPayment: () async {
+        final res = await ApiService.payWithWallet(
+          amount: itemPrice,
+          bookingId: widget.bookingId,
+          planId: widget.bookingId,
+          paymentType: 'group_party',
+        );
+        if (res != null && res['success'] == true) {
+          final transactionId = res['data']?['transactionId']?.toString() ?? 'wallet';
+          if (widget.bookingId != null && widget.bookingId!.isNotEmpty) {
+            await ApiService.payNowBooking(widget.bookingId!);
+          }
+          if (widget.onRazorpayPaymentSuccess != null) {
+            await widget.onRazorpayPaymentSuccess!(
+              'wallet_$transactionId',
+              'mock_signature',
+            );
+          } else if (widget.onPaymentSuccess != null) {
+            await widget.onPaymentSuccess!();
+          }
+          if (mounted) {
+            TopNotificationBanner.show(
+              title: 'Booking Confirmed! 🎉',
+              body: 'Your payment via Smart Wallet at ${widget.venue['name'] ?? 'Venue'} is confirmed.',
+              data: {'bookingId': widget.bookingId},
+            );
+            if (widget.package == 'Party Plan Safety Deposit') {
+              Navigator.pop(context);
+            } else {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => DigitalTicketScreen(
+                    venue: widget.venue,
+                    date: widget.date,
+                    package: widget.package,
+                    time: widget.time,
+                    table: widget.table,
+                    guests: widget.guests,
+                    totalPrice: widget.totalPrice,
+                    ticketId: widget.bookingId ?? widget.razorpayOrderId ?? 'TICKET',
+                  ),
+                ),
+              );
+            }
+          }
+          return true;
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(res?['message'] ?? 'Wallet payment failed'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+        return false;
+      },
+      onDirectPayment: () async {
+        _executeDirectRazorpay(amountInPaise);
+      },
+      onHybridPayment: (shortfallAmount) async {
+        final orderData = await ApiService.createWalletRechargeOrder(shortfallAmount);
+        if (orderData != null) {
+          final String orderId = orderData['orderId'] ?? orderData['id'] ?? '';
+          final options = {
+            'key': orderData['keyId'] ?? widget.razorpayKeyId ?? 'rzp_test_T1rwVokR7tFger',
+            'amount': (shortfallAmount * 100).toInt(),
+            'name': 'Lunara Shortfall',
+            'description': 'Recharge ₹${shortfallAmount.toStringAsFixed(0)} for ${widget.package}',
+            'order_id': orderId,
+            'theme': {'color': '#7F00FF'},
+          };
+          _razorpay.open(options);
+        }
+      },
+    );
+  }
+
+  void _executeDirectRazorpay(int amountInPaise) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -474,58 +644,16 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
       ),
     );
 
-    int amountInPaise = 0;
-    if (widget.totalPrice != null) {
-      final cleanPrice = widget.totalPrice!.replaceAll(RegExp(r'[^\d]'), '');
-      final parsed = int.tryParse(cleanPrice);
-      if (parsed != null) {
-        amountInPaise = parsed * 100;
-      }
-    }
-
-    bool isFree = amountInPaise == 0 ||
-        (widget.totalPrice != null &&
-            (widget.totalPrice!.toLowerCase().contains('free') ||
-                widget.totalPrice!.replaceAll(RegExp(r'[^\d]'), '') == '0'));
-
-    if (isFree) {
-      Future.delayed(const Duration(milliseconds: 500), () async {
-        if (!context.mounted) return;
-        if (widget.bookingId != null && widget.bookingId!.isNotEmpty) {
-          await ApiService.payNowBooking(widget.bookingId!);
-        }
-        if (widget.onRazorpayPaymentSuccess != null) {
-          await widget.onRazorpayPaymentSuccess!('free_booking', 'free_signature');
-        } else if (widget.onPaymentSuccess != null) {
-          await widget.onPaymentSuccess!();
-        }
-        if (!context.mounted) return;
-        Navigator.pop(context); // Close processing dialog
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => DigitalTicketScreen(
-              venue: widget.venue,
-              date: widget.date,
-              package: widget.package,
-              time: widget.time,
-              table: widget.table,
-              guests: widget.guests,
-              totalPrice: 'FREE (₹0)',
-              ticketId: widget.bookingId ?? 'FREE_TICKET',
-            ),
-          ),
-        );
-      });
-      return;
-    }
-
     var options = {
       'key': widget.razorpayKeyId ?? 'rzp_test_T1rwVokR7tFger',
-      'amount': widget.razorpayAmount ?? amountInPaise,
+      'amount': amountInPaise,
       'name': 'Lunara',
       'description': widget.package,
-      'prefill': {'contact': '8888888888', 'email': 'test@razorpay.com'},
+      'prefill': {
+        'contact': widget.mobileNumber ?? '8888888888',
+        'email': 'test@razorpay.com'
+      },
+      'theme': {'color': '#7F00FF'},
     };
 
     if (widget.razorpayOrderId != null &&
@@ -540,7 +668,6 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
     try {
       _razorpay.open(options);
       razorpayOpened = true;
-      // Mark dialog as open so _handlePaymentSuccess can close it properly
       _isProcessingDialogOpen = true;
     } catch (e) {
       debugPrint(

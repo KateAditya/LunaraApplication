@@ -10,6 +10,9 @@ import 'payment_confirmation_screen.dart';
 import '../../services/app_tour_service.dart';
 import '../../widgets/venue_timing_error_dialog.dart';
 import '../../widgets/venue_cover_charge_notice.dart';
+import '../../widgets/smart_checkout_sheet.dart';
+import '../../widgets/top_notification_banner.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../social/large_party_ticket_screen.dart';
 
 
@@ -1790,87 +1793,224 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                         final formattedTime = '$hour:$min $ampm';
 
                         final parentContext = context;
-
-                        // Show loading dialog
-                        showDialog(
-                          context: context,
-                          barrierDismissible: false,
-                          builder: (ctx) => const Center(
-                            child: CircularProgressIndicator(
-                              color: LunaraTheme.electricViolet,
-                            ),
-                          ),
-                        );
-
                         final partyDateStr = selectedDateTime.toIso8601String();
 
-                        final result = await ApiService.createGroupParty(
-                          venueId: widget.venue.id,
-                          numberOfFriends: parsed,
-                          partyDate: partyDateStr,
-                          mobileNumber: _mobileController.text.trim(),
-                          optionalMobileNumber:
-                              _optMobileController.text.trim().isEmpty
-                              ? null
-                              : _optMobileController.text.trim(),
-                          foodPreference: _foodPreference,
-                          drinkPreference: _drinkPreference,
-                        );
+                        if (totalPrice <= 0) {
+                          // Free Group Party Instant Confirmation
+                          showDialog(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (ctx) => const Center(
+                              child: CircularProgressIndicator(
+                                color: LunaraTheme.electricViolet,
+                              ),
+                            ),
+                          );
 
-                        if (!parentContext.mounted) return;
-                        Navigator.pop(parentContext); // Close loading dialog
+                          final result = await ApiService.createGroupParty(
+                            venueId: widget.venue.id,
+                            numberOfFriends: parsed,
+                            partyDate: partyDateStr,
+                            mobileNumber: _mobileController.text.trim(),
+                            optionalMobileNumber: _optMobileController.text.trim().isEmpty
+                                ? null
+                                : _optMobileController.text.trim(),
+                            foodPreference: _foodPreference,
+                            drinkPreference: _drinkPreference,
+                          );
 
-                        if (result == null || result['success'] != true) {
-                          final String errorMsg =
-                              result?['message'] ??
-                              'Failed to initiate booking. Please try again.';
-                          _showValidationError(errorMsg);
+                          if (!parentContext.mounted) return;
+                          Navigator.pop(parentContext); // Close loading dialog
+                          Navigator.pop(parentContext); // Close booking bottom sheet
+
+                          if (result != null && result['success'] == true) {
+                            final groupPartyId = (result['data'] is Map)
+                                ? result['data']['id']?.toString()
+                                : result['id']?.toString();
+                            Navigator.pushAndRemoveUntil(
+                              parentContext,
+                              MaterialPageRoute(
+                                builder: (_) => LargePartyTicketScreen(
+                                  booking: {
+                                    'id': groupPartyId,
+                                    'bookingId': groupPartyId,
+                                    'bookingDate': partyDateStr,
+                                    'partyDate': partyDateStr,
+                                    'startTime': formattedTime,
+                                    'status': 'confirmed',
+                                    'paymentStatus': 'paid',
+                                    'venue': widget.venue.toMap(),
+                                    'venueName': widget.venue.name,
+                                    'numberOfGuests': parsed,
+                                    'partySubject': 'Group Party',
+                                    'totalAmount': totalPrice,
+                                  },
+                                  venue: widget.venue.toMap(),
+                                ),
+                              ),
+                              (route) => route.isFirst,
+                            );
+                          } else {
+                            final String errorMsg =
+                                result?['message'] ?? 'Failed to initiate booking. Please try again.';
+                            _showValidationError(errorMsg);
+                          }
                           return;
                         }
 
-                        final String orderId = result['razorpayOrderId'] ?? '';
-                        final int amount =
-                            result['amount'] ?? (totalPrice * 100).round();
-                        final String? keyId = result['razorpayKeyId']
-                            ?.toString();
-
-                        Navigator.pop(
-                          parentContext,
-                        ); // Close booking bottom sheet
-                        Navigator.push(
-                          parentContext,
-                          MaterialPageRoute(
-                            builder: (_) => PaymentConfirmationScreen(
-                              venue: widget.venue.toMap(),
-                              date:
-                                  '${_selectedDate!.day}/${_selectedDate!.month}/${_selectedDate!.year}',
-                              package: 'Group Party Booking',
-                              time: formattedTime,
-                              table: 'Group Party',
-                              guests: '$parsed Friends',
-                              totalPrice: '₹${totalPrice.toStringAsFixed(0)}',
-                              showSplitBill: false,
+                        // Paid Group Party Flow - Smart Checkout Sheet (Smart Wallet + Direct Razorpay + Hybrid)
+                        SmartCheckoutSheet.show(
+                          context: parentContext,
+                          title: 'Group Party - ${widget.venue.name}',
+                          subtitle: 'Group Party for $parsed Friends at ${widget.venue.name}',
+                          itemPrice: totalPrice,
+                          onWalletPayment: () async {
+                            final result = await ApiService.createGroupParty(
+                              venueId: widget.venue.id,
+                              numberOfFriends: parsed,
+                              partyDate: partyDateStr,
                               mobileNumber: _mobileController.text.trim(),
-                              optionalMobileNumber: _optMobileController.text
-                                  .trim(),
-                              razorpayOrderId: orderId,
-                              razorpayAmount: amount,
-                              razorpayKeyId: keyId,
-                              onRazorpayPaymentSuccess:
-                                  (paymentId, signature) async {
+                              optionalMobileNumber: _optMobileController.text.trim().isEmpty
+                                  ? null
+                                  : _optMobileController.text.trim(),
+                              foodPreference: _foodPreference,
+                              drinkPreference: _drinkPreference,
+                            );
+
+                            if (result == null || result['success'] != true) {
+                              if (parentContext.mounted) {
+                                ScaffoldMessenger.of(parentContext).showSnackBar(
+                                  SnackBar(
+                                    content: Text(result?['message'] ?? 'Failed to initiate group party booking'),
+                                    backgroundColor: Colors.redAccent,
+                                  ),
+                                );
+                              }
+                              return false;
+                            }
+
+                            final groupPartyId = (result['data'] is Map)
+                                ? (result['data']['id']?.toString() ?? '')
+                                : (result['id']?.toString() ?? '');
+
+                            final walletRes = await ApiService.payWithWallet(
+                              amount: totalPrice,
+                              planId: groupPartyId,
+                              bookingId: groupPartyId,
+                              paymentType: 'group_party',
+                            );
+
+                            if (walletRes != null && walletRes['success'] == true) {
+                              final transactionId = walletRes['data']?['transactionId']?.toString() ?? 'wallet';
+                              final verifySuccess = await ApiService.verifyGroupPartyPayment(
+                                razorpayOrderId: 'order_mock_wallet',
+                                razorpayPaymentId: 'wallet_$transactionId',
+                                razorpaySignature: 'mock_signature',
+                              );
+
+                              if (verifySuccess && parentContext.mounted) {
+                                TopNotificationBanner.show(
+                                  title: 'Group Party Confirmed! 🎉',
+                                  body: 'Your payment was verified successfully. Digital ticket generated!',
+                                  data: {'type': 'group_party_confirmed', 'partyId': groupPartyId},
+                                );
+                                Navigator.pop(parentContext); // Close modal
+                                Navigator.pushAndRemoveUntil(
+                                  parentContext,
+                                  MaterialPageRoute(
+                                    builder: (_) => LargePartyTicketScreen(
+                                      booking: {
+                                        'id': groupPartyId,
+                                        'bookingId': groupPartyId,
+                                        'bookingDate': partyDateStr,
+                                        'partyDate': partyDateStr,
+                                        'startTime': formattedTime,
+                                        'status': 'confirmed',
+                                        'paymentStatus': 'paid',
+                                        'venue': widget.venue.toMap(),
+                                        'venueName': widget.venue.name,
+                                        'numberOfGuests': parsed,
+                                        'partySubject': 'Group Party',
+                                        'totalAmount': totalPrice,
+                                      },
+                                      venue: widget.venue.toMap(),
+                                    ),
+                                  ),
+                                  (route) => route.isFirst,
+                                );
+                                return true;
+                              }
+                            }
+                            if (parentContext.mounted) {
+                              ScaffoldMessenger.of(parentContext).showSnackBar(
+                                SnackBar(
+                                  content: Text(walletRes?['message'] ?? 'Wallet payment failed'),
+                                  backgroundColor: Colors.redAccent,
+                                ),
+                              );
+                            }
+                            return false;
+                          },
+                          onDirectPayment: () async {
+                            final result = await ApiService.createGroupParty(
+                              venueId: widget.venue.id,
+                              numberOfFriends: parsed,
+                              partyDate: partyDateStr,
+                              mobileNumber: _mobileController.text.trim(),
+                              optionalMobileNumber: _optMobileController.text.trim().isEmpty
+                                  ? null
+                                  : _optMobileController.text.trim(),
+                              foodPreference: _foodPreference,
+                              drinkPreference: _drinkPreference,
+                            );
+
+                            if (result == null || result['success'] != true) {
+                              if (parentContext.mounted) {
+                                ScaffoldMessenger.of(parentContext).showSnackBar(
+                                  SnackBar(
+                                    content: Text(result?['message'] ?? 'Failed to initiate group party'),
+                                    backgroundColor: Colors.redAccent,
+                                  ),
+                                );
+                              }
+                              return;
+                            }
+
+                            final orderId = result['razorpayOrderId']?.toString() ?? '';
+                            final amountInPaise = (result['amount'] is int && (result['amount'] as int) > 0)
+                                ? result['amount'] as int
+                                : (totalPrice * 100).round();
+                            final keyId = result['razorpayKeyId']?.toString() ?? 'rzp_test_T1rwVokR7tFger';
+                            final groupPartyId = (result['data'] is Map)
+                                ? (result['data']['id']?.toString() ?? '')
+                                : (result['id']?.toString() ?? '');
+
+                            Navigator.pop(parentContext); // Close modal
+                            Navigator.push(
+                              parentContext,
+                              MaterialPageRoute(
+                                builder: (_) => PaymentConfirmationScreen(
+                                  venue: widget.venue.toMap(),
+                                  date: '${_selectedDate!.day}/${_selectedDate!.month}/${_selectedDate!.year}',
+                                  package: 'Group Party Booking',
+                                  time: formattedTime,
+                                  table: 'Group Party',
+                                  guests: '$parsed Friends',
+                                  totalPrice: '₹${totalPrice.toStringAsFixed(0)}',
+                                  showSplitBill: false,
+                                  mobileNumber: _mobileController.text.trim(),
+                                  optionalMobileNumber: _optMobileController.text.trim(),
+                                  razorpayOrderId: orderId,
+                                  razorpayAmount: amountInPaise,
+                                  razorpayKeyId: keyId,
+                                  onRazorpayPaymentSuccess: (paymentId, signature) async {
                                     try {
-                                      final success =
-                                          await ApiService.verifyGroupPartyPayment(
-                                            razorpayOrderId: orderId,
-                                            razorpayPaymentId: paymentId,
-                                            razorpaySignature: signature,
-                                          );
-                                      if (!parentContext.mounted) return;
-                                      if (success) {
-                                        // Navigate to ticket screen
-                                        final groupPartyId = (result['data'] is Map)
-                                            ? result['data']['id']?.toString()
-                                            : null;
+                                      final success = await ApiService.verifyGroupPartyPayment(
+                                        razorpayOrderId: orderId,
+                                        razorpayPaymentId: paymentId,
+                                        razorpaySignature: signature,
+                                      );
+                                      if (success && parentContext.mounted) {
                                         Navigator.pushAndRemoveUntil(
                                           parentContext,
                                           MaterialPageRoute(
@@ -1894,80 +2034,142 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                                           ),
                                           (route) => route.isFirst,
                                         );
-                                      } else {
-                                        ScaffoldMessenger.of(
-                                          parentContext,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              'Payment Verification Failed.',
-                                            ),
-                                            backgroundColor: Colors.red,
-                                          ),
-                                        );
                                       }
                                     } catch (e) {
-                                      debugPrint(
-                                        'verifyGroupPartyPayment error: $e',
-                                      );
+                                      debugPrint('verifyGroupPartyPayment error: $e');
                                     }
                                   },
-                              onPaymentSuccess: () async {
-                                try {
-                                  final success =
-                                      await ApiService.verifyGroupPartyPayment(
+                                  onPaymentSuccess: () async {
+                                    try {
+                                      final success = await ApiService.verifyGroupPartyPayment(
                                         razorpayOrderId: orderId,
                                         razorpayPaymentId: 'mock_payment',
                                         razorpaySignature: 'mock_signature',
                                       );
-                                  if (!parentContext.mounted) return;
-                                  if (success) {
-                                    final groupPartyId = (result['data'] is Map)
-                                        ? result['data']['id']?.toString()
-                                        : null;
-                                    Navigator.pushAndRemoveUntil(
-                                      parentContext,
-                                      MaterialPageRoute(
-                                        builder: (_) => LargePartyTicketScreen(
-                                          booking: {
-                                            'id': groupPartyId,
-                                            'bookingId': groupPartyId,
-                                            'bookingDate': partyDateStr,
-                                            'partyDate': partyDateStr,
-                                            'startTime': formattedTime,
-                                            'status': 'confirmed',
-                                            'paymentStatus': 'paid',
-                                            'venue': widget.venue.toMap(),
-                                            'venueName': widget.venue.name,
-                                            'numberOfGuests': parsed,
-                                            'partySubject': 'Group Party',
-                                            'totalAmount': totalPrice,
-                                          },
-                                          venue: widget.venue.toMap(),
-                                        ),
-                                      ),
-                                      (route) => route.isFirst,
+                                      if (success && parentContext.mounted) {
+                                        Navigator.pushAndRemoveUntil(
+                                          parentContext,
+                                          MaterialPageRoute(
+                                            builder: (_) => LargePartyTicketScreen(
+                                              booking: {
+                                                'id': groupPartyId,
+                                                'bookingId': groupPartyId,
+                                                'bookingDate': partyDateStr,
+                                                'partyDate': partyDateStr,
+                                                'startTime': formattedTime,
+                                                'status': 'confirmed',
+                                                'paymentStatus': 'paid',
+                                                'venue': widget.venue.toMap(),
+                                                'venueName': widget.venue.name,
+                                                'numberOfGuests': parsed,
+                                                'partySubject': 'Group Party',
+                                                'totalAmount': totalPrice,
+                                              },
+                                              venue: widget.venue.toMap(),
+                                            ),
+                                          ),
+                                          (route) => route.isFirst,
+                                        );
+                                      }
+                                    } catch (e) {
+                                      debugPrint('verifyGroupPartyPayment error: $e');
+                                    }
+                                  },
+                                ),
+                              ),
+                            );
+                          },
+                          onHybridPayment: (shortfallAmount) async {
+                            final orderData = await ApiService.createWalletRechargeOrder(shortfallAmount);
+                            if (orderData != null) {
+                              final String rzpOrderId = orderData['orderId'] ?? orderData['id'] ?? '';
+                              final rzpKey = orderData['keyId']?.toString() ?? 'rzp_test_T1rwVokR7tFger';
+
+                              final rzp = Razorpay();
+                              rzp.on(Razorpay.EVENT_PAYMENT_SUCCESS, (PaymentSuccessResponse response) async {
+                                rzp.clear();
+                                final recharged = await ApiService.verifyWalletRecharge(
+                                  amount: shortfallAmount,
+                                  razorpayOrderId: rzpOrderId,
+                                  razorpayPaymentId: response.paymentId ?? 'mock_pay',
+                                  razorpaySignature: response.signature ?? 'mock_sig',
+                                );
+                                if (recharged) {
+                                  final result = await ApiService.createGroupParty(
+                                    venueId: widget.venue.id,
+                                    numberOfFriends: parsed,
+                                    partyDate: partyDateStr,
+                                    mobileNumber: _mobileController.text.trim(),
+                                    optionalMobileNumber: _optMobileController.text.trim().isEmpty
+                                        ? null
+                                        : _optMobileController.text.trim(),
+                                    foodPreference: _foodPreference,
+                                    drinkPreference: _drinkPreference,
+                                  );
+                                  final groupPartyId = (result != null && result['data'] is Map)
+                                      ? (result['data']['id']?.toString() ?? '')
+                                      : (result?['id']?.toString() ?? '');
+
+                                  final walletRes = await ApiService.payWithWallet(
+                                    amount: totalPrice,
+                                    planId: groupPartyId,
+                                    bookingId: groupPartyId,
+                                    paymentType: 'group_party',
+                                  );
+                                  if (walletRes != null && walletRes['success'] == true) {
+                                    final transactionId = walletRes['data']?['transactionId']?.toString() ?? 'wallet';
+                                    await ApiService.verifyGroupPartyPayment(
+                                      razorpayOrderId: 'order_mock_wallet',
+                                      razorpayPaymentId: 'wallet_$transactionId',
+                                      razorpaySignature: 'mock_signature',
                                     );
-                                  } else {
-                                    ScaffoldMessenger.of(
-                                      parentContext,
-                                    ).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Payment Verification Failed.',
+                                    if (parentContext.mounted) {
+                                      Navigator.pop(parentContext); // Close modal
+                                      Navigator.pushAndRemoveUntil(
+                                        parentContext,
+                                        MaterialPageRoute(
+                                          builder: (_) => LargePartyTicketScreen(
+                                            booking: {
+                                              'id': groupPartyId,
+                                              'bookingId': groupPartyId,
+                                              'bookingDate': partyDateStr,
+                                              'partyDate': partyDateStr,
+                                              'startTime': formattedTime,
+                                              'status': 'confirmed',
+                                              'paymentStatus': 'paid',
+                                              'venue': widget.venue.toMap(),
+                                              'venueName': widget.venue.name,
+                                              'numberOfGuests': parsed,
+                                              'partySubject': 'Group Party',
+                                              'totalAmount': totalPrice,
+                                            },
+                                            venue: widget.venue.toMap(),
+                                          ),
                                         ),
-                                        backgroundColor: Colors.red,
-                                      ),
-                                    );
+                                        (route) => route.isFirst,
+                                      );
+                                    }
                                   }
-                                } catch (e) {
-                                  debugPrint(
-                                    'verifyGroupPartyPayment error: $e',
+                                }
+                              });
+                              rzp.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse response) {
+                                rzp.clear();
+                                if (parentContext.mounted) {
+                                  ScaffoldMessenger.of(parentContext).showSnackBar(
+                                    SnackBar(content: Text('Recharge failed: ${response.message}')),
                                   );
                                 }
-                              },
-                            ),
-                          ),
+                              });
+                              rzp.open({
+                                'key': rzpKey,
+                                'amount': (shortfallAmount * 100).round(),
+                                'name': 'Lunara Wallet Recharge',
+                                'description': 'Recharge ₹${shortfallAmount.toStringAsFixed(0)} for Group Party Booking',
+                                'order_id': rzpOrderId,
+                                'theme': {'color': '#7F00FF'},
+                              });
+                            }
+                          },
                         );
                       },
                       style: ElevatedButton.styleFrom(

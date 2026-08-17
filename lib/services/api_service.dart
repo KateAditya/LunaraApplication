@@ -3633,6 +3633,10 @@ class ApiService {
     String? optionalMobileNumber,
     String? foodPreference,
     String? drinkPreference,
+    String? partySubject,
+    String? partyRequirement,
+    String? partyDescription,
+    String? startTime,
   }) async {
     final userId = currentUserId;
     if (userId == null) return null;
@@ -3651,6 +3655,14 @@ class ApiService {
             'foodPreference': foodPreference.trim(),
           if (drinkPreference != null && drinkPreference.trim().isNotEmpty)
             'drinkPreference': drinkPreference.trim(),
+          if (partySubject != null && partySubject.trim().isNotEmpty)
+            'partySubject': partySubject.trim(),
+          if (partyRequirement != null && partyRequirement.trim().isNotEmpty)
+            'partyRequirement': partyRequirement.trim(),
+          if (partyDescription != null && partyDescription.trim().isNotEmpty)
+            'partyDescription': partyDescription.trim(),
+          if (startTime != null && startTime.trim().isNotEmpty)
+            'startTime': startTime.trim(),
         },
       );
       try {

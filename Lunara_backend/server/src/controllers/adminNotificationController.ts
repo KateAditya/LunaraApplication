@@ -48,7 +48,15 @@ export const getAdminNotificationSummary = async (req: Request, res: Response): 
         const [bookingsCount, partyRequestsCount, groupPartiesCount, strangersMeetCount] = await Promise.all([
             Booking.count({ where: makeWhere(dateBookings) }).catch(() => 0),
             PartyPlanRequest.count({ where: makeWhere(datePartyRequests) }).catch(() => 0),
-            GroupParty.count({ where: makeWhere(dateGroupParties) }).catch(() => 0),
+            GroupParty.count({
+                where: {
+                    ...makeWhere(dateGroupParties),
+                    [Op.or]: [
+                        { paymentStatus: 'paid' },
+                        { status: 'confirmed' }
+                    ]
+                }
+            }).catch(() => 0),
             StrangersMeetRequest.count({ where: makeWhere(dateStrangersMeet) }).catch(() => 0),
         ]);
 
@@ -79,6 +87,7 @@ export const getAdminNotificationSummary = async (req: Request, res: Response): 
  */
 export const getAdminNotificationActivity = async (_req: Request, res: Response): Promise<Response> => {
     try {
+        const { Op } = require('sequelize');
         const [recentBookings, recentPartyReqs, recentGroupParties, recentStrangersMeet] = await Promise.all([
             Booking.findAll({
                 limit: 5,
@@ -96,6 +105,12 @@ export const getAdminNotificationActivity = async (_req: Request, res: Response)
                 ],
             }).catch(() => []),
             GroupParty.findAll({
+                where: {
+                    [Op.or]: [
+                        { paymentStatus: 'paid' },
+                        { status: 'confirmed' }
+                    ]
+                },
                 limit: 5,
                 order: [['createdAt', 'DESC']],
                 include: [
