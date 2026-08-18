@@ -1,5 +1,6 @@
 import 'dart:io' show Platform;
 import 'dart:convert';
+import 'dart:async';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
@@ -168,6 +169,28 @@ class ApiService {
 
   static socket_io.Socket? socket;
   static final Map<String, List<Function(dynamic)>> _socketListeners = {};
+
+  static final StreamController<Map<String, dynamic>> _chatUpdateController =
+      StreamController<Map<String, dynamic>>.broadcast();
+
+  static Stream<Map<String, dynamic>> get chatUpdateStream =>
+      _chatUpdateController.stream;
+
+  static void notifyChatUpdated({
+    required String conversationId,
+    required String lastMessagePreview,
+    String? lastMessageAt,
+    String? messageId,
+    bool deleted = false,
+  }) {
+    _chatUpdateController.add({
+      'conversationId': conversationId,
+      'lastMessagePreview': lastMessagePreview,
+      'lastMessageAt': lastMessageAt,
+      'messageId': messageId,
+      'deleted': deleted,
+    });
+  }
 
   static void addSocketListener(String event, Function(dynamic) callback) {
     if (!_socketListeners.containsKey(event)) {
@@ -2549,7 +2572,7 @@ class ApiService {
     return [];
   }
 
-  /// Step 5A-5E â€” POST /api/mobile/chat/conversations/:id/messages
+  /// Step 5A-5E — POST /api/mobile/chat/conversations/:id/messages
   static Future<Map<String, dynamic>?> sendMessage(
     String conversationId, {
     required String senderId,
@@ -2561,6 +2584,7 @@ class ApiService {
     String? invitationRefType,
     String? invitationTime,
     String? clientMessageId,
+    String? replyToMessageId,
   }) async {
     try {
       final body = <String, dynamic>{'senderId': senderId, 'type': type};
@@ -2573,6 +2597,7 @@ class ApiService {
       }
       if (invitationTime != null) body['invitationTime'] = invitationTime;
       if (clientMessageId != null) body['clientMessageId'] = clientMessageId;
+      if (replyToMessageId != null) body['replyToMessageId'] = replyToMessageId;
 
       final response = await post(
         '/api/mobile/chat/conversations/$conversationId/messages',

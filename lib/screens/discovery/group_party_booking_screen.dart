@@ -12,6 +12,7 @@ import '../../widgets/venue_timing_error_dialog.dart';
 import '../../widgets/venue_cover_charge_notice.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 import '../../widgets/top_notification_banner.dart';
+import '../../widgets/subscription_limit_dialog.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../social/large_party_ticket_screen.dart';
 
@@ -486,6 +487,17 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
   String _drinkPreference = 'Both';
 
   void _showValidationError(String message) {
+    if (message.contains('Free Plan limit') ||
+        message.contains('PARTY_PLAN_LIMIT_REACHED') ||
+        message.contains('Upgrade to VIP') ||
+        (message.contains('limit') && message.contains('Party Plan'))) {
+      showSubscriptionLimitDialog(
+        context,
+        feature: SubLimitFeature.partyCreation,
+        customMessage: message,
+      );
+      return;
+    }
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(

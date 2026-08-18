@@ -911,6 +911,21 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
         });
     } catch (err: any) {
         logger.error('createPartyPlan error:', err);
+        if (err.code === 'PARTY_PLAN_LIMIT_REACHED' || err.code === 'PARTY_PLAN_DAILY_LIMIT_REACHED') {
+            res.status(403).json({
+                success: false,
+                code: err.code,
+                message: err.message,
+                data: err.details?.details || err.details || {
+                    tier: 'FREE',
+                    limit: 1,
+                    used: 1,
+                    remaining: 0,
+                    upgradeAvailable: true,
+                }
+            });
+            return;
+        }
         if (err.code && err.code.startsWith('PLAN_')) {
             res.status(409).json({
                 success: false,

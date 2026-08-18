@@ -40,6 +40,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool _isRecipientTyping = false;
   Timer? _typingDebounceTimer;
   final Set<String> _selectedMessageIds = {};
+  final Set<String> _deletingMessageIds = {};
+  Map<String, dynamic>? _replyingToMessage;
 
   // ── Chat Session / Subscription state ───────────────────────────────────────
   bool _chatSessionLoaded = false;
@@ -127,7 +129,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
     ApiService.addSocketListener('message_deleted', _onMessageDeletedSocket);
     ApiService.addSocketListener('chat_cleared', _onChatClearedSocket);
-    ApiService.addSocketListener('conversation_deleted', _onConversationDeletedSocket);
+    ApiService.addSocketListener(
+      'conversation_deleted',
+      _onConversationDeletedSocket,
+    );
   }
 
   void _removeSocketListeners() {
@@ -150,27 +155,86 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
     ApiService.removeSocketListener('message_deleted', _onMessageDeletedSocket);
     ApiService.removeSocketListener('chat_cleared', _onChatClearedSocket);
-    ApiService.removeSocketListener('conversation_deleted', _onConversationDeletedSocket);
+    ApiService.removeSocketListener(
+      'conversation_deleted',
+      _onConversationDeletedSocket,
+    );
   }
 
   void _onMessageDeletedSocket(dynamic rawData) {
     if (!mounted || rawData == null) return;
-    final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
+    final data = rawData is Map
+        ? Map<String, dynamic>.from(rawData)
+        : <String, dynamic>{};
     final msgConvId = _safeString(data['conversationId']);
     final msgId = _safeString(data['messageId']);
-    if (_conversationId != null && msgConvId.toLowerCase() == _conversationId!.toLowerCase()) {
-      setState(() {
-        _messages.removeWhere((m) => _safeString(m['id']) == msgId || _safeString(m['clientMessageId']) == msgId);
-        _selectedMessageIds.remove(msgId);
-      });
+    final deleteForEveryone = data['deleteForEveryone'] != false;
+    final targetUserId = _safeString(data['targetUserId']);
+
+    if (!deleteForEveryone &&
+        targetUserId.isNotEmpty &&
+        _currentUserId != null &&
+        targetUserId.toLowerCase() != _currentUserId!.toLowerCase()) {
+      return; // Message deleted only for the other user
     }
+
+    if (_conversationId != null &&
+        msgConvId.toLowerCase() == _conversationId!.toLowerCase()) {
+      setState(() {
+        _messages.removeWhere(
+          (m) =>
+              _safeString(m['id']) == msgId ||
+              _safeString(m['clientMessageId']) == msgId,
+        );
+        _selectedMessageIds.remove(msgId);
+        if (_replyingToMessage != null &&
+            (_safeString(_replyingToMessage!['id']) == msgId ||
+                _safeString(_replyingToMessage!['clientMessageId']) == msgId)) {
+          _replyingToMessage = null;
+        }
+      });
+      _recalculateLatestMessageAndNotify();
+    }
+  }
+
+  void _recalculateLatestMessageAndNotify() {
+    final convId = _conversationId;
+    if (convId == null || convId.isEmpty) return;
+
+    final nonDeleted = _messages.where((m) => m['isDeleted'] != true).toList();
+    String preview = '';
+    String? lastMessageAt;
+
+    if (nonDeleted.isNotEmpty) {
+      final latest = nonDeleted.first;
+      final type = _safeString(latest['type'], 'text');
+      final content = _safeString(latest['text'] ?? latest['content']);
+
+      preview = content;
+      if (type == 'image') preview = '📷 Photo';
+      if (type == 'sticker') preview = '😄 Sticker';
+      if (type == 'voice') preview = '🎙 Voice message';
+      if (type == 'invitation') preview = '📅 Party invitation';
+      if (type == 'icebreaker') preview = '⚡ $content';
+
+      lastMessageAt = latest['createdAt']?.toString();
+    }
+
+    ApiService.notifyChatUpdated(
+      conversationId: convId,
+      lastMessagePreview: preview,
+      lastMessageAt: lastMessageAt,
+    );
   }
 
   void _onChatClearedSocket(dynamic rawData) {
     if (!mounted || rawData == null) return;
-    final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
+    final data = rawData is Map
+        ? Map<String, dynamic>.from(rawData)
+        : <String, dynamic>{};
     final msgConvId = _safeString(data['conversationId']);
-    if (_conversationId != null && msgConvId.toLowerCase() == _conversationId!.toLowerCase()) {
+    if (_conversationId != null &&
+        msgConvId.toLowerCase() == _conversationId!.toLowerCase()) {
       setState(() {
         _messages.clear();
         _selectedMessageIds.clear();
@@ -180,9 +244,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   void _onConversationDeletedSocket(dynamic rawData) {
     if (!mounted || rawData == null) return;
-    final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
+    final data = rawData is Map
+        ? Map<String, dynamic>.from(rawData)
+        : <String, dynamic>{};
     final msgConvId = _safeString(data['conversationId']);
-    if (_conversationId != null && msgConvId.toLowerCase() == _conversationId!.toLowerCase()) {
+    if (_conversationId != null &&
+        msgConvId.toLowerCase() == _conversationId!.toLowerCase()) {
       setState(() {
         _messages.clear();
         _selectedMessageIds.clear();
@@ -665,6 +732,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       'fileSize': m['fileSize'],
       'waveformData': m['waveformData']?.toString(),
       'replyToMessageId': m['replyToMessageId']?.toString(),
+      if (m['replyTo'] != null) 'replyTo': m['replyTo'],
+      if (m['replyToMessage'] != null) 'replyTo': m['replyToMessage'],
       'isSent':
           senderId.isNotEmpty &&
           senderId.toLowerCase() == _currentUserId?.toLowerCase(),
@@ -704,6 +773,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (convId == null || userId == null) return;
 
     final tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
+    final replying = _replyingToMessage;
+    final replyToMessageId =
+        replying != null ? _safeString(replying['id']) : null;
 
     // Optimistic insert
     final optimistic = {
@@ -715,6 +787,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       'createdAt': DateTime.now().toIso8601String(),
       'isDeleted': false,
       'status': 'sent',
+      if (replyToMessageId != null) 'replyToMessageId': replyToMessageId,
+      if (replying != null) 'replyTo': replying,
       if (type == 'icebreaker') ...{'isIcebreaker': true},
     };
 
@@ -722,6 +796,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       _messages.insert(0, optimistic);
       _sortMessages();
       _isSending = true;
+      _replyingToMessage = null;
     });
     _messageController.clear();
 
@@ -732,6 +807,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         type: type,
         content: text,
         clientMessageId: tempId,
+        replyToMessageId: replyToMessageId,
       );
 
       if (result != null && mounted) {
@@ -741,7 +817,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         );
         if (idx != -1) {
           setState(() {
-            _messages[idx] = _mapApiMessage(result);
+            final mapped = _mapApiMessage(result);
+            if (replying != null && mapped['replyTo'] == null) {
+              mapped['replyTo'] = replying;
+            }
+            _messages[idx] = mapped;
             _sortMessages();
           });
         }
@@ -1584,61 +1664,167 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _deleteSelectedMessages() async {
-    if (_selectedMessageIds.isEmpty || _conversationId == null || _currentUserId == null) return;
-
-    final count = _selectedMessageIds.length;
-    final confirm = await showDialog<bool>(
+  Future<String?> _showWhatsAppDeleteDialog({
+    required bool canDeleteForEveryone,
+    int count = 1,
+  }) async {
+    return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Delete $count message${count > 1 ? 's' : ''}?'),
-        content: const Text(
-          'This will delete the selected messages from the conversation.',
-          style: TextStyle(fontSize: 14),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+        title: Text(
+          count == 1 ? 'Delete message?' : 'Delete $count messages?',
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+            color: Color(0xFF0F172A),
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFEF4444),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: const Text('Delete', style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+        content: Text(
+          canDeleteForEveryone
+              ? 'You can delete this message for everyone in the chat, or just for yourself.'
+              : 'You can delete this message from your chat. Other participants will still be able to see it.',
+          style: const TextStyle(
+            fontSize: 14,
+            color: Color(0xFF475569),
+            height: 1.4,
+          ),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actions: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (canDeleteForEveryone) ...[
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, 'for_everyone'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF7F00FF),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: const Text(
+                    'Delete for everyone',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+              OutlinedButton(
+                onPressed: () => Navigator.pop(ctx, 'for_me'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF7F00FF),
+                  side: const BorderSide(color: Color(0xFF7F00FF), width: 1.5),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  'Delete for me',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, 'cancel'),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF64748B),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+                child: const Text(
+                  'Cancel',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
+  }
 
-    if (confirm == true) {
-      final idsToDelete = Set<String>.from(_selectedMessageIds);
-      setState(() {
-        _messages.removeWhere((m) => idsToDelete.contains(_safeString(m['id'])) || idsToDelete.contains(_safeString(m['clientMessageId'])));
-        _selectedMessageIds.clear();
-      });
+  Future<void> _deleteSelectedMessages() async {
+    if (_selectedMessageIds.isEmpty ||
+        _conversationId == null ||
+        _currentUserId == null) {
+      return;
+    }
 
-      for (final msgId in idsToDelete) {
-        if (!msgId.startsWith('temp_')) {
-          await ApiService.deleteMessage(
-            conversationId: _conversationId!,
-            messageId: msgId,
-            userId: _currentUserId!,
-            deleteForEveryone: true,
-          );
-        }
+    final count = _selectedMessageIds.length;
+    final allSentByMe = _selectedMessageIds.every((id) {
+      final m = _messages.firstWhere(
+        (msg) =>
+            _safeString(msg['id']) == id ||
+            _safeString(msg['clientMessageId']) == id,
+        orElse: () => {},
+      );
+      return m.isNotEmpty &&
+          (m['isSent'] == true ||
+              _safeString(m['senderId']).toLowerCase() ==
+                  _currentUserId!.toLowerCase());
+    });
+
+    final choice = await _showWhatsAppDeleteDialog(
+      canDeleteForEveryone: allSentByMe,
+      count: count,
+    );
+
+    if (choice == null || choice == 'cancel') return;
+
+    final deleteForEveryone = (choice == 'for_everyone');
+    final idsToDelete = Set<String>.from(_selectedMessageIds);
+
+    setState(() {
+      _messages.removeWhere(
+        (m) =>
+            idsToDelete.contains(_safeString(m['id'])) ||
+            idsToDelete.contains(_safeString(m['clientMessageId'])),
+      );
+      _selectedMessageIds.clear();
+      if (_replyingToMessage != null &&
+          (idsToDelete.contains(_safeString(_replyingToMessage!['id'])) ||
+              idsToDelete.contains(
+                  _safeString(_replyingToMessage!['clientMessageId'])))) {
+        _replyingToMessage = null;
       }
+    });
+
+    _recalculateLatestMessageAndNotify();
+
+    for (final msgId in idsToDelete) {
+      if (!msgId.startsWith('temp_')) {
+        await ApiService.deleteMessage(
+          conversationId: _conversationId!,
+          messageId: msgId,
+          userId: _currentUserId!,
+          deleteForEveryone: deleteForEveryone,
+        );
+      }
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            deleteForEveryone
+                ? '$count messages deleted for everyone'
+                : '$count messages deleted for you',
+          ),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
   void _showMessageActionSheet(Map<String, dynamic> msg) {
-    final msgId = _safeString(msg['id']);
     final text = _safeString(msg['text'] ?? msg['content']);
-    final isSent = msg['isSent'] == true;
+    final hasCopyableText = text.isNotEmpty && text != '[Message deleted]';
 
     showModalBottomSheet(
       context: context,
@@ -1661,37 +1847,47 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 ),
               ),
               const SizedBox(height: 12),
-              if (text.isNotEmpty)
+              if (hasCopyableText)
                 ListTile(
-                  leading: const Icon(Icons.copy_rounded, color: Color(0xFF7F00FF)),
-                  title: const Text('Copy Message'),
+                  leading: const Icon(
+                    Icons.copy_rounded,
+                    color: Color(0xFF7F00FF),
+                  ),
+                  title: const Text(
+                    'Copy',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                    ),
+                  ),
                   onTap: () {
                     Navigator.pop(sheetCtx);
                     Clipboard.setData(ClipboardData(text: text));
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('✓ Message copied to clipboard')),
+                      const SnackBar(
+                        content: Text('Message copied'),
+                        duration: Duration(seconds: 2),
+                        behavior: SnackBarBehavior.floating,
+                      ),
                     );
                   },
                 ),
               ListTile(
-                leading: const Icon(Icons.checklist_rounded, color: Color(0xFF6366F1)),
-                title: const Text('Select Message'),
-                onTap: () {
-                  Navigator.pop(sheetCtx);
-                  setState(() {
-                    _selectedMessageIds.add(msgId);
-                  });
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.delete_outline_rounded, color: Color(0xFFEF4444)),
-                title: Text(
-                  isSent ? 'Delete Message' : 'Delete for Me',
-                  style: const TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold),
+                leading: const Icon(
+                  Icons.delete_outline_rounded,
+                  color: Color(0xFFEF4444),
+                ),
+                title: const Text(
+                  'Delete',
+                  style: TextStyle(
+                    color: Color(0xFFEF4444),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
                 ),
                 onTap: () {
                   Navigator.pop(sheetCtx);
-                  _deleteSingleMessage(msgId);
+                  _deleteSingleMessage(msg);
                 },
               ),
             ],
@@ -1701,50 +1897,115 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _deleteSingleMessage(String msgId) async {
-    if (msgId.isEmpty || _conversationId == null || _currentUserId == null) return;
+  Future<void> _deleteSingleMessage(Map<String, dynamic> msg) async {
+    final msgId = _safeString(msg['id']);
+    if (msgId.isEmpty || _conversationId == null || _currentUserId == null) {
+      return;
+    }
+    if (_deletingMessageIds.contains(msgId)) return;
 
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Delete this message?'),
-        content: const Text(
-          'This message will be removed from this conversation.',
-          style: TextStyle(fontSize: 14),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFEF4444),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: const Text('Delete', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
+    final isSent = msg['isSent'] == true ||
+        _safeString(msg['senderId']).toLowerCase() ==
+            _currentUserId!.toLowerCase();
+
+    final choice = await _showWhatsAppDeleteDialog(
+      canDeleteForEveryone: isSent,
+      count: 1,
     );
 
-    if (confirm == true) {
-      setState(() {
-        _messages.removeWhere((m) => _safeString(m['id']) == msgId || _safeString(m['clientMessageId']) == msgId);
-        _selectedMessageIds.remove(msgId);
-      });
+    if (choice == null || choice == 'cancel') return;
 
-      if (!msgId.startsWith('temp_')) {
-        await ApiService.deleteMessage(
+    final deleteForEveryone = (choice == 'for_everyone');
+
+    _deletingMessageIds.add(msgId);
+    final targetIndex = _messages.indexWhere(
+      (m) =>
+          _safeString(m['id']) == msgId ||
+          _safeString(m['clientMessageId']) == msgId,
+    );
+    Map<String, dynamic>? removedMsg;
+    if (targetIndex != -1) {
+      removedMsg = _messages[targetIndex];
+    }
+
+    setState(() {
+      _messages.removeWhere(
+        (m) =>
+            _safeString(m['id']) == msgId ||
+            _safeString(m['clientMessageId']) == msgId,
+      );
+      _selectedMessageIds.remove(msgId);
+      if (_replyingToMessage != null &&
+          (_safeString(_replyingToMessage!['id']) == msgId ||
+              _safeString(_replyingToMessage!['clientMessageId']) == msgId)) {
+        _replyingToMessage = null;
+      }
+    });
+
+    _recalculateLatestMessageAndNotify();
+
+    if (!msgId.startsWith('temp_')) {
+      try {
+        final success = await ApiService.deleteMessage(
           conversationId: _conversationId!,
           messageId: msgId,
           userId: _currentUserId!,
-          deleteForEveryone: true,
+          deleteForEveryone: deleteForEveryone,
         );
+        _deletingMessageIds.remove(msgId);
+        if (!success) {
+          if (mounted && removedMsg != null) {
+            setState(() {
+              if (targetIndex != -1 && targetIndex <= _messages.length) {
+                _messages.insert(targetIndex, removedMsg!);
+              } else {
+                _messages.add(removedMsg!);
+              }
+              _sortMessages();
+            });
+            _recalculateLatestMessageAndNotify();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Unable to delete message. Please try again.'),
+                backgroundColor: Color(0xFFEF4444),
+              ),
+            );
+          }
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                deleteForEveryone
+                    ? 'Message deleted for everyone'
+                    : 'Message deleted for you',
+              ),
+              duration: const Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      } catch (e) {
+        _deletingMessageIds.remove(msgId);
+        if (mounted && removedMsg != null) {
+          setState(() {
+            if (targetIndex != -1 && targetIndex <= _messages.length) {
+              _messages.insert(targetIndex, removedMsg!);
+            } else {
+              _messages.add(removedMsg!);
+            }
+            _sortMessages();
+          });
+          _recalculateLatestMessageAndNotify();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Unable to delete message. Please try again.'),
+              backgroundColor: Color(0xFFEF4444),
+            ),
+          );
+        }
       }
+    } else {
+      _deletingMessageIds.remove(msgId);
     }
   }
 
@@ -1765,16 +2026,24 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+            ),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFF59E0B),
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
-            child: const Text('Clear Chat', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Clear Chat',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -1800,10 +2069,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Future<void> _showDeleteChatDialog() async {
     final otherUserId = widget.user['id']?.toString() ?? '';
     final convId = _conversationId ?? widget.user['conversationId']?.toString();
-    final targetId = (convId != null && convId.isNotEmpty) ? convId : otherUserId;
+    final targetId = (convId != null && convId.isNotEmpty)
+        ? convId
+        : otherUserId;
     final userId = _currentUserId ?? ApiService.currentUserId;
-    final userName = widget.user['name']?.toString() ??
-        (widget.user['firstName'] != null ? '${widget.user['firstName']} ${widget.user['lastName'] ?? ''}'.trim() : 'this user');
+    final userName =
+        widget.user['name']?.toString() ??
+        (widget.user['firstName'] != null
+            ? '${widget.user['firstName']} ${widget.user['lastName'] ?? ''}'
+                  .trim()
+            : 'this user');
     if (targetId.isEmpty || userId == null) return;
 
     final confirm = await showDialog<bool>(
@@ -1818,23 +2093,31 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+            ),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFEF4444),
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
-            child: const Text('Delete Chat', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Delete Chat',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
     );
 
     if (confirm == true) {
-      final success = await ApiService.deleteConversation(targetId, userId);
+      await ApiService.deleteConversation(targetId, userId);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1842,7 +2125,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             backgroundColor: Color(0xFF10B981),
           ),
         );
-        Navigator.pop(context, {'deleted': true, 'conversationId': convId, 'otherUserId': otherUserId});
+        Navigator.pop(context, {
+          'deleted': true,
+          'conversationId': convId,
+          'otherUserId': otherUserId,
+        });
       }
     }
   }
@@ -1986,7 +2273,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               value: 'clear',
               child: Row(
                 children: [
-                  Icon(Icons.cleaning_services_outlined, color: Color(0xFFF59E0B), size: 20),
+                  Icon(
+                    Icons.cleaning_services_outlined,
+                    color: Color(0xFFF59E0B),
+                    size: 20,
+                  ),
                   SizedBox(width: 10),
                   Text('Clear Chat'),
                 ],
@@ -1996,9 +2287,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               value: 'delete',
               child: Row(
                 children: [
-                  Icon(Icons.delete_outline_rounded, color: Color(0xFFEF4444), size: 20),
+                  Icon(
+                    Icons.delete_outline_rounded,
+                    color: Color(0xFFEF4444),
+                    size: 20,
+                  ),
                   SizedBox(width: 10),
-                  Text('Delete Chat', style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold)),
+                  Text(
+                    'Delete Chat',
+                    style: TextStyle(
+                      color: Color(0xFFEF4444),
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -2017,9 +2318,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               value: 'report',
               child: Row(
                 children: [
-                  const Icon(Icons.report_problem_outlined, color: Colors.red, size: 20),
-                  const SizedBox(width: 10),
-                  const Text('Report User', style: TextStyle(color: Colors.red)),
+                  Icon(
+                    Icons.report_problem_outlined,
+                    color: Colors.red,
+                    size: 20,
+                  ),
+                  SizedBox(width: 10),
+                  Text('Report User', style: TextStyle(color: Colors.red)),
                 ],
               ),
             ),
@@ -2080,20 +2385,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             final msg = _messages[index];
             final type = _safeString(msg['type'], 'text');
 
+            Widget child;
             try {
               if (type == 'invitation') {
-                return _buildInvitationCard(msg);
+                child = _buildInvitationCard(msg);
+              } else if (type == 'pay_request') {
+                child = _buildPayRequestCard(msg);
+              } else if (type == 'system') {
+                child = _buildSystemMessage(msg);
+              } else {
+                child = _buildMessageBubble(msg);
               }
-              if (type == 'pay_request') {
-                return _buildPayRequestCard(msg);
-              }
-              if (type == 'system') {
-                return _buildSystemMessage(msg);
-              }
-              return _buildMessageBubble(msg);
             } catch (e) {
               debugPrint('Error rendering chat message at index $index: $e');
-              return _buildMessageBubble({
+              child = _buildMessageBubble({
                 'isSent': msg['isSent'] == true,
                 'text': _safeString(msg['text'] ?? msg['content'], 'Message'),
                 'type': 'text',
@@ -2101,6 +2406,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 'status': 'sent',
               });
             }
+
+            if (type == 'system' || msg['isDeleted'] == true) {
+              return child;
+            }
+
+            return _SwipeToReplyWrapper(
+              onReply: () {
+                setState(() {
+                  _replyingToMessage = msg;
+                });
+                _focusNode.requestFocus();
+              },
+              child: child,
+            );
           },
         ),
         if (_isSending)
@@ -2174,6 +2493,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Widget _buildPayRequestCard(Map<String, dynamic> msg) {
     final isSent = msg['isSent'] == true;
+    final msgId = _safeString(msg['id']);
+    final isDeleted = msg['isDeleted'] == true;
+    final canSelect = !isDeleted && msgId.isNotEmpty && !msgId.startsWith('temp_');
+
     Map<String, dynamic> payload = {};
     try {
       final raw = _safeString(msg['text']);
@@ -2195,90 +2518,93 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         100.0;
     final requesterId = payload['requesterId']?.toString();
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-      child: Center(
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 300),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: const Color(0xFF7F00FF).withValues(alpha: 0.3),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
+    return GestureDetector(
+      onLongPress: canSelect ? () => _showMessageActionSheet(msg) : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+        child: Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 300),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: const Color(0xFF7F00FF).withValues(alpha: 0.3),
               ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.bolt_rounded,
-                color: Color(0xFF7F00FF),
-                size: 32,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                isSent
-                    ? 'You asked them to pay for $extensionDays more days.'
-                    : '$requesterName is asking you to pay ₹${extensionPrice.toStringAsFixed(0)} for $extensionDays more days of chat.',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.06),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
                 ),
-              ),
-              if (!isSent) ...[
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      final convId = _conversationId;
-                      if (convId == null) return;
-                      final ok = await ApiService.acceptChatExtensionRequest(
-                        convId,
-                        requestedById: requesterId,
-                      );
-                      if (ok && mounted) {
-                        await _checkChatSession();
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              '✅ Chat extended for $extensionDays days!',
-                            ),
-                            backgroundColor: const Color(0xFF7F00FF),
-                          ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.bolt_rounded,
+                  color: Color(0xFF7F00FF),
+                  size: 32,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  isSent
+                      ? 'You asked them to pay for $extensionDays more days.'
+                      : '$requesterName is asking you to pay ₹${extensionPrice.toStringAsFixed(0)} for $extensionDays more days of chat.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+                if (!isSent) ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        final convId = _conversationId;
+                        if (convId == null) return;
+                        final ok = await ApiService.acceptChatExtensionRequest(
+                          convId,
+                          requestedById: requesterId,
                         );
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF7F00FF),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
+                        if (ok && mounted) {
+                          await _checkChatSession();
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                '✅ Chat extended for $extensionDays days!',
+                              ),
+                              backgroundColor: const Color(0xFF7F00FF),
+                            ),
+                          );
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF7F00FF),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                       ),
-                    ),
-                    child: Text(
-                      'PAY ₹${extensionPrice.toStringAsFixed(0)} & EXTEND',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
+                      child: Text(
+                        'PAY ₹${extensionPrice.toStringAsFixed(0)} & EXTEND',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
-                ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -2329,7 +2655,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             : Colors.transparent,
         padding: const EdgeInsets.symmetric(
           vertical: 2,
-        ), // removed horizontal padding
+        ),
         child: Align(
           alignment: isSent ? Alignment.centerRight : Alignment.centerLeft,
           child: Container(
@@ -2392,6 +2718,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     ),
                   )
                 : _buildTextBubbleContent(
+                    msg,
                     text,
                     timeStr,
                     isSent,
@@ -2404,13 +2731,42 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
+  String _getRepliedPreviewText(Map<String, dynamic> r) {
+    final type = _safeString(r['type'], 'text');
+    final text = _safeString(r['text'] ?? r['content']);
+    if (type == 'image') return '📷 Photo';
+    if (type == 'sticker') return '😄 Sticker';
+    if (type == 'voice') return '🎙 Voice message';
+    if (type == 'invitation') return '📅 Party invitation';
+    if (type == 'icebreaker') return '⚡ $text';
+    return text.isEmpty ? 'Message' : text;
+  }
+
   Widget _buildTextBubbleContent(
+    Map<String, dynamic> msg,
     String text,
     String timeStr,
     bool isSent,
     bool isIcebreaker,
     String status,
   ) {
+    Map<String, dynamic>? replyToMsg;
+    if (msg['replyTo'] is Map) {
+      replyToMsg = Map<String, dynamic>.from(msg['replyTo']);
+    } else if (msg['replyToMessageId'] != null &&
+        _safeString(msg['replyToMessageId']).isNotEmpty) {
+      final rId = _safeString(msg['replyToMessageId']);
+      final found = _messages.firstWhere(
+        (m) =>
+            _safeString(m['id']) == rId ||
+            _safeString(m['clientMessageId']) == rId,
+        orElse: () => {},
+      );
+      if (found.isNotEmpty) {
+        replyToMsg = found;
+      }
+    }
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 10, 12, 8),
       child: Column(
@@ -2419,6 +2775,52 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             : CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (replyToMsg != null && replyToMsg.isNotEmpty) ...[
+            Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: isSent
+                    ? Colors.black.withValues(alpha: 0.15)
+                    : const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(8),
+                border: Border(
+                  left: BorderSide(
+                    color: isSent ? Colors.white : const Color(0xFF7F00FF),
+                    width: 3.5,
+                  ),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    replyToMsg['isSent'] == true
+                        ? 'You'
+                        : _safeString(widget.user['name'], 'User'),
+                    style: TextStyle(
+                      color: isSent ? Colors.white : const Color(0xFF7F00FF),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _getRepliedPreviewText(replyToMsg),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: isSent
+                          ? Colors.white.withValues(alpha: 0.85)
+                          : const Color(0xFF475569),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -2472,131 +2874,138 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
     final status = _safeString(msg['invitationStatus'], 'pending');
     final msgId = _safeString(msg['id']);
+    final isDeleted = msg['isDeleted'] == true;
+    final canSelect = !isDeleted && msgId.isNotEmpty && !msgId.startsWith('temp_');
     final msgStatus = _safeString(msg['status'], 'sent');
     final timeStr = _formatMessageTime(msg['createdAt']?.toString());
 
-    return Align(
-      alignment: isSent ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        width: 260,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFDCF8C6), width: 1),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 4,
-              offset: const Offset(0, 1),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: const BoxDecoration(
-                color: Color(0xFF7F00FF),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(11)),
+    return GestureDetector(
+      onLongPress: canSelect ? () => _showMessageActionSheet(msg) : null,
+      child: Align(
+        alignment: isSent ? Alignment.centerRight : Alignment.centerLeft,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          width: 260,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFDCF8C6), width: 1),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 4,
+                offset: const Offset(0, 1),
               ),
-              child: const Row(
-                children: [
-                  Text('🎉', style: TextStyle(fontSize: 14)),
-                  SizedBox(width: 6),
-                  Text(
-                    'INVITATION',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.5,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    venue,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                      color: Colors.black,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  if (date.isNotEmpty)
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF7F00FF),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(11)),
+                ),
+                child: const Row(
+                  children: [
+                    Text('🎉', style: TextStyle(fontSize: 14)),
+                    SizedBox(width: 6),
                     Text(
-                      date,
-                      style: TextStyle(color: Colors.grey[600], fontSize: 13),
-                    ),
-                  const SizedBox(height: 12),
-                  if (status == 'pending' && !isSent) ...[
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _inviteButton(
-                            'ACCEPT',
-                            true,
-                            () => _respondInvitation(msgId, 'accept'),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _inviteButton(
-                            'DECLINE',
-                            false,
-                            () => _respondInvitation(msgId, 'decline'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ] else ...[
-                    Container(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      decoration: BoxDecoration(
-                        color: status == 'accepted'
-                            ? const Color(0xFFE8F5E9)
-                            : const Color(0xFFFFEBEE),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        status == 'accepted' ? '✅ Accepted' : '❌ Declined',
-                        style: TextStyle(
-                          color: status == 'accepted'
-                              ? const Color(0xFF2E7D32)
-                              : const Color(0xFFC62828),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
+                      'INVITATION',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.5,
                       ),
                     ),
                   ],
-                  const SizedBox(height: 6),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Text(
-                        timeStr,
-                        style: TextStyle(color: Colors.grey[500], fontSize: 10),
-                      ),
-                      if (isSent) ...[
-                        const SizedBox(width: 4),
-                        _buildMessageStatusIcon(msgStatus),
-                      ],
-                    ],
-                  ),
-                ],
+                ),
               ),
-            ),
-          ],
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      venue,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Colors.black,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    if (date.isNotEmpty)
+                      Text(
+                        date,
+                        style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                      ),
+                    const SizedBox(height: 12),
+                    if (status == 'pending' && !isSent) ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _inviteButton(
+                              'ACCEPT',
+                              true,
+                              () => _respondInvitation(msgId, 'accept'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _inviteButton(
+                              'DECLINE',
+                              false,
+                              () => _respondInvitation(msgId, 'decline'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ] else ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 6,
+                          horizontal: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: status == 'accepted'
+                              ? const Color(0xFFE8F5E9)
+                              : const Color(0xFFFFEBEE),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          status == 'accepted' ? '✅ Accepted' : '❌ Declined',
+                          style: TextStyle(
+                            color: status == 'accepted'
+                                ? const Color(0xFF2E7D32)
+                                : const Color(0xFFC62828),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Text(
+                          timeStr,
+                          style: TextStyle(color: Colors.grey[500], fontSize: 10),
+                        ),
+                        if (isSent) ...[
+                          const SizedBox(width: 4),
+                          _buildMessageStatusIcon(msgStatus),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -2620,6 +3029,84 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             fontSize: 12,
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildReplyPreview() {
+    if (_replyingToMessage == null) return const SizedBox.shrink();
+
+    final isSent = _replyingToMessage!['isSent'] == true;
+    final senderName =
+        isSent ? 'You' : _safeString(widget.user['name'], 'User');
+    final previewText = _getRepliedPreviewText(_replyingToMessage!);
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(14, 0, 14, 6),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F0FF),
+        borderRadius: BorderRadius.circular(16),
+        border: const Border(
+          left: BorderSide(color: Color(0xFF7F00FF), width: 4),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.reply_rounded,
+            color: Color(0xFF7F00FF),
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Replying to $senderName',
+                  style: const TextStyle(
+                    color: Color(0xFF7F00FF),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  previewText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF475569),
+                    fontSize: 12.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(
+              Icons.close_rounded,
+              color: Color(0xFF64748B),
+              size: 20,
+            ),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            onPressed: () {
+              setState(() {
+                _replyingToMessage = null;
+              });
+            },
+          ),
+        ],
       ),
     );
   }
@@ -2653,10 +3140,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       );
     }
 
-    if (_isCancellationPending) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_isCancellationPending)
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
             padding: const EdgeInsets.all(10),
@@ -2686,12 +3173,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               ],
             ),
           ),
-          _buildStandardInputArea(context),
-        ],
-      );
-    }
-
-    return _buildStandardInputArea(context);
+        _buildReplyPreview(),
+        _buildStandardInputArea(context),
+      ],
+    );
   }
 
   Widget _buildStandardInputArea(BuildContext context) {
@@ -2751,6 +3236,128 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 size: 20,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SwipeToReplyWrapper extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onReply;
+
+  const _SwipeToReplyWrapper({
+    required this.child,
+    required this.onReply,
+  });
+
+  @override
+  State<_SwipeToReplyWrapper> createState() => _SwipeToReplyWrapperState();
+}
+
+class _SwipeToReplyWrapperState extends State<_SwipeToReplyWrapper>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+  double _dragOffset = 0.0;
+  bool _triggered = false;
+  static const double _threshold = 45.0;
+  static const double _maxDrag = 65.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
+    _animation = Tween<double>(begin: 0, end: 0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    )..addListener(() {
+        setState(() {
+          _dragOffset = _animation.value;
+        });
+      });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onHorizontalDragUpdate(DragUpdateDetails details) {
+    if (details.primaryDelta == null) return;
+
+    final newOffset = (_dragOffset + details.primaryDelta!).clamp(0.0, _maxDrag);
+    if (newOffset != _dragOffset) {
+      setState(() {
+        _dragOffset = newOffset;
+      });
+      if (!_triggered && _dragOffset >= _threshold) {
+        _triggered = true;
+        HapticFeedback.lightImpact();
+      }
+    }
+  }
+
+  void _onHorizontalDragEnd(DragEndDetails details) {
+    if (_triggered) {
+      widget.onReply();
+    }
+    _triggered = false;
+    _animation = Tween<double>(begin: _dragOffset, end: 0.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
+    _controller.forward(from: 0.0);
+  }
+
+  void _onHorizontalDragCancel() {
+    _triggered = false;
+    _animation = Tween<double>(begin: _dragOffset, end: 0.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
+    _controller.forward(from: 0.0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = (_dragOffset / _threshold).clamp(0.0, 1.0);
+
+    return GestureDetector(
+      onHorizontalDragUpdate: _onHorizontalDragUpdate,
+      onHorizontalDragEnd: _onHorizontalDragEnd,
+      onHorizontalDragCancel: _onHorizontalDragCancel,
+      behavior: HitTestBehavior.translucent,
+      child: Stack(
+        alignment: Alignment.centerLeft,
+        children: [
+          if (_dragOffset > 0)
+            Positioned(
+              left: (_dragOffset * 0.4 - 15).clamp(4.0, 24.0),
+              child: Opacity(
+                opacity: progress,
+                child: Transform.scale(
+                  scale: 0.6 + (progress * 0.4),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF7F00FF).withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.reply_rounded,
+                      color: Color(0xFF7F00FF),
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          Transform.translate(
+            offset: Offset(_dragOffset, 0),
+            child: widget.child,
           ),
         ],
       ),
