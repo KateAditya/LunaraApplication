@@ -1082,6 +1082,7 @@ export const securePlanReservation = async (req: Request, res: Response) => {
         const ticketCode = uuidv4();
 
         const booking = await Booking.create({
+            bookingNumber: `BKG-PLN-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
             userId: plan.userId, // host owns the booking
             venueId: plan.venueId,
             bookingDate: plan.planDate,
