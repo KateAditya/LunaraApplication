@@ -1,3 +1,4 @@
+// ignore_for_file: use_build_context_synchronously
 import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -2718,11 +2719,49 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                   onChanged: (val) {
                                     setSheetState(() {
                                       showVenueDetails = !val;
+                                      if (!showVenueDetails && selectedVenue != null) {
+                                        if (descriptionCtrl.text.isEmpty ||
+                                            descriptionCtrl.text.toLowerCase().contains("let's party at") ||
+                                            descriptionCtrl.text.toLowerCase().contains(selectedVenue!.name.toLowerCase())) {
+                                          descriptionCtrl.text = "Let's party at a Secret Venue! 🔒✨";
+                                        }
+                                      } else if (showVenueDetails && selectedVenue != null) {
+                                        if (descriptionCtrl.text == "Let's party at a Secret Venue! 🔒✨") {
+                                          descriptionCtrl.text = "Let's party at ${selectedVenue!.name}! 🚀";
+                                        }
+                                      }
                                     });
                                   },
                                 ),
                               ],
                             ),
+                            if (!showVenueDetails) ...[
+                              const SizedBox(height: 8),
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    Icon(Icons.lock_rounded, size: 14, color: Colors.amber),
+                                    SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        'Secret Venue is ON! Venue name & image are hidden from public feed. Please avoid writing the venue name in your description!',
+                                        style: TextStyle(
+                                          fontSize: 9.5,
+                                          color: Colors.black87,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -3806,9 +3845,11 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                       body: {
                                         'userId': userId,
                                         'venueId': selectedVenue!.id,
-                                        'message': descriptionCtrl.text.isEmpty
-                                            ? "Let's party at ${selectedVenue!.name}"
-                                            : descriptionCtrl.text,
+                                        'message': descriptionCtrl.text.isNotEmpty
+                                            ? descriptionCtrl.text
+                                            : (!showVenueDetails
+                                                ? "Let's party at a Secret Venue! 🔒✨"
+                                                : "Let's party at ${selectedVenue!.name}"),
                                         'planDateTime': _formatToISTString(
                                           selectedDate!,
                                           selectedTime!,

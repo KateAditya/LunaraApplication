@@ -149,6 +149,65 @@ class _StrangersMeetStartDialogState extends State<StrangersMeetStartDialog> {
     }
   }
 
+  Future<void> _handleNotStarted() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1B2E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Mark as Not Started?',
+          style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 16),
+        ),
+        content: Text(
+          'Are you sure this Strangers Meet did not take place? This will close the meetup.',
+          style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: GoogleFonts.poppins(color: Colors.white60)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Yes, Not Started', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() {
+      _isSubmitting = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await ApiService.reportStrangersMeetNotStarted(widget.meetId);
+      if (mounted) {
+        Navigator.pop(context, true);
+        widget.onStarted?.call();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Meetup marked as not started.', style: GoogleFonts.poppins(color: Colors.white)),
+            backgroundColor: const Color(0xFF1E1E2E),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isSubmitting = false;
+        _errorMessage = e.toString().replaceAll('Exception: ', '');
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final dateFormat = DateFormat('EEE, dd MMM • hh:mm a');
@@ -284,11 +343,13 @@ class _StrangersMeetStartDialogState extends State<StrangersMeetStartDialog> {
             ),
             const SizedBox(height: 20),
             ElevatedButton(
-              onPressed: () {
-                setState(() {
-                  _showDurationPicker = true;
-                });
-              },
+              onPressed: _isSubmitting
+                  ? null
+                  : () {
+                      setState(() {
+                        _showDurationPicker = true;
+                      });
+                    },
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF8B5CF6),
                 foregroundColor: Colors.white,
@@ -303,16 +364,24 @@ class _StrangersMeetStartDialogState extends State<StrangersMeetStartDialog> {
             ),
             const SizedBox(height: 10),
             OutlinedButton(
-              onPressed: () => Navigator.pop(context, false),
+              onPressed: _isSubmitting ? null : _handleNotStarted,
               style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.white70,
-                side: const BorderSide(color: Colors.white24),
+                foregroundColor: Colors.redAccent,
+                side: BorderSide(color: Colors.redAccent.withOpacity(0.5)),
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               ),
               child: Text(
-                'NOT YET',
+                'NOT STARTED',
                 style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(
+                'Dismiss / Decide Later',
+                style: GoogleFonts.poppins(color: Colors.white54, fontSize: 12),
               ),
             ),
           ] else ...[

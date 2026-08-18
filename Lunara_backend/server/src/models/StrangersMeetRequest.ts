@@ -4,11 +4,18 @@ import sequelize from '../config/database';
 export enum StrangersMeetStatus {
     PENDING = 'pending',
     APPROVED = 'approved',
+    START_CONFIRMATION_PENDING = 'start_confirmation_pending',
     IN_PROGRESS = 'in_progress',
+    END_CONFIRMATION_PENDING = 'end_confirmation_pending',
     HOST_CONFIRMED_ENDED = 'host_confirmed_ended',
     ADMIN_CONFIRMED_ENDED = 'admin_confirmed_ended',
-    REJECTED = 'rejected',
+    SETTLED = 'settled',
     COMPLETED = 'completed',
+    REJECTED = 'rejected',
+    NOT_STARTED = 'not_started',
+    NEEDS_HOST_CONTACT = 'needs_host_contact',
+    CANCELLED = 'cancelled',
+    ADMIN_RESOLVED = 'admin_resolved',
 }
 
 export enum StrangersMeetPaymentStatus {
@@ -67,6 +74,15 @@ export interface StrangersMeetRequestAttributes {
     adminConfirmedEndedAt?: Date;
     adminConfirmedBy?: string;
     settlementOverdue?: boolean;
+    // Escalation & Fallback fields
+    escalatedAt?: Date;
+    escalationReason?: string;
+    adminResolution?: string;
+    adminResolutionNotes?: string;
+    adminResolvedAt?: Date;
+    adminResolvedBy?: string;
+    hostNotStartedAt?: Date;
+    hostNotStartedReason?: string;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -114,6 +130,14 @@ export interface StrangersMeetRequestCreationAttributes
         | 'adminConfirmedEndedAt'
         | 'adminConfirmedBy'
         | 'settlementOverdue'
+        | 'escalatedAt'
+        | 'escalationReason'
+        | 'adminResolution'
+        | 'adminResolutionNotes'
+        | 'adminResolvedAt'
+        | 'adminResolvedBy'
+        | 'hostNotStartedAt'
+        | 'hostNotStartedReason'
         | 'createdAt'
         | 'updatedAt'
     > { }
@@ -169,6 +193,14 @@ class StrangersMeetRequest
     public adminConfirmedEndedAt?: Date;
     public adminConfirmedBy?: string;
     public settlementOverdue!: boolean;
+    public escalatedAt?: Date;
+    public escalationReason?: string;
+    public adminResolution?: string;
+    public adminResolutionNotes?: string;
+    public adminResolvedAt?: Date;
+    public adminResolvedBy?: string;
+    public hostNotStartedAt?: Date;
+    public hostNotStartedReason?: string;
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 }
@@ -198,16 +230,12 @@ StrangersMeetRequest.init(
             type: DataTypes.STRING(200),
             allowNull: false,
             validate: {
-                notEmpty: { msg: 'Subject is required' },
-                len: { args: [1, 200], msg: 'Subject must be between 1 and 200 characters' },
+                len: [1, 200],
             },
         },
         tagline: {
             type: DataTypes.TEXT,
             allowNull: false,
-            validate: {
-                notEmpty: { msg: 'Tagline is required' },
-            },
         },
         eventDateTime: {
             type: DataTypes.DATE,
@@ -219,8 +247,8 @@ StrangersMeetRequest.init(
             allowNull: false,
             field: 'number_of_persons',
             validate: {
-                min: { args: [21], msg: 'Minimum 21 persons required' },
-                max: { args: [50], msg: 'Maximum 50 persons allowed' },
+                min: 21,
+                max: 50,
             },
         },
         chargesPerHead: {
@@ -236,9 +264,24 @@ StrangersMeetRequest.init(
             field: 'slots_filled',
         },
         status: {
-            type: DataTypes.STRING(50),
+            type: DataTypes.ENUM(
+                'pending',
+                'approved',
+                'start_confirmation_pending',
+                'in_progress',
+                'end_confirmation_pending',
+                'host_confirmed_ended',
+                'admin_confirmed_ended',
+                'settled',
+                'completed',
+                'rejected',
+                'not_started',
+                'needs_host_contact',
+                'cancelled',
+                'admin_resolved'
+            ),
             allowNull: false,
-            defaultValue: StrangersMeetStatus.PENDING,
+            defaultValue: 'pending',
         },
         paymentAmount: {
             type: DataTypes.DECIMAL(10, 2),
@@ -246,15 +289,14 @@ StrangersMeetRequest.init(
             field: 'payment_amount',
         },
         paymentStatus: {
-            type: DataTypes.ENUM(...Object.values(StrangersMeetPaymentStatus)),
+            type: DataTypes.ENUM('unpaid', 'paid'),
             allowNull: false,
-            defaultValue: StrangersMeetPaymentStatus.UNPAID,
+            defaultValue: 'unpaid',
             field: 'payment_status',
         },
         mobileNumber: {
             type: DataTypes.STRING(20),
             allowNull: false,
-            defaultValue: '',
             field: 'mobile_number',
         },
         alternateMobileNumber: {
@@ -270,7 +312,6 @@ StrangersMeetRequest.init(
         ticketId: {
             type: DataTypes.STRING(50),
             allowNull: true,
-            unique: true,
             field: 'ticket_id',
         },
         ticketUrl: {
@@ -289,13 +330,13 @@ StrangersMeetRequest.init(
             field: 'razorpay_payment_id',
         },
         razorpaySignature: {
-            type: DataTypes.STRING(200),
+            type: DataTypes.STRING(255),
             allowNull: true,
             field: 'razorpay_signature',
         },
         settlementStatus: {
-            type: DataTypes.STRING(50),
-            allowNull: false,
+            type: DataTypes.ENUM('none', 'requested', 'approved', 'settlement_pending', 'paid', 'settled'),
+            allowNull: true,
             defaultValue: 'none',
             field: 'settlement_status',
         },
@@ -438,6 +479,46 @@ StrangersMeetRequest.init(
             allowNull: false,
             defaultValue: false,
             field: 'settlement_overdue',
+        },
+        escalatedAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'escalated_at',
+        },
+        escalationReason: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+            field: 'escalation_reason',
+        },
+        adminResolution: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'admin_resolution',
+        },
+        adminResolutionNotes: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+            field: 'admin_resolution_notes',
+        },
+        adminResolvedAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'admin_resolved_at',
+        },
+        adminResolvedBy: {
+            type: DataTypes.UUID,
+            allowNull: true,
+            field: 'admin_resolved_by',
+        },
+        hostNotStartedAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'host_not_started_at',
+        },
+        hostNotStartedReason: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+            field: 'host_not_started_reason',
         },
     },
     {

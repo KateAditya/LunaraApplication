@@ -1,14 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme.dart';
 import '../../services/google_places_service.dart';
 import '../../widgets/action_button.dart';
 import '../../widgets/lunara_profile_image.dart';
 import '../../services/api_service.dart';
-import '../../services/ticket_pdf_service.dart';
+import '../../services/lunara_ticket_capture_service.dart';
 import '../home/dashboard.dart';
 
 class DigitalTicketScreen extends StatefulWidget {
@@ -47,6 +46,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
   Timer? _countdownTimer;
   Duration _timeRemaining = Duration.zero;
   bool _isGeneratingPdf = false;
+  final GlobalKey _ticketKey = GlobalKey();
 
   @override
   void initState() {
@@ -358,7 +358,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
     final venueName = widget.venue?['name'] ?? 'Unknown Venue';
     final dateStr = widget.date ?? 'SAT, OCT 24';
     final timeStr = widget.time ?? '10:30 PM';
-    final ticketIdStr = widget.ticketId ?? 'TICKET';
+    final ticketIdStr = (widget.ticketId ?? 'TICKET').toUpperCase();
     final tableStr = widget.table ?? 'VIP V1';
     final guestsStr = widget.guests ?? '1';
 
@@ -367,27 +367,22 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
     if (dateStr.contains('•')) {
       final parts = dateStr.split('•');
       cleanDateStr = parts[0].trim();
-      cleanTimeStr = parts[1].trim();
+      cleanTimeStr = parts.length > 1 ? parts[1].trim() : cleanTimeStr;
     }
 
-    final ticketUrl = widget.ticketUrl;
-    final shareText = 'My Digital Ticket on Lunara is Confirmed! 🥳\n\n'
-        'Venue: $venueName\n'
-        'Date: $cleanDateStr • $cleanTimeStr\n'
-        'Table: $tableStr\n'
-        'Guests: $guestsStr\n'
-        'Ticket ID: $ticketIdStr\n'
-        '${ticketUrl != null && ticketUrl.isNotEmpty ? "Official Ticket Pass: $ticketUrl\n" : ""}'
-        '\nLet\'s vibe together! 💜';
+    final hostUser = ApiService.cachedCurrentUser;
+    final cleanHostName = hostUser != null ? '${hostUser.firstName} ${hostUser.lastName}'.trim() : 'Guest User';
 
-    final box = context.findRenderObject() as RenderBox?;
-    // ignore: deprecated_member_use
-    Share.share(
-      shareText,
-      subject: 'My Lunara Ticket',
-      sharePositionOrigin: box != null
-          ? box.localToGlobal(Offset.zero) & box.size
-          : null,
+    LunaraTicketCaptureService.shareTicket(
+      context: context,
+      ticketKey: _ticketKey,
+      ticketCode: ticketIdStr,
+      venueName: venueName,
+      eventDateTime: '$cleanDateStr • $cleanTimeStr',
+      eventType: 'Venue Booking Pass',
+      hostName: cleanHostName,
+      guestCount: '$guestsStr Guests',
+      extraDetails: 'Table $tableStr',
     );
   }
 
@@ -525,9 +520,11 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
     final screenWidth = MediaQuery.of(context).size.width;
     final ticketWidth = screenWidth > 500 ? 420.0 : double.infinity;
 
-    return Container(
-      width: ticketWidth,
-      decoration: BoxDecoration(
+    return RepaintBoundary(
+      key: _ticketKey,
+      child: Container(
+        width: ticketWidth,
+        decoration: BoxDecoration(
         gradient: isDark 
             ? const LinearGradient(
                 begin: Alignment.topLeft,
@@ -1071,6 +1068,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
           ),
         ],
       ),
+      ),
     );
   }
 
@@ -1103,74 +1101,18 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
   }
 
   Future<void> _downloadLocalTicket(BuildContext context) async {
-    setState(() {
-      _isGeneratingPdf = true;
-    });
+    final venueName = widget.venue?['name']?.toString() ?? 'Venue';
+    final displayDate = widget.date ?? 'Event Date';
+    final ticketCode = (widget.ticketId ?? 'BKG-PASS').toUpperCase();
 
-    try {
-      final venueName = widget.venue?['name']?.toString() ?? 'ELARA VELVET';
-      final venueCity = widget.venue?['city']?.toString() ?? 'Unknown City';
-      final venueArea = widget.venue?['area']?.toString() ?? '';
-      final venueAddress = widget.venue?['address']?.toString() ?? '${venueArea.isNotEmpty ? "$venueArea, " : ""}$venueCity';
-      final imageUrl = _getVenueImageUrl();
-
-      final hostUser = ApiService.cachedCurrentUser;
-      final cleanHostName = hostUser != null ? '${hostUser.firstName} ${hostUser.lastName}'.trim() : 'Guest User';
-
-      String displayDate = widget.date ?? 'SAT, OCT 24';
-      String displayTime = widget.time ?? '10:30 PM';
-      if (displayDate.contains('•')) {
-        final parts = displayDate.split('•');
-        displayDate = parts[0].trim();
-        displayTime = parts.length > 1 ? parts[1].trim() : displayTime;
-      }
-
-      final pdfBytes = await TicketPdfService.generateTicketBytes(
-        venueName: venueName,
-        venueAddress: venueAddress,
-        dateStr: displayDate,
-        timeStr: displayTime,
-        table: widget.table ?? 'VIP V1',
-        guests: widget.guests != null ? '${widget.guests} GUESTS' : '6 GUESTS',
-        ticketId: widget.ticketId ?? 'TICKET',
-        status: widget.status ?? (_isTicketExpired() ? 'EXPIRED' : 'CONFIRMED'),
-        hostName: cleanHostName,
-        imageUrl: imageUrl,
-      );
-
-      if (mounted) {
-        if (pdfBytes != null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Ticket downloaded successfully.')),
-          );
-          String sanitizedTicketId = widget.ticketId?.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_') ?? '';
-          if (sanitizedTicketId.isEmpty) {
-            String sanitizedVenue = venueName.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
-            sanitizedTicketId = '${sanitizedVenue}_${DateTime.now().millisecondsSinceEpoch}';
-          }
-          final fileName = 'Lunara_Ticket_$sanitizedTicketId.pdf';
-          
-          // ignore: deprecated_member_use
-          Share.shareXFiles([XFile.fromData(pdfBytes, name: fileName, mimeType: 'application/pdf')], subject: 'My Lunara Ticket');
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to generate PDF.')),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error downloading ticket.')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isGeneratingPdf = false;
-        });
-      }
-    }
+    await LunaraTicketCaptureService.downloadTicket(
+      context: context,
+      ticketKey: _ticketKey,
+      ticketCode: ticketCode,
+      eventType: 'Venue_Booking',
+      venueName: venueName,
+      eventDateTime: displayDate,
+    );
   }
 
   Widget _buildFooter(BuildContext context) {

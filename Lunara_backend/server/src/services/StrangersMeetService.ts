@@ -9,6 +9,7 @@ import { generateTicketForStrangersMeetHelper } from './ticketService';
 import { logger } from '../config/logger';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
+import AuditLog from '../models/AuditLog';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -110,7 +111,6 @@ export class StrangersMeetService {
         );
 
         try {
-            const AuditLog = (await import('../models/AuditLog')).default;
             await AuditLog.logAction({
                 userId,
                 partyPlanId: request.id,
@@ -147,7 +147,7 @@ export class StrangersMeetService {
             throw new Error('Invalid payment signature');
         }
 
-        const ticketId = `LNR-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+        const ticketId = `SM-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
         await request.update({
             paymentStatus: StrangersMeetPaymentStatus.PAID,
@@ -164,12 +164,11 @@ export class StrangersMeetService {
         }
 
         try {
-            const AuditLog = (await import('../models/AuditLog')).default;
             await AuditLog.logAction({
                 userId: request.userId,
                 partyPlanId: request.id,
                 action: 'Stranger Meet Host Deposit Verified',
-                metadata: { razorpay_payment_id, razorpay_order_id }
+                metadata: { razorpay_payment_id, razorpay_order_id, ticketId }
             });
         } catch (_) {}
 
@@ -194,8 +193,16 @@ export class StrangersMeetService {
         const request = await StrangersMeetRequest.findByPk(requestId);
         if (!request) throw new Error('Stranger Meetup not found.');
 
-        if (request.status !== StrangersMeetStatus.APPROVED || request.paymentStatus !== StrangersMeetPaymentStatus.PAID) {
+        if (
+            request.status !== StrangersMeetStatus.APPROVED &&
+            request.status !== StrangersMeetStatus.START_CONFIRMATION_PENDING &&
+            request.status !== StrangersMeetStatus.IN_PROGRESS
+        ) {
             throw new Error('This Stranger Meetup is not active or live for booking.');
+        }
+
+        if (request.paymentStatus !== StrangersMeetPaymentStatus.PAID) {
+            throw new Error('Host deposit payment is pending for this meetup.');
         }
 
         // Count confirmed/paid joiners atomically
@@ -245,7 +252,6 @@ export class StrangersMeetService {
         }
 
         try {
-            const AuditLog = (await import('../models/AuditLog')).default;
             await AuditLog.logAction({
                 userId,
                 partyPlanId: requestId,
@@ -322,7 +328,7 @@ export class StrangersMeetService {
                         updatedAt: new Date().toISOString()
                     });
 
-                    // Live feed update broadcast
+                    // Broadcast single-card update
                     io.emit('live_feed_update', {
                         type: 'strangers_meet_update',
                         entityId,
@@ -339,13 +345,13 @@ export class StrangersMeetService {
                     const User = (await import('../models/User')).default;
                     const Notification = (await import('../models/Notification')).default;
                     const admins = await User.findAll({ where: { role: 'admin' }, attributes: ['id', 'fcmToken'] });
-                    const adminTitle = 'New Strangers Meet Request 🚨';
-                    const adminBody = title;
+                    const adminTitle = title.includes('🚨') ? title : `🚨 Strangers Meet Alert: ${title}`;
+                    const adminBody = body;
 
                     for (const admin of admins) {
                         await Notification.create({
                             recipientUserId: admin.id,
-                            eventType: 'strangers_meet_request_submitted',
+                            eventType: eventType || 'strangers_meet_admin_alert',
                             category: 'bookings' as any,
                             entityType: 'strangers_meet',
                             entityId,
@@ -361,7 +367,7 @@ export class StrangersMeetService {
                             sendPushNotification(admin.fcmToken, {
                                 title: adminTitle,
                                 body: adminBody,
-                                data: { type: 'strangers_meet_request_submitted', entityId }
+                                data: { type: eventType, entityId }
                             }).catch(() => {});
                         }
                     }
@@ -386,6 +392,7 @@ export class StrangersMeetService {
 
     /**
      * Unifies and enriches Stranger Meet notification card into ONE single timeline card
+     * Source of truth for the entire lifecycle in Live Feed
      */
     public static async enrichStrangersMeetNotificationCard(
         meetId: string,
@@ -419,13 +426,22 @@ export class StrangersMeetService {
 
             const now = new Date();
             const eventTime = new Date(request.eventDateTime);
-            const expectedEndTime = request.expectedEndAt ? new Date(request.expectedEndAt) : new Date(eventTime.getTime() + 2 * 60 * 60 * 1000);
-            
-            const isCompleted = request.status === StrangersMeetStatus.COMPLETED || request.settlementStatus === 'settled' || request.settlementStatus === 'paid';
+            const expectedEndTime = request.expectedEndAt
+                ? new Date(request.expectedEndAt)
+                : new Date(eventTime.getTime() + 2 * 60 * 60 * 1000);
+
+            const isCompleted = request.status === StrangersMeetStatus.COMPLETED || request.status === StrangersMeetStatus.SETTLED || request.settlementStatus === 'settled' || request.settlementStatus === 'paid';
             const isAdminConfirmed = request.status === StrangersMeetStatus.ADMIN_CONFIRMED_ENDED;
             const isHostEnded = request.status === StrangersMeetStatus.HOST_CONFIRMED_ENDED;
+            const isEndConfirmationPending = request.status === StrangersMeetStatus.END_CONFIRMATION_PENDING;
             const isInProgress = request.status === StrangersMeetStatus.IN_PROGRESS;
-            const isConfirmed = (request.status === StrangersMeetStatus.APPROVED || isInProgress || isHostEnded || isAdminConfirmed || isCompleted) && request.paymentStatus === StrangersMeetPaymentStatus.PAID;
+            const isStartConfirmationPending = request.status === StrangersMeetStatus.START_CONFIRMATION_PENDING;
+            const isNeedsHostContact = request.status === StrangersMeetStatus.NEEDS_HOST_CONTACT;
+            const isNotStarted = request.status === StrangersMeetStatus.NOT_STARTED;
+            const isCancelled = request.status === StrangersMeetStatus.CANCELLED || request.status === StrangersMeetStatus.REJECTED;
+            const isAdminResolved = request.status === StrangersMeetStatus.ADMIN_RESOLVED;
+
+            const isConfirmed = (request.status === StrangersMeetStatus.APPROVED || isStartConfirmationPending || isInProgress || isEndConfirmationPending || isHostEnded || isAdminConfirmed || isCompleted) && request.paymentStatus === StrangersMeetPaymentStatus.PAID;
             const isHostPaid = request.paymentStatus === StrangersMeetPaymentStatus.PAID;
             const isApproved = request.status === StrangersMeetStatus.APPROVED;
 
@@ -448,28 +464,12 @@ export class StrangersMeetService {
                 });
             };
 
-            // 1. Booking Created
             addStep('Booking Created', true, request.createdAt);
-
-            // 2. Request Sent
-            addStep('Request Sent', isApproved || isConfirmed, request.createdAt);
-
-            // 3. Request Accepted
-            addStep('Request Accepted', isApproved || isConfirmed, request.updatedAt);
-
-            // 4. Booking Confirmed
-            addStep('Booking Confirmed', isConfirmed, request.updatedAt);
-
-            // 5. Started
-            addStep('Meetup Started', isInProgress || isHostEnded || isAdminConfirmed || isCompleted, request.startedAt);
-
-            // 6. Ended
+            addStep('Admin Approved', isApproved || isConfirmed, request.createdAt);
+            addStep('Deposit Paid', isConfirmed, request.updatedAt);
+            addStep('Meetup Started', isInProgress || isEndConfirmationPending || isHostEnded || isAdminConfirmed || isCompleted, request.startedAt);
             addStep('Meetup Ended', isHostEnded || isAdminConfirmed || isCompleted, request.endedAt);
-
-            // 7. Admin Verified
             addStep('Admin Verified', isAdminConfirmed || isCompleted, request.adminConfirmedEndedAt);
-
-            // 8. Settled
             addStep('Settled', isCompleted, request.settlementDate);
 
             let currentStatusText = 'Booking Requested';
@@ -477,31 +477,47 @@ export class StrangersMeetService {
             let secondaryAction: string | null = null;
             let primaryActionUrl: string | null = null;
             let secondaryActionUrl: string | null = null;
-            let countdown = diffStartMs > 0 ? `${diffHours}h ${diffMins}m remaining` : 'Started / Past';
+            let countdown = diffStartMs > 0 ? `${diffHours}h ${diffMins}m remaining` : 'Scheduled time reached';
 
             if (isCompleted) {
-                currentStatusText = 'Meetup Completed • Settled';
-                primaryAction = 'View Details';
-                primaryActionUrl = `/strangers-meet/${request.id}`;
-                countdown = 'Settled';
-            } else if (isAdminConfirmed) {
-                currentStatusText = 'Admin Confirmed • Settlement Pending (Within 24h)';
-                primaryAction = 'Open Chat';
-                primaryActionUrl = `/chat/strangers-meet-${request.id}`;
+                const amountText = request.settlementAmount ? `₹${Number(request.settlementAmount).toFixed(0)}` : 'Completed';
+                currentStatusText = `✓ Meet Completed • Settlement: ${amountText}`;
+                primaryAction = 'View Settlement';
+                primaryActionUrl = `/strangers-meet/${request.id}/settlement`;
                 secondaryAction = 'View Details';
                 secondaryActionUrl = `/strangers-meet/${request.id}`;
+                countdown = 'Settled & Closed';
+            } else if (isAdminConfirmed) {
+                currentStatusText = 'Admin Confirmed • Settlement Processing within 24h';
+                primaryAction = 'View Details';
+                primaryActionUrl = `/strangers-meet/${request.id}`;
+                secondaryAction = 'Open Chat';
+                secondaryActionUrl = `/chat/strangers-meet-${request.id}`;
                 countdown = 'Settlement in progress';
             } else if (isHostEnded) {
                 currentStatusText = 'Meetup Ended • Under Admin Review';
-                primaryAction = 'Open Chat';
-                primaryActionUrl = `/chat/strangers-meet-${request.id}`;
-                secondaryAction = 'View Details';
-                secondaryActionUrl = `/strangers-meet/${request.id}`;
+                primaryAction = 'View Details';
+                primaryActionUrl = `/strangers-meet/${request.id}`;
+                secondaryAction = 'Open Chat';
+                secondaryActionUrl = `/chat/strangers-meet-${request.id}`;
                 countdown = 'Pending Admin Review';
+            } else if (isEndConfirmationPending) {
+                currentStatusText = 'End Confirmation Required';
+                countdown = 'Expected end time reached';
+                if (isHost) {
+                    primaryAction = 'Yes, Ended';
+                    primaryActionUrl = `/strangers-meet/${request.id}/confirm-ended`;
+                    secondaryAction = 'Still Going';
+                    secondaryActionUrl = `/strangers-meet/${request.id}/extend`;
+                } else {
+                    primaryAction = 'Open Chat';
+                    primaryActionUrl = `/chat/strangers-meet-${request.id}`;
+                }
             } else if (isInProgress) {
-                currentStatusText = diffEndMs > 0 
-                    ? `In Progress • ${endDiffHours}h ${endDiffMins}m remaining`
-                    : 'In Progress • Ending time reached';
+                const startedFormatted = request.startedAt
+                    ? new Date(request.startedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+                    : '';
+                currentStatusText = `✓ Strangers Meet Started • ${startedFormatted}`;
                 countdown = diffEndMs > 0 ? `${endDiffHours}h ${endDiffMins}m remaining` : 'Ending time reached';
                 if (isHost) {
                     primaryAction = 'End Meetup';
@@ -514,37 +530,59 @@ export class StrangersMeetService {
                     secondaryAction = 'View Ticket';
                     secondaryActionUrl = `/strangers-meet/${request.id}/ticket`;
                 }
+            } else if (isStartConfirmationPending) {
+                currentStatusText = 'Start Confirmation Required';
+                countdown = 'Scheduled Time Reached';
+                if (isHost) {
+                    primaryAction = 'Yes, Started';
+                    primaryActionUrl = `/strangers-meet/${request.id}/start`;
+                    secondaryAction = 'Not Started';
+                    secondaryActionUrl = `/strangers-meet/${request.id}/not-started`;
+                } else {
+                    primaryAction = 'Open Chat';
+                    primaryActionUrl = `/chat/strangers-meet-${request.id}`;
+                }
+            } else if (isNeedsHostContact) {
+                currentStatusText = 'Action Required: No host confirmation within 24h';
+                countdown = 'Under Admin Investigation';
+                if (isHost) {
+                    primaryAction = 'Update Status';
+                    primaryActionUrl = `/strangers-meet/${request.id}/manual-status`;
+                } else {
+                    primaryAction = 'View Details';
+                    primaryActionUrl = `/strangers-meet/${request.id}`;
+                }
+            } else if (isNotStarted) {
+                currentStatusText = 'Meetup Not Started';
+                countdown = 'Closed';
+                primaryAction = 'View Details';
+                primaryActionUrl = `/strangers-meet/${request.id}`;
+            } else if (isCancelled) {
+                currentStatusText = 'Meetup Cancelled';
+                countdown = 'Cancelled';
+                primaryAction = 'View Details';
+                primaryActionUrl = `/strangers-meet/${request.id}`;
+            } else if (isAdminResolved) {
+                currentStatusText = `Admin Resolved: ${request.adminResolution || 'Completed'}`;
+                countdown = 'Resolved';
+                primaryAction = 'View Details';
+                primaryActionUrl = `/strangers-meet/${request.id}`;
             } else if (isConfirmed) {
                 if (diffStartMs <= 0) {
-                    currentStatusText = isHost ? 'Start Time Reached • Confirm Start' : 'Meetup Time Reached';
+                    currentStatusText = isHost ? 'Start Confirmation Required' : 'Meetup Time Reached';
                     if (isHost) {
-                        primaryAction = 'Start Meetup';
+                        primaryAction = 'Yes, Started';
                         primaryActionUrl = `/strangers-meet/${request.id}/start`;
+                        secondaryAction = 'Not Started';
+                        secondaryActionUrl = `/strangers-meet/${request.id}/not-started`;
                     } else {
                         primaryAction = 'Open Chat';
                         primaryActionUrl = `/chat/strangers-meet-${request.id}`;
                     }
                     countdown = 'Ready to Start';
-                } else if (diffStartMs <= 30 * 60 * 1000) {
-                    currentStatusText = 'Time to leave for your Stranger Meet';
-                    primaryAction = 'Open Chat';
-                    primaryActionUrl = `/chat/strangers-meet-${request.id}`;
-                    secondaryAction = 'View Ticket';
-                    secondaryActionUrl = `/strangers-meet/${request.id}/ticket`;
-                } else if (diffStartMs <= 60 * 60 * 1000) {
-                    currentStatusText = 'Starts in 1 Hour';
-                    primaryAction = 'Open Chat';
-                    primaryActionUrl = `/chat/strangers-meet-${request.id}`;
-                    secondaryAction = 'View Ticket';
-                    secondaryActionUrl = `/strangers-meet/${request.id}/ticket`;
-                } else if (diffStartMs <= 2 * 60 * 60 * 1000) {
-                    currentStatusText = 'Starts in 2 Hours';
-                    primaryAction = 'Open Chat';
-                    primaryActionUrl = `/chat/strangers-meet-${request.id}`;
-                    secondaryAction = 'View Ticket';
-                    secondaryActionUrl = `/strangers-meet/${request.id}/ticket`;
                 } else {
-                    currentStatusText = 'Booking Confirmed • Chat Active';
+                    currentStatusText = 'Upcoming Strangers Meet';
+                    countdown = `Starts in ${diffHours}h ${diffMins}m`;
                     primaryAction = 'Open Chat';
                     primaryActionUrl = `/chat/strangers-meet-${request.id}`;
                     secondaryAction = 'View Ticket';
@@ -557,9 +595,9 @@ export class StrangersMeetService {
                         primaryAction = 'Pay Deposit';
                         primaryActionUrl = `/strangers-meet/${request.id}/pay-deposit`;
                     } else {
-                        currentStatusText = 'Host Reviewing Joiners';
-                        primaryAction = 'Review Joiners';
-                        primaryActionUrl = `/strangers-meet/${request.id}/joiners`;
+                        currentStatusText = 'Accepting Participants';
+                        primaryAction = 'View Meet';
+                        primaryActionUrl = `/strangers-meet/${request.id}`;
                     }
                 } else {
                     if (userJoiner?.status === 'accepted' && userJoiner?.paymentStatus !== 'paid') {
@@ -572,7 +610,7 @@ export class StrangersMeetService {
                     }
                 }
             } else {
-                currentStatusText = 'Under Host Review';
+                currentStatusText = 'Awaiting Admin Approval';
                 primaryAction = 'Pending Approval';
             }
 
@@ -634,7 +672,15 @@ export class StrangersMeetService {
                 ADD COLUMN IF NOT EXISTS ended_confirmed_at TIMESTAMP WITH TIME ZONE,
                 ADD COLUMN IF NOT EXISTS admin_confirmed_ended_at TIMESTAMP WITH TIME ZONE,
                 ADD COLUMN IF NOT EXISTS admin_confirmed_by UUID,
-                ADD COLUMN IF NOT EXISTS settlement_overdue BOOLEAN DEFAULT FALSE;
+                ADD COLUMN IF NOT EXISTS settlement_overdue BOOLEAN DEFAULT FALSE,
+                ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMP WITH TIME ZONE,
+                ADD COLUMN IF NOT EXISTS escalation_reason TEXT,
+                ADD COLUMN IF NOT EXISTS admin_resolution VARCHAR(100),
+                ADD COLUMN IF NOT EXISTS admin_resolution_notes TEXT,
+                ADD COLUMN IF NOT EXISTS admin_resolved_at TIMESTAMP WITH TIME ZONE,
+                ADD COLUMN IF NOT EXISTS admin_resolved_by UUID,
+                ADD COLUMN IF NOT EXISTS host_not_started_at TIMESTAMP WITH TIME ZONE,
+                ADD COLUMN IF NOT EXISTS host_not_started_reason TEXT;
             `);
         } catch (err) {
             logger.warn('[StrangersMeetService] ensureStrangersMeetLifecycleColumns warning:', err);
@@ -670,7 +716,8 @@ export class StrangersMeetService {
         }
 
         if (request.status === StrangersMeetStatus.IN_PROGRESS && request.startedAt) {
-            throw new Error('Meetup has already started.');
+            logger.info(`[StrangersMeetService] Meet ${meetId} already started. Idempotent return.`);
+            return request;
         }
 
         let finalDuration = durationHours || 1;
@@ -693,6 +740,13 @@ export class StrangersMeetService {
             expectedEndAt: expectedEnd,
         });
 
+        await AuditLog.logAction({
+            userId: hostUserId,
+            partyPlanId: meetId,
+            action: 'Strangers Meet Started',
+            metadata: { startedAt: now, durationHours: finalDuration, expectedEndAt: expectedEnd }
+        });
+
         await this.emitNotification({
             recipientUserId: hostUserId,
             entityId: meetId,
@@ -701,6 +755,50 @@ export class StrangersMeetService {
             body: `Your meetup is active! Expected duration: ${finalDuration >= 1 ? finalDuration.toFixed(0) + ' hour(s)' : finalDuration.toFixed(1) + ' hours'}.`,
             notifyAdmins: false,
             metadata: { meetId, startedAt: now, expectedEndAt: expectedEnd }
+        });
+
+        return request;
+    }
+
+    /**
+     * Host marks meetup as NOT STARTED
+     */
+    public static async hostReportNotStarted(
+        meetId: string,
+        hostUserId: string,
+        reason?: string
+    ): Promise<StrangersMeetRequest> {
+        await this.ensureStrangersMeetLifecycleColumns();
+        const request = await StrangersMeetRequest.findByPk(meetId);
+        if (!request) throw new Error('Strangers Meet not found');
+        if (request.userId !== hostUserId) throw new Error('Only the host can update status');
+
+        if (request.status === StrangersMeetStatus.IN_PROGRESS || request.status === StrangersMeetStatus.COMPLETED) {
+            throw new Error('Cannot mark as not started after meetup has already started or completed.');
+        }
+
+        const now = new Date();
+        await request.update({
+            status: StrangersMeetStatus.NOT_STARTED,
+            hostNotStartedAt: now,
+            hostNotStartedReason: reason || 'Host indicated meetup did not take place',
+        });
+
+        await AuditLog.logAction({
+            userId: hostUserId,
+            partyPlanId: meetId,
+            action: 'Strangers Meet Marked Not Started',
+            metadata: { hostNotStartedAt: now, reason }
+        });
+
+        await this.emitNotification({
+            recipientUserId: hostUserId,
+            entityId: meetId,
+            eventType: 'strangers_meet_not_started',
+            title: '⚠️ Strangers Meet Closed',
+            body: 'You indicated that this Strangers Meet did not take place.',
+            notifyAdmins: true,
+            metadata: { meetId, status: StrangersMeetStatus.NOT_STARTED }
         });
 
         return request;
@@ -720,7 +818,7 @@ export class StrangersMeetService {
         if (!request) throw new Error('Strangers Meet not found');
         if (request.userId !== hostUserId) throw new Error('Only the host can extend this meetup');
 
-        if (request.status !== StrangersMeetStatus.IN_PROGRESS) {
+        if (request.status !== StrangersMeetStatus.IN_PROGRESS && request.status !== StrangersMeetStatus.END_CONFIRMATION_PENDING) {
             throw new Error('Only in-progress meetups can be extended.');
         }
 
@@ -741,6 +839,7 @@ export class StrangersMeetService {
         const totalDuration = (newExpectedEnd.getTime() - startRef.getTime()) / (1000 * 60 * 60);
 
         await request.update({
+            status: StrangersMeetStatus.IN_PROGRESS,
             expectedEndAt: newExpectedEnd,
             durationHours: Number(totalDuration.toFixed(2)),
         });
@@ -770,8 +869,13 @@ export class StrangersMeetService {
         if (!request) throw new Error('Strangers Meet not found');
         if (request.userId !== hostUserId) throw new Error('Only the host can confirm the end of this meetup');
 
-        if (request.status === StrangersMeetStatus.HOST_CONFIRMED_ENDED || request.status === StrangersMeetStatus.ADMIN_CONFIRMED_ENDED || request.status === StrangersMeetStatus.COMPLETED) {
-            throw new Error('Meetup end has already been confirmed.');
+        if (
+            request.status === StrangersMeetStatus.HOST_CONFIRMED_ENDED ||
+            request.status === StrangersMeetStatus.ADMIN_CONFIRMED_ENDED ||
+            request.status === StrangersMeetStatus.COMPLETED
+        ) {
+            logger.info(`[StrangersMeetService] Meet ${meetId} already ended. Idempotent return.`);
+            return request;
         }
 
         const now = new Date();
@@ -780,6 +884,13 @@ export class StrangersMeetService {
             endedAt: now,
             endedConfirmedBy: hostUserId,
             endedConfirmedAt: now,
+        });
+
+        await AuditLog.logAction({
+            userId: hostUserId,
+            partyPlanId: meetId,
+            action: 'Strangers Meet Ended by Host',
+            metadata: { endedAt: now }
         });
 
         await this.emitNotification({
@@ -806,10 +917,8 @@ export class StrangersMeetService {
         const request = await StrangersMeetRequest.findByPk(meetId);
         if (!request) throw new Error('Strangers Meet not found');
 
-        if (request.status !== StrangersMeetStatus.HOST_CONFIRMED_ENDED && request.status !== StrangersMeetStatus.IN_PROGRESS) {
-            if (request.status === StrangersMeetStatus.ADMIN_CONFIRMED_ENDED || request.status === StrangersMeetStatus.COMPLETED) {
-                throw new Error('Meetup has already been confirmed by admin.');
-            }
+        if (request.status === StrangersMeetStatus.ADMIN_CONFIRMED_ENDED || request.status === StrangersMeetStatus.COMPLETED) {
+            return request;
         }
 
         const now = new Date();
@@ -820,7 +929,14 @@ export class StrangersMeetService {
             settlementStatus: 'settlement_pending',
         });
 
-        // 21. Host Notification after Admin confirmation: 24 hours window
+        await AuditLog.logAction({
+            userId: adminId,
+            partyPlanId: meetId,
+            action: 'Strangers Meet End Confirmed by Admin',
+            metadata: { adminConfirmedEndedAt: now }
+        });
+
+        // Host Notification after Admin confirmation: 24 hours window
         await this.emitNotification({
             recipientUserId: request.userId,
             entityId: meetId,
@@ -832,6 +948,116 @@ export class StrangersMeetService {
         });
 
         return request;
+    }
+
+    /**
+     * Admin resolves 24-hour escalation case
+     */
+    public static async adminResolveEscalation(
+        meetId: string,
+        adminId: string,
+        resolution: string,
+        resolutionNotes?: string
+    ): Promise<StrangersMeetRequest> {
+        await this.ensureStrangersMeetLifecycleColumns();
+        const request = await StrangersMeetRequest.findByPk(meetId);
+        if (!request) throw new Error('Strangers Meet not found');
+
+        const now = new Date();
+        let newStatus = StrangersMeetStatus.ADMIN_RESOLVED;
+
+        if (resolution === 'meet_completed') {
+            newStatus = StrangersMeetStatus.ADMIN_CONFIRMED_ENDED;
+        } else if (resolution === 'meet_cancelled') {
+            newStatus = StrangersMeetStatus.CANCELLED;
+        } else if (resolution === 'not_started') {
+            newStatus = StrangersMeetStatus.NOT_STARTED;
+        }
+
+        await request.update({
+            status: newStatus,
+            adminResolution: resolution,
+            adminResolutionNotes: resolutionNotes || undefined,
+            adminResolvedAt: now,
+            adminResolvedBy: adminId,
+            settlementStatus: resolution === 'meet_completed' ? 'settlement_pending' : request.settlementStatus,
+        });
+
+        await AuditLog.logAction({
+            userId: adminId,
+            partyPlanId: meetId,
+            action: 'Strangers Meet Escalation Resolved by Admin',
+            metadata: { resolution, resolutionNotes, resolvedAt: now }
+        });
+
+        await this.emitNotification({
+            recipientUserId: request.userId,
+            entityId: meetId,
+            eventType: 'strangers_meet_escalation_resolved',
+            title: '🛡️ Strangers Meet Resolution',
+            body: `Admin has reviewed and resolved your meetup: ${resolution.replace(/_/g, ' ')}.`,
+            notifyAdmins: false,
+            metadata: { meetId, resolution }
+        });
+
+        return request;
+    }
+
+    /**
+     * Automatically calculates settlement breakdown
+     */
+    public static async calculateSettlementSummary(meetId: string): Promise<Record<string, any>> {
+        const request = await StrangersMeetRequest.findByPk(meetId, {
+            include: [{ model: StrangersMeetJoiner, as: 'joiners' }]
+        });
+        if (!request) throw new Error('Strangers Meet not found');
+
+        const reqAny = request as any;
+        const joiners: any[] = reqAny.joiners || [];
+        const paidJoiners = joiners.filter((j: any) => j.status === 'paid' || j.paymentStatus === 'paid');
+        const totalSeats = request.numberOfPersons;
+        const paidSlots = paidJoiners.length;
+        const unfilledSeats = Math.max(0, totalSeats - paidSlots);
+        const platformDepositTotal = Number(request.paymentAmount || 0);
+        const platformChargePerSeat = request.platformChargePerSeat ? Number(request.platformChargePerSeat) :
+            (platformDepositTotal > 0 && totalSeats > 0 ? platformDepositTotal / totalSeats : 0);
+        const hostChargePerHead = Number(request.chargesPerHead || 0);
+        const hostRevenueFromParticipants = paidSlots * hostChargePerHead;
+        const unfilledDepositRefund = unfilledSeats * platformChargePerSeat;
+        const calculatedSettlement = unfilledDepositRefund + hostRevenueFromParticipants;
+
+        let maskedPayoutDetails = '';
+        if (request.upiId) {
+            maskedPayoutDetails = `UPI: ${request.upiId}`;
+        } else if (request.accountNumber) {
+            const acct = request.accountNumber;
+            const maskedAcct = acct.length > 4 ? `••••${acct.substring(acct.length - 4)}` : acct;
+            maskedPayoutDetails = `Bank: ${request.bankName || 'A/C'} (${maskedAcct})`;
+        } else if (request.bankDetails) {
+            maskedPayoutDetails = request.bankDetails;
+        }
+
+        return {
+            meetId: request.id,
+            totalSeats,
+            paidSlots,
+            unfilledSeats,
+            platformDepositTotal,
+            platformChargePerSeat,
+            hostChargePerHead,
+            grossCollection: hostRevenueFromParticipants,
+            unfilledDepositRefund,
+            calculatedSettlement,
+            maskedPayoutDetails,
+            upiId: request.upiId || null,
+            upiNumber: request.upiNumber || null,
+            accountNumber: request.accountNumber ? `••••${request.accountNumber.slice(-4)}` : null,
+            bankName: request.bankName || null,
+            ifscCode: request.ifscCode || null,
+            accountHolderName: request.accountHolderName || null,
+            status: request.status,
+            settlementStatus: request.settlementStatus || 'none',
+        };
     }
 
     /**
@@ -851,26 +1077,18 @@ export class StrangersMeetService {
         if (!request) throw new Error('Strangers Meet not found');
 
         if (request.settlementStatus === 'paid' || request.settlementStatus === 'settled') {
-            throw new Error('This meetup has already been settled.');
+            logger.info(`[StrangersMeetService] Meet ${meetId} already settled. Idempotent return.`);
+            return request;
         }
 
         if (!paymentReference || !paymentReference.trim()) {
             throw new Error('Payment reference is required.');
         }
 
-        const reqAny = request as any;
-        const joiners: any[] = reqAny.joiners || [];
-        const paidJoiners = joiners.filter((j: any) => j.status === 'paid' || j.paymentStatus === 'paid');
-        const totalSeats = request.numberOfPersons;
-        const paidSlots = paidJoiners.length;
-        const unfilledSeats = Math.max(0, totalSeats - paidSlots);
-        const platformDepositTotal = Number(request.paymentAmount || 0);
-        const platformChargePerSeat = request.platformChargePerSeat ? Number(request.platformChargePerSeat) :
-            (platformDepositTotal > 0 && totalSeats > 0 ? platformDepositTotal / totalSeats : 0);
-        const hostChargePerHead = Number(request.chargesPerHead || 0);
-        const hostRevenueFromParticipants = paidSlots * hostChargePerHead;
-        const calculatedSettlement = (unfilledSeats * platformChargePerSeat) + hostRevenueFromParticipants;
-        const finalSettlementAmount = (amount !== undefined && amount !== null && !isNaN(amount)) ? Number(amount) : calculatedSettlement;
+        const summary = await this.calculateSettlementSummary(meetId);
+        const finalSettlementAmount = (amount !== undefined && amount !== null && !isNaN(amount))
+            ? Number(amount)
+            : summary.calculatedSettlement;
 
         const now = new Date();
         await request.update({
@@ -884,21 +1102,21 @@ export class StrangersMeetService {
             adminConfirmedBy: adminId,
         });
 
-        // Mask payout details
-        let maskedPayoutDetails = '';
-        if (request.upiId) {
-            maskedPayoutDetails = `UPI: ${request.upiId}`;
-        } else if (request.accountNumber) {
-            const acct = request.accountNumber;
-            const maskedAcct = acct.length > 4 ? `XXXXXX${acct.substring(acct.length - 4)}` : acct;
-            maskedPayoutDetails = `Bank: ${request.bankName || ''} (${maskedAcct})`;
-        } else if (request.bankDetails) {
-            maskedPayoutDetails = request.bankDetails;
-        }
+        await AuditLog.logAction({
+            userId: adminId,
+            partyPlanId: meetId,
+            action: 'Strangers Meet Settlement Marked Settled by Admin',
+            metadata: {
+                settlementAmount: finalSettlementAmount,
+                paymentReference,
+                settlementMethod,
+                settledAt: now,
+            }
+        });
 
         const formattedDate = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
-        // 29. Host Final Notification after amount settled
+        // Host Final Notification after amount settled - updates existing card in-place
         await this.emitNotification({
             recipientUserId: request.userId,
             entityId: meetId,
@@ -908,12 +1126,12 @@ export class StrangersMeetService {
             notifyAdmins: false,
             metadata: {
                 meetId,
-                totalAmount: hostRevenueFromParticipants,
+                totalAmount: summary.grossCollection,
                 settledAmount: finalSettlementAmount,
                 settlementMethod,
                 paymentReference,
                 settlementDate: now.toISOString(),
-                maskedPayoutDetails,
+                maskedPayoutDetails: summary.maskedPayoutDetails,
             }
         });
 

@@ -2166,7 +2166,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         (myRequest != null && (myRequest['status'] == 'confirmed' || myRequest['status'] == 'paid' || myRequest['joinerPaymentStatus'] == 'paid')) ||
         (acceptedJoinerRequest != null && (acceptedJoinerRequest['status'] == 'confirmed' || acceptedJoinerRequest['status'] == 'paid' || acceptedJoinerRequest['joinerPaymentStatus'] == 'paid'));
 
-    String countdownLabel = 'Pay Deposit';
+    String countdownLabel = '30m';
+    String timeRemainingText = '';
     bool isPaymentExpired = false;
     final rawDeadline = myRequest?['paymentDeadlineAt'] ??
         myRequest?['paymentTimeoutAt'] ??
@@ -2179,11 +2180,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         final remaining = deadline.difference(DateTime.now());
         if (remaining.isNegative) {
           isPaymentExpired = true;
-          countdownLabel = 'Pay Deposit (Expired)';
+          countdownLabel = 'Expired';
+          timeRemainingText = 'Expired';
         } else {
           final m = remaining.inMinutes;
           final s = remaining.inSeconds % 60;
-          countdownLabel = 'Pay Deposit (${m}m ${s.toString().padLeft(2, "0")}s)';
+          countdownLabel = '${m}m ${s.toString().padLeft(2, "0")}s';
+          timeRemainingText = '${m}m ${s.toString().padLeft(2, "0")}s remaining';
         }
       } catch (_) {}
     }
@@ -2623,12 +2626,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         title = '✅ Approved! Pay Safety Deposit';
         badge = 'ACTION REQUIRED';
         accent = const Color(0xFF8B5CF6);
-        body = '$hostName accepted your request! Pay your safety deposit within $countdownLabel to confirm match.';
-        statusSummary = countdownLabel;
+        body = '$hostName accepted your request! Pay your safety deposit within ${timeRemainingText.isNotEmpty ? timeRemainingText : countdownLabel} to confirm match.';
+        statusSummary = timeRemainingText.isNotEmpty ? timeRemainingText : 'Window: $countdownLabel';
 
         actionsList = [
           NotificationAction(
-            label: 'Pay Deposit (₹99) • $countdownLabel',
+            label: isPaymentExpired
+                ? 'Payment Window Expired'
+                : 'Pay Deposit (₹99) • $countdownLabel',
             icon: Icons.payment_rounded,
             isPrimary: true,
             onTap: () {
@@ -2938,20 +2943,187 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final DateTime? expectedEnd = rawExpectedEnd != null ? DateTime.tryParse(rawExpectedEnd.toString())?.toLocal() : null;
     final String endFormatted = expectedEnd != null ? DateFormat('hh:mm a').format(expectedEnd) : '';
 
-    if (meetStatus == 'in_progress') {
-      title = '🟢 Stranger Meet In Progress';
-      badge = 'LIVE / IN PROGRESS';
-      accent = const Color(0xFF3B82F6);
-      body = endFormatted.isNotEmpty
-          ? '🟢 Meetup is in progress at $venueName • Until $endFormatted'
-          : '🟢 Meetup is in progress at $venueName!';
-      statusSummary = 'Live • In Progress';
+    if (meetStatus == 'start_confirmation_pending') {
+      title = '🟢 START CONFIRMATION REQUIRED';
+      badge = 'ACTION REQUIRED';
+      accent = const Color(0xFF8B5CF6);
+      body = 'Scheduled: $formattedDateTime at $venueName. Has your meetup started?';
+      statusSummary = 'Start Confirmation Required';
 
       if (isHost) {
         userRoleLabel = '👑 Your Stranger Meet';
         actionsList = [
           NotificationAction(
-            label: 'End / Extend',
+            label: 'Started',
+            icon: Icons.play_circle_fill_rounded,
+            isPrimary: true,
+            onTap: () {
+              StrangersMeetStartDialog.show(
+                context,
+                meetId: meetId,
+                subject: meetMap['subject']?.toString() ?? 'Strangers Meet',
+                venueName: venueName,
+                eventDateTime: parsedEventDate ?? DateTime.now(),
+                onStarted: () => _loadFeed(),
+              );
+            },
+          ),
+          NotificationAction(
+            label: 'Not Started',
+            icon: Icons.cancel_outlined,
+            isPrimary: false,
+            color: Colors.redAccent,
+            onTap: () => _handleMarkStrangersMeetNotStarted(meetId),
+          ),
+        ];
+      } else {
+        userRoleLabel = 'Hosted by';
+        partnerUser = hostCreator.isNotEmpty ? hostCreator : null;
+        partnerRoleLabel = 'Host:';
+        final otherId = meetHostId.isNotEmpty ? meetHostId : (hostCreator['id'] ?? '');
+
+        actionsList = [
+          NotificationAction(
+            label: 'Chat',
+            icon: Icons.chat_bubble_rounded,
+            isPrimary: true,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ChatScreen(
+                  user: {
+                    'id': otherId,
+                    'firstName': hostCreator['firstName'] ?? hostName,
+                    'lastName': hostCreator['lastName'] ?? '',
+                    'profilePhotoUrl': hostPhoto,
+                  },
+                ),
+              ),
+            ),
+          ),
+        ];
+      }
+    } else if (meetStatus == 'end_confirmation_pending') {
+      title = '🏁 END CONFIRMATION REQUIRED';
+      badge = 'CONFIRM END';
+      accent = const Color(0xFFF59E0B);
+      body = 'Expected end time ($endFormatted) reached. Has your meetup ended?';
+      statusSummary = 'End Confirmation Required';
+
+      if (isHost) {
+        userRoleLabel = '👑 Your Stranger Meet';
+        actionsList = [
+          NotificationAction(
+            label: 'Yes, Ended',
+            icon: Icons.check_circle_rounded,
+            isPrimary: true,
+            onTap: () => _handleConfirmStrangersMeetEndedDirect(meetId),
+          ),
+          NotificationAction(
+            label: 'Still Going',
+            icon: Icons.more_time_rounded,
+            isPrimary: false,
+            color: const Color(0xFFF59E0B),
+            onTap: () {
+              StrangersMeetEndDialog.show(
+                context,
+                meetId: meetId,
+                subject: meetMap['subject']?.toString() ?? 'Strangers Meet',
+                venueName: venueName,
+                expectedEndAt: expectedEnd,
+                onEnded: () => _loadFeed(),
+                onExtended: () => _loadFeed(),
+              );
+            },
+          ),
+        ];
+      } else {
+        userRoleLabel = 'Hosted by';
+        partnerUser = hostCreator.isNotEmpty ? hostCreator : null;
+        partnerRoleLabel = 'Host:';
+        final otherId = meetHostId.isNotEmpty ? meetHostId : (hostCreator['id'] ?? '');
+
+        actionsList = [
+          NotificationAction(
+            label: 'Chat',
+            icon: Icons.chat_bubble_rounded,
+            isPrimary: true,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ChatScreen(
+                  user: {
+                    'id': otherId,
+                    'firstName': hostCreator['firstName'] ?? hostName,
+                    'lastName': hostCreator['lastName'] ?? '',
+                    'profilePhotoUrl': hostPhoto,
+                  },
+                ),
+              ),
+            ),
+          ),
+        ];
+      }
+    } else if (meetStatus == 'needs_host_contact') {
+      title = '⚠️ ACTION REQUIRED';
+      badge = 'STATUS UNRESOLVED';
+      accent = const Color(0xFFEF4444);
+      body = isHost
+          ? 'No start/end confirmation was received within 24h. Please update your status or our team will contact you.'
+          : 'This meetup is currently under investigation by Lunara Admin.';
+      statusSummary = 'Needs Host Contact';
+
+      if (isHost) {
+        userRoleLabel = '👑 Your Stranger Meet';
+        actionsList = [
+          NotificationAction(
+            label: 'Update Status',
+            icon: Icons.edit_calendar_rounded,
+            isPrimary: true,
+            onTap: () {
+              StrangersMeetStartDialog.show(
+                context,
+                meetId: meetId,
+                subject: meetMap['subject']?.toString() ?? 'Strangers Meet',
+                venueName: venueName,
+                eventDateTime: parsedEventDate ?? DateTime.now(),
+                onStarted: () => _loadFeed(),
+              );
+            },
+          ),
+          NotificationAction(
+            label: 'Not Started',
+            icon: Icons.cancel_outlined,
+            isPrimary: false,
+            color: Colors.redAccent,
+            onTap: () => _handleMarkStrangersMeetNotStarted(meetId),
+          ),
+        ];
+      }
+    } else if (meetStatus == 'not_started') {
+      title = '❌ Meetup Not Started';
+      badge = 'NOT STARTED';
+      accent = const Color(0xFF6B7280);
+      body = 'This Strangers Meet at $venueName did not take place.';
+      statusSummary = 'Not Started • Closed';
+      actionsList = null;
+    } else if (meetStatus == 'in_progress') {
+      final startedFormatted = meetMap['startedAt'] != null
+          ? DateFormat('hh:mm a').format(DateTime.tryParse(meetMap['startedAt'].toString())?.toLocal() ?? DateTime.now())
+          : '';
+      title = '🟢 Stranger Meet In Progress';
+      badge = 'LIVE / IN PROGRESS';
+      accent = const Color(0xFF3B82F6);
+      body = startedFormatted.isNotEmpty
+          ? 'Started at $startedFormatted • Expected end: ${endFormatted.isNotEmpty ? endFormatted : 'TBD'}'
+          : 'Meetup is live at $venueName!';
+      statusSummary = 'Started • In Progress';
+
+      if (isHost) {
+        userRoleLabel = '👑 Your Stranger Meet';
+        actionsList = [
+          NotificationAction(
+            label: 'End Meet',
             icon: Icons.timer_outlined,
             isPrimary: true,
             color: const Color(0xFFF59E0B),
@@ -3071,12 +3243,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           },
         ),
       ];
-    } else if (meetStatus == 'completed') {
+    } else if (meetStatus == 'completed' || meetStatus == 'settled') {
+      final amount = meetMap['settlementAmount'] ?? meetMap['settlement_amount'];
+      final String settlementStr = amount != null ? '₹${double.tryParse(amount.toString())?.toStringAsFixed(0) ?? amount}' : '';
       title = '✓ Meetup Completed & Settled';
-      badge = 'COMPLETED & SETTLED';
+      badge = 'SETTLED & COMPLETED';
       accent = const Color(0xFF10B981);
       body = isHost
-          ? 'Your host payout has been settled to your account.'
+          ? (settlementStr.isNotEmpty ? 'Host payout of $settlementStr has been settled to your account.' : 'Your host payout has been settled.')
           : 'This Stranger Meet was successfully completed.';
       statusSummary = 'Settled & Completed';
       userRoleLabel = isHost ? '👑 Your Stranger Meet' : 'Hosted by';
@@ -4504,6 +4678,90 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       razorpay.open(options);
     } catch (e) {
       debugPrint('Error opening Razorpay for Host Payment: $e');
+    }
+  }
+
+  Future<void> _handleConfirmStrangersMeetEndedDirect(String meetId) async {
+    try {
+      await ApiService.confirmStrangersMeetEnded(meetId);
+      if (mounted) {
+        _loadFeed();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Meetup marked as ended. Admin will verify settlement.', style: TextStyle(color: Colors.white)),
+            backgroundColor: Color(0xFF1E1E2E),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceAll('Exception: ', ''), style: const TextStyle(color: Colors.white)),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleMarkStrangersMeetNotStarted(String meetId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1B2E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Mark as Not Started?',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 16),
+        ),
+        content: const Text(
+          'Are you sure this Strangers Meet did not take place? This will close the meetup.',
+          style: TextStyle(color: Colors.white70, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white60)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Yes, Not Started', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await ApiService.reportStrangersMeetNotStarted(meetId);
+      if (mounted) {
+        _loadFeed();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Strangers Meet marked as not started.', style: TextStyle(color: Colors.white)),
+            backgroundColor: Color(0xFF1E1E2E),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceAll('Exception: ', ''), style: const TextStyle(color: Colors.white)),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 }

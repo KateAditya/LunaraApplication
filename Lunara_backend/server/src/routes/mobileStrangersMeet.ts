@@ -21,6 +21,7 @@ import {
     startMeetup,
     extendMeetup,
     confirmEndedMeetup,
+    postNotStarted,
 } from '../controllers/strangersMeetController';
 
 const router = Router();
@@ -282,6 +283,21 @@ router.post(
         validate,
     ],
     confirmEndedMeetup
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/strangers-meet/:id/not-started
+// Host marks meetup as not started
+// ─────────────────────────────────────────────────────────────────────────────
+router.post(
+    '/:id/not-started',
+    [
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
+        body('reason').optional().isString(),
+        validate,
+    ],
+    postNotStarted
 );
 
 export default router;

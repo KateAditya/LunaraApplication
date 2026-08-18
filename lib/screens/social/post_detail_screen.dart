@@ -1776,9 +1776,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Widget _buildPartyPlanDetails() {
     final String firstName = widget.post['firstName'] ?? 'Lunara';
     final String lastName = widget.post['lastName'] ?? 'User';
-    final String venueName = widget.post['venue'] ?? 'Unknown Venue';
+    final String rawVenueName = widget.post['venue'] ?? widget.venue?['name'] ?? 'Unknown Venue';
 
-    final String content = widget.post['content'] ?? '';
+    final bool isMyPost =
+        widget.post['userId']?.toString() == ApiService.currentUserId ||
+        (widget.post['user'] != null &&
+            widget.post['user']['id']?.toString() == ApiService.currentUserId);
+    final bool hasConfirmedBooking = widget.post['hasConfirmedBooking'] == true ||
+        widget.post['isMatched'] == true ||
+        _alreadyRequested && (_meetRequest?.joiners != null);
+    final bool isSecretVenue = widget.post['showVenueDetails'] == false || widget.venue?['showVenueDetails'] == false;
+    final bool hideVenue = isSecretVenue && !isMyPost && !hasConfirmedBooking;
+
+    final String venueName = hideVenue ? 'SECRET VENUE 🔒' : rawVenueName;
+
+    String content = widget.post['content'] ?? widget.post['message'] ?? '';
+    if (hideVenue && rawVenueName.isNotEmpty && rawVenueName != 'Unknown Venue') {
+      content = content.replaceAll(RegExp(RegExp.escape(rawVenueName), caseSensitive: false), 'a Secret Venue 🔒');
+    }
     final String time = widget.post['time'] ?? '';
 
     final String? photo =
@@ -1791,10 +1806,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ? widget.post['user']['profilePhotoUrl']
             : null) ??
         widget.post['image'];
-    final bool isMyPost =
-        widget.post['userId']?.toString() == ApiService.currentUserId ||
-        (widget.post['user'] != null &&
-            widget.post['user']['id']?.toString() == ApiService.currentUserId);
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -1850,14 +1861,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             Container(
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: LunaraTheme.electricViolet.withValues(
+                                color: (hideVenue ? Colors.amber : LunaraTheme.electricViolet).withValues(
                                   alpha: 0.1,
                                 ),
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(
-                                Icons.location_on_rounded,
-                                color: LunaraTheme.electricViolet,
+                              child: Icon(
+                                hideVenue ? Icons.lock_outline_rounded : Icons.location_on_rounded,
+                                color: hideVenue ? Colors.amber[800] : LunaraTheme.electricViolet,
                                 size: 20,
                               ),
                             ),
@@ -1866,9 +1877,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text(
-                                    'HAPPENING AT',
-                                    style: TextStyle(
+                                  Text(
+                                    hideVenue ? 'VENUE PRIVACY' : 'HAPPENING AT',
+                                    style: const TextStyle(
                                       color: Colors.black38,
                                       fontSize: 10,
                                       fontWeight: FontWeight.w900,
@@ -1877,16 +1888,28 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   ),
                                   Text(
                                     venueName.toUpperCase(),
-                                    style: const TextStyle(
-                                      color: Colors.black,
+                                    style: TextStyle(
+                                      color: hideVenue ? Colors.amber[900] : Colors.black,
                                       fontSize: 16,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
+                                  if (hideVenue)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 2.0),
+                                      child: Text(
+                                        'Locality: ${widget.venue?['area'] ?? widget.venue?['city'] ?? 'Local Area'} (Exact venue revealed once host approves)',
+                                        style: TextStyle(
+                                          color: Colors.grey[600],
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
                                 ],
                               ),
                             ),
-                            if (widget.venue != null)
+                            if (!hideVenue && widget.venue != null)
                               TextButton(
                                 onPressed: () {
                                   Navigator.push(
@@ -2156,37 +2179,49 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     String? photo,
     Map<String, dynamic> post,
   ) {
+    final bool isMyPost =
+        post['userId']?.toString() == ApiService.currentUserId ||
+        (post['user'] != null &&
+            post['user']['id']?.toString() == ApiService.currentUserId);
+    final bool hasConfirmedBooking = post['hasConfirmedBooking'] == true ||
+        post['isMatched'] == true ||
+        _alreadyRequested && (_meetRequest?.joiners != null);
+    final bool isSecretVenue = post['showVenueDetails'] == false || widget.venue?['showVenueDetails'] == false;
+    final bool hideVenue = isSecretVenue && !isMyPost && !hasConfirmedBooking;
+
     // Determine venue/banner photo (prefer venue or event banner image, avoid host profile photo taking over full banner)
     String? bannerPhoto;
-    final venueMap =
-        widget.venue ??
-        (post['venue'] is Map ? post['venue'] as Map<String, dynamic> : null);
-    if (venueMap != null) {
-      if (venueMap['images'] is List &&
-          (venueMap['images'] as List).isNotEmpty) {
-        final firstImg = (venueMap['images'] as List).first;
-        if (firstImg is Map) {
-          final u =
-              firstImg['url'] ?? firstImg['imageUrl'] ?? firstImg['filePath'];
-          if (u != null && u.toString().isNotEmpty) bannerPhoto = u.toString();
-        } else if (firstImg is String && firstImg.isNotEmpty) {
-          bannerPhoto = firstImg;
+    if (!hideVenue) {
+      final venueMap =
+          widget.venue ??
+          (post['venue'] is Map ? post['venue'] as Map<String, dynamic> : null);
+      if (venueMap != null) {
+        if (venueMap['images'] is List &&
+            (venueMap['images'] as List).isNotEmpty) {
+          final firstImg = (venueMap['images'] as List).first;
+          if (firstImg is Map) {
+            final u =
+                firstImg['url'] ?? firstImg['imageUrl'] ?? firstImg['filePath'];
+            if (u != null && u.toString().isNotEmpty) bannerPhoto = u.toString();
+          } else if (firstImg is String && firstImg.isNotEmpty) {
+            bannerPhoto = firstImg;
+          }
         }
+        bannerPhoto ??=
+            venueMap['imageUrl']?.toString() ??
+            venueMap['coverImage']?.toString() ??
+            venueMap['photoUrl']?.toString();
       }
       bannerPhoto ??=
-          venueMap['imageUrl']?.toString() ??
-          venueMap['coverImage']?.toString() ??
-          venueMap['photoUrl']?.toString();
-    }
-    bannerPhoto ??=
-        post['venueImage']?.toString() ??
-        post['bannerUrl']?.toString() ??
-        post['bannerImage']?.toString();
+          post['venueImage']?.toString() ??
+          post['bannerUrl']?.toString() ??
+          post['bannerImage']?.toString();
 
-    if (bannerPhoto != null &&
-        bannerPhoto.startsWith('/') &&
-        !bannerPhoto.startsWith('assets')) {
-      bannerPhoto = '${ApiService.baseUrl}$bannerPhoto';
+      if (bannerPhoto != null &&
+          bannerPhoto.startsWith('/') &&
+          !bannerPhoto.startsWith('assets')) {
+        bannerPhoto = '${ApiService.baseUrl}$bannerPhoto';
+      }
     }
 
     // Host photo for profile chip
@@ -2198,18 +2233,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     // Determine Event Title
+    final String rawVenueName = widget.venue?['name'] ?? post['venue']?['name'] ?? '';
     final String rawSubject =
         (post['subject'] ??
                 post['title'] ??
                 post['message'] ??
-                widget.venue?['name'] ??
-                post['venue']?['name'] ??
+                (hideVenue ? 'SECRET VENUE' : rawVenueName) ??
                 'STRANGERS MEET')
             .toString()
             .trim();
-    final String displayTitle = rawSubject.isNotEmpty
+    String displayTitle = rawSubject.isNotEmpty
         ? rawSubject.toUpperCase()
         : 'STRANGERS MEET';
+
+    if (hideVenue && rawVenueName.isNotEmpty) {
+      displayTitle = displayTitle.replaceAll(RegExp(RegExp.escape(rawVenueName.toUpperCase())), 'SECRET VENUE 🔒');
+      if (displayTitle.isEmpty || displayTitle == rawVenueName.toUpperCase()) {
+        displayTitle = 'SECRET VENUE 🔒';
+      }
+    }
 
     final bool isVerified =
         post['isVerified'] == true || post['verified'] == true;
@@ -2258,7 +2300,53 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         background: Stack(
           fit: StackFit.expand,
           children: [
-            LunaraNetworkImage(imageUrl: bannerPhoto, fit: BoxFit.cover),
+            if (hideVenue)
+              Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF2D0060), Color(0xFF0D001C)],
+                  ),
+                ),
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
+                          border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.5), width: 2),
+                        ),
+                        child: const Icon(Icons.lock_rounded, color: Colors.white, size: 44),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'SECRET VENUE 🔒',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 2,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Photo & exact location revealed upon host approval',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.7),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              LunaraNetworkImage(imageUrl: bannerPhoto, fit: BoxFit.cover),
 
             // Gradient Overlay
             Container(

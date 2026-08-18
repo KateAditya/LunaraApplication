@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../widgets/lunara_profile_image.dart';
 import '../../models/user.dart';
+import '../../services/api_service.dart';
 import '../profile/profile_screen.dart';
 
 class AllUsersScreen extends StatefulWidget {
-  final List<dynamic> users;
+  final List<dynamic>? users;
 
-  const AllUsersScreen({super.key, required this.users});
+  const AllUsersScreen({super.key, this.users});
 
   @override
   State<AllUsersScreen> createState() => _AllUsersScreenState();
@@ -16,7 +17,9 @@ class AllUsersScreen extends StatefulWidget {
 class _AllUsersScreenState extends State<AllUsersScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  late List<dynamic> _filteredUsers;
+  List<dynamic> _allUsers = [];
+  List<dynamic> _filteredUsers = [];
+  bool _isLoading = false;
 
   String _selectedGender = 'All';
   String _selectedAgeRange = 'All Ages';
@@ -33,7 +36,11 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
   @override
   void initState() {
     super.initState();
-    _filteredUsers = widget.users;
+    if (widget.users != null && widget.users!.isNotEmpty) {
+      _allUsers = List<dynamic>.from(widget.users!);
+      _filteredUsers = List<dynamic>.from(widget.users!);
+    }
+    _loadAllUsers();
   }
 
   @override
@@ -42,9 +49,41 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
     super.dispose();
   }
 
+  Future<void> _loadAllUsers() async {
+    if (!mounted) return;
+    if (_allUsers.isEmpty) {
+      setState(() => _isLoading = true);
+    }
+    try {
+      final fetched = await ApiService.fetchCustomers(
+        limit: 500,
+        includeAllCities: true,
+      );
+      if (fetched.isNotEmpty && mounted) {
+        setState(() {
+          _allUsers = fetched;
+          _isLoading = false;
+          _applyFilters();
+        });
+      } else if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      debugPrint('Error loading all users in AllUsersScreen: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   void _applyFilters() {
+    final currentUserId = ApiService.currentUserId;
     setState(() {
-      _filteredUsers = widget.users.where((user) {
+      _filteredUsers = _allUsers.where((user) {
+        // Exclude self if logged in
+        if (currentUserId != null && currentUserId.isNotEmpty) {
+          final uId = user['id']?.toString();
+          if (uId == currentUserId) return false;
+        }
+
         // Search
         final String name =
             (user['firstName'] ?? user['fullName'] ?? user['name'] ?? 'User')
@@ -53,9 +92,12 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
         final String userName = (user['userName'] ?? '')
             .toString()
             .toLowerCase();
-        final q = _searchQuery.toLowerCase();
+        final String email = (user['email'] ?? '')
+            .toString()
+            .toLowerCase();
+        final q = _searchQuery.toLowerCase().trim();
         final bool matchesSearch =
-            q.isEmpty || name.contains(q) || userName.contains(q);
+            q.isEmpty || name.contains(q) || userName.contains(q) || email.contains(q);
         if (!matchesSearch) return false;
 
         // Gender filter
@@ -109,6 +151,11 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
     });
   }
 
+  bool get _hasActiveFilters =>
+      _searchQuery.isNotEmpty ||
+      _selectedGender != 'All' ||
+      _selectedAgeRange != 'All Ages';
+
   void _onSearchChanged(String query) {
     _searchQuery = query;
     _applyFilters();
@@ -119,10 +166,38 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('ALL PROFILES'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        title: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'ALL PROFILES',
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                fontSize: 16,
+                letterSpacing: 0.5,
+                color: Colors.black,
+              ),
+            ),
+            const SizedBox(height: 2),
+            if (_allUsers.isNotEmpty)
+              Text(
+                _hasActiveFilters
+                    ? '${_filteredUsers.length} of ${_allUsers.length} profiles'
+                    : '${_allUsers.length} profiles',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF64748B),
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.2,
+                ),
+              ),
+          ],
+        ),
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+          icon: const Icon(Icons.arrow_back_ios_new, size: 20, color: Colors.black),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -146,7 +221,7 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
                   fontWeight: FontWeight.bold,
                 ),
                 decoration: InputDecoration(
-                  hintText: 'Search users...',
+                  hintText: 'Search users by name, username...',
                   hintStyle: TextStyle(
                     color: Colors.grey[400],
                     fontSize: 14,
@@ -270,83 +345,102 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
           ),
 
           Expanded(
-            child: _filteredUsers.isEmpty
+            child: _isLoading && _filteredUsers.isEmpty
                 ? const Center(
-                    child: Text(
-                      'No users found.',
-                      style: TextStyle(
-                        color: Colors.grey,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    child: CircularProgressIndicator(
+                      color: LunaraTheme.electricViolet,
                     ),
                   )
-                : GridView.builder(
-                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          crossAxisSpacing: 16,
-                          mainAxisSpacing: 24,
-                          childAspectRatio: 0.65,
-                        ),
-                    itemCount: _filteredUsers.length,
-                    itemBuilder: (context, index) {
-                      final user = _filteredUsers[index];
-                      final String name =
-                          (user['firstName'] ??
-                                  user['fullName'] ??
-                                  user['name'] ??
-                                  'User')
-                              .toString();
+                : RefreshIndicator(
+                    color: LunaraTheme.electricViolet,
+                    onRefresh: _loadAllUsers,
+                    child: _filteredUsers.isEmpty
+                        ? const SingleChildScrollView(
+                            physics: AlwaysScrollableScrollPhysics(),
+                            child: SizedBox(
+                              height: 300,
+                              child: Center(
+                                child: Text(
+                                  'No users found.',
+                                  style: TextStyle(
+                                    color: Colors.grey,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          )
+                        : GridView.builder(
+                            physics: const AlwaysScrollableScrollPhysics(
+                              parent: BouncingScrollPhysics(),
+                            ),
+                            padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 3,
+                                  crossAxisSpacing: 16,
+                                  mainAxisSpacing: 24,
+                                  childAspectRatio: 0.65,
+                                ),
+                            itemCount: _filteredUsers.length,
+                            itemBuilder: (context, index) {
+                              final user = _filteredUsers[index];
+                              final String name =
+                                  (user['firstName'] ??
+                                          user['fullName'] ??
+                                          user['name'] ??
+                                          'User')
+                                      .toString();
 
-                      return GestureDetector(
-                        onTap: () {
-                          try {
-                            final resolvedUser = User.fromJson(user);
-                            final List<User> resolvedAllProfiles = [];
-                            for (var u in _filteredUsers) {
-                              try {
-                                resolvedAllProfiles.add(User.fromJson(Map<String, dynamic>.from(u)));
-                              } catch (_) {}
-                            }
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    ProfileScreen(
-                                      user: resolvedUser,
-                                      allProfiles: resolvedAllProfiles,
+                              return GestureDetector(
+                                onTap: () {
+                                  try {
+                                    final resolvedUser = User.fromJson(user);
+                                    final List<User> resolvedAllProfiles = [];
+                                    for (var u in _filteredUsers) {
+                                      try {
+                                        resolvedAllProfiles.add(User.fromJson(Map<String, dynamic>.from(u)));
+                                      } catch (_) {}
+                                    }
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) =>
+                                            ProfileScreen(
+                                              user: resolvedUser,
+                                              allProfiles: resolvedAllProfiles,
+                                            ),
+                                      ),
+                                    );
+                                  } catch (e) {
+                                    debugPrint('Error navigating to user profile: $e');
+                                  }
+                                },
+                                child: Column(
+                                  children: [
+                                    LunaraProfileImage(
+                                      userData: user,
+                                      radius: 40,
+                                      isInteractive: false,
                                     ),
-                              ),
-                            );
-                          } catch (e) {
-                            debugPrint('Error navigating to user profile: $e');
-                          }
-                        },
-                        child: Column(
-                          children: [
-                            LunaraProfileImage(
-                              userData: user,
-                              radius: 40,
-                              isInteractive: false,
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              name,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black,
-                                letterSpacing: 0.2,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
-                      );
-                    },
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      name,
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.black,
+                                        letterSpacing: 0.2,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
                   ),
           ),
         ],

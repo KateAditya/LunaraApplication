@@ -135,6 +135,10 @@ async function autoOpenChat(hostId: string, joinerId: string, planId: string) {
 
 async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanRequest, transaction?: Transaction) {
     try {
+        const planDate = plan.planDateTime ? new Date(plan.planDateTime) : new Date();
+        const isValidDate = !isNaN(planDate.getTime());
+        const validDateObj = isValidDate ? planDate : new Date();
+
         const existingBooking = await Booking.findOne({
             where: {
                 goingMode: GoingMode.PARTY_REQUEST,
@@ -154,7 +158,7 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
                     ticketCode: existingBooking.ticketCode,
                     planId: plan.id,
                     requestId: request.id,
-                    expiresAt: plan.planDateTime.toISOString(),
+                    expiresAt: validDateObj.toISOString(),
                 };
                 io.to(`user_${plan.userId}`).emit('party_plan_ticket_generated', ticketData);
                 io.to(`user_${request.requesterId}`).emit('party_plan_ticket_generated', ticketData);
@@ -162,9 +166,8 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
             return;
         }
 
-        const dateObj = new Date(plan.planDateTime);
-        const bookingDate = dateObj.toISOString().split('T')[0];
-        const startTime = dateObj.toTimeString().split(' ')[0];
+        const bookingDate = validDateObj.toISOString().split('T')[0];
+        const startTime = validDateObj.toTimeString().split(' ')[0];
 
         // Ticket code format: PP-XXXXXX (uppercase alphanumeric)
         const ticketCode = 'PP-' + Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -176,7 +179,7 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
             hostId: plan.userId,
             joinerId: request.requesterId,
             ticketCode,
-            expiresAt: plan.planDateTime.toISOString(),  // Ticket is valid until party starts
+            expiresAt: validDateObj.toISOString(),  // Ticket is valid until party starts
             paymentType: plan.paymentType,
             totalDeposit: Number(plan.depositAmount || 99) + 99, // host deposit + joiner deposit
             generatedAt: new Date().toISOString(),
@@ -248,7 +251,7 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
                 ticketCode,
                 planId: plan.id,
                 requestId: request.id,
-                expiresAt: plan.planDateTime.toISOString(),
+                expiresAt: validDateObj.toISOString(),
             };
             io.to(`user_${plan.userId}`).emit('party_plan_ticket_generated', ticketData);
             io.to(`user_${request.requesterId}`).emit('party_plan_ticket_generated', ticketData);
@@ -2603,7 +2606,7 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
             res.status(404).json({ success: false, message: 'Request not found' });
             return;
         }
-        if (request.requesterId !== userId) {
+        if (userId && request.requesterId && request.requesterId.toString() !== userId.toString()) {
             await transaction.rollback();
             res.status(403).json({ success: false, message: 'Only the requesting participant can verify this payment' });
             return;
@@ -2645,7 +2648,10 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
             isMockOrWalletOrder;
 
         if (isMockSignature || generatedSignature === razorpay_signature || razorpay_signature === 'mock_signature' || razorpay_signature === 'signature' || razorpay_signature === 'test_signature') {
-            const plan = (request as any).plan as PartyPlan;
+            let plan = (request as any).plan as PartyPlan;
+            if (!plan && request.planId) {
+                plan = await PartyPlan.findByPk(request.planId, { transaction }) as PartyPlan;
+            }
             if (!plan) {
                 await transaction.rollback();
                 res.status(404).json({ success: false, message: 'Party plan not found' });
@@ -2736,7 +2742,9 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
                         });
 
                         const { io } = require('../server');
-                        io.to(`user_${plan.userId}`).emit('party_plan_joiner_paid', { planId: plan.id, requestId: request.id });
+                        if (io) {
+                            io.to(`user_${plan.userId}`).emit('party_plan_joiner_paid', { planId: plan.id, requestId: request.id });
+                        }
                     } catch (err: any) {
                         logger.warn('Failed to notify host of joiner payment:', err.message);
                     }

@@ -4,12 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../services/google_places_service.dart';
 import 'package:intl/intl.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../models/strangers_meet_request.dart';
 import '../../widgets/lunara_profile_image.dart';
 import '../../widgets/lunara_ticket_widget.dart';
 import '../../services/api_service.dart';
+import '../../services/lunara_ticket_capture_service.dart';
 
 class StrangersMeetTicketScreen extends StatefulWidget {
   final StrangersMeetRequest request;
@@ -33,6 +33,7 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
   String? _canonicalTicketCode;
   String? _ticketUrl;
   int? _freshPersonsCount;
+  final GlobalKey _ticketKey = GlobalKey();
 
   @override
   void initState() {
@@ -137,32 +138,6 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
     }
   }
 
-  void _shareTicket(BuildContext context) {
-    final reqId = widget.request.id;
-    final ticketId = (_canonicalTicketCode ?? widget.request.ticketId ?? 'TICKET').toUpperCase();
-
-    String? rawUrl = _ticketUrl ?? widget.request.ticketUrl;
-    String shareLink = '';
-
-    if (rawUrl != null && rawUrl.toString().trim().isNotEmpty) {
-      final str = rawUrl.toString().trim();
-      if (str.startsWith('http://') || str.startsWith('https://')) {
-        shareLink = str;
-      } else {
-        shareLink = '${ApiService.baseUrl}${str.startsWith('/') ? '' : '/'}$str';
-      }
-    } else {
-      shareLink = '${ApiService.baseUrl}/api/mobile/strangers-meet/requests/$reqId/ticket';
-    }
-
-    final box = context.findRenderObject() as RenderBox?;
-    Share.share(
-      shareLink,
-      subject: 'Lunara Strangers Meet Ticket ($ticketId)',
-      sharePositionOrigin: box != null ? box.localToGlobal(Offset.zero) & box.size : null,
-    );
-  }
-
   Widget _buildCountdownBadge() {
     if (_timeRemaining == Duration.zero) {
       return Container(
@@ -231,6 +206,26 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
       return Map<String, dynamic>.from(widget.request.user!);
     }
     return <String, dynamic>{};
+  }
+
+  void _shareTicket(BuildContext context) {
+    final venueName = widget.request.venue?['name'] ?? 'Venue';
+    final eventDateTime = DateFormat('MMM dd, yyyy • hh:mm a').format(widget.request.eventDateTime);
+    final ticketId = (_canonicalTicketCode ?? widget.request.ticketId ?? 'SM-PASS').toUpperCase();
+    final hostUser = _resolveHostUser();
+    final hostName = '${hostUser['firstName'] ?? ''} ${hostUser['lastName'] ?? ''}'.trim();
+    final dynamicCount = _freshPersonsCount ?? widget.request.actualParticipantsCount;
+
+    LunaraTicketCaptureService.shareTicket(
+      context: context,
+      ticketKey: _ticketKey,
+      ticketCode: ticketId,
+      venueName: venueName,
+      eventDateTime: eventDateTime,
+      eventType: 'Strangers Meet',
+      hostName: hostName.isNotEmpty ? hostName : 'Event Host',
+      guestCount: '$dynamicCount Attendees',
+    );
   }
 
   @override
@@ -309,19 +304,21 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
           child: Column(
             children: [
               // ── THE TICKET CARD (LIGHT THEME) ──────────────────────────────
-              LunaraTicketWidget(
-                cardColor: Colors.white,
-                cutoutColor: lightBgColor,
-                dashColor: const Color(0xFFCBD5E1),
-                borderRadius: 24.0,
-                border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.06),
-                    blurRadius: 24,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
+              RepaintBoundary(
+                key: _ticketKey,
+                child: LunaraTicketWidget(
+                  cardColor: Colors.white,
+                  cutoutColor: lightBgColor,
+                  dashColor: const Color(0xFFCBD5E1),
+                  borderRadius: 24.0,
+                  border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.06),
+                      blurRadius: 24,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
                 topSection: Padding(
                   padding: const EdgeInsets.all(20),
                   child: Column(
@@ -920,32 +917,31 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                     ],
                   ),
                 ),
+                ),
               ),
 
               const SizedBox(height: 28),
 
-              // ── ACTION BUTTONS BELOW TICKET ────────────────────────────────
-              if ((_ticketUrl ?? widget.request.ticketUrl) != null &&
-                  (_ticketUrl ?? widget.request.ticketUrl)!.isNotEmpty) ...[
                 SizedBox(
                   width: double.infinity,
                   height: 52,
                   child: ElevatedButton.icon(
-                    onPressed: () async {
-                      final url = _ticketUrl ?? widget.request.ticketUrl ?? '';
-                      if (url.isEmpty) return;
-                      final pdfUri = Uri.parse(url);
-                      if (await canLaunchUrl(pdfUri)) {
-                        await launchUrl(pdfUri, mode: LaunchMode.externalApplication);
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Could not open the PDF URL.')),
-                        );
-                      }
+                    onPressed: () {
+                      final venueName = widget.request.venue?['name'] ?? 'Venue';
+                      final eventDateTime = DateFormat('MMM dd, yyyy • hh:mm a').format(widget.request.eventDateTime);
+                      final ticketId = (_canonicalTicketCode ?? widget.request.ticketId ?? 'SM-PASS').toUpperCase();
+                      LunaraTicketCaptureService.downloadTicket(
+                        context: context,
+                        ticketKey: _ticketKey,
+                        ticketCode: ticketId,
+                        eventType: 'Strangers_Meet',
+                        venueName: venueName,
+                        eventDateTime: eventDateTime,
+                      );
                     },
                     icon: const Icon(Icons.download_rounded, color: Colors.white, size: 20),
                     label: const Text(
-                      'DOWNLOAD PDF TICKET',
+                      'DOWNLOAD TICKET PASS',
                       style: TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
@@ -963,7 +959,6 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-              ],
               SizedBox(
                 width: double.infinity,
                 height: 52,
