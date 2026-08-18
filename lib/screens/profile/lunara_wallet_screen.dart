@@ -839,10 +839,10 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
     final filterIndex = _filterTabController.index;
     final filtered = _transactions.where((txn) {
       final type = (txn['transactionType'] ?? txn['type'] ?? '').toString().toLowerCase();
-      if (filterIndex == 1) return type.contains('recharge');
+      if (filterIndex == 1) return type.contains('recharge') || type.contains('refund') || type.contains('unlock');
       if (filterIndex == 2) return type.contains('vip') || type.contains('subscription') || type.contains('membership');
       if (filterIndex == 3) return type.contains('reward') || type.contains('cashback') || type.contains('promo');
-      if (filterIndex == 4) return type.contains('purchase') || type.contains('booking') || type.contains('deposit');
+      if (filterIndex == 4) return (type.contains('purchase') || type.contains('booking') || type.contains('deposit')) && !type.contains('refund') && !type.contains('unlock');
       return true;
     }).toList();
 
@@ -884,20 +884,31 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
     final double amount = double.tryParse(txn['amount']?.toString() ?? '0.0') ?? 0.0;
     final String rawStatus = (txn['status'] ?? 'success').toString().toLowerCase();
     final String type = (txn['transactionType'] ?? txn['type'] ?? 'payment').toString().toLowerCase();
-    final contextData = txn['context'] ?? {};
+    final contextData = txn['context'] is Map ? txn['context'] as Map : {};
 
     String title = 'TRANSACTION';
     IconData icon = Icons.receipt_rounded;
     Color iconBg = Colors.grey[100]!;
     Color iconColor = Colors.grey[800]!;
 
-    bool isCredit = type.contains('recharge') || type.contains('credit') || type.contains('cashback') || type.contains('reward');
+    final bool isRefund = type.contains('refund') || type.contains('unlock');
+    final bool isCredit = type.contains('recharge') ||
+        type.contains('credit') ||
+        type.contains('cashback') ||
+        type.contains('reward') ||
+        isRefund;
 
     if (type.contains('recharge')) {
       title = 'RECHARGE';
       icon = Icons.add_card_rounded;
       iconBg = Colors.blue.withValues(alpha: 0.1);
       iconColor = Colors.blue[700]!;
+    } else if (isRefund) {
+      final reason = (contextData['reason'] ?? (txn['metadata'] is Map ? txn['metadata']['reason'] : null) ?? 'PARTY PLAN REFUND').toString();
+      title = reason.toUpperCase();
+      icon = Icons.replay_rounded;
+      iconBg = const Color(0xFF10B981).withValues(alpha: 0.1);
+      iconColor = const Color(0xFF10B981);
     } else if (type.contains('vip') || type.contains('subscription')) {
       title = (contextData['planName'] ?? 'VIP MEMBERSHIP').toString().toUpperCase();
       icon = Icons.workspace_premium_rounded;

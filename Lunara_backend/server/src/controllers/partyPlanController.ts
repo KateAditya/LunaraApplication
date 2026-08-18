@@ -24,6 +24,7 @@ import Payment, { PaymentMethod, PaymentStatus } from '../models/Payment';
 import { generateTicketForBookingHelper } from '../services/ticketService';
 import { NotificationService } from '../services/NotificationService';
 import AuditLog from '../models/AuditLog';
+import { WalletService } from '../services/walletService';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // autoOpenChat — ONLY called after MATCH_CONFIRMED. Guarded by lifecycleStatus.
@@ -3166,9 +3167,6 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
 
 // ─────────────────────────────────────────────────────────────────────────────
 async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction) {
-    const WalletTransaction = (await import('../models/WalletTransaction')).default;
-    const { WalletTransactionType } = await import('../models/WalletTransaction');
-
     const wasHostPaid = plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID;
 
     // 1. Update plan status
@@ -3180,36 +3178,17 @@ async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction
         hostPaymentStatus: wasHostPaid ? PartyPlanPaymentStatus.REFUNDED : plan.hostPaymentStatus,
     }, { transaction });
 
-    // 1.5 Refund Host if paid (Idempotent: check existing transaction reference)
+    // 1.5 Refund Host if paid (Idempotent: credit Smart Credit Wallet)
     if (wasHostPaid) {
         const hostRefundRef = `REFUND_HOST_CANCEL_${plan.id}`;
-        const existingHostTx = await WalletTransaction.findOne({
-            where: {
-                userId: plan.userId,
-                partyPlanId: plan.id,
-                reference: hostRefundRef,
-            },
-            transaction
+        await WalletService.creditRefund({
+            userId: plan.userId,
+            amount: Number(plan.depositAmount) || 99.00,
+            referenceId: hostRefundRef,
+            reason: 'Party Plan Cancelled by Host',
+            partyPlanId: plan.id,
+            transaction,
         });
-
-        if (!existingHostTx) {
-            const hostUser = await User.findByPk(plan.userId, { transaction });
-            if (hostUser) {
-                const hOld = Number(hostUser.walletBalance || 0);
-                const hDeposit = Number(plan.depositAmount) || 99.00;
-                const hNew = hOld + hDeposit;
-                await hostUser.update({ walletBalance: hNew }, { transaction });
-                await WalletTransaction.logTransaction({
-                    userId: hostUser.id,
-                    partyPlanId: plan.id,
-                    amount: hDeposit,
-                    openingBalance: hOld,
-                    closingBalance: hNew,
-                    transactionType: WalletTransactionType.REFUND,
-                    reference: hostRefundRef,
-                }, transaction);
-            }
-        }
     }
 
     // 2. Release lock in Time Lock Engine
@@ -3242,36 +3221,17 @@ async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction
             joinerPaymentStatus: wasJoinerPaid ? PartyPlanJoinerPaymentStatus.REFUNDED : req.joinerPaymentStatus
         }, { transaction });
 
-        // Refund Joiner if paid (Idempotent: check existing transaction reference)
+        // Refund Joiner if paid (Idempotent: credit Smart Credit Wallet)
         if (wasJoinerPaid) {
             const joinerRefundRef = `REFUND_JOINER_CANCEL_${req.id}`;
-            const existingJoinerTx = await WalletTransaction.findOne({
-                where: {
-                    userId: req.requesterId,
-                    partyPlanId: plan.id,
-                    reference: joinerRefundRef,
-                },
-                transaction
+            await WalletService.creditRefund({
+                userId: req.requesterId,
+                amount: 99.00,
+                referenceId: joinerRefundRef,
+                reason: 'Party Plan Cancelled by Host (Joiner Refund)',
+                partyPlanId: plan.id,
+                transaction,
             });
-
-            if (!existingJoinerTx) {
-                const joinerUser = await User.findByPk(req.requesterId, { transaction });
-                if (joinerUser) {
-                    const jOld = Number(joinerUser.walletBalance || 0);
-                    const jDeposit = 99.00;
-                    const jNew = jOld + jDeposit;
-                    await joinerUser.update({ walletBalance: jNew }, { transaction });
-                    await WalletTransaction.logTransaction({
-                        userId: joinerUser.id,
-                        partyPlanId: plan.id,
-                        amount: jDeposit,
-                        openingBalance: jOld,
-                        closingBalance: jNew,
-                        transactionType: WalletTransactionType.REFUND,
-                        reference: joinerRefundRef,
-                    }, transaction);
-                }
-            }
         }
 
         // Notify joiners
@@ -3525,36 +3485,15 @@ export const repostPartyPlan = async (req: Request, res: Response): Promise<void
             }, { transaction });
 
             if (wasJoinerPaid) {
-                const WalletTransaction = (await import('../models/WalletTransaction')).default;
-                const { WalletTransactionType } = await import('../models/WalletTransaction');
                 const joinerRefundRef = `REFUND_JOINER_REPOST_${reqItem.id}`;
-                const existingJoinerTx = await WalletTransaction.findOne({
-                    where: {
-                        userId: reqItem.requesterId,
-                        partyPlanId: plan.id,
-                        reference: joinerRefundRef,
-                    },
-                    transaction
+                await WalletService.creditRefund({
+                    userId: reqItem.requesterId,
+                    amount: 99.00,
+                    referenceId: joinerRefundRef,
+                    reason: 'Party Plan Reposted (Joiner Refund)',
+                    partyPlanId: plan.id,
+                    transaction,
                 });
-
-                if (!existingJoinerTx) {
-                    const joinerUser = await User.findByPk(reqItem.requesterId, { transaction });
-                    if (joinerUser) {
-                        const jOld = Number(joinerUser.walletBalance || 0);
-                        const jDeposit = 99.00;
-                        const jNew = jOld + jDeposit;
-                        await joinerUser.update({ walletBalance: jNew }, { transaction });
-                        await WalletTransaction.logTransaction({
-                            userId: joinerUser.id,
-                            partyPlanId: plan.id,
-                            amount: jDeposit,
-                            openingBalance: jOld,
-                            closingBalance: jNew,
-                            transactionType: WalletTransactionType.REFUND,
-                            reference: joinerRefundRef,
-                        }, transaction);
-                    }
-                }
             }
         }
 
@@ -4225,8 +4164,6 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
         const hostDeposit = Number(plan.depositAmount || 99.00);
         const guestDeposit = plan.paymentType === 'self_pay' ? 0.00 : 99.00;
 
-        const WalletTransaction = (await import('../models/WalletTransaction')).default;
-        const WalletTransactionType = (await import('../models/WalletTransaction')).WalletTransactionType;
         const { ReliabilityService, ReliabilityAction } = await import('../services/reliabilityService');
 
         if (hostArrived && guestArrived && acceptedReq) {
@@ -4240,69 +4177,39 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
             // Idempotent Host Refund
             if (hostUser) {
                 const hostRef = `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${hostUser.id}`;
-                const existingHostTx = await WalletTransaction.findOne({
-                    where: {
-                        [Op.or]: [
-                            { reference: hostRef },
-                            { reference: `REFUND_HOST_${plan.id}` }
-                        ]
-                    },
-                    transaction
+                await WalletService.creditRefund({
+                    userId: hostUser.id,
+                    amount: hostDeposit,
+                    referenceId: hostRef,
+                    reason: 'Party Plan Both Confirmed Arrival (Host Refund)',
+                    partyPlanId: plan.id,
+                    transaction,
                 });
-                if (!existingHostTx) {
-                    const hOld = Number(hostUser.walletBalance || 0);
-                    const hNew = hOld + hostDeposit;
-                    await hostUser.update({ walletBalance: hNew }, { transaction });
-                    await plan.update({ hostPaymentStatus: PartyPlanPaymentStatus.REFUNDED }, { transaction });
-                    await WalletTransaction.logTransaction({
-                        userId: hostUser.id,
-                        partyPlanId: plan.id,
-                        amount: hostDeposit,
-                        openingBalance: hOld,
-                        closingBalance: hNew,
-                        transactionType: WalletTransactionType.REFUND,
-                        reference: hostRef,
-                    });
-                    await ReliabilityService.updateScore({
-                        userId: hostUser.id,
-                        action: ReliabilityAction.CONFIRMED_ARRIVAL,
-                        partyPlanId: plan.id,
-                    });
-                }
+                await plan.update({ hostPaymentStatus: PartyPlanPaymentStatus.REFUNDED }, { transaction });
+                await ReliabilityService.updateScore({
+                    userId: hostUser.id,
+                    action: ReliabilityAction.CONFIRMED_ARRIVAL,
+                    partyPlanId: plan.id,
+                });
             }
 
             // Idempotent Guest Refund
             if (guestUser && guestDeposit > 0) {
                 const guestRef = `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${guestUser.id}`;
-                const existingGuestTx = await WalletTransaction.findOne({
-                    where: {
-                        [Op.or]: [
-                            { reference: guestRef },
-                            { reference: `REFUND_GUEST_${acceptedReq.id}` }
-                        ]
-                    },
-                    transaction
+                await WalletService.creditRefund({
+                    userId: guestUser.id,
+                    amount: guestDeposit,
+                    referenceId: guestRef,
+                    reason: 'Party Plan Both Confirmed Arrival (Guest Refund)',
+                    partyPlanId: plan.id,
+                    transaction,
                 });
-                if (!existingGuestTx) {
-                    const gOld = Number(guestUser.walletBalance || 0);
-                    const gNew = gOld + guestDeposit;
-                    await guestUser.update({ walletBalance: gNew }, { transaction });
-                    await acceptedReq.update({ joinerPaymentStatus: PartyPlanJoinerPaymentStatus.REFUNDED }, { transaction });
-                    await WalletTransaction.logTransaction({
-                        userId: guestUser.id,
-                        partyPlanId: plan.id,
-                        amount: guestDeposit,
-                        openingBalance: gOld,
-                        closingBalance: gNew,
-                        transactionType: WalletTransactionType.REFUND,
-                        reference: guestRef,
-                    });
-                    await ReliabilityService.updateScore({
-                        userId: guestUser.id,
-                        action: ReliabilityAction.CONFIRMED_ARRIVAL,
-                        partyPlanId: plan.id,
-                    });
-                }
+                await acceptedReq.update({ joinerPaymentStatus: PartyPlanJoinerPaymentStatus.REFUNDED }, { transaction });
+                await ReliabilityService.updateScore({
+                    userId: guestUser.id,
+                    action: ReliabilityAction.CONFIRMED_ARRIVAL,
+                    partyPlanId: plan.id,
+                });
             }
 
             await plan.update({
@@ -4320,30 +4227,20 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
                 // ── CASE B: Host YES, Guest NO ──
                 if (hostUser) {
                     const hostRef = `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${hostUser.id}`;
-                    const existingHostTx = await WalletTransaction.findOne({
-                        where: { [Op.or]: [{ reference: hostRef }, { reference: `REFUND_HOST_${plan.id}` }] },
-                        transaction
+                    await WalletService.creditRefund({
+                        userId: hostUser.id,
+                        amount: hostDeposit,
+                        referenceId: hostRef,
+                        reason: 'Party Plan Confirmed Arrival (Host Refund, Guest No-Show)',
+                        partyPlanId: plan.id,
+                        transaction,
                     });
-                    if (!existingHostTx) {
-                        const hOld = Number(hostUser.walletBalance || 0);
-                        const hNew = hOld + hostDeposit;
-                        await hostUser.update({ walletBalance: hNew }, { transaction });
-                        await plan.update({ hostPaymentStatus: PartyPlanPaymentStatus.REFUNDED }, { transaction });
-                        await WalletTransaction.logTransaction({
-                            userId: hostUser.id,
-                            partyPlanId: plan.id,
-                            amount: hostDeposit,
-                            openingBalance: hOld,
-                            closingBalance: hNew,
-                            transactionType: WalletTransactionType.REFUND,
-                            reference: hostRef,
-                        });
-                        await ReliabilityService.updateScore({
-                            userId: hostUser.id,
-                            action: ReliabilityAction.CONFIRMED_ARRIVAL,
-                            partyPlanId: plan.id,
-                        });
-                    }
+                    await plan.update({ hostPaymentStatus: PartyPlanPaymentStatus.REFUNDED }, { transaction });
+                    await ReliabilityService.updateScore({
+                        userId: hostUser.id,
+                        action: ReliabilityAction.CONFIRMED_ARRIVAL,
+                        partyPlanId: plan.id,
+                    });
                 }
                 if (guestUser) {
                     await ReliabilityService.updateScore({
@@ -4361,30 +4258,20 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
                 // ── CASE C: Host NO, Guest YES ──
                 if (guestUser && guestDeposit > 0) {
                     const guestRef = `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${guestUser.id}`;
-                    const existingGuestTx = await WalletTransaction.findOne({
-                        where: { [Op.or]: [{ reference: guestRef }, { reference: `REFUND_GUEST_${acceptedReq.id}` }] },
-                        transaction
+                    await WalletService.creditRefund({
+                        userId: guestUser.id,
+                        amount: guestDeposit,
+                        referenceId: guestRef,
+                        reason: 'Party Plan Confirmed Arrival (Guest Refund, Host No-Show)',
+                        partyPlanId: plan.id,
+                        transaction,
                     });
-                    if (!existingGuestTx) {
-                        const gOld = Number(guestUser.walletBalance || 0);
-                        const gNew = gOld + guestDeposit;
-                        await guestUser.update({ walletBalance: gNew }, { transaction });
-                        await acceptedReq.update({ joinerPaymentStatus: PartyPlanJoinerPaymentStatus.REFUNDED }, { transaction });
-                        await WalletTransaction.logTransaction({
-                            userId: guestUser.id,
-                            partyPlanId: plan.id,
-                            amount: guestDeposit,
-                            openingBalance: gOld,
-                            closingBalance: gNew,
-                            transactionType: WalletTransactionType.REFUND,
-                            reference: guestRef,
-                        });
-                        await ReliabilityService.updateScore({
-                            userId: guestUser.id,
-                            action: ReliabilityAction.CONFIRMED_ARRIVAL,
-                            partyPlanId: plan.id,
-                        });
-                    }
+                    await acceptedReq.update({ joinerPaymentStatus: PartyPlanJoinerPaymentStatus.REFUNDED }, { transaction });
+                    await ReliabilityService.updateScore({
+                        userId: guestUser.id,
+                        action: ReliabilityAction.CONFIRMED_ARRIVAL,
+                        partyPlanId: plan.id,
+                    });
                 }
                 if (hostUser) {
                     await ReliabilityService.updateScore({

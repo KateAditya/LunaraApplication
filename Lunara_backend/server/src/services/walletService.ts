@@ -27,14 +27,14 @@ export class WalletService {
      */
     public static async getOrCreateWallet(userId: string, transaction?: Transaction): Promise<SmartWallet> {
         let wallet = await SmartWallet.findOne({ where: { userId }, transaction });
-        if (!wallet) {
-            const user = await User.findByPk(userId, { transaction });
-            const initialBalance = user?.walletBalance ? Number(user.walletBalance) : 0.00;
+        const user = await User.findByPk(userId, { transaction });
+        const userBalance = user?.walletBalance ? Number(user.walletBalance) : 0.00;
 
+        if (!wallet) {
             wallet = await SmartWallet.create(
                 {
                     userId,
-                    balance: initialBalance,
+                    balance: userBalance,
                     lockedBalance: 0.00,
                     pendingBalance: 0.00,
                     promotionalBalance: 0.00,
@@ -50,6 +50,11 @@ export class WalletService {
                 },
                 { transaction }
             );
+        } else if (Number(wallet.balance || 0) < userBalance) {
+            // Auto-heal discrepancy if User.walletBalance has credited refunds
+            const diff = userBalance - Number(wallet.balance || 0);
+            const newLocked = Math.max(0, Number(wallet.lockedBalance || 0) - diff);
+            await wallet.update({ balance: userBalance, lockedBalance: newLocked }, { transaction });
         }
         return wallet;
     }
@@ -443,39 +448,60 @@ export class WalletService {
     }
 
     /**
-     * Process Refund into Smart Credit Wallet (idempotent, no Razorpay charges).
+     * Credits a refund directly into Smart Credit Wallet (idempotent).
+     * Automatically adjusts locked balance if applicable, updates SmartWallet.balance,
+     * updates SmartWallet.lifetimeRefunds, syncs User.walletBalance, and logs a WalletTransaction.
      */
-    public static async processRefund(params: {
+    public static async creditRefund(params: {
         userId: string;
         amount: number;
         referenceId: string;
         reason: string;
         partyPlanId?: string;
         bookingId?: string;
+        transaction?: Transaction;
     }): Promise<{ success: boolean; wallet: SmartWallet; txn: WalletTransaction }> {
-        const { userId, amount, referenceId, reason, partyPlanId, bookingId } = params;
+        const { userId, amount, referenceId, reason, partyPlanId, bookingId, transaction: externalTx } = params;
 
         if (amount <= 0) throw new Error('Refund amount must be positive');
 
         // Check duplicate refund reference
         const existingTxn = await WalletTransaction.findOne({
             where: { reference: referenceId, transactionType: WalletTransactionType.REFUND, status: WalletTransactionStatus.SUCCESS },
+            transaction: externalTx,
         });
         if (existingTxn) {
-            const wallet = await this.getOrCreateWallet(userId);
+            const wallet = await this.getOrCreateWallet(userId, externalTx);
             return { success: true, wallet, txn: existingTxn };
         }
 
-        const result = await sequelize.transaction(async (t) => {
-            const wallet = await SmartWallet.findOne({ where: { userId }, lock: Transaction.LOCK.UPDATE, transaction: t });
-            if (!wallet) throw new Error('Wallet not found');
+        const executeInTx = async (t: Transaction) => {
+            const wallet = await this.getOrCreateWallet(userId, t);
+            await wallet.reload({ lock: Transaction.LOCK.UPDATE, transaction: t });
 
-            const openingBal = wallet.totalAvailableBalance;
-            const newBal = Number(wallet.balance) + amount;
+            const openingBal = Number(wallet.balance || 0);
+            const currentLocked = Number(wallet.lockedBalance || 0);
+
+            // If there is locked balance, unlock it
+            const unlockAmount = Math.min(currentLocked, amount);
+            const newLocked = Math.max(0, currentLocked - unlockAmount);
+            const newBalance = openingBal + amount;
             const newLifetimeRefunds = Number(wallet.lifetimeRefunds || 0) + amount;
 
-            await wallet.update({ balance: newBal, lifetimeRefunds: newLifetimeRefunds }, { transaction: t });
-            await User.update({ walletBalance: wallet.totalAvailableBalance }, { where: { id: userId }, transaction: t });
+            await wallet.update(
+                {
+                    balance: newBalance,
+                    lockedBalance: newLocked,
+                    lifetimeRefunds: newLifetimeRefunds,
+                },
+                { transaction: t }
+            );
+
+            const updatedAvailable = Number(wallet.totalAvailableBalance || wallet.balance);
+            await User.update(
+                { walletBalance: updatedAvailable },
+                { where: { id: userId }, transaction: t }
+            );
 
             const txn = await WalletTransaction.create(
                 {
@@ -485,13 +511,13 @@ export class WalletService {
                     bookingId,
                     amount,
                     openingBalance: openingBal,
-                    closingBalance: wallet.totalAvailableBalance,
+                    closingBalance: updatedAvailable,
                     transactionType: WalletTransactionType.REFUND,
                     status: WalletTransactionStatus.SUCCESS,
                     reference: referenceId,
                     source: 'system_refund',
                     destination: 'wallet_available',
-                    metadata: { reason },
+                    metadata: { reason, partyPlanId, bookingId },
                 },
                 { transaction: t }
             );
@@ -500,15 +526,36 @@ export class WalletService {
                 {
                     userId,
                     action: 'Refund Processed to Wallet',
-                    metadata: { amount, reason, referenceId },
+                    metadata: { amount, reason, referenceId, partyPlanId, bookingId },
                 },
                 { transaction: t }
             );
 
             return { wallet, txn };
-        });
+        };
 
-        return { success: true, ...result };
+        if (externalTx) {
+            const res = await executeInTx(externalTx);
+            return { success: true, ...res };
+        } else {
+            const res = await sequelize.transaction(executeInTx);
+            return { success: true, ...res };
+        }
+    }
+
+    /**
+     * Process Refund into Smart Credit Wallet (idempotent, no Razorpay charges).
+     */
+    public static async processRefund(params: {
+        userId: string;
+        amount: number;
+        referenceId: string;
+        reason: string;
+        partyPlanId?: string;
+        bookingId?: string;
+        transaction?: Transaction;
+    }): Promise<{ success: boolean; wallet: SmartWallet; txn: WalletTransaction }> {
+        return this.creditRefund(params);
     }
 
     /**
