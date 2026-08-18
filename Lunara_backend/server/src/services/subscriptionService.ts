@@ -10,12 +10,13 @@
  * The new dynamic engine takes precedence when SubscriptionPlanFeatures rows exist.
  */
 
-import { Op } from 'sequelize';
+import { Op, Transaction } from 'sequelize';
 import SubscriptionPackage from '../models/SubscriptionPackage';
 import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription';
 import SubscriptionPlanFeature from '../models/SubscriptionPlanFeature';
 import SubscriptionFeature from '../models/SubscriptionFeature';
 import SubscriptionUsage, { UsagePeriod } from '../models/SubscriptionUsage';
+import PartyPlan from '../models/PartyPlan';
 import { logger } from '../config/logger';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -173,7 +174,7 @@ export class SubscriptionService {
                         });
                     }
                 }
-                // Enable stranger_meet and party_creation for ALL users
+                // Enable stranger_meet and party_creation for VIP users
                 features.set('stranger_meet', { enabled: true, value: 'unlimited' });
                 features.set('party_creation', { enabled: true, value: 'unlimited' });
             }
@@ -186,7 +187,7 @@ export class SubscriptionService {
             features.set('super_likes', { enabled: false, value: 0 });
             features.set('boosts', { enabled: false, value: 0 });
             features.set('stranger_meet', { enabled: true, value: 'unlimited' });
-            features.set('party_creation', { enabled: true, value: 'unlimited' });
+            features.set('party_creation', { enabled: true, value: 1 }); // 1 party plan per calendar month
         }
 
         const entry: CacheEntry = {
@@ -199,6 +200,152 @@ export class SubscriptionService {
     }
 
     // ── Core Methods ──────────────────────────────────────────────────────────
+
+    /**
+     * Check Party Plan creation limit for a user according to Phase 1 & Phase 2 entitlement rules:
+     * - Free Plan: Maximum 1 Party Plan per calendar month.
+     * - Paid VIP Plan: Maximum 3 Party Plans per calendar day (or configured package limit).
+     */
+    static async checkPartyPlanLimit(
+        userId: string,
+        targetDate: Date = new Date(),
+        options?: { transaction?: Transaction }
+    ): Promise<{
+        allowed: boolean;
+        tier: string;
+        limit: FeatureLimit;
+        used: number;
+        remaining: FeatureLimit;
+        resetAt: Date;
+        message?: string;
+        code?: string;
+    }> {
+        try {
+            await this.activateUpcomingSubscriptions(userId);
+
+            const activeSub = await UserSubscription.findOne({
+                where: {
+                    userId,
+                    status: SubscriptionStatus.ACTIVE,
+                    endDate: { [Op.gt]: new Date() },
+                },
+                include: [{ model: SubscriptionPackage, as: 'package' }],
+                order: [['createdAt', 'DESC']],
+                transaction: options?.transaction,
+            });
+
+            const plan: SubscriptionPackage | null = (activeSub as any)?.package || null;
+            const tier = plan ? plan.tier : 'FREE';
+
+            const refDate = targetDate instanceof Date && !isNaN(targetDate.getTime()) ? targetDate : new Date();
+
+            // Calendar Day Window (server time)
+            const startOfDay = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate(), 0, 0, 0, 0);
+            const endOfDay = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate(), 23, 59, 59, 999);
+            const resetAtDay = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate() + 1, 0, 0, 0, 0);
+
+            // Calendar Month Window (server time)
+            const startOfMonth = new Date(refDate.getFullYear(), refDate.getMonth(), 1, 0, 0, 0, 0);
+            const endOfMonth = new Date(refDate.getFullYear(), refDate.getMonth() + 1, 0, 23, 59, 59, 999);
+            const resetAtMonth = new Date(refDate.getFullYear(), refDate.getMonth() + 1, 1, 0, 0, 0, 0);
+
+            // ── 1. Free Tier Check (1 Party Plan per calendar month) ─────────
+            if (!plan || tier === 'FREE') {
+                const freeMonthlyLimit = 1;
+                const monthlyUsed = await PartyPlan.count({
+                    where: {
+                        userId,
+                        createdAt: { [Op.between]: [startOfMonth, endOfMonth] },
+                        status: { [Op.ne]: 'cancelled' },
+                    },
+                    transaction: options?.transaction,
+                });
+
+                if (monthlyUsed >= freeMonthlyLimit) {
+                    return {
+                        allowed: false,
+                        tier: 'FREE',
+                        limit: freeMonthlyLimit,
+                        used: monthlyUsed,
+                        remaining: 0,
+                        resetAt: resetAtMonth,
+                        code: 'PARTY_PLAN_LIMIT_REACHED',
+                        message: `You have reached your Free Plan limit of ${freeMonthlyLimit} Party Plan for this month. Upgrade to VIP to create more party plans!`,
+                    };
+                }
+
+                return {
+                    allowed: true,
+                    tier: 'FREE',
+                    limit: freeMonthlyLimit,
+                    used: monthlyUsed,
+                    remaining: Math.max(0, freeMonthlyLimit - monthlyUsed),
+                    resetAt: resetAtMonth,
+                };
+            }
+
+            // ── 2. Paid VIP Tier Check (Maximum 3 Party Plans per calendar day) ──
+            let vipDailyLimit: number = 3;
+            const planFeature = await SubscriptionPlanFeature.findOne({
+                where: { packageId: plan.id, isEnabled: true },
+                include: [{
+                    model: SubscriptionFeature,
+                    as: 'feature',
+                    where: { key: 'party_creation' }
+                }],
+                transaction: options?.transaction,
+            });
+
+            if (planFeature && (planFeature as any).value) {
+                const val = (planFeature as any).value;
+                if (val.value !== undefined && val.value !== 'unlimited') {
+                    const num = Number(val.value);
+                    if (!isNaN(num) && num > 0) vipDailyLimit = num;
+                }
+            }
+
+            const dailyUsed = await PartyPlan.count({
+                where: {
+                    userId,
+                    createdAt: { [Op.between]: [startOfDay, endOfDay] },
+                    status: { [Op.ne]: 'cancelled' },
+                },
+                transaction: options?.transaction,
+            });
+
+            if (dailyUsed >= vipDailyLimit) {
+                return {
+                    allowed: false,
+                    tier,
+                    limit: vipDailyLimit,
+                    used: dailyUsed,
+                    remaining: 0,
+                    resetAt: resetAtDay,
+                    code: 'PARTY_PLAN_DAILY_LIMIT_REACHED',
+                    message: `You have reached today's Party Plan creation limit of ${vipDailyLimit}. You can schedule more plans tomorrow!`,
+                };
+            }
+
+            return {
+                allowed: true,
+                tier,
+                limit: vipDailyLimit,
+                used: dailyUsed,
+                remaining: Math.max(0, vipDailyLimit - dailyUsed),
+                resetAt: resetAtDay,
+            };
+        } catch (err) {
+            logger.error('SubscriptionService.checkPartyPlanLimit error:', err);
+            return {
+                allowed: true,
+                tier: 'UNKNOWN',
+                limit: UNLIMITED,
+                used: 0,
+                remaining: UNLIMITED,
+                resetAt: new Date(),
+            };
+        }
+    }
 
     /**
      * Get the user's active plan (cached).
@@ -215,7 +362,7 @@ export class SubscriptionService {
      * Returns true even for unlimited-value numeric features.
      */
     static async hasAccess(userId: string, featureKey: string): Promise<boolean> {
-        if (featureKey === 'party_creation' || featureKey === 'stranger_meet') {
+        if (featureKey === 'stranger_meet') {
             return true;
         }
         try {

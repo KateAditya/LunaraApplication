@@ -6,6 +6,7 @@ import SubscriptionPackage from '../models/SubscriptionPackage';
 import PlanTimeLock from '../models/PlanTimeLock';
 import PlanTimeLockConfig, { PlanTimeLockConfigAttributes } from '../models/PlanTimeLockConfig';
 import NotificationJob from '../models/NotificationJob';
+import { SubscriptionService } from './subscriptionService';
 
 // Unique 32-bit signed integer hash function for Postgres transaction advisory lock
 export function getAdvisoryLockKey(uuidStr: string): number {
@@ -147,8 +148,31 @@ export class PlanEligibilityService {
         remainingSeconds?: number;
         existingPlanId?: string;
         existingPlanType?: string;
+        details?: any;
     }> {
         const transaction = options?.transaction;
+
+        // 0. VIP package entitlement & monthly quota check for party plans (Phase 1)
+        if (planType === 'party_plan') {
+            const startTimeRef = typeof startTimeInput === 'string' ? new Date(startTimeInput) : startTimeInput;
+            const limitCheck = await SubscriptionService.checkPartyPlanLimit(userId, startTimeRef, { transaction });
+            if (!limitCheck.allowed) {
+                return {
+                    eligible: false,
+                    reasonCode: limitCheck.code || 'PARTY_PLAN_LIMIT_REACHED',
+                    message: limitCheck.message || 'Party plan creation limit reached.',
+                    details: {
+                        tier: limitCheck.tier,
+                        limit: limitCheck.limit,
+                        used: limitCheck.used,
+                        remaining: limitCheck.remaining,
+                        resetAt: limitCheck.resetAt,
+                        upgradeAvailable: true,
+                    },
+                };
+            }
+        }
+
         const config = await this.resolveConfig(userId, planType);
 
         if (!config.timeLockEnabled) {

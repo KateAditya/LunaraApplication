@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../services/api_service.dart';
 import 'chat_screen.dart';
@@ -14,113 +15,194 @@ class _MessagesScreenState extends State<MessagesScreen> {
   bool _isLoading = true;
   List<Map<String, dynamic>> _conversations = [];
   bool _hasCreatedOrJoinedPlans = false;
+  StreamSubscription<Map<String, dynamic>>? _chatUpdateSub;
 
   @override
   void initState() {
     super.initState();
     _loadConversations();
     _initSocketListeners();
+    _initLocalStreamListener();
   }
 
-  void _initSocketListeners() {
-    ApiService.socket?.on('new_message', (data) {
-      if (!mounted || data == null) return;
+  void _initLocalStreamListener() {
+    _chatUpdateSub = ApiService.chatUpdateStream.listen((data) {
+      if (!mounted) return;
       final convId = data['conversationId']?.toString();
       if (convId == null) return;
 
-      final senderId = data['senderId']?.toString();
-      final currentUserId = ApiService.currentUserId;
-      final type = data['type']?.toString() ?? 'text';
-      final content = data['content']?.toString() ?? '';
-
-      String preview = content;
-      if (type == 'image') preview = '📷 Photo';
-      if (type == 'sticker') preview = '😄 Sticker';
-      if (type == 'voice') preview = '🎙 Voice message';
-      if (type == 'invitation') preview = '📅 Party invitation';
-
       setState(() {
-        final idx = _conversations.indexWhere((c) => (c['conversationId'] ?? c['id'])?.toString() == convId);
+        final idx = _conversations.indexWhere(
+          (c) => (c['conversationId'] ?? c['id'])?.toString() == convId,
+        );
         if (idx != -1) {
-          final target = _conversations.removeAt(idx);
-          target['lastMessagePreview'] = preview;
-          target['lastMessageAt'] = data['createdAt'] ?? DateTime.now().toIso8601String();
-          if (senderId != currentUserId) {
-            target['unreadCount'] = (target['unreadCount'] as num? ?? 0).toInt() + 1;
-          }
-          _conversations.insert(0, target);
+          _conversations[idx]['lastMessagePreview'] =
+              data['lastMessagePreview'] ?? '';
+          _conversations[idx]['lastMessageAt'] = data['lastMessageAt'];
         } else {
           _loadConversations();
         }
       });
     });
+  }
 
-    ApiService.socket?.on('messages_read', (data) {
-      if (!mounted || data == null) return;
-      final convId = data['conversationId']?.toString();
-      if (convId == null) return;
+  void _initSocketListeners() {
+    ApiService.addSocketListener('new_message', _onNewMessageSocket);
+    ApiService.addSocketListener('messages_read', _onMessagesReadSocket);
+    ApiService.addSocketListener('user_status_changed', _onUserStatusSocket);
+    ApiService.addSocketListener('conversation_deleted', _onConversationDeletedSocket);
+    ApiService.addSocketListener('chat_cleared', _onChatClearedSocket);
+    ApiService.addSocketListener('message_deleted', _onMessageDeletedSocket);
+  }
 
-      setState(() {
-        final idx = _conversations.indexWhere((c) => (c['conversationId'] ?? c['id'])?.toString() == convId);
-        if (idx != -1) {
-          _conversations[idx]['unreadCount'] = 0;
+  void _onNewMessageSocket(dynamic rawData) {
+    if (!mounted || rawData == null) return;
+    final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
+    final convId = data['conversationId']?.toString();
+    if (convId == null) return;
+
+    final senderId = data['senderId']?.toString();
+    final currentUserId = ApiService.currentUserId;
+    final type = data['type']?.toString() ?? 'text';
+    final content = data['content']?.toString() ?? '';
+
+    String preview = content;
+    if (type == 'image') preview = '📷 Photo';
+    if (type == 'sticker') preview = '😄 Sticker';
+    if (type == 'voice') preview = '🎙 Voice message';
+    if (type == 'invitation') preview = '📅 Party invitation';
+
+    setState(() {
+      final idx = _conversations.indexWhere(
+        (c) => (c['conversationId'] ?? c['id'])?.toString() == convId,
+      );
+      if (idx != -1) {
+        final target = _conversations.removeAt(idx);
+        target['lastMessagePreview'] = preview;
+        target['lastMessageAt'] = data['createdAt'] ?? DateTime.now().toIso8601String();
+        if (senderId != currentUserId) {
+          target['unreadCount'] = (target['unreadCount'] as num? ?? 0).toInt() + 1;
         }
-      });
+        _conversations.insert(0, target);
+      } else {
+        _loadConversations();
+      }
     });
+  }
 
-    ApiService.socket?.on('user_status_changed', (data) {
-      if (!mounted || data == null) return;
-      final userId = data['userId']?.toString();
-      final isOnline = data['isOnline'] == true;
-      if (userId == null) return;
+  void _onMessagesReadSocket(dynamic rawData) {
+    if (!mounted || rawData == null) return;
+    final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
+    final convId = data['conversationId']?.toString();
+    if (convId == null) return;
 
-      bool changed = false;
-      for (var c in _conversations) {
-        if (_otherUserId(c) == userId) {
-          final ou = c['otherUser'] ?? c['otherUserDetails'] ?? c['participant'] ?? c['user'] ?? c['receiver'];
-          if (ou is Map) {
-            ou['isOnline'] = isOnline;
-            ou['online'] = isOnline;
-            changed = true;
-          }
+    setState(() {
+      final idx = _conversations.indexWhere(
+        (c) => (c['conversationId'] ?? c['id'])?.toString() == convId,
+      );
+      if (idx != -1) {
+        _conversations[idx]['unreadCount'] = 0;
+      }
+    });
+  }
+
+  void _onUserStatusSocket(dynamic rawData) {
+    if (!mounted || rawData == null) return;
+    final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
+    final userId = data['userId']?.toString();
+    final isOnline = data['isOnline'] == true;
+    if (userId == null) return;
+
+    bool changed = false;
+    for (var c in _conversations) {
+      if (_otherUserId(c) == userId) {
+        final ou = c['otherUser'] ?? c['otherUserDetails'] ?? c['participant'] ?? c['user'] ?? c['receiver'];
+        if (ou is Map) {
+          ou['isOnline'] = isOnline;
+          ou['online'] = isOnline;
+          changed = true;
         }
       }
-      if (changed) {
-        setState(() {});
+    }
+    if (changed) {
+      setState(() {});
+    }
+  }
+
+  void _onConversationDeletedSocket(dynamic rawData) {
+    if (!mounted || rawData == null) return;
+    final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
+    final convId = data['conversationId']?.toString();
+    if (convId == null) return;
+
+    setState(() {
+      _conversations.removeWhere(
+        (c) => (c['conversationId'] ?? c['id'])?.toString() == convId,
+      );
+    });
+  }
+
+  void _onChatClearedSocket(dynamic rawData) {
+    if (!mounted || rawData == null) return;
+    final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
+    final convId = data['conversationId']?.toString();
+    if (convId == null) return;
+
+    setState(() {
+      final idx = _conversations.indexWhere(
+        (c) => (c['conversationId'] ?? c['id'])?.toString() == convId,
+      );
+      if (idx != -1) {
+        _conversations[idx]['lastMessagePreview'] = '';
+        _conversations[idx]['unreadCount'] = 0;
       }
     });
-    ApiService.socket?.on('conversation_deleted', (data) {
-      if (!mounted || data == null) return;
-      final convId = data['conversationId']?.toString();
-      if (convId == null) return;
+  }
 
-      setState(() {
-        _conversations.removeWhere((c) => (c['conversationId'] ?? c['id'])?.toString() == convId);
-      });
-    });
+  void _onMessageDeletedSocket(dynamic rawData) {
+    if (!mounted || rawData == null) return;
+    final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
+    final convId = data['conversationId']?.toString();
+    if (convId == null) return;
 
-    ApiService.socket?.on('chat_cleared', (data) {
-      if (!mounted || data == null) return;
-      final convId = data['conversationId']?.toString();
-      if (convId == null) return;
+    final deleteForEveryone = data['deleteForEveryone'] != false;
+    final targetUserId = (data['targetUserId'] ?? '').toString();
+    final myUserId = (ApiService.currentUserId ?? '').toString();
 
-      setState(() {
-        final idx = _conversations.indexWhere((c) => (c['conversationId'] ?? c['id'])?.toString() == convId);
-        if (idx != -1) {
-          _conversations[idx]['lastMessagePreview'] = '';
-          _conversations[idx]['unreadCount'] = 0;
+    if (!deleteForEveryone &&
+        targetUserId.isNotEmpty &&
+        myUserId.isNotEmpty &&
+        targetUserId.toLowerCase() != myUserId.toLowerCase()) {
+      return; // Not deleted for this user
+    }
+
+    setState(() {
+      final idx = _conversations.indexWhere(
+        (c) => (c['conversationId'] ?? c['id'])?.toString() == convId,
+      );
+      if (idx != -1) {
+        if (data.containsKey('lastMessagePreview')) {
+          _conversations[idx]['lastMessagePreview'] =
+              data['lastMessagePreview'] ?? '';
+          _conversations[idx]['lastMessageAt'] = data['lastMessageAt'];
+        } else {
+          _loadConversations();
         }
-      });
+      } else {
+        _loadConversations();
+      }
     });
   }
 
   @override
   void dispose() {
-    ApiService.socket?.off('new_message');
-    ApiService.socket?.off('messages_read');
-    ApiService.socket?.off('user_status_changed');
-    ApiService.socket?.off('conversation_deleted');
-    ApiService.socket?.off('chat_cleared');
+    _chatUpdateSub?.cancel();
+    ApiService.removeSocketListener('new_message', _onNewMessageSocket);
+    ApiService.removeSocketListener('messages_read', _onMessagesReadSocket);
+    ApiService.removeSocketListener('user_status_changed', _onUserStatusSocket);
+    ApiService.removeSocketListener('conversation_deleted', _onConversationDeletedSocket);
+    ApiService.removeSocketListener('chat_cleared', _onChatClearedSocket);
+    ApiService.removeSocketListener('message_deleted', _onMessageDeletedSocket);
     super.dispose();
   }
 

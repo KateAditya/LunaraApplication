@@ -44,6 +44,7 @@ export interface MessageAttributes {
     status: MessageStatus;
     readAt?: Date;
     deletedAt?: Date;             // Soft delete
+    deletedForUsers?: string[];   // User IDs who selected "Delete for me"
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -67,6 +68,7 @@ export interface MessageCreationAttributes
         | 'status'
         | 'readAt'
         | 'deletedAt'
+        | 'deletedForUsers'
         | 'createdAt'
         | 'updatedAt'
     > {}
@@ -93,6 +95,7 @@ class Message
     public status!: MessageStatus;
     public readAt?: Date;
     public deletedAt?: Date;
+    public deletedForUsers?: string[];
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 
@@ -210,6 +213,12 @@ Message.init(
             type: DataTypes.DATE,
             allowNull: true,
             field: 'deleted_at',
+        },
+        deletedForUsers: {
+            type: DataTypes.JSONB,
+            allowNull: true,
+            defaultValue: [],
+            field: 'deleted_for_users',
         },
     },
     {
