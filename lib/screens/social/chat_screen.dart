@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../services/api_service.dart';
 import '../../services/push_notification_service.dart';
 import 'icebreaker_modal.dart';
@@ -124,6 +125,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       'party_plan_cancellation_requested',
       _onCancellationRequestedSocket,
     );
+    ApiService.addSocketListener('message_deleted', _onMessageDeletedSocket);
+    ApiService.addSocketListener('chat_cleared', _onChatClearedSocket);
+    ApiService.addSocketListener('conversation_deleted', _onConversationDeletedSocket);
   }
 
   void _removeSocketListeners() {
@@ -144,6 +148,46 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       'party_plan_cancellation_requested',
       _onCancellationRequestedSocket,
     );
+    ApiService.removeSocketListener('message_deleted', _onMessageDeletedSocket);
+    ApiService.removeSocketListener('chat_cleared', _onChatClearedSocket);
+    ApiService.removeSocketListener('conversation_deleted', _onConversationDeletedSocket);
+  }
+
+  void _onMessageDeletedSocket(dynamic rawData) {
+    if (!mounted || rawData == null) return;
+    final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
+    final msgConvId = _safeString(data['conversationId']);
+    final msgId = _safeString(data['messageId']);
+    if (_conversationId != null && msgConvId.toLowerCase() == _conversationId!.toLowerCase()) {
+      setState(() {
+        _messages.removeWhere((m) => _safeString(m['id']) == msgId || _safeString(m['clientMessageId']) == msgId);
+        _selectedMessageIds.remove(msgId);
+      });
+    }
+  }
+
+  void _onChatClearedSocket(dynamic rawData) {
+    if (!mounted || rawData == null) return;
+    final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
+    final msgConvId = _safeString(data['conversationId']);
+    if (_conversationId != null && msgConvId.toLowerCase() == _conversationId!.toLowerCase()) {
+      setState(() {
+        _messages.clear();
+        _selectedMessageIds.clear();
+      });
+    }
+  }
+
+  void _onConversationDeletedSocket(dynamic rawData) {
+    if (!mounted || rawData == null) return;
+    final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
+    final msgConvId = _safeString(data['conversationId']);
+    if (_conversationId != null && msgConvId.toLowerCase() == _conversationId!.toLowerCase()) {
+      setState(() {
+        _messages.clear();
+        _selectedMessageIds.clear();
+      });
+    }
   }
 
   void _onPlanCancelledSocket(dynamic rawData) {
@@ -764,70 +808,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           };
         }
       });
-    }
-  }
-
-  // ── Delete ───────────────────────────────────────────────────────────────────
-
-  Future<void> _deleteSelectedMessages() async {
-    final convId = _conversationId;
-    final userId = _currentUserId;
-    if (convId == null || userId == null || _selectedMessageIds.isEmpty) return;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          'Delete ${_selectedMessageIds.length} message(s)?',
-          style: const TextStyle(fontWeight: FontWeight.w800),
-        ),
-        content: const Text(
-          'These messages will be removed for everyone. You can only delete your own messages.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-
-    final idsToDelete = _selectedMessageIds.toList();
-    setState(() {
-      _selectedMessageIds.clear();
-    });
-
-    bool anyDeleted = false;
-    for (final messageId in idsToDelete) {
-      // Find the message in our list to ensure it's sent by current user
-      final msg = _messages.firstWhere(
-        (m) => m['id'] == messageId,
-        orElse: () => <String, dynamic>{},
-      );
-
-      if (msg.isNotEmpty && msg['isSent'] == true) {
-        final ok = await ApiService.deleteMessage(convId, messageId, userId);
-        if (ok) {
-          anyDeleted = true;
-          final index = _messages.indexWhere((m) => m['id'] == messageId);
-          if (index != -1) {
-            _messages[index]['isDeleted'] = true;
-            _messages[index]['text'] = '';
-          }
-        }
-      }
-    }
-
-    if (anyDeleted && mounted) {
-      setState(() {});
     }
   }
 
@@ -1604,6 +1584,269 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _deleteSelectedMessages() async {
+    if (_selectedMessageIds.isEmpty || _conversationId == null || _currentUserId == null) return;
+
+    final count = _selectedMessageIds.length;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Delete $count message${count > 1 ? 's' : ''}?'),
+        content: const Text(
+          'This will delete the selected messages from the conversation.',
+          style: TextStyle(fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Delete', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      final idsToDelete = Set<String>.from(_selectedMessageIds);
+      setState(() {
+        _messages.removeWhere((m) => idsToDelete.contains(_safeString(m['id'])) || idsToDelete.contains(_safeString(m['clientMessageId'])));
+        _selectedMessageIds.clear();
+      });
+
+      for (final msgId in idsToDelete) {
+        if (!msgId.startsWith('temp_')) {
+          await ApiService.deleteMessage(
+            conversationId: _conversationId!,
+            messageId: msgId,
+            userId: _currentUserId!,
+            deleteForEveryone: true,
+          );
+        }
+      }
+    }
+  }
+
+  void _showMessageActionSheet(Map<String, dynamic> msg) {
+    final msgId = _safeString(msg['id']);
+    final text = _safeString(msg['text'] ?? msg['content']);
+    final isSent = msg['isSent'] == true;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (text.isNotEmpty)
+                ListTile(
+                  leading: const Icon(Icons.copy_rounded, color: Color(0xFF7F00FF)),
+                  title: const Text('Copy Message'),
+                  onTap: () {
+                    Navigator.pop(sheetCtx);
+                    Clipboard.setData(ClipboardData(text: text));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('✓ Message copied to clipboard')),
+                    );
+                  },
+                ),
+              ListTile(
+                leading: const Icon(Icons.checklist_rounded, color: Color(0xFF6366F1)),
+                title: const Text('Select Message'),
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  setState(() {
+                    _selectedMessageIds.add(msgId);
+                  });
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline_rounded, color: Color(0xFFEF4444)),
+                title: Text(
+                  isSent ? 'Delete Message' : 'Delete for Me',
+                  style: const TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold),
+                ),
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  _deleteSingleMessage(msgId);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _deleteSingleMessage(String msgId) async {
+    if (msgId.isEmpty || _conversationId == null || _currentUserId == null) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Delete this message?'),
+        content: const Text(
+          'This message will be removed from this conversation.',
+          style: TextStyle(fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Delete', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      setState(() {
+        _messages.removeWhere((m) => _safeString(m['id']) == msgId || _safeString(m['clientMessageId']) == msgId);
+        _selectedMessageIds.remove(msgId);
+      });
+
+      if (!msgId.startsWith('temp_')) {
+        await ApiService.deleteMessage(
+          conversationId: _conversationId!,
+          messageId: msgId,
+          userId: _currentUserId!,
+          deleteForEveryone: true,
+        );
+      }
+    }
+  }
+
+  Future<void> _showClearChatDialog() async {
+    final convId = _conversationId;
+    final userId = _currentUserId;
+    if (convId == null || userId == null) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Clear Chat History?'),
+        content: const Text(
+          'All messages in this conversation will be cleared for you.',
+          style: TextStyle(fontSize: 14, height: 1.35),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFF59E0B),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Clear Chat', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      final success = await ApiService.clearChat(convId, userId);
+      if (success && mounted) {
+        setState(() {
+          _messages.clear();
+          _selectedMessageIds.clear();
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✓ Chat cleared successfully'),
+            backgroundColor: Color(0xFF10B981),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showDeleteChatDialog() async {
+    final otherUserId = widget.user['id']?.toString() ?? '';
+    final convId = _conversationId ?? widget.user['conversationId']?.toString();
+    final targetId = (convId != null && convId.isNotEmpty) ? convId : otherUserId;
+    final userId = _currentUserId ?? ApiService.currentUserId;
+    final userName = widget.user['name']?.toString() ??
+        (widget.user['firstName'] != null ? '${widget.user['firstName']} ${widget.user['lastName'] ?? ''}'.trim() : 'this user');
+    if (targetId.isEmpty || userId == null) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Delete chat with $userName?'),
+        content: const Text(
+          'This will permanently delete this conversation and remove the user from your chats list.',
+          style: TextStyle(fontSize: 14, height: 1.35),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Delete Chat', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      final success = await ApiService.deleteConversation(targetId, userId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✓ Chat deleted successfully'),
+            backgroundColor: Color(0xFF10B981),
+          ),
+        );
+        Navigator.pop(context, {'deleted': true, 'conversationId': convId, 'otherUserId': otherUserId});
+      }
+    }
+  }
+
   PreferredSizeWidget _buildAppBar(BuildContext context) {
     if (_selectedMessageIds.isNotEmpty) {
       return AppBar(
@@ -1728,20 +1971,57 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         PopupMenuButton<String>(
           icon: const Icon(Icons.more_vert_rounded, color: Color(0xFF7C3AED)),
           onSelected: (value) {
-            if (value == 'block') {
+            if (value == 'clear') {
+              _showClearChatDialog();
+            } else if (value == 'delete') {
+              _showDeleteChatDialog();
+            } else if (value == 'block') {
               _toggleBlock();
             } else if (value == 'report') {
               _reportUser();
             }
           },
           itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+            const PopupMenuItem<String>(
+              value: 'clear',
+              child: Row(
+                children: [
+                  Icon(Icons.cleaning_services_outlined, color: Color(0xFFF59E0B), size: 20),
+                  SizedBox(width: 10),
+                  Text('Clear Chat'),
+                ],
+              ),
+            ),
+            const PopupMenuItem<String>(
+              value: 'delete',
+              child: Row(
+                children: [
+                  Icon(Icons.delete_outline_rounded, color: Color(0xFFEF4444), size: 20),
+                  SizedBox(width: 10),
+                  Text('Delete Chat', style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+            const PopupMenuDivider(),
             PopupMenuItem<String>(
               value: 'block',
-              child: Text(_isBlocked ? 'Unblock User' : 'Block User'),
+              child: Row(
+                children: [
+                  Icon(Icons.block_rounded, color: Colors.grey, size: 20),
+                  const SizedBox(width: 10),
+                  Text(_isBlocked ? 'Unblock User' : 'Block User'),
+                ],
+              ),
             ),
             const PopupMenuItem<String>(
               value: 'report',
-              child: Text('Report User', style: TextStyle(color: Colors.red)),
+              child: Row(
+                children: [
+                  const Icon(Icons.report_problem_outlined, color: Colors.red, size: 20),
+                  const SizedBox(width: 10),
+                  const Text('Report User', style: TextStyle(color: Colors.red)),
+                ],
+              ),
             ),
           ],
         ),
@@ -2033,10 +2313,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
 
     void handleLongPress() {
-      if (!selectionMode && canSelect) {
-        setState(() {
-          _selectedMessageIds.add(msgId);
-        });
+      if (selectionMode && canSelect) {
+        handleTap();
+      } else if (canSelect) {
+        _showMessageActionSheet(msg);
       }
     }
 

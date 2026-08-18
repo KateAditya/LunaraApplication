@@ -8,6 +8,7 @@ import UserProfile from '../models/UserProfile';
 import UserPhoto from '../models/UserPhoto';
 import VenueImage from '../models/VenueImage';
 import { logger } from '../config/logger';
+import '../models';
 import ChatSubscription, { ChatSubscriptionStatus } from '../models/ChatSubscription';
 import Conversation from '../models/Conversation';
 import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription';
@@ -17,6 +18,15 @@ import PartySafetyCheck, { SafetyStatus } from '../models/PartySafetyCheck';
 // Run every 5 minutes with overlap protection
 let isPartyPlanCronRunning = false;
 export const startPartyPlanCron = () => {
+    // Check Strangers Meet lifecycle every 1 minute
+    cron.schedule('* * * * *', async () => {
+        try {
+            await checkAndTriggerStrangersMeetLifecycle();
+        } catch (err) {
+            logger.error('[Cron] Error running Strangers Meet lifecycle tick:', err);
+        }
+    });
+
     cron.schedule('*/5 * * * *', async () => {
         if (isPartyPlanCronRunning) {
             logger.warn('[Cron] Party Plan Cron already running, skipping overlapping tick.');
@@ -1034,13 +1044,12 @@ export const startPartyPlanCron = () => {
             }
 
             // ── 3. Process Completed Plans & Execute 4-Case Refund Engine ─────
-            const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
-            
-            const completedPlans = await PartyPlan.findAll({
+            const candidatePlans = await PartyPlan.findAll({
                 where: {
                     status: { [Op.in]: ['active', 'inactive'] },
-                    hostPaymentStatus: PartyPlanPaymentStatus.PAID,
-                    planDateTime: { [Op.lt]: twoHoursAgo }
+                    lifecycleStatus: { [Op.ne]: PartyPlanLifecycleStatus.PLAN_COMPLETED },
+                    hostPaymentStatus: { [Op.in]: [PartyPlanPaymentStatus.PAID, 'paid'] },
+                    planDateTime: { [Op.lt]: now }
                 }
             });
 
@@ -1048,7 +1057,7 @@ export const startPartyPlanCron = () => {
             const WalletTransaction = (await import('../models/WalletTransaction')).default;
             const WalletTransactionType = (await import('../models/WalletTransaction')).WalletTransactionType;
 
-            for (const plan of completedPlans) {
+            for (const plan of candidatePlans) {
                 const acceptedReq = await PartyPlanRequest.findOne({
                     where: {
                         planId: plan.id,
@@ -1058,7 +1067,22 @@ export const startPartyPlanCron = () => {
                 });
 
                 if (!acceptedReq) {
-                    await plan.update({ status: PartyPlanStatus.INACTIVE });
+                    await plan.update({
+                        status: PartyPlanStatus.INACTIVE,
+                        lifecycleStatus: PartyPlanLifecycleStatus.PLAN_COMPLETED
+                    });
+                    continue;
+                }
+
+                const hostHasAnswered = plan.hostArrivalTime !== null || plan.hostArrivalConfirmed !== null;
+                const guestHasAnswered = acceptedReq.guestArrivalTime !== null || acceptedReq.guestArrivalConfirmed !== null;
+                const bothAnswered = hostHasAnswered && guestHasAnswered;
+
+                const eventTime = plan.planDateTime ? new Date(plan.planDateTime).getTime() : 0;
+                const isPast24hDeadline = eventTime > 0 && now.getTime() >= eventTime + 24 * 60 * 60 * 1000;
+
+                // If neither/both haven't answered and 24h deadline hasn't elapsed, leave the confirmation window open
+                if (!bothAnswered && !isPast24hDeadline) {
                     continue;
                 }
 
@@ -1076,7 +1100,7 @@ export const startPartyPlanCron = () => {
                     logger.info(`[RefundEngine Case 1] Both Host and Guest confirmed arrival for plan ${plan.id}`);
 
                     if (hostUser) {
-                        const existingHostTx = await WalletTransaction.findOne({ where: { reference: `REFUND_HOST_${plan.id}` } });
+                        const existingHostTx = await WalletTransaction.findOne({ where: { reference: `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${hostUser.id}` } });
                         if (!existingHostTx) {
                             const hOld = Number(hostUser.walletBalance || 0);
                             const hNew = hOld + hostDeposit;
@@ -1089,7 +1113,7 @@ export const startPartyPlanCron = () => {
                                 openingBalance: hOld,
                                 closingBalance: hNew,
                                 transactionType: WalletTransactionType.REFUND,
-                                reference: `REFUND_HOST_${plan.id}`,
+                                reference: `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${hostUser.id}`,
                             });
                             await ReliabilityService.updateScore({
                                 userId: hostUser.id,
@@ -1100,7 +1124,7 @@ export const startPartyPlanCron = () => {
                     }
 
                     if (guestUser && guestDeposit > 0) {
-                        const existingGuestTx = await WalletTransaction.findOne({ where: { reference: `REFUND_GUEST_${acceptedReq.id}` } });
+                        const existingGuestTx = await WalletTransaction.findOne({ where: { reference: `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${guestUser.id}` } });
                         if (!existingGuestTx) {
                             const gOld = Number(guestUser.walletBalance || 0);
                             const gNew = gOld + guestDeposit;
@@ -1113,7 +1137,7 @@ export const startPartyPlanCron = () => {
                                 openingBalance: gOld,
                                 closingBalance: gNew,
                                 transactionType: WalletTransactionType.REFUND,
-                                reference: `REFUND_GUEST_${acceptedReq.id}`,
+                                reference: `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${guestUser.id}`,
                             });
                         }
                     }
@@ -1132,12 +1156,12 @@ export const startPartyPlanCron = () => {
                         paymentStatus: 'Completed (Both Refunded)'
                     });
                 }
-                // ── CASE 2: Host YES, Guest NO ─────────────────────────────────
+                // ── CASE 2: Host YES, Guest NO (or Guest Unresponsive past 24h) ──
                 else if (hostYes && !guestYes) {
                     logger.info(`[RefundEngine Case 2] Host YES, Guest NO for plan ${plan.id}`);
 
                     if (hostUser) {
-                        const existingHostTx = await WalletTransaction.findOne({ where: { reference: `REFUND_HOST_${plan.id}` } });
+                        const existingHostTx = await WalletTransaction.findOne({ where: { reference: `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${hostUser.id}` } });
                         if (!existingHostTx) {
                             const hOld = Number(hostUser.walletBalance || 0);
                             const hNew = hOld + hostDeposit;
@@ -1150,7 +1174,7 @@ export const startPartyPlanCron = () => {
                                 openingBalance: hOld,
                                 closingBalance: hNew,
                                 transactionType: WalletTransactionType.REFUND,
-                                reference: `REFUND_HOST_${plan.id}`,
+                                reference: `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${hostUser.id}`,
                             });
                             await ReliabilityService.updateScore({
                                 userId: hostUser.id,
@@ -1174,12 +1198,12 @@ export const startPartyPlanCron = () => {
                         paymentStatus: 'Completed (Host Refunded, Guest No-Show)'
                     });
                 }
-                // ── CASE 3: Host NO, Guest YES ─────────────────────────────────
+                // ── CASE 3: Host NO, Guest YES (or Host Unresponsive past 24h) ──
                 else if (!hostYes && guestYes) {
                     logger.info(`[RefundEngine Case 3] Host NO, Guest YES for plan ${plan.id}`);
 
                     if (guestUser && guestDeposit > 0) {
-                        const existingGuestTx = await WalletTransaction.findOne({ where: { reference: `REFUND_GUEST_${acceptedReq.id}` } });
+                        const existingGuestTx = await WalletTransaction.findOne({ where: { reference: `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${guestUser.id}` } });
                         if (!existingGuestTx) {
                             const gOld = Number(guestUser.walletBalance || 0);
                             const gNew = gOld + guestDeposit;
@@ -1192,7 +1216,7 @@ export const startPartyPlanCron = () => {
                                 openingBalance: gOld,
                                 closingBalance: gNew,
                                 transactionType: WalletTransactionType.REFUND,
-                                reference: `REFUND_GUEST_${acceptedReq.id}`,
+                                reference: `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${guestUser.id}`,
                             });
                         }
                     }
@@ -1219,9 +1243,9 @@ export const startPartyPlanCron = () => {
                         paymentStatus: 'Completed (Guest Refunded, Host No-Show)'
                     });
                 }
-                // ── CASE 4 & 5: Host NO, Guest NO (or Timeout) ───────────────
+                // ── CASE 4 & 5: Host NO, Guest NO (or 24h Deadline Passed - NO REFUND) ──
                 else {
-                    logger.info(`[RefundEngine Case 4/5] Host NO, Guest NO for plan ${plan.id}`);
+                    logger.info(`[RefundEngine Case 4/5] Both NO / Unresolved 24h Deadline for plan ${plan.id}. No refund issued.`);
 
                     if (hostUser) {
                         await ReliabilityService.updateScore({
@@ -1242,7 +1266,7 @@ export const startPartyPlanCron = () => {
                     await plan.update({
                         status: PartyPlanStatus.INACTIVE,
                         lifecycleStatus: PartyPlanLifecycleStatus.PLAN_COMPLETED,
-                        paymentStatus: 'Closed (Both No-Show / Timeout)'
+                        paymentStatus: 'Closed (Unresolved / 24h Deadline Passed)'
                     });
                 }
             }
@@ -1841,7 +1865,7 @@ async function dispatchSafetyCheckIfPending(data: {
             category: 'alert',
             entityType: 'PartySafetyCheck',
             entityId: safetyRecord.id,
-            title: '🛡️ Safety Check: Has your party ended?',
+            title: 'Safety Check: Has your party ended?',
             body: `Your party at ${data.venueName} started 3 hours ago. Please confirm you are safe & sound.`,
             priority: 'HIGH',
             idempotencyKey: `safety_check_${safetyRecord.id}_${data.userId}`,
@@ -1852,4 +1876,75 @@ async function dispatchSafetyCheckIfPending(data: {
         logger.error(`Failed to dispatch safety check for plan ${data.planId} and user ${data.userId}:`, err.message || err);
     }
 }
+
+export const checkAndTriggerStrangersMeetLifecycle = async () => {
+    try {
+        const StrangersMeetRequest = (await import('../models/StrangersMeetRequest')).default;
+        const { StrangersMeetStatus, StrangersMeetPaymentStatus } = await import('../models/StrangersMeetRequest');
+        const Venue = (await import('../models/Venue')).default;
+        const { io } = require('../server');
+
+        const now = new Date();
+
+        // 1. Check for Strangers Meets whose start time has arrived and need host start confirmation
+        const readyToStartMeets = await StrangersMeetRequest.findAll({
+            where: {
+                status: StrangersMeetStatus.APPROVED,
+                paymentStatus: StrangersMeetPaymentStatus.PAID,
+                eventDateTime: { [Op.lte]: now },
+                startedAt: null as any,
+            },
+            include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'area'] }]
+        });
+
+        for (const meet of readyToStartMeets) {
+            const venueName = (meet as any).venue?.name || 'Venue';
+            if (io) {
+                io.to(`user_${meet.userId}`).emit('strangers_meet_start_prompt', {
+                    meetId: meet.id,
+                    subject: meet.subject,
+                    venueName,
+                    eventDateTime: meet.eventDateTime,
+                });
+            }
+        }
+
+        // 2. Check for in-progress Strangers Meets whose expected end time has arrived
+        const readyToEndMeets = await StrangersMeetRequest.findAll({
+            where: {
+                status: StrangersMeetStatus.IN_PROGRESS,
+                expectedEndAt: { [Op.lte]: now },
+            },
+            include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'area'] }]
+        });
+
+        for (const meet of readyToEndMeets) {
+            const venueName = (meet as any).venue?.name || 'Venue';
+            if (io) {
+                io.to(`user_${meet.userId}`).emit('strangers_meet_end_prompt', {
+                    meetId: meet.id,
+                    subject: meet.subject,
+                    venueName,
+                    expectedEndAt: meet.expectedEndAt,
+                });
+            }
+        }
+
+        // 3. Check for overdue settlements (> 24h since admin confirmation without payout)
+        const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        await StrangersMeetRequest.update(
+            { settlementOverdue: true },
+            {
+                where: {
+                    status: StrangersMeetStatus.ADMIN_CONFIRMED_ENDED,
+                    adminConfirmedEndedAt: { [Op.lte]: twentyFourHoursAgo },
+                    settlementStatus: { [Op.notIn]: ['paid', 'settled'] },
+                    settlementOverdue: false,
+                }
+            }
+        );
+    } catch (err: any) {
+        logger.error('checkAndTriggerStrangersMeetLifecycle error:', err);
+    }
+};
 

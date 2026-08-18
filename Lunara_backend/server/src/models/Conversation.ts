@@ -17,6 +17,10 @@ export interface ConversationAttributes {
     unreadOne: number;        // unread count for participantOne
     unreadTwo: number;        // unread count for participantTwo
     status: ConversationStatus;
+    clearedAtOne?: Date;      // Timestamp when participantOne cleared or deleted the chat
+    clearedAtTwo?: Date;      // Timestamp when participantTwo cleared or deleted the chat
+    deletedByOne?: boolean;   // Whether participantOne has deleted the conversation from their chat list
+    deletedByTwo?: boolean;   // Whether participantTwo has deleted the conversation from their chat list
     // Optional context linking (plan/booking that started the chat)
     contextType?: string;     // 'plan' | 'booking' | null
     contextId?: string;
@@ -34,6 +38,10 @@ export interface ConversationCreationAttributes
         | 'unreadOne'
         | 'unreadTwo'
         | 'status'
+        | 'clearedAtOne'
+        | 'clearedAtTwo'
+        | 'deletedByOne'
+        | 'deletedByTwo'
         | 'contextType'
         | 'contextId'
         | 'createdAt'
@@ -52,6 +60,10 @@ class Conversation
     public unreadOne!: number;
     public unreadTwo!: number;
     public status!: ConversationStatus;
+    public clearedAtOne?: Date;
+    public clearedAtTwo?: Date;
+    public deletedByOne?: boolean;
+    public deletedByTwo?: boolean;
     public contextType?: string;
     public contextId?: string;
     public readonly createdAt!: Date;
@@ -121,6 +133,26 @@ Conversation.init(
         status: {
             type: DataTypes.ENUM(...Object.values(ConversationStatus)),
             defaultValue: ConversationStatus.ACTIVE,
+        },
+        clearedAtOne: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'cleared_at_one',
+        },
+        clearedAtTwo: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'cleared_at_two',
+        },
+        deletedByOne: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            field: 'deleted_by_one',
+        },
+        deletedByTwo: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            field: 'deleted_by_two',
         },
         contextType: {
             type: DataTypes.STRING(20),

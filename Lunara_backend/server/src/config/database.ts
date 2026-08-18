@@ -75,6 +75,24 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='reminder_2h_sent') THEN ALTER TABLE strangers_meet_requests ADD COLUMN reminder_2h_sent BOOLEAN DEFAULT FALSE; END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='reminder_1h_sent') THEN ALTER TABLE strangers_meet_requests ADD COLUMN reminder_1h_sent BOOLEAN DEFAULT FALSE; END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='reminder_30m_sent') THEN ALTER TABLE strangers_meet_requests ADD COLUMN reminder_30m_sent BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='started_at') THEN ALTER TABLE strangers_meet_requests ADD COLUMN started_at TIMESTAMP WITH TIME ZONE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='started_by') THEN ALTER TABLE strangers_meet_requests ADD COLUMN started_by UUID; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='duration_hours') THEN ALTER TABLE strangers_meet_requests ADD COLUMN duration_hours DECIMAL(4,2) DEFAULT 3.0; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='expected_end_at') THEN ALTER TABLE strangers_meet_requests ADD COLUMN expected_end_at TIMESTAMP WITH TIME ZONE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='ended_at') THEN ALTER TABLE strangers_meet_requests ADD COLUMN ended_at TIMESTAMP WITH TIME ZONE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='ended_confirmed_by') THEN ALTER TABLE strangers_meet_requests ADD COLUMN ended_confirmed_by UUID; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='ended_confirmed_at') THEN ALTER TABLE strangers_meet_requests ADD COLUMN ended_confirmed_at TIMESTAMP WITH TIME ZONE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='admin_confirmed_ended_at') THEN ALTER TABLE strangers_meet_requests ADD COLUMN admin_confirmed_ended_at TIMESTAMP WITH TIME ZONE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='admin_confirmed_by') THEN ALTER TABLE strangers_meet_requests ADD COLUMN admin_confirmed_by UUID; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='settlement_overdue') THEN ALTER TABLE strangers_meet_requests ADD COLUMN settlement_overdue BOOLEAN DEFAULT FALSE; END IF;
+
+                    -- Strangers Meet Enums
+                    BEGIN ALTER TYPE "enum_strangers_meet_requests_status" ADD VALUE IF NOT EXISTS 'in_progress'; EXCEPTION WHEN others THEN NULL; END;
+                    BEGIN ALTER TYPE "enum_strangers_meet_requests_status" ADD VALUE IF NOT EXISTS 'host_confirmed_ended'; EXCEPTION WHEN others THEN NULL; END;
+                    BEGIN ALTER TYPE "enum_strangers_meet_requests_status" ADD VALUE IF NOT EXISTS 'admin_confirmed_ended'; EXCEPTION WHEN others THEN NULL; END;
+                    BEGIN ALTER TYPE "enum_strangers_meet_requests_status" ADD VALUE IF NOT EXISTS 'completed'; EXCEPTION WHEN others THEN NULL; END;
+                    BEGIN ALTER TYPE "enum_strangers_meet_requests_settlement_status" ADD VALUE IF NOT EXISTS 'settlement_pending'; EXCEPTION WHEN others THEN NULL; END;
+                    BEGIN ALTER TYPE "enum_strangers_meet_requests_settlement_status" ADD VALUE IF NOT EXISTS 'settled'; EXCEPTION WHEN others THEN NULL; END;
 
                     -- strangers_meet_joiners columns
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_joiners' AND column_name='status') THEN ALTER TABLE strangers_meet_joiners ADD COLUMN status VARCHAR(50) DEFAULT 'pending'; END IF;
@@ -244,6 +262,30 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='wallet_transactions' AND column_name='source') THEN ALTER TABLE wallet_transactions ADD COLUMN source VARCHAR(100); END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='wallet_transactions' AND column_name='destination') THEN ALTER TABLE wallet_transactions ADD COLUMN destination VARCHAR(100); END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='wallet_transactions' AND column_name='created_by') THEN ALTER TABLE wallet_transactions ADD COLUMN created_by VARCHAR(100); END IF;
+
+                    -- party_plan_cancellation_requests table
+                    CREATE TABLE IF NOT EXISTS party_plan_cancellation_requests (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        plan_id UUID NOT NULL,
+                        booking_id UUID,
+                        requested_by_id UUID NOT NULL,
+                        recipient_user_id UUID NOT NULL,
+                        status VARCHAR(50) NOT NULL DEFAULT 'pending',
+                        reason VARCHAR(100) NOT NULL DEFAULT 'my_plans_changed',
+                        other_reason_text VARCHAR(150),
+                        requested_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                        expires_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT (NOW() + INTERVAL '2 hours'),
+                        responded_at TIMESTAMP WITH TIME ZONE,
+                        responded_by_id UUID,
+                        auto_approval_eligible BOOLEAN DEFAULT FALSE,
+                        host_deposit_amount DECIMAL(10,2) DEFAULT 99.00,
+                        joiner_deposit_amount DECIMAL(10,2) DEFAULT 99.00,
+                        host_wallet_transaction_id VARCHAR(255),
+                        joiner_wallet_transaction_id VARCHAR(255),
+                        reliability_impact INTEGER DEFAULT -5,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                    );
                 END $$;
             `);
 
@@ -274,6 +316,18 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                 CREATE INDEX IF NOT EXISTS idx_venues_is_active ON venues(is_active);
                 CREATE INDEX IF NOT EXISTS idx_ads_is_active ON ads(is_active);
                 CREATE INDEX IF NOT EXISTS idx_notifs_recipient ON notifications(recipient_user_id, is_read);
+                CREATE INDEX IF NOT EXISTS idx_wallet_tx_user_type ON wallet_transactions(user_id, transaction_type);
+                CREATE INDEX IF NOT EXISTS idx_wallet_tx_status ON wallet_transactions(status);
+                CREATE INDEX IF NOT EXISTS idx_smart_wallets_user_id ON smart_wallets(user_id);
+                CREATE INDEX IF NOT EXISTS idx_venue_images_venue_id ON venue_images(venue_id, image_type);
+                CREATE INDEX IF NOT EXISTS idx_user_photos_user_id ON user_photos(user_id);
+                CREATE INDEX IF NOT EXISTS idx_user_profiles_user_id ON user_profiles(user_id);
+                CREATE INDEX IF NOT EXISTS idx_payments_user_status ON payments(user_id, status);
+                CREATE INDEX IF NOT EXISTS idx_conv_part1_part2 ON conversations(participant_one, participant_two);
+                CREATE INDEX IF NOT EXISTS idx_pp_canc_req_plan ON party_plan_cancellation_requests(plan_id);
+                CREATE INDEX IF NOT EXISTS idx_pp_canc_req_status ON party_plan_cancellation_requests(status);
+                CREATE INDEX IF NOT EXISTS idx_pp_canc_req_req_by ON party_plan_cancellation_requests(requested_by_id);
+                CREATE INDEX IF NOT EXISTS idx_pp_canc_req_rec_id ON party_plan_cancellation_requests(recipient_user_id);
             `);
 
             logger.info('Database schema and performance indexes verified successfully.');

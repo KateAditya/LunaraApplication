@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
@@ -17,11 +18,32 @@ class UpcomingPartyScreen extends StatefulWidget {
 class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
   bool _isInterested = false;
   bool _isToggling = false;
+  Map<String, dynamic>? _venueData;
+  Map<String, dynamic>? get currentVenue => _venueData ?? widget.venueMap;
 
   @override
   void initState() {
     super.initState();
     _checkInitialInterest();
+    _loadFullVenueDetails();
+  }
+
+  Future<void> _loadFullVenueDetails() async {
+    final venueId = widget.venueMap?['id']?.toString() ?? widget.party['venueId']?.toString() ?? '';
+    if (venueId.isEmpty) return;
+    try {
+      final res = await ApiService.get('/api/venues/$venueId');
+      if (res.statusCode == 200 && mounted) {
+        final data = jsonDecode(res.body);
+        if (data != null && data['venue'] is Map) {
+          setState(() {
+            _venueData = Map<String, dynamic>.from(data['venue']);
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading full venue details in UpcomingPartyScreen: $e');
+    }
   }
 
   String _formatDateIso(String raw) {
@@ -180,8 +202,8 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
     final double screenWidth = MediaQuery.of(context).size.width;
     final String title = widget.party['title']?.toString() ?? 'Special Event';
     final String dateStr = widget.party['date']?.toString() ?? 'Upcoming';
-    final String venueName =
-        widget.party['venue']?.toString() ?? 'Unknown Venue';
+    final resolvedVenue = currentVenue;
+    final String venueName = (resolvedVenue?['name'] ?? widget.party['venue'] ?? 'Venue').toString();
     final String imageUrl = widget.party['image']?.toString() ?? '';
     final String aboutEventText =
         (widget.party['aboutEvent'] != null &&
@@ -189,20 +211,39 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
         ? widget.party['aboutEvent'].toString().trim()
         : 'Join us for an unforgettable night at $venueName. Get ready for amazing music, great vibes, and an incredible atmosphere. Book your tickets now before they sell out!';
 
-    String? venueImageUrl;
-    if (widget.venueMap != null) {
-      final images = widget.venueMap!['images'];
-      if (images is List && images.isNotEmpty) {
-        final firstImg = images[0];
-        if (firstImg is Map) {
-          venueImageUrl = firstImg['url']?.toString();
-        } else if (firstImg is String) {
-          venueImageUrl = firstImg;
+    String venueImageUrl = '';
+    if (resolvedVenue != null) {
+      if (resolvedVenue['coverImage'] != null) {
+        if (resolvedVenue['coverImage'] is Map) {
+          venueImageUrl = (resolvedVenue['coverImage']['url'] ?? resolvedVenue['coverImage']['filePath'] ?? '').toString();
+        } else {
+          venueImageUrl = resolvedVenue['coverImage'].toString();
         }
+      } else if (resolvedVenue['image'] != null) {
+        venueImageUrl = resolvedVenue['image'].toString();
+      } else if (resolvedVenue['imageUrl'] != null) {
+        venueImageUrl = resolvedVenue['imageUrl'].toString();
+      } else if (resolvedVenue['primaryPhoto'] != null) {
+        venueImageUrl = resolvedVenue['primaryPhoto'].toString();
       }
-      if (venueImageUrl == null && widget.venueMap!['imageUrl'] != null) {
-        venueImageUrl = widget.venueMap!['imageUrl'].toString();
+      if (venueImageUrl.isNotEmpty && !venueImageUrl.startsWith('http')) {
+        final clean = venueImageUrl.replaceAll(r'\', '/');
+        final formatted = clean.startsWith('/') ? clean : '/$clean';
+        venueImageUrl = '${ApiService.baseUrl}$formatted';
       }
+    }
+
+    final String cityRaw = (resolvedVenue?['city'] ?? '').toString().trim();
+    final String areaRaw = (resolvedVenue?['area'] ?? resolvedVenue?['addressLine1'] ?? '').toString().trim();
+    final String cleanCity = (cityRaw.isNotEmpty && cityRaw.toLowerCase() != 'null') ? cityRaw : '';
+    final String cleanArea = (areaRaw.isNotEmpty && areaRaw.toLowerCase() != 'null') ? areaRaw : '';
+    String venueLocationText = '';
+    if (cleanCity.isNotEmpty && cleanArea.isNotEmpty) {
+      venueLocationText = '$cleanCity • $cleanArea';
+    } else if (cleanCity.isNotEmpty) {
+      venueLocationText = cleanCity;
+    } else if (cleanArea.isNotEmpty) {
+      venueLocationText = cleanArea;
     }
 
     return Scaffold(
@@ -394,8 +435,7 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                   ),
                   const SizedBox(height: 32),
 
-                  if (widget.venueMap != null &&
-                      widget.venueMap!.isNotEmpty) ...[
+                  if (currentVenue != null && currentVenue!.isNotEmpty) ...[
                     const Text(
                       'HOSTED AT',
                       style: TextStyle(
@@ -412,8 +452,12 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) =>
-                                VenueDetailScreen(venue: widget.venueMap!),
+                            builder: (_) => VenueDetailScreen(
+                              venue: currentVenue!,
+                              initialPartyEvent: widget.party['rawAd'] is Map
+                                  ? widget.party['rawAd']
+                                  : widget.party,
+                            ),
                           ),
                         );
                       },
@@ -444,17 +488,14 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(12),
                                 color: Colors.grey[200],
-                                image:
-                                    venueImageUrl != null &&
-                                        venueImageUrl.isNotEmpty
+                                image: venueImageUrl.isNotEmpty
                                     ? DecorationImage(
                                         image: NetworkImage(venueImageUrl),
                                         fit: BoxFit.cover,
                                       )
                                     : null,
                               ),
-                              child:
-                                  venueImageUrl == null || venueImageUrl.isEmpty
+                              child: venueImageUrl.isEmpty
                                   ? const Icon(Icons.store, color: Colors.grey)
                                   : null,
                             ),
@@ -473,16 +514,17 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '${widget.venueMap!['city']} • ${widget.venueMap!['area'] ?? widget.venueMap!['addressLine1']}'
-                                        .toUpperCase(),
-                                    style: TextStyle(
-                                      color: Colors.grey[600],
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
+                                  if (venueLocationText.isNotEmpty) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      venueLocationText.toUpperCase(),
+                                      style: TextStyle(
+                                        color: Colors.grey[600],
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
-                                  ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -541,21 +583,32 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                                       ),
                                     ],
                             ),
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 6.0),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      _isInterested
-                                          ? Icons.favorite_rounded
-                                          : Icons.favorite_border_rounded,
-                                      color: LunaraTheme.electricViolet,
-                                      size: 20,
+                            child: _isToggling
+                                ? const Center(
+                                    child: SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: LunaraTheme.electricViolet,
+                                      ),
                                     ),
-                                    const SizedBox(width: 6),
+                                  )
+                                : FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6.0),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(
+                                            _isInterested
+                                                ? Icons.favorite_rounded
+                                                : Icons.favorite_border_rounded,
+                                            color: LunaraTheme.electricViolet,
+                                            size: 20,
+                                          ),
+                                          const SizedBox(width: 6),
                                     Text(
                                       _isInterested ? 'INTERESTED ✓' : 'INTERESTED',
                                       style: const TextStyle(

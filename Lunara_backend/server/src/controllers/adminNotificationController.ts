@@ -1,6 +1,5 @@
 import { Request, Response } from 'express';
 import Booking from '../models/Booking';
-import PartyPlanRequest from '../models/PartyPlanRequest';
 import GroupParty from '../models/GroupParty';
 import StrangersMeetRequest from '../models/StrangersMeetRequest';
 import User from '../models/User';
@@ -46,14 +45,27 @@ export const getAdminNotificationSummary = async (req: Request, res: Response): 
         };
 
         const [bookingsCount, partyRequestsCount, groupPartiesCount, strangersMeetCount] = await Promise.all([
-            Booking.count({ where: makeWhere(dateBookings) }).catch(() => 0),
-            PartyPlanRequest.count({ where: makeWhere(datePartyRequests) }).catch(() => 0),
+            Booking.count({
+                where: {
+                    ...makeWhere(dateBookings),
+                    isLargePartyRequest: { [Op.ne]: true },
+                }
+            }).catch(() => 0),
+            Booking.count({
+                where: {
+                    ...makeWhere(datePartyRequests),
+                    isLargePartyRequest: true,
+                    numberOfGuests: { [Op.gt]: 20 },
+                }
+            }).catch(() => 0),
             GroupParty.count({
                 where: {
                     ...makeWhere(dateGroupParties),
+                    numberOfFriends: { [Op.lte]: 20 },
                     [Op.or]: [
                         { paymentStatus: 'paid' },
-                        { status: 'confirmed' }
+                        { status: 'confirmed' },
+                        { totalAmount: 0 }
                     ]
                 }
             }).catch(() => 0),
@@ -90,25 +102,35 @@ export const getAdminNotificationActivity = async (_req: Request, res: Response)
         const { Op } = require('sequelize');
         const [recentBookings, recentPartyReqs, recentGroupParties, recentStrangersMeet] = await Promise.all([
             Booking.findAll({
+                where: {
+                    isLargePartyRequest: { [Op.ne]: true }
+                },
                 limit: 5,
                 order: [['createdAt', 'DESC']],
                 include: [
-                    { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] },
+                    { model: User, as: 'customer', attributes: ['id', 'firstName', 'lastName', 'email'] },
                     { model: Venue, as: 'venue', attributes: ['id', 'name', 'city'] },
                 ],
             }).catch(() => []),
-            PartyPlanRequest.findAll({
+            Booking.findAll({
+                where: {
+                    isLargePartyRequest: true,
+                    numberOfGuests: { [Op.gt]: 20 }
+                },
                 limit: 5,
                 order: [['createdAt', 'DESC']],
                 include: [
-                    { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] },
+                    { model: User, as: 'customer', attributes: ['id', 'firstName', 'lastName', 'email'] },
+                    { model: Venue, as: 'venue', attributes: ['id', 'name', 'city'] },
                 ],
             }).catch(() => []),
             GroupParty.findAll({
                 where: {
+                    numberOfFriends: { [Op.lte]: 20 },
                     [Op.or]: [
                         { paymentStatus: 'paid' },
-                        { status: 'confirmed' }
+                        { status: 'confirmed' },
+                        { totalAmount: 0 }
                     ]
                 },
                 limit: 5,
@@ -141,7 +163,7 @@ export const getAdminNotificationActivity = async (_req: Request, res: Response)
 
         // Map Bookings
         recentBookings.forEach((b: any) => {
-            const userName = b.user ? `${b.user.firstName || ''} ${b.user.lastName || ''}`.trim() : 'User';
+            const userName = b.customer ? `${b.customer.firstName || ''} ${b.customer.lastName || ''}`.trim() : (b.user ? `${b.user.firstName || ''} ${b.user.lastName || ''}`.trim() : 'User');
             const venueName = b.venue?.name || 'Venue';
             activities.push({
                 id: `booking_${b.id}`,
@@ -155,14 +177,15 @@ export const getAdminNotificationActivity = async (_req: Request, res: Response)
             });
         });
 
-        // Map Party Requests
+        // Map Large Party Requests
         recentPartyReqs.forEach((pr: any) => {
-            const userName = pr.user ? `${pr.user.firstName || ''} ${pr.user.lastName || ''}`.trim() : 'User';
+            const userName = pr.customer ? `${pr.customer.firstName || ''} ${pr.customer.lastName || ''}`.trim() : (pr.user ? `${pr.user.firstName || ''} ${pr.user.lastName || ''}`.trim() : 'User');
+            const venueName = pr.venue?.name || 'Venue';
             activities.push({
                 id: `pr_${pr.id}`,
                 type: 'party_request',
-                title: `🎉 Party Request: ${userName}`,
-                subtitle: `Submitted a party request (${pr.status})`,
+                title: `🎉 Large Party Request: ${userName}`,
+                subtitle: `Request for ${pr.numberOfGuests} guests @ ${venueName} (${pr.status})`,
                 path: '/party-requests',
                 status: pr.status,
                 isPending: pr.status === 'pending',
@@ -178,7 +201,7 @@ export const getAdminNotificationActivity = async (_req: Request, res: Response)
                 id: `gp_${gp.id}`,
                 type: 'group_party',
                 title: `👥 Group Party: ${userName}`,
-                subtitle: `Posted a group party for ${gp.numberOfFriends + 1} guests @ ${venueName} (${gp.status})`,
+                subtitle: `Group party for ${gp.numberOfFriends} friends @ ${venueName} (${gp.status})`,
                 path: '/group-parties',
                 status: gp.status,
                 isPending: gp.status === 'pending',

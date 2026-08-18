@@ -659,9 +659,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final String hostLastName = hostUserMap['lastName'] ?? 'User';
     final String? hostPhoto = hostUserMap['photoUrl'];
 
-    final bool isMyPost =
-        hostUserMap['id']?.toString() == ApiService.currentUserId;
     final String currentUserId = ApiService.currentUserId ?? '';
+    final bool isMyPost =
+        (req.userId != null && req.userId == currentUserId) ||
+        (hostUserMap['id'] != null && hostUserMap['id']?.toString() == currentUserId) ||
+        (widget.post['userId'] != null && widget.post['userId']?.toString() == currentUserId) ||
+        (widget.post['user_id'] != null && widget.post['user_id']?.toString() == currentUserId);
 
     Map<String, dynamic>? myJoinerInfo;
     if (req.joiners != null) {
@@ -1039,7 +1042,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   ),
 
                   // Pending Requests Section (only for Host)
-                  if (isMyPost) ...[_buildPendingRequestsSection()],
+                  if (isMyPost) ...[_buildPendingRequestsSection(slotsFilled, maxPersons)],
 
                   // Participants Section
                   _buildParticipantsSection(),
@@ -1105,7 +1108,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               if (ju == null) return const SizedBox.shrink();
 
               final name = ju['firstName'] ?? 'User';
-              final photo = ju['photoUrl'];
+              final photo = ju['photoUrl'] ?? ju['profileImageUrl'];
               String? finalPhoto = photo;
               if (finalPhoto != null &&
                   finalPhoto.startsWith('/') &&
@@ -1170,10 +1173,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Widget _buildPendingRequestsSection() {
+  Widget _buildPendingRequestsSection(int slotsFilled, int maxPersons) {
     final pendingJoiners = (_meetRequest?.joiners ?? []).where((j) {
       if (j is Map) {
-        return j['status']?.toString() == 'pending';
+        return (j['status']?.toString() ?? '').toLowerCase() == 'pending';
       }
       return false;
     }).toList();
@@ -1182,19 +1185,65 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       return const SizedBox.shrink();
     }
 
+    final bool isFull = slotsFilled >= maxPersons;
+    final int availableSlots = (maxPersons - slotsFilled).clamp(0, maxPersons);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 32),
-        const Text(
-          'PENDING REQUESTS TO JOIN',
-          style: TextStyle(
-            color: Colors.black38,
-            fontSize: 10,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1.5,
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'PENDING REQUESTS (${pendingJoiners.length})',
+              style: const TextStyle(
+                color: Colors.black38,
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.5,
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: isFull ? Colors.red.withValues(alpha: 0.1) : Colors.green.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                isFull ? 'MEET FULL ($slotsFilled/$maxPersons)' : '$availableSlots spots remaining',
+                style: TextStyle(
+                  color: isFull ? Colors.red : Colors.green[700],
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
         ),
+        if (isFull) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.amber.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.info_outline_rounded, color: Colors.amber, size: 18),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'All spots are filled! You can decline remaining requests or wait if someone cancels.',
+                    style: TextStyle(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
         ListView.builder(
           shrinkWrap: true,
@@ -1202,12 +1251,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           itemCount: pendingJoiners.length,
           itemBuilder: (context, index) {
             final joiner = pendingJoiners[index];
-            final ju = joiner['user'] as Map<String, dynamic>?;
-            if (ju == null) return const SizedBox.shrink();
+            final ju = (joiner['user'] is Map)
+                ? joiner['user'] as Map<String, dynamic>
+                : (joiner['requester'] is Map ? joiner['requester'] as Map<String, dynamic> : <String, dynamic>{});
 
-            final name = '${ju['firstName'] ?? ''} ${ju['lastName'] ?? ''}'
-                .trim();
-            final photo = ju['photoUrl'];
+            final name = '${ju['firstName'] ?? 'User'} ${ju['lastName'] ?? ''}'.trim();
+            final photo = ju['photoUrl'] ?? ju['profileImageUrl'];
             String? finalPhoto = photo;
             if (finalPhoto != null &&
                 finalPhoto.startsWith('/') &&
@@ -1216,81 +1265,128 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             }
 
             final joinerId = joiner['id'].toString();
+            final bio = ju['bio']?.toString() ?? ju['profile']?['bio']?.toString();
+            final foodPref = joiner['foodPreference']?.toString() ?? ju['foodPreference']?.toString();
+            final drinkPref = joiner['drinkPreference']?.toString() ?? ju['drinkPreference']?.toString();
 
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
                 color: Colors.grey[50],
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: Colors.grey[200]!),
               ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  CircleAvatar(
-                    radius: 22,
-                    backgroundColor: LunaraTheme.electricViolet.withValues(
-                      alpha: 0.08,
-                    ),
-                    backgroundImage: finalPhoto != null && finalPhoto.isNotEmpty
-                        ? NetworkImage(finalPhoto)
-                        : null,
-                    child: finalPhoto == null || finalPhoto.isEmpty
-                        ? const Icon(
-                            Icons.person,
-                            color: LunaraTheme.electricViolet,
-                          )
-                        : null,
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 22,
+                        backgroundColor: LunaraTheme.electricViolet.withValues(
+                          alpha: 0.08,
+                        ),
+                        backgroundImage: finalPhoto != null && finalPhoto.isNotEmpty
+                            ? NetworkImage(finalPhoto)
+                            : null,
+                        child: finalPhoto == null || finalPhoto.isEmpty
+                            ? const Icon(
+                                Icons.person,
+                                color: LunaraTheme.electricViolet,
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name.isEmpty ? 'Lunara Member' : name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
+                            ),
+                            if (bio != null && bio.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  bio,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            if (foodPref != null || drinkPref != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 3),
+                                child: Text(
+                                  'Food: ${foodPref ?? "Any"} • Drink: ${drinkPref ?? "Any"}',
+                                  style: const TextStyle(
+                                    color: LunaraTheme.electricViolet,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          name.isEmpty ? 'User' : name,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: isFull
+                              ? null
+                              : () => _handleRequest(joinerId, 'accept'),
+                          icon: const Icon(Icons.check_circle_rounded, size: 16),
+                          label: const Text(
+                            'Approve',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: LunaraTheme.electricViolet,
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor: Colors.grey[300],
+                            disabledForegroundColor: Colors.grey[600],
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
                           ),
                         ),
-                        if (ju['phone'] != null &&
-                            ju['phone'].toString().isNotEmpty)
-                          Text(
-                            ju['phone'].toString(),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _handleRequest(joinerId, 'reject'),
+                          icon: const Icon(Icons.cancel_rounded, size: 16, color: Colors.redAccent),
+                          label: const Text(
+                            'Decline',
                             style: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: Colors.redAccent,
                             ),
                           ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Reject button
-                  IconButton(
-                    onPressed: () => _handleRequest(joinerId, 'reject'),
-                    icon: const Icon(Icons.close_rounded, color: Colors.red),
-                    tooltip: 'Reject',
-                    style: IconButton.styleFrom(
-                      backgroundColor: Colors.red.withValues(alpha: 0.1),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Color(0x40EF4444)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Accept button
-                  IconButton(
-                    onPressed: () => _handleRequest(joinerId, 'accept'),
-                    icon: const Icon(Icons.check_rounded, color: Colors.green),
-                    tooltip: 'Accept',
-                    style: IconButton.styleFrom(
-                      backgroundColor: Colors.green.withValues(alpha: 0.1),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
+                    ],
                   ),
                 ],
               ),

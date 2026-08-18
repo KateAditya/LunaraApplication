@@ -1,5 +1,6 @@
 class StrangersMeetRequest {
   final String id;
+  final String? userId;
   final String subject;
   final String tagline;
   final DateTime eventDateTime;
@@ -35,6 +36,18 @@ class StrangersMeetRequest {
   final DateTime? settlementDate;
   final String? settlementMethod;
 
+  // Lifecycle fields
+  final DateTime? startedAt;
+  final String? startedBy;
+  final double? durationHours;
+  final DateTime? expectedEndAt;
+  final DateTime? endedAt;
+  final String? endedConfirmedBy;
+  final DateTime? endedConfirmedAt;
+  final DateTime? adminConfirmedEndedAt;
+  final String? adminConfirmedBy;
+  final bool settlementOverdue;
+
   // Dynamic computed values from server
   final int joinedCount;
   final int paymentCount;
@@ -46,6 +59,7 @@ class StrangersMeetRequest {
 
   StrangersMeetRequest({
     required this.id,
+    this.userId,
     required this.subject,
     required this.tagline,
     required this.eventDateTime,
@@ -74,6 +88,16 @@ class StrangersMeetRequest {
     this.settlementAmount,
     this.settlementDate,
     this.settlementMethod,
+    this.startedAt,
+    this.startedBy,
+    this.durationHours,
+    this.expectedEndAt,
+    this.endedAt,
+    this.endedConfirmedBy,
+    this.endedConfirmedAt,
+    this.adminConfirmedEndedAt,
+    this.adminConfirmedBy,
+    this.settlementOverdue = false,
     this.joinedCount = 0,
     this.paymentCount = 0,
     this.remainingCount = 0,
@@ -95,6 +119,7 @@ class StrangersMeetRequest {
 
     return StrangersMeetRequest(
       id: json['id'] ?? '',
+      userId: json['userId'] ?? json['user_id'] ?? json['user']?['id']?.toString(),
       subject: json['subject'] ?? '',
       tagline: json['tagline'] ?? '',
       eventDateTime: DateTime.parse(
@@ -155,6 +180,30 @@ class StrangersMeetRequest {
           ? DateTime.parse(json['settlementDate'] ?? json['settlement_date']).toLocal()
           : null,
       settlementMethod: json['settlementMethod'] ?? json['settlement_method'],
+      startedAt: (json['startedAt'] ?? json['started_at']) != null
+          ? DateTime.parse(json['startedAt'] ?? json['started_at']).toLocal()
+          : null,
+      startedBy: json['startedBy'] ?? json['started_by'],
+      durationHours: json['durationHours'] != null
+          ? (json['durationHours'] is String
+                ? double.tryParse(json['durationHours'])
+                : (json['durationHours'] as num).toDouble())
+          : null,
+      expectedEndAt: (json['expectedEndAt'] ?? json['expected_end_at']) != null
+          ? DateTime.parse(json['expectedEndAt'] ?? json['expected_end_at']).toLocal()
+          : null,
+      endedAt: (json['endedAt'] ?? json['ended_at']) != null
+          ? DateTime.parse(json['endedAt'] ?? json['ended_at']).toLocal()
+          : null,
+      endedConfirmedBy: json['endedConfirmedBy'] ?? json['ended_confirmed_by'],
+      endedConfirmedAt: (json['endedConfirmedAt'] ?? json['ended_confirmed_at']) != null
+          ? DateTime.parse(json['endedConfirmedAt'] ?? json['ended_confirmed_at']).toLocal()
+          : null,
+      adminConfirmedEndedAt: (json['adminConfirmedEndedAt'] ?? json['admin_confirmed_ended_at']) != null
+          ? DateTime.parse(json['adminConfirmedEndedAt'] ?? json['admin_confirmed_ended_at']).toLocal()
+          : null,
+      adminConfirmedBy: json['adminConfirmedBy'] ?? json['admin_confirmed_by'],
+      settlementOverdue: json['settlementOverdue'] == true || json['settlement_overdue'] == true,
       joinedCount: json['joinedCount'] ?? json['joined_count'] ?? 0,
       paymentCount: json['paymentCount'] ?? json['payment_count'] ?? 0,
       remainingCount: json['remainingCount'] ?? json['remaining_count'] ?? 0,
@@ -162,6 +211,23 @@ class StrangersMeetRequest {
       venue: json['venue'],
       joiners: json['joiners'],
     );
+  }
+
+  /// Helper getters for lifecycle
+  bool get isInProgress => status.toLowerCase() == 'in_progress';
+  bool get isHostConfirmedEnded => status.toLowerCase() == 'host_confirmed_ended';
+  bool get isAdminConfirmedEnded => status.toLowerCase() == 'admin_confirmed_ended';
+  bool get isCompleted => status.toLowerCase() == 'completed';
+
+  /// Remaining duration string (hh:mm:ss) until expectedEndAt
+  String get remainingTimeFormatted {
+    if (expectedEndAt == null) return '--:--';
+    final diff = expectedEndAt!.difference(DateTime.now());
+    if (diff.isNegative) return '00:00:00';
+    final hours = diff.inHours.toString().padLeft(2, '0');
+    final minutes = (diff.inMinutes % 60).toString().padLeft(2, '0');
+    final seconds = (diff.inSeconds % 60).toString().padLeft(2, '0');
+    return '$hours:$minutes:$seconds';
   }
 
   /// Whether the host provided bank details (either structured or legacy UPI/UPI number)
@@ -179,5 +245,22 @@ class StrangersMeetRequest {
       return '$bankName · ${accountNumber ?? ''} · IFSC: ${ifscCode ?? ''}';
     }
     return bankDetails ?? 'No bank details provided';
+  }
+
+  /// Returns the dynamically confirmed participant count (joined users)
+  int get actualParticipantsCount {
+    if (joinedCount > 0) return joinedCount;
+    if (paymentCount > 0) return paymentCount;
+    if (slotsFilled > 0) return slotsFilled;
+    if (joiners != null && joiners!.isNotEmpty) {
+      final valid = joiners!.where((j) {
+        if (j is! Map) return false;
+        final st = (j['status'] ?? '').toString().toLowerCase();
+        final pst = (j['paymentStatus'] ?? '').toString().toLowerCase();
+        return st == 'paid' || st == 'accepted' || pst == 'paid';
+      }).length;
+      if (valid > 0) return valid;
+    }
+    return 1; // Default to host (1 person)
   }
 }

@@ -64,6 +64,12 @@ import WalletCashbackRule from './WalletCashbackRule';
 User.hasOne(SmartWallet, { foreignKey: 'userId', as: 'smartWallet' });
 SmartWallet.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
+User.hasMany(WalletTransaction, { foreignKey: 'userId', as: 'walletTransactions' });
+WalletTransaction.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
+SmartWallet.hasMany(WalletTransaction, { foreignKey: 'walletId', as: 'transactions' });
+WalletTransaction.belongsTo(SmartWallet, { foreignKey: 'walletId', as: 'smartWallet' });
+
 // ============================================================================
 // Notification Associations
 // ============================================================================
@@ -491,6 +497,7 @@ UserPenalty.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
 User.hasMany(GroupParty, { foreignKey: 'userId', as: 'groupParties' });
 GroupParty.belongsTo(User, { foreignKey: 'userId', as: 'creator' });
+GroupParty.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
 Venue.hasMany(GroupParty, { foreignKey: 'venueId', as: 'groupParties', onDelete: 'CASCADE' });
 GroupParty.belongsTo(Venue, { foreignKey: 'venueId', as: 'venue' });
@@ -704,6 +711,16 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
                 ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;
                 ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;
                 ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;
+                ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS started_at TIMESTAMP WITH TIME ZONE;
+                ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS started_by UUID;
+                ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS duration_hours DECIMAL(4,2) DEFAULT 3.0;
+                ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS expected_end_at TIMESTAMP WITH TIME ZONE;
+                ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS ended_at TIMESTAMP WITH TIME ZONE;
+                ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS ended_confirmed_by UUID;
+                ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS ended_confirmed_at TIMESTAMP WITH TIME ZONE;
+                ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS admin_confirmed_ended_at TIMESTAMP WITH TIME ZONE;
+                ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS admin_confirmed_by UUID;
+                ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_overdue BOOLEAN DEFAULT FALSE;
             `);
         } catch (colErr) {
             console.warn('⚠️ Auto-adding StrangersMeetRequest reminder columns note:', colErr);

@@ -4,7 +4,7 @@ import '../../../services/api_service.dart';
 import '../../profile/lunara_wallet_screen.dart';
 
 class PartyPlanArrivalDialog {
-  /// Shows the prominent 10-minute / 5-minute Arrival Confirmation Modal Bottom Sheet
+  /// Shows the prominent Partner Arrival Confirmation Modal Bottom Sheet
   static Future<void> showArrivalPrompt(
     BuildContext context, {
     required Map<String, dynamic> plan,
@@ -14,6 +14,43 @@ class PartyPlanArrivalDialog {
     final venue = (plan['venue'] is Map) ? plan['venue'] as Map<String, dynamic> : <String, dynamic>{};
     final venueName = venue['name']?.toString() ?? plan['venueName']?.toString() ?? 'the venue';
     final planId = plan['planId']?.toString() ?? plan['id']?.toString() ?? '';
+
+    // Resolve Partner profile
+    final acceptedReq = (plan['acceptedRequest'] is Map)
+        ? plan['acceptedRequest'] as Map<String, dynamic>
+        : (plan['request'] is Map ? plan['request'] as Map<String, dynamic> : <String, dynamic>{});
+    final partnerData = isHost
+        ? ((acceptedReq['requester'] is Map)
+            ? acceptedReq['requester'] as Map<String, dynamic>
+            : (plan['joiner'] is Map
+                ? plan['joiner'] as Map<String, dynamic>
+                : (plan['partner'] is Map ? plan['partner'] as Map<String, dynamic> : <String, dynamic>{})))
+        : ((plan['creator'] is Map)
+            ? plan['creator'] as Map<String, dynamic>
+            : (plan['user'] is Map
+                ? plan['user'] as Map<String, dynamic>
+                : (plan['host'] is Map ? plan['host'] as Map<String, dynamic> : <String, dynamic>{})));
+
+    final partnerName = '${partnerData['firstName'] ?? (isHost ? 'Party Partner' : 'Host')} ${partnerData['lastName'] ?? ''}'.trim();
+    final rawPhoto = partnerData['profileImageUrl'] ?? partnerData['profilePhotoUrl'] ?? partnerData['primaryPhoto'];
+    final partnerPhotoUrl = ApiService.formatImageUrl(rawPhoto);
+
+    // Resolve scheduled date/time string
+    String scheduledTimeStr = plan['startTime']?.toString() ?? plan['planTime']?.toString() ?? 'Starting soon';
+    final rawDateTime = plan['planDateTime'] ?? plan['eventDateTime'] ?? plan['partyDate'];
+    if (rawDateTime != null) {
+      try {
+        final dt = DateTime.parse(rawDateTime.toString()).toLocal();
+        const weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        final w = weekdayNames[dt.weekday - 1];
+        final m = monthNames[dt.month - 1];
+        final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+        final ampm = dt.hour >= 12 ? 'PM' : 'AM';
+        final minute = dt.minute.toString().padLeft(2, '0');
+        scheduledTimeStr = '$w, ${dt.day} $m • $hour:$minute $ampm';
+      } catch (_) {}
+    }
 
     await showModalBottomSheet(
       context: context,
@@ -52,67 +89,126 @@ class PartyPlanArrivalDialog {
                         borderRadius: BorderRadius.circular(3),
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 18),
 
-                    // Location Pin Header Icon
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: LunaraTheme.electricViolet.withValues(alpha: 0.12),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.pin_drop_rounded,
-                        color: LunaraTheme.electricViolet,
-                        size: 36,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
+                    // Header title
                     const Text(
-                      '📍 ARE YOU AT THE VENUE?',
+                      'Partner Arrival Confirmation',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w900,
-                        letterSpacing: 0.8,
-                        color: Colors.black87,
+                        letterSpacing: 0.5,
+                        color: Color(0xFF0F172A),
                       ),
                     ),
-                    const SizedBox(height: 10),
-
+                    const SizedBox(height: 6),
                     Text(
-                      'Your Party Plan at\n"$venueName"\nstarts soon.',
+                      'Your Party Plan is starting soon.\nHas your partner reached the venue?',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey[800],
+                        fontSize: 14,
+                        color: Colors.grey[700],
                         height: 1.35,
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 18),
 
+                    // Partner Profile & Venue Summary Card
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF9FAFB),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey[200]!),
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.info_outline_rounded, size: 18, color: LunaraTheme.electricViolet),
-                          const SizedBox(width: 10),
+                          CircleAvatar(
+                            radius: 24,
+                            backgroundColor: const Color(0xFFE2E8F0),
+                            backgroundImage: partnerPhotoUrl != null ? NetworkImage(partnerPhotoUrl) : null,
+                            child: partnerPhotoUrl == null
+                                ? const Icon(Icons.person, color: Color(0xFF94A3B8), size: 24)
+                                : null,
+                          ),
+                          const SizedBox(width: 14),
                           Expanded(
-                            child: Text(
-                              'Your answer confirms the Party Plan and processes your eligible ₹99 Commitment Deposit refund.',
-                              style: TextStyle(fontSize: 12, color: Colors.grey[700], height: 1.3),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  partnerName,
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF0F172A),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 3),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.location_on_rounded, size: 13, color: LunaraTheme.electricViolet),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        venueName,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF475569),
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.schedule_rounded, size: 13, color: Color(0xFF64748B)),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      scheduledTimeStr,
+                                      style: const TextStyle(
+                                        fontSize: 11.5,
+                                        color: Color(0xFF64748B),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 14),
+
+                    // Refund Helper Note
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.info_outline_rounded, size: 16, color: LunaraTheme.electricViolet),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'When both participants confirm arrival, your ₹99 Commitment Deposit is immediately refunded to your wallet.',
+                              style: TextStyle(fontSize: 11.5, color: Colors.grey[700], height: 1.3),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 22),
 
                     if (isSubmitting)
                       const Padding(
@@ -149,7 +245,7 @@ class PartyPlanArrivalDialog {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
                                       content: Text('✓ Arrival Confirmed! Waiting for your partner to confirm.'),
-                                      backgroundColor: LunaraTheme.electricViolet,
+                                      backgroundColor: Color(0xFF10B981),
                                     ),
                                   );
                                 }
@@ -157,7 +253,7 @@ class PartyPlanArrivalDialog {
                               },
                               icon: const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
                               label: const Text(
-                                "✓ YES, I'M HERE",
+                                "YES, REACHED",
                                 style: TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.bold,
@@ -174,13 +270,13 @@ class PartyPlanArrivalDialog {
                               ),
                             ),
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 10),
 
-                          // Secondary NOT YET Button
+                          // Secondary NO Button
                           SizedBox(
                             width: double.infinity,
                             height: 48,
-                            child: OutlinedButton(
+                            child: OutlinedButton.icon(
                               onPressed: () async {
                                 setSheetState(() => isSubmitting = true);
                                 final uid = ApiService.currentUserId ?? '';
@@ -195,28 +291,34 @@ class PartyPlanArrivalDialog {
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
-                                      content: Text('Recorded: NOT YET. Confirm when you reach to unlock your refund.'),
+                                      content: Text('Recorded: NOT REACHED. You can update your response before the window closes.'),
                                       backgroundColor: Colors.orange,
                                     ),
                                   );
                                 }
                                 onUpdate?.call();
                               },
+                              icon: const Icon(Icons.cancel_outlined, size: 18, color: Color(0xFF64748B)),
+                              label: const Text(
+                                'NO, NOT REACHED',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF475569),
+                                ),
+                              ),
                               style: OutlinedButton.styleFrom(
-                                side: BorderSide(color: Colors.grey[300]!, width: 1.2),
+                                side: const BorderSide(color: Color(0xFFCBD5E1), width: 1.2),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(14),
                                 ),
                               ),
-                              child: Text(
-                                'NOT YET',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey[700],
-                                ),
-                              ),
                             ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'You can update your response until the confirmation window closes.',
+                            style: TextStyle(fontSize: 11, color: Colors.grey[500]),
                           ),
                         ],
                       ),

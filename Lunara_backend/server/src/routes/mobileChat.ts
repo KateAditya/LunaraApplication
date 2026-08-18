@@ -118,6 +118,51 @@ router.delete(
 );
 
 /**
+ * DELETE /api/mobile/chat/conversations/:id/messages
+ * Clear all messages in a conversation for the user.
+ * Body: { userId, clearForEveryone?: boolean }
+ */
+router.delete(
+    '/conversations/:id/messages',
+    [
+        param('id').isUUID(),
+        body('userId').notEmpty().withMessage('userId is required'),
+        validate,
+    ],
+    ctrl.clearChat
+);
+
+/**
+ * POST /api/mobile/chat/conversations/:id/clear
+ * Clear all messages in a conversation for the user.
+ * Body: { userId, clearForEveryone?: boolean }
+ */
+router.post(
+    '/conversations/:id/clear',
+    [
+        param('id').isUUID(),
+        body('userId').notEmpty().withMessage('userId is required'),
+        validate,
+    ],
+    ctrl.clearChat
+);
+
+/**
+ * DELETE /api/mobile/chat/conversations/:id
+ * Delete the entire conversation / user from chat list.
+ * Body: { userId, deleteForEveryone?: boolean }
+ */
+router.delete(
+    '/conversations/:id',
+    [
+        param('id').isUUID(),
+        body('userId').notEmpty().withMessage('userId is required'),
+        validate,
+    ],
+    ctrl.deleteConversation
+);
+
+/**
  * PATCH /api/mobile/chat/conversations/:id/read
  * Mark all unread messages in a conversation as read.
  * Body: { userId }

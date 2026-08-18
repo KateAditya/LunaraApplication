@@ -7,6 +7,8 @@ import {
     rejectRequest,
     paySettlement,
     approveSettlementPayout,
+    adminConfirmEnded,
+    adminMarkSettled,
 } from '../controllers/strangersMeetController';
 
 const router = Router();
@@ -14,12 +16,12 @@ const router = Router();
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/admin/strangers-meet
 // Admin — list all requests
-// Query: ?status=pending|approved|rejected  ?page=1  ?limit=20
+// Query: ?status=pending|approved|rejected|completed|payouts|all  ?page=1  ?limit=20
 // ─────────────────────────────────────────────────────────────────────────────
 router.get(
     '/',
     [
-        query('status').optional().isIn(['pending', 'approved', 'rejected']).withMessage('Invalid status'),
+        query('status').optional().isString().withMessage('Invalid status'),
         query('page').optional().isInt({ min: 1 }).withMessage('page must be a positive integer'),
         query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('limit must be between 1 and 100'),
         validate,
@@ -61,6 +63,35 @@ router.patch(
         validate,
     ],
     rejectRequest
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/admin/strangers-meet/:id/confirm-ended
+// Admin confirms meetup ended (starts 24h settlement window)
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch(
+    '/:id/confirm-ended',
+    [
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        validate,
+    ],
+    adminConfirmEnded
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/admin/strangers-meet/:id/mark-settled
+// Admin confirms payout and marks amount as settled
+// ─────────────────────────────────────────────────────────────────────────────
+router.post(
+    '/:id/mark-settled',
+    [
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        body('paymentReference').notEmpty().withMessage('paymentReference is required'),
+        body('settlementMethod').optional().isString(),
+        body('amount').optional().isFloat({ min: 0 }),
+        validate,
+    ],
+    adminMarkSettled
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
