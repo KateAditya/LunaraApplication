@@ -21,6 +21,7 @@ import '../discovery/upcoming_party_screen.dart';
 import '../../services/google_places_service.dart';
 import '../../widgets/venue_cover_charge_notice.dart';
 import '../../widgets/smart_checkout_sheet.dart';
+import '../../widgets/subscription_limit_dialog.dart';
 
 class PlanHubScreen extends StatefulWidget {
   final bool autoShowCreatePlan;
@@ -4355,14 +4356,32 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     } else {
                                       if (!mounted) return;
                                       String errorMsg =
-                                          'Failed to save plan data.';
+                                              'Failed to save plan data.';
+                                      String? errorCode;
                                       try {
                                         final data = jsonDecode(response.body);
                                         errorMsg =
                                             data['message'] ??
                                             data['error'] ??
                                             errorMsg;
+                                        errorCode = data['code'];
                                       } catch (_) {}
+
+                                      if (errorCode == 'PARTY_PLAN_LIMIT_REACHED' ||
+                                          errorCode == 'PARTY_PLAN_DAILY_LIMIT_REACHED' ||
+                                          response.statusCode == 403) {
+                                        setSheetState(() {
+                                          isPosting = false;
+                                        });
+                                        Navigator.pop(context); // Close bottom sheet
+                                        showSubscriptionLimitDialog(
+                                          context,
+                                          feature: SubLimitFeature.partyCreation,
+                                          customMessage: errorMsg,
+                                        );
+                                        return;
+                                      }
+
                                       setSheetState(() {
                                         isPosting = false;
                                         sheetErrorMsg = errorMsg;

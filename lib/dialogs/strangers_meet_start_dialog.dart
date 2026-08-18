@@ -1,3 +1,4 @@
+// ignore_for_file: use_build_context_synchronously, deprecated_member_use
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -42,7 +43,8 @@ class StrangersMeetStartDialog extends StatefulWidget {
   }
 
   @override
-  State<StrangersMeetStartDialog> createState() => _StrangersMeetStartDialogState();
+  State<StrangersMeetStartDialog> createState() =>
+      _StrangersMeetStartDialogState();
 }
 
 class _StrangersMeetStartDialogState extends State<StrangersMeetStartDialog> {
@@ -56,8 +58,12 @@ class _StrangersMeetStartDialogState extends State<StrangersMeetStartDialog> {
 
   Future<void> _pickCustomEndTime() async {
     final now = DateTime.now();
-    final initialDate = widget.eventDateTime.isAfter(now) ? widget.eventDateTime : now;
-    final initialTime = TimeOfDay.fromDateTime(initialDate.add(const Duration(hours: 2)));
+    final initialDate = widget.eventDateTime.isAfter(now)
+        ? widget.eventDateTime
+        : now;
+    final initialTime = TimeOfDay.fromDateTime(
+      initialDate.add(const Duration(hours: 2)),
+    );
 
     final pickedTime = await showTimePicker(
       context: context,
@@ -137,7 +143,9 @@ class _StrangersMeetStartDialogState extends State<StrangersMeetStartDialog> {
             ),
             backgroundColor: const Color(0xFF1E1E2E),
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
         );
       }
@@ -223,9 +231,7 @@ class _StrangersMeetStartDialogState extends State<StrangersMeetStartDialog> {
       decoration: const BoxDecoration(
         color: Color(0xFF13111C),
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        border: Border(
-          top: BorderSide(color: Color(0xFF2A283E), width: 1.5),
-        ),
+        border: Border(top: BorderSide(color: Color(0xFF2A283E), width: 1.5)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -250,7 +256,7 @@ class _StrangersMeetStartDialogState extends State<StrangersMeetStartDialog> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF8B5CF6).withOpacity(0.15),
+                  color: const Color(0xFF8B5CF6).withValues(alpha: 0.15),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
@@ -299,20 +305,34 @@ class _StrangersMeetStartDialogState extends State<StrangersMeetStartDialog> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.location_on_outlined, color: Colors.white70, size: 16),
+                const Icon(
+                  Icons.location_on_outlined,
+                  color: Colors.white70,
+                  size: 16,
+                ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     widget.venueName,
-                    style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12),
+                    style: GoogleFonts.poppins(
+                      color: Colors.white70,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
-                const Icon(Icons.access_time_rounded, color: Colors.white70, size: 16),
+                const Icon(
+                  Icons.access_time_rounded,
+                  color: Colors.white70,
+                  size: 16,
+                ),
                 const SizedBox(width: 6),
                 Text(
                   formattedDate,
-                  style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12),
+                  style: GoogleFonts.poppins(
+                    color: Colors.white70,
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ),
@@ -323,13 +343,18 @@ class _StrangersMeetStartDialogState extends State<StrangersMeetStartDialog> {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.redAccent.withOpacity(0.12),
+                color: Colors.redAccent.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.redAccent.withOpacity(0.3)),
+                border: Border.all(
+                  color: Colors.redAccent.withValues(alpha: 0.3),
+                ),
               ),
               child: Text(
                 _errorMessage!,
-                style: GoogleFonts.poppins(color: Colors.redAccent, fontSize: 12),
+                style: GoogleFonts.poppins(
+                  color: Colors.redAccent,
+                  fontSize: 12,
+                ),
               ),
             ),
             const SizedBox(height: 12),
@@ -354,12 +379,17 @@ class _StrangersMeetStartDialogState extends State<StrangersMeetStartDialog> {
                 backgroundColor: const Color(0xFF8B5CF6),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
                 elevation: 0,
               ),
               child: Text(
                 'YES, STRANGERS MEET STARTED',
-                style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 13),
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
               ),
             ),
             const SizedBox(height: 10),
@@ -369,11 +399,16 @@ class _StrangersMeetStartDialogState extends State<StrangersMeetStartDialog> {
                 foregroundColor: Colors.redAccent,
                 side: BorderSide(color: Colors.redAccent.withOpacity(0.5)),
                 padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
               ),
               child: Text(
-                'NOT STARTED',
-                style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13),
+                'NOT YET',
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
               ),
             ),
             const SizedBox(height: 8),
@@ -412,19 +447,28 @@ class _StrangersMeetStartDialogState extends State<StrangersMeetStartDialog> {
                     },
                     borderRadius: BorderRadius.circular(12),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
-                        color: isSelected ? const Color(0xFF8B5CF6) : const Color(0xFF1E1B2E),
+                        color: isSelected
+                            ? const Color(0xFF8B5CF6)
+                            : const Color(0xFF1E1B2E),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: isSelected ? const Color(0xFF8B5CF6) : const Color(0xFF2E2A44),
+                          color: isSelected
+                              ? const Color(0xFF8B5CF6)
+                              : const Color(0xFF2E2A44),
                         ),
                       ),
                       child: Text(
                         '${hrs.toInt()} ${hrs == 1 ? 'HOUR' : 'HOURS'}',
                         style: GoogleFonts.poppins(
                           color: isSelected ? Colors.white : Colors.white70,
-                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                          fontWeight: isSelected
+                              ? FontWeight.w700
+                              : FontWeight.w500,
                           fontSize: 12,
                         ),
                       ),
@@ -436,26 +480,41 @@ class _StrangersMeetStartDialogState extends State<StrangersMeetStartDialog> {
                   onTap: _pickCustomEndTime,
                   borderRadius: BorderRadius.circular(12),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
-                      color: _selectedDuration == -1.0 ? const Color(0xFF8B5CF6) : const Color(0xFF1E1B2E),
+                      color: _selectedDuration == -1.0
+                          ? const Color(0xFF8B5CF6)
+                          : const Color(0xFF1E1B2E),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: _selectedDuration == -1.0 ? const Color(0xFF8B5CF6) : const Color(0xFF2E2A44),
+                        color: _selectedDuration == -1.0
+                            ? const Color(0xFF8B5CF6)
+                            : const Color(0xFF2E2A44),
                       ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.edit_calendar_rounded, size: 14, color: Colors.white70),
+                        const Icon(
+                          Icons.edit_calendar_rounded,
+                          size: 14,
+                          color: Colors.white70,
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           _customEndDateTime != null
                               ? 'CUSTOM (${DateFormat('hh:mm a').format(_customEndDateTime!)})'
                               : 'CUSTOM TIME',
                           style: GoogleFonts.poppins(
-                            color: _selectedDuration == -1.0 ? Colors.white : Colors.white70,
-                            fontWeight: _selectedDuration == -1.0 ? FontWeight.w700 : FontWeight.w500,
+                            color: _selectedDuration == -1.0
+                                ? Colors.white
+                                : Colors.white70,
+                            fontWeight: _selectedDuration == -1.0
+                                ? FontWeight.w700
+                                : FontWeight.w500,
                             fontSize: 12,
                           ),
                         ),
@@ -474,18 +533,26 @@ class _StrangersMeetStartDialogState extends State<StrangersMeetStartDialog> {
                 backgroundColor: const Color(0xFF8B5CF6),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
                 elevation: 0,
               ),
               child: _isSubmitting
                   ? const SizedBox(
                       height: 20,
                       width: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
                     )
                   : Text(
                       'CONFIRM & START COUNTDOWN',
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 13),
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
                     ),
             ),
             const SizedBox(height: 8),

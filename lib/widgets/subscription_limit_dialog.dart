@@ -91,15 +91,15 @@ const _configs = <SubLimitFeature, _FeatureConfig>{
   ),
   SubLimitFeature.partyCreation: _FeatureConfig(
     emoji: '🎉',
-    title: "Party Creation is\na VIP Feature",
-    subtitle: "Host and manage group nights out with your crew — a premium Lunara VIP perk.",
-    benefitHeader: "Party Planning includes:",
+    title: "Party Plan Limit\nReached",
+    subtitle: "Free plan includes 1 Party Plan per calendar month. Upgrade to Lunara VIP to host more party plans and unlock exclusive perks!",
+    benefitHeader: "VIP Party Plan Benefits:",
     benefits: [
-      "🥂 Create group plans at venues",
+      "🥂 Unlimited party plans",
+      "⭐ Priority Live Feed placement",
       "💸 Collect split payments",
-      "📲 Invite matches & friends",
-      "🎫 Generate party tickets",
-      "🎟️ Available from Core plan",
+      "📲 Direct invites to matches",
+      "🎟️ Instant party ticketing",
     ],
     gradientColors: [Color(0xFFFFB703), Color(0xFFFF4B7D)],
   ),
@@ -153,6 +153,12 @@ Future<void> showSubscriptionLimitDialog(
 
 /// Parses the API error code into a [SubLimitFeature].
 SubLimitFeature featureFromCode(String? code, {String? action}) {
+  if (code == 'PARTY_PLAN_LIMIT_REACHED' ||
+      code == 'PARTY_PLAN_DAILY_LIMIT_REACHED' ||
+      action == 'party_plan' ||
+      action == 'party_creation') {
+    return SubLimitFeature.partyCreation;
+  }
   if (code == 'SUBSCRIPTION_REQUIRED') {
     // Try to infer from context
     return SubLimitFeature.generic;
@@ -163,6 +169,12 @@ SubLimitFeature featureFromCode(String? code, {String? action}) {
 }
 
 SubLimitFeature featureFromActionOrCode({String? action, String? code}) {
+  if (code == 'PARTY_PLAN_LIMIT_REACHED' ||
+      code == 'PARTY_PLAN_DAILY_LIMIT_REACHED' ||
+      action == 'party_plan' ||
+      action == 'party_creation') {
+    return SubLimitFeature.partyCreation;
+  }
   if (action == 'superlike') return SubLimitFeature.superLike;
   if (action == 'like') return SubLimitFeature.dailyLikes;
   if (action == 'backtrack') return SubLimitFeature.backtrack;

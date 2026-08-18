@@ -1392,10 +1392,27 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                 });
             }
 
-            // Consume/decrement superlike credit if not unlimited (unlimited is >= 9999)
+            // Atomic database-level conditional decrement for transaction & concurrency safety (Phase 2)
             if (activeSub.superlikesRemaining < 9999) {
-                activeSub.superlikesRemaining = activeSub.superlikesRemaining - 1;
-                await activeSub.save();
+                const [affectedCount] = await UserSubscription.update(
+                    { superlikesRemaining: sequelize.literal('superlikes_remaining - 1') },
+                    {
+                        where: {
+                            id: activeSub.id,
+                            superlikesRemaining: { [Op.gt]: 0 }
+                        }
+                    }
+                );
+
+                if (affectedCount === 0) {
+                    return res.status(403).json({
+                        success: false,
+                        code: 'LIMIT_REACHED',
+                        message: 'You have no super likes remaining. Upgrade your plan or purchase more super likes!'
+                    });
+                }
+
+                activeSub.superlikesRemaining = Math.max(0, activeSub.superlikesRemaining - 1);
                 const { SubscriptionService } = require('../services/subscriptionService');
                 SubscriptionService.invalidateCache(userId);
             }

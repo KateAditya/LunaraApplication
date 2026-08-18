@@ -53,6 +53,7 @@ async function ensureConversationColumns() {
             ALTER TABLE conversations ADD COLUMN IF NOT EXISTS cleared_at_two TIMESTAMP WITH TIME ZONE;
             ALTER TABLE conversations ADD COLUMN IF NOT EXISTS deleted_by_one BOOLEAN DEFAULT FALSE;
             ALTER TABLE conversations ADD COLUMN IF NOT EXISTS deleted_by_two BOOLEAN DEFAULT FALSE;
+            ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted_for_users JSONB DEFAULT '[]'::jsonb;
         `);
         columnsEnsured = true;
     } catch (err) {
@@ -379,8 +380,24 @@ export const getMessages = async (req: Request, res: Response) => {
             limit,
         });
 
+        // Filter out messages deleted specifically for this user ("Delete for me")
+        const visibleMessages = messages.filter(m => {
+            const dfu = (m as any).deletedForUsers;
+            if (!dfu) return true;
+            if (Array.isArray(dfu)) {
+                return !dfu.map((x: any) => String(x).toLowerCase()).includes(uId);
+            }
+            if (typeof dfu === 'string') {
+                try {
+                    const parsed = JSON.parse(dfu);
+                    return Array.isArray(parsed) ? !parsed.map((x: any) => String(x).toLowerCase()).includes(uId) : true;
+                } catch (_) { return true; }
+            }
+            return true;
+        });
+
         // Mark unread messages as read across all related conversations
-        const unreadIds = messages
+        const unreadIds = visibleMessages
             .filter(m => m.senderId !== userId && m.status !== MessageStatus.READ)
             .map(m => m.id);
 
@@ -406,7 +423,7 @@ export const getMessages = async (req: Request, res: Response) => {
         }
 
         // Return in chronological order (oldest first for chat display)
-        const ordered = [...messages].reverse();
+        const ordered = [...visibleMessages].reverse();
 
         return res.json({
             success: true,
@@ -719,8 +736,9 @@ export const markConversationRead = async (req: Request, res: Response) => {
 // ─── DELETE /conversations/:id/messages/:msgId — Soft-delete message ─────────
 export const deleteMessage = async (req: Request, res: Response) => {
     try {
+        await ensureConversationColumns();
         const { id, msgId } = req.params;
-        const { userId, deleteForEveryone } = req.body;
+        const { userId, deleteForEveryone = true } = req.body;
         if (!userId) return res.status(400).json({ success: false, message: 'userId is required' });
 
         const message = await Message.findOne({ where: { id: msgId, conversationId: id } });
@@ -729,24 +747,181 @@ export const deleteMessage = async (req: Request, res: Response) => {
         const conv = await Conversation.findByPk(id);
         if (!conv) return res.status(404).json({ success: false, message: 'Conversation not found' });
 
-        const isSender = message.senderId.toLowerCase() === userId.toLowerCase();
-        if (!isSender && !deleteForEveryone) {
-            return res.status(403).json({ success: false, message: 'You can only delete your own messages' });
+        const uId = userId.toLowerCase();
+        const p1 = (conv.participantOne || '').toLowerCase();
+        const p2 = (conv.participantTwo || '').toLowerCase();
+        if (p1 !== uId && p2 !== uId) {
+            return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
-        await (message as any).update({ deletedAt: new Date(), content: null, mediaUrl: null });
+        const isSender = message.senderId.toLowerCase() === uId;
+        const otherUserId = conv.getOtherParticipant(userId);
 
-        // Real-time socket broadcast to both participants
-        try {
-            const { io } = require('../server');
-            const otherUserId = conv.getOtherParticipant(userId);
-            io.to(`user_${userId}`).emit('message_deleted', { conversationId: id, messageId: msgId });
-            io.to(`user_${otherUserId}`).emit('message_deleted', { conversationId: id, messageId: msgId });
-        } catch (err) {
-            logger.error('Failed to emit message_deleted socket event:', err);
+        // Find ALL conversation rows between these two participants
+        const allConvs = await Conversation.findAll({
+            where: {
+                [Op.or]: [
+                    { participantOne: conv.participantOne, participantTwo: conv.participantTwo },
+                    { participantOne: conv.participantTwo, participantTwo: conv.participantOne },
+                ],
+            },
+        });
+        const allConvIds = allConvs.map(c => c.id);
+
+        if (deleteForEveryone === true) {
+            // Delete for everyone — only the sender is authorized (WhatsApp behavior)
+            if (!isSender) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'You can only delete your own messages for everyone',
+                });
+            }
+
+            await (message as any).update({ deletedAt: new Date(), content: null, mediaUrl: null });
+
+            // Find the new latest non-deleted message across the conversations
+            const remainingMessages = await Message.findAll({
+                where: {
+                    conversationId: { [Op.in]: allConvIds },
+                    deletedAt: null as any,
+                },
+                order: [['createdAt', 'DESC']],
+                limit: 10,
+            });
+
+            const latestMsg = remainingMessages.length > 0 ? remainingMessages[0] : null;
+            const newPreview = latestMsg ? latestMsg.getPreview() : '';
+            const newLastMsgAt = latestMsg ? latestMsg.createdAt : null;
+            const newLastMsgId = latestMsg ? latestMsg.id : null;
+
+            for (const c of allConvs) {
+                await (c as any).update({
+                    lastMessageId: newLastMsgId,
+                    lastMessagePreview: newPreview,
+                    lastMessageAt: newLastMsgAt,
+                });
+            }
+
+            // Real-time socket broadcast to both participants
+            try {
+                const { io } = require('../server');
+                const deletePayload = {
+                    conversationId: id,
+                    messageId: msgId,
+                    deleteForEveryone: true,
+                    lastMessagePreview: newPreview,
+                    lastMessageAt: newLastMsgAt,
+                    hasRemainingMessages: !!latestMsg,
+                };
+                io.to(`user_${userId}`).emit('message_deleted', deletePayload);
+                if (otherUserId) {
+                    io.to(`user_${otherUserId}`).emit('message_deleted', deletePayload);
+                }
+            } catch (err) {
+                logger.error('Failed to emit message_deleted socket event:', err);
+            }
+
+            return res.json({
+                success: true,
+                message: 'Message deleted for everyone successfully',
+                data: {
+                    messageId: msgId,
+                    conversationId: id,
+                    deleteForEveryone: true,
+                    lastMessagePreview: newPreview,
+                    lastMessageAt: newLastMsgAt,
+                },
+            });
+        } else {
+            // Delete for me — hide message only for the requesting user
+            let deletedForUsers: string[] = [];
+            const rawDfu = (message as any).deletedForUsers;
+            if (Array.isArray(rawDfu)) {
+                deletedForUsers = [...rawDfu];
+            } else if (typeof rawDfu === 'string') {
+                try { deletedForUsers = JSON.parse(rawDfu); } catch (_) {}
+            }
+            if (!deletedForUsers.map(x => String(x).toLowerCase()).includes(uId)) {
+                deletedForUsers.push(userId);
+                await (message as any).update({ deletedForUsers });
+            }
+
+            // Find the new latest remaining message for THIS user (excluding messages in deletedForUsers)
+            const remainingMessages = await Message.findAll({
+                where: {
+                    conversationId: { [Op.in]: allConvIds },
+                    deletedAt: null as any,
+                },
+                order: [['createdAt', 'DESC']],
+                limit: 50,
+            });
+
+            const userRemainingMessages = remainingMessages.filter(m => {
+                const dfu = (m as any).deletedForUsers;
+                if (!dfu) return true;
+                if (Array.isArray(dfu)) {
+                    return !dfu.map((x: any) => String(x).toLowerCase()).includes(uId);
+                }
+                if (typeof dfu === 'string') {
+                    try {
+                        const parsed = JSON.parse(dfu);
+                        return Array.isArray(parsed) ? !parsed.map((x: any) => String(x).toLowerCase()).includes(uId) : true;
+                    } catch (_) { return true; }
+                }
+                return true;
+            });
+
+            const latestUserMsg = userRemainingMessages.length > 0 ? userRemainingMessages[0] : null;
+            const newPreview = latestUserMsg ? latestUserMsg.getPreview() : '';
+            const newLastMsgAt = latestUserMsg ? latestUserMsg.createdAt : null;
+            const newLastMsgId = latestUserMsg ? latestUserMsg.id : null;
+
+            for (const c of allConvs) {
+                const isP1 = (c.participantOne || '').toLowerCase() === uId;
+                if (isP1) {
+                    await (c as any).update({
+                        lastMessageId: newLastMsgId,
+                        lastMessagePreview: newPreview,
+                        lastMessageAt: newLastMsgAt,
+                    });
+                } else {
+                    await (c as any).update({
+                        lastMessageId: newLastMsgId,
+                        lastMessagePreview: newPreview,
+                        lastMessageAt: newLastMsgAt,
+                    });
+                }
+            }
+
+            // Real-time socket broadcast ONLY to requesting user
+            try {
+                const { io } = require('../server');
+                const deletePayload = {
+                    conversationId: id,
+                    messageId: msgId,
+                    deleteForEveryone: false,
+                    targetUserId: userId,
+                    lastMessagePreview: newPreview,
+                    lastMessageAt: newLastMsgAt,
+                    hasRemainingMessages: !!latestUserMsg,
+                };
+                io.to(`user_${userId}`).emit('message_deleted', deletePayload);
+            } catch (err) {
+                logger.error('Failed to emit message_deleted socket event:', err);
+            }
+
+            return res.json({
+                success: true,
+                message: 'Message deleted for you successfully',
+                data: {
+                    messageId: msgId,
+                    conversationId: id,
+                    deleteForEveryone: false,
+                    lastMessagePreview: newPreview,
+                    lastMessageAt: newLastMsgAt,
+                },
+            });
         }
-
-        return res.json({ success: true, message: 'Message deleted successfully', data: { messageId: msgId } });
     } catch (err: any) {
         logger.error('deleteMessage:', err);
         return res.status(500).json({ success: false, message: err.message });

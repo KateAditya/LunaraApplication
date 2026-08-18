@@ -60,10 +60,13 @@ class _StrangersMeetEndDialogState extends State<StrangersMeetEndDialog> {
 
   Future<void> _pickCustomExtensionTime() async {
     final now = DateTime.now();
-    final baseTime = (widget.expectedEndAt != null && widget.expectedEndAt!.isAfter(now))
+    final baseTime =
+        (widget.expectedEndAt != null && widget.expectedEndAt!.isAfter(now))
         ? widget.expectedEndAt!
         : now;
-    final initialTime = TimeOfDay.fromDateTime(baseTime.add(const Duration(hours: 1)));
+    final initialTime = TimeOfDay.fromDateTime(
+      baseTime.add(const Duration(hours: 1)),
+    );
 
     final pickedTime = await showTimePicker(
       context: context,
@@ -120,14 +123,24 @@ class _StrangersMeetEndDialogState extends State<StrangersMeetEndDialog> {
           context: context,
           builder: (ctx) => AlertDialog(
             backgroundColor: const Color(0xFF1E1B2E),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
             title: Row(
               children: [
-                const Icon(Icons.verified_rounded, color: Color(0xFF10B981), size: 28),
+                const Icon(
+                  Icons.verified_rounded,
+                  color: Color(0xFF10B981),
+                  size: 28,
+                ),
                 const SizedBox(width: 8),
                 Text(
                   'Meetup Ended!',
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: Colors.white, fontSize: 16),
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    fontSize: 16,
+                  ),
                 ),
               ],
             ),
@@ -138,7 +151,13 @@ class _StrangersMeetEndDialogState extends State<StrangersMeetEndDialog> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: Text('OK', style: GoogleFonts.poppins(color: const Color(0xFF8B5CF6), fontWeight: FontWeight.w700)),
+                child: Text(
+                  'OK',
+                  style: GoogleFonts.poppins(
+                    color: const Color(0xFF8B5CF6),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
             ],
           ),
@@ -190,7 +209,9 @@ class _StrangersMeetEndDialogState extends State<StrangersMeetEndDialog> {
             ),
             backgroundColor: const Color(0xFF1E1E2E),
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
         );
       }
@@ -214,9 +235,7 @@ class _StrangersMeetEndDialogState extends State<StrangersMeetEndDialog> {
       decoration: const BoxDecoration(
         color: Color(0xFF13111C),
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        border: Border(
-          top: BorderSide(color: Color(0xFF2A283E), width: 1.5),
-        ),
+        border: Border(top: BorderSide(color: Color(0xFF2A283E), width: 1.5)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -241,7 +260,7 @@ class _StrangersMeetEndDialogState extends State<StrangersMeetEndDialog> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF59E0B).withOpacity(0.15),
+                  color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
@@ -290,12 +309,19 @@ class _StrangersMeetEndDialogState extends State<StrangersMeetEndDialog> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.location_on_outlined, color: Colors.white70, size: 16),
+                const Icon(
+                  Icons.location_on_outlined,
+                  color: Colors.white70,
+                  size: 16,
+                ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     widget.venueName,
-                    style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12),
+                    style: GoogleFonts.poppins(
+                      color: Colors.white70,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
               ],
@@ -307,13 +333,18 @@ class _StrangersMeetEndDialogState extends State<StrangersMeetEndDialog> {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.redAccent.withOpacity(0.12),
+                color: Colors.redAccent.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.redAccent.withOpacity(0.3)),
+                border: Border.all(
+                  color: Colors.redAccent.withValues(alpha: 0.3),
+                ),
               ),
               child: Text(
                 _errorMessage!,
-                style: GoogleFonts.poppins(color: Colors.redAccent, fontSize: 12),
+                style: GoogleFonts.poppins(
+                  color: Colors.redAccent,
+                  fontSize: 12,
+                ),
               ),
             ),
             const SizedBox(height: 12),
@@ -331,14 +362,26 @@ class _StrangersMeetEndDialogState extends State<StrangersMeetEndDialog> {
                 backgroundColor: const Color(0xFF10B981),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
                 elevation: 0,
               ),
               child: _isSubmitting
-                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
                   : Text(
                       'YES, STRANGERS MEET ENDED',
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 13),
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
                     ),
             ),
             const SizedBox(height: 10),
@@ -352,11 +395,17 @@ class _StrangersMeetEndDialogState extends State<StrangersMeetEndDialog> {
                 foregroundColor: Colors.white,
                 side: const BorderSide(color: Color(0xFF8B5CF6)),
                 padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
               ),
               child: Text(
                 'NOT YET — EXTEND TIME',
-                style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13, color: const Color(0xFF8B5CF6)),
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  color: const Color(0xFF8B5CF6),
+                ),
               ),
             ),
             const SizedBox(height: 6),
@@ -385,7 +434,9 @@ class _StrangersMeetEndDialogState extends State<StrangersMeetEndDialog> {
               children: [
                 ..._extensionOptions.map((hrs) {
                   final isSelected = _selectedExtensionHours == hrs;
-                  final label = hrs == 0.5 ? '+30 MINS' : '+${hrs.toInt()} ${hrs == 1 ? 'HOUR' : 'HOURS'}';
+                  final label = hrs == 0.5
+                      ? '+30 MINS'
+                      : '+${hrs.toInt()} ${hrs == 1 ? 'HOUR' : 'HOURS'}';
                   return InkWell(
                     onTap: () {
                       setState(() {
@@ -395,19 +446,28 @@ class _StrangersMeetEndDialogState extends State<StrangersMeetEndDialog> {
                     },
                     borderRadius: BorderRadius.circular(12),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
-                        color: isSelected ? const Color(0xFF8B5CF6) : const Color(0xFF1E1B2E),
+                        color: isSelected
+                            ? const Color(0xFF8B5CF6)
+                            : const Color(0xFF1E1B2E),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: isSelected ? const Color(0xFF8B5CF6) : const Color(0xFF2E2A44),
+                          color: isSelected
+                              ? const Color(0xFF8B5CF6)
+                              : const Color(0xFF2E2A44),
                         ),
                       ),
                       child: Text(
                         label,
                         style: GoogleFonts.poppins(
                           color: isSelected ? Colors.white : Colors.white70,
-                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                          fontWeight: isSelected
+                              ? FontWeight.w700
+                              : FontWeight.w500,
                           fontSize: 12,
                         ),
                       ),
@@ -418,26 +478,41 @@ class _StrangersMeetEndDialogState extends State<StrangersMeetEndDialog> {
                   onTap: _pickCustomExtensionTime,
                   borderRadius: BorderRadius.circular(12),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
-                      color: _selectedExtensionHours == -1.0 ? const Color(0xFF8B5CF6) : const Color(0xFF1E1B2E),
+                      color: _selectedExtensionHours == -1.0
+                          ? const Color(0xFF8B5CF6)
+                          : const Color(0xFF1E1B2E),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: _selectedExtensionHours == -1.0 ? const Color(0xFF8B5CF6) : const Color(0xFF2E2A44),
+                        color: _selectedExtensionHours == -1.0
+                            ? const Color(0xFF8B5CF6)
+                            : const Color(0xFF2E2A44),
                       ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.edit_calendar_rounded, size: 14, color: Colors.white70),
+                        const Icon(
+                          Icons.edit_calendar_rounded,
+                          size: 14,
+                          color: Colors.white70,
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           _customEndDateTime != null
                               ? 'CUSTOM (${DateFormat('hh:mm a').format(_customEndDateTime!)})'
                               : 'CUSTOM TIME',
                           style: GoogleFonts.poppins(
-                            color: _selectedExtensionHours == -1.0 ? Colors.white : Colors.white70,
-                            fontWeight: _selectedExtensionHours == -1.0 ? FontWeight.w700 : FontWeight.w500,
+                            color: _selectedExtensionHours == -1.0
+                                ? Colors.white
+                                : Colors.white70,
+                            fontWeight: _selectedExtensionHours == -1.0
+                                ? FontWeight.w700
+                                : FontWeight.w500,
                             fontSize: 12,
                           ),
                         ),
@@ -455,14 +530,26 @@ class _StrangersMeetEndDialogState extends State<StrangersMeetEndDialog> {
                 backgroundColor: const Color(0xFF8B5CF6),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
                 elevation: 0,
               ),
               child: _isSubmitting
-                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
                   : Text(
                       'CONFIRM EXTENSION',
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 13),
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
                     ),
             ),
             const SizedBox(height: 8),
