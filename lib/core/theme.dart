@@ -44,13 +44,13 @@ class LunaraTheme {
   static const Gradient purpleGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFF845ADF), Color(0xFFA241D2)],
+    colors: [Color(0xFF3e0f6b), Color(0xFFb952eb)],
   );
 
   static const Gradient deepPurpleGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFF845ADF), Color(0xFFA241D2)],
+    colors: [Color(0xFF3e0f6b), Color(0xFFb952eb)],
   );
 
   static const Gradient midnightGlow = primaryGradient;
@@ -149,6 +149,7 @@ class LunaraTheme {
   static const String logoVerticalLight = 'assets/images/logo_vertical_light.png';
   static const String logoIcon = 'assets/images/logo_icon.png';
   static const String logo = 'assets/images/logo.png';
+  static const String lunaraLogo = 'assets/images/lunara_logo.png';
   static const String defaultAvatar = 'assets/images/default_avatar.png';
 
   /// Returns verification tick color according to user's purchased subscription plan.

@@ -8,6 +8,7 @@ import UserProfile from '../models/UserProfile';
 import UserPhoto from '../models/UserPhoto';
 import VenueImage from '../models/VenueImage';
 import { logger } from '../config/logger';
+import '../models';
 import ChatSubscription, { ChatSubscriptionStatus } from '../models/ChatSubscription';
 import Conversation from '../models/Conversation';
 import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription';

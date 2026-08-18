@@ -86,6 +86,14 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='admin_confirmed_by') THEN ALTER TABLE strangers_meet_requests ADD COLUMN admin_confirmed_by UUID; END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='settlement_overdue') THEN ALTER TABLE strangers_meet_requests ADD COLUMN settlement_overdue BOOLEAN DEFAULT FALSE; END IF;
 
+                    -- Strangers Meet Enums
+                    BEGIN ALTER TYPE "enum_strangers_meet_requests_status" ADD VALUE IF NOT EXISTS 'in_progress'; EXCEPTION WHEN others THEN NULL; END;
+                    BEGIN ALTER TYPE "enum_strangers_meet_requests_status" ADD VALUE IF NOT EXISTS 'host_confirmed_ended'; EXCEPTION WHEN others THEN NULL; END;
+                    BEGIN ALTER TYPE "enum_strangers_meet_requests_status" ADD VALUE IF NOT EXISTS 'admin_confirmed_ended'; EXCEPTION WHEN others THEN NULL; END;
+                    BEGIN ALTER TYPE "enum_strangers_meet_requests_status" ADD VALUE IF NOT EXISTS 'completed'; EXCEPTION WHEN others THEN NULL; END;
+                    BEGIN ALTER TYPE "enum_strangers_meet_requests_settlement_status" ADD VALUE IF NOT EXISTS 'settlement_pending'; EXCEPTION WHEN others THEN NULL; END;
+                    BEGIN ALTER TYPE "enum_strangers_meet_requests_settlement_status" ADD VALUE IF NOT EXISTS 'settled'; EXCEPTION WHEN others THEN NULL; END;
+
                     -- strangers_meet_joiners columns
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_joiners' AND column_name='status') THEN ALTER TABLE strangers_meet_joiners ADD COLUMN status VARCHAR(50) DEFAULT 'pending'; END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_joiners' AND column_name='food_preference') THEN ALTER TABLE strangers_meet_joiners ADD COLUMN food_preference VARCHAR(100); END IF;

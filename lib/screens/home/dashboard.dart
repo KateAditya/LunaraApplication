@@ -15,6 +15,7 @@ import '../../services/push_notification_service.dart';
 import '../../models/user.dart';
 import '../../services/api_service.dart';
 import '../../widgets/lunara_profile_image.dart';
+import '../../widgets/lunara_pulsing_logo_button.dart';
 import '../social/match_success_dialog.dart';
 import '../onboarding/permissions_screen.dart' show NotificationPermissionRequest;
 
@@ -353,19 +354,26 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
             label: 'Live Feed',
           ),
           BottomNavigationBarItem(
-            icon: Container(
-              key: AppTourService.postTabKey,
-              padding: const EdgeInsets.all(8),
-              decoration: const BoxDecoration(
-                gradient: LunaraTheme.deepPurpleGradient,
-                shape: BoxShape.circle,
-              ),
-              child: Image.asset(
-                LunaraTheme.logo,
-                height: 28,
-                width: 28,
-                fit: BoxFit.contain,
-              ),
+            icon: LunaraPulsingLogoButton(
+              containerKey: AppTourService.postTabKey,
+              size: 46,
+              iconPadding: 8,
+              borderWidth: 1.5,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  PageRouteBuilder(
+                    pageBuilder: (_, _, _) => const PlanHubScreen(),
+                    transitionsBuilder: (_, animation, _, child) {
+                      return FadeTransition(
+                        opacity: animation,
+                        child: child,
+                      );
+                    },
+                    transitionDuration: const Duration(milliseconds: 200),
+                  ),
+                );
+              },
             ),
             label: 'Post',
           ),
