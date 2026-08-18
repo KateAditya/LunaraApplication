@@ -44,13 +44,13 @@ class LunaraTheme {
   static const Gradient purpleGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFF3e0f6b), Color(0xFFb952eb)],
+    colors: [Color(0xFF845ADF), Color(0xFFA241D2)],
   );
 
   static const Gradient deepPurpleGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFF3e0f6b), Color(0xFFb952eb)],
+    colors: [Color(0xFF845ADF), Color(0xFFA241D2)],
   );
 
   static const Gradient midnightGlow = primaryGradient;

@@ -508,11 +508,21 @@ class _AdAnnouncementDialogState extends State<AdAnnouncementDialog> {
                             onPressed: () {
                               Navigator.pop(context);
                               if (venueId != null && venueId.isNotEmpty) {
+                                final Map<String, dynamic> venueData = {};
+                                if (currentAd['venue'] is Map) {
+                                  venueData.addAll(Map<String, dynamic>.from(currentAd['venue']));
+                                }
+                                venueData['id'] = venueId;
+                                if (venueName != null && venueData['name'] == null) venueData['name'] = venueName;
+                                if (city != null && venueData['city'] == null) venueData['city'] = city;
+                                if (area != null && venueData['area'] == null) venueData['area'] = area;
+
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
                                     builder: (context) => VenueDetailScreen(
-                                      venue: {'id': venueId, 'name': venueName ?? 'Venue'},
+                                      venue: venueData,
+                                      initialPartyEvent: currentAd,
                                     ),
                                   ),
                                 );

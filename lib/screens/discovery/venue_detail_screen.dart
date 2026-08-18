@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import '../../core/theme.dart';
 import '../../widgets/action_button.dart';
 import 'booking_process_screen.dart';
+import 'party_event_booking_sheet.dart';
 import '../../widgets/venue_video_player.dart';
 import '../../services/google_places_service.dart';
 import 'package:geolocator/geolocator.dart';
@@ -16,20 +18,24 @@ import 'upcoming_party_screen.dart';
 import '../../main.dart';
 import '../../widgets/venue_cover_charge_notice.dart';
 
-
-
-
 class VenueDetailScreen extends StatefulWidget {
   final Map<String, dynamic> venue;
+  final Map<String, dynamic>? initialPartyEvent;
 
-  const VenueDetailScreen({super.key, required this.venue});
+  const VenueDetailScreen({
+    super.key,
+    required this.venue,
+    this.initialPartyEvent,
+  });
 
   @override
   State<VenueDetailScreen> createState() => _VenueDetailScreenState();
 }
 
 class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindingObserver {
-  Map<String, dynamic> get venue => widget.venue;
+  Map<String, dynamic> _venueData = {};
+  bool _isLoadingVenue = false;
+  Map<String, dynamic> get venue => _venueData.isNotEmpty ? _venueData : widget.venue;
   int _currentCarouselIndex = 0;
   double? _googleRating;
   int? _googleRatingCount;
@@ -50,6 +56,7 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
     } else {
       _loadGoogleRating();
     }
+    _loadFullVenueDetails();
     _loadVenueEvents();
     GooglePlacesService.addListener(_onDistanceUpdated);
     _checkLocationAndForce(requestIfNeeded: false);
@@ -169,6 +176,59 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
     }
   }
 
+  String _cleanMediaUrl(dynamic urlOrPath) {
+    if (urlOrPath == null) return '';
+    final str = urlOrPath.toString().trim();
+    if (str.isEmpty || str.toLowerCase() == 'null') return '';
+    if (str.startsWith('http')) return str;
+    final clean = str.replaceAll(r'\', '/');
+    final formatted = clean.startsWith('/') ? clean : '/$clean';
+    return '${ApiService.baseUrl}$formatted';
+  }
+
+  Future<void> _loadFullVenueDetails() async {
+    final String venueId = (widget.venue['id'] ?? widget.venue['venueId'] ?? '').toString();
+    if (venueId.isEmpty) return;
+    setState(() => _isLoadingVenue = true);
+    try {
+      final res = await ApiService.get('/api/venues/$venueId');
+      if (res.statusCode == 200 && mounted) {
+        final data = jsonDecode(res.body);
+        if (data != null && data['venue'] is Map) {
+          setState(() {
+            _venueData = Map<String, dynamic>.from(data['venue']);
+            _isLoadingVenue = false;
+            if (_venueData['googleRating'] != null) {
+              _googleRating = double.tryParse(_venueData['googleRating'].toString());
+              _googleRatingCount = int.tryParse(_venueData['googleRatingCount']?.toString() ?? '');
+              _isLoadingRating = false;
+            }
+          });
+          if (_googleRating == null) {
+            _loadGoogleRating();
+          }
+          final latVal = _venueData['latitude'] ?? _venueData['lat'];
+          final lngVal = _venueData['longitude'] ?? _venueData['lng'];
+          final double? lat = latVal != null ? double.tryParse(latVal.toString()) : null;
+          final double? lng = lngVal != null ? double.tryParse(lngVal.toString()) : null;
+          if (_currentPosition != null && lat != null && lng != null && lat != 0.0 && lng != 0.0) {
+            await GooglePlacesService.fetchRoadDistanceMeters(
+              _currentPosition!.latitude,
+              _currentPosition!.longitude,
+              lat,
+              lng,
+            );
+            if (mounted) setState(() {});
+          }
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading full venue details: $e');
+    }
+    if (mounted) setState(() => _isLoadingVenue = false);
+  }
+
   Future<void> _loadGoogleRating() async {
     if (venue['googleRating'] != null) {
       if (mounted) {
@@ -181,8 +241,8 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
       return;
     }
 
-    final name = venue['name'] as String? ?? '';
-    final city = venue['city'] as String? ?? '';
+    final name = (venue['name'] ?? widget.venue['name'] ?? '').toString();
+    final city = (venue['city'] ?? widget.venue['city'] ?? '').toString();
     if (name.isNotEmpty) {
       final result = await GooglePlacesService.fetchGoogleRating(name, city);
       if (mounted && result != null) {
@@ -205,41 +265,74 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
         city: ApiService.selectedCity,
         type: 'Party',
       );
-      if (activeAds.isNotEmpty && mounted) {
-        final venueId = venue['id'];
-        final matchingEvents = activeAds.where((ad) => ad['venueId'] == venueId).map((ad) {
-          final venueMap = ad['venue'] as Map<String, dynamic>? ?? {};
-          final imageUrl = ad['imagePath'] != null
-              ? (ad['imagePath'].toString().startsWith('http')
-                    ? ad['imagePath'].toString()
-                    : '${ApiService.baseUrl}${ad['imagePath']}')
-              : '';
+      final venueId = (widget.venue['id'] ?? widget.venue['venueId'] ?? '').toString();
+      final List<Map<String, dynamic>> parsedEvents = [];
 
-          String dateStr = ad['toDate'] ?? ad['fromDate'] ?? '';
-          if (dateStr.isNotEmpty) {
-            try {
-              final dt = DateTime.parse(dateStr).toLocal();
-              dateStr = DateFormat('EEEE, MMM dd').format(dt);
-            } catch (_) {}
-          } else {
-            dateStr = 'Upcoming';
+      if (widget.initialPartyEvent != null) {
+        final ad = widget.initialPartyEvent!;
+        final imgUrl = _cleanMediaUrl(ad['imagePath'] ?? ad['image']);
+        String dateStr = ad['toDate'] ?? ad['fromDate'] ?? ad['rawDate'] ?? '';
+        if (dateStr.isNotEmpty) {
+          try {
+            final dt = DateTime.parse(dateStr).toLocal();
+            dateStr = DateFormat('EEEE, MMM dd').format(dt);
+          } catch (_) {}
+        } else {
+          dateStr = 'LIVE PARTY EVENT';
+        }
+        parsedEvents.add({
+          'id': ad['id'] ?? 'featured_party',
+          'title': ad['title'] ?? ad['description'] ?? 'Special Party Event',
+          'date': dateStr,
+          'rawDate': ad['toDate'] ?? ad['fromDate'] ?? '',
+          'venue': venue['name'] ?? widget.venue['name'] ?? 'Unknown Venue',
+          'image': imgUrl,
+          'isAsset': false,
+          'venueId': venueId,
+          'venueMap': venue,
+          'aboutEvent': ad['aboutEvent'] ?? ad['about_event'] ?? ad['description'],
+          'rawAd': ad,
+        });
+      }
+
+      if (activeAds.isNotEmpty) {
+        for (var ad in activeAds) {
+          final adVenueId = (ad['venueId'] ?? ad['venue']?['id'])?.toString();
+          if (adVenueId != null && adVenueId == venueId) {
+            if (parsedEvents.any((e) => e['id'] == ad['id'])) continue;
+            final venueMap = ad['venue'] as Map<String, dynamic>? ?? {};
+            final imageUrl = _cleanMediaUrl(ad['imagePath']);
+
+            String dateStr = ad['toDate'] ?? ad['fromDate'] ?? '';
+            if (dateStr.isNotEmpty) {
+              try {
+                final dt = DateTime.parse(dateStr).toLocal();
+                dateStr = DateFormat('EEEE, MMM dd').format(dt);
+              } catch (_) {}
+            } else {
+              dateStr = 'Upcoming';
+            }
+
+            parsedEvents.add({
+              'id': ad['id'] ?? 'event_${parsedEvents.length}',
+              'title': ad['title'] ?? ad['description'] ?? 'Special Event',
+              'date': dateStr,
+              'rawDate': ad['toDate'] ?? ad['fromDate'],
+              'venue': venueMap['name'] ?? venue['name'] ?? 'Unknown Venue',
+              'image': imageUrl,
+              'isAsset': false,
+              'venueId': ad['venueId'],
+              'venueMap': venueMap.isNotEmpty ? venueMap : venue,
+              'aboutEvent': ad['aboutEvent'],
+              'rawAd': ad,
+            });
           }
+        }
+      }
 
-          return {
-            'title': ad['title'] ?? ad['description'] ?? 'Special Event',
-            'date': dateStr,
-            'rawDate': ad['toDate'] ?? ad['fromDate'],
-            'venue': venueMap['name'] ?? venue['name'] ?? 'Unknown Venue',
-            'image': imageUrl,
-            'isAsset': false,
-            'venueId': ad['venueId'],
-            'venueMap': venueMap.isNotEmpty ? venueMap : venue,
-            'aboutEvent': ad['aboutEvent'],
-          };
-        }).toList();
-
+      if (mounted) {
         setState(() {
-          _venueEvents = matchingEvents;
+          _venueEvents = parsedEvents;
         });
       }
     } catch (e) {
@@ -533,41 +626,98 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
     final double? discountVal = double.tryParse(venue['discountPercentage']?.toString() ?? '');
     final bool hasDiscount = discountVal != null && discountVal > 0;
 
-    final List<Map<String, dynamic>> images = [];
-    if (venue['images'] != null) {
+    final List<String> interiorImages = [];
+    final List<String> videoMedia = [];
+    final Map<String, List<String>> menus = {};
+
+    // 1. Gallery from backend
+    if (venue['gallery'] is List) {
+      for (var item in (venue['gallery'] as List)) {
+        String u = '';
+        if (item is Map) {
+          u = _cleanMediaUrl(item['url'] ?? item['filePath']);
+        } else if (item is String) {
+          u = _cleanMediaUrl(item);
+        }
+        if (u.isNotEmpty && !interiorImages.contains(u)) interiorImages.add(u);
+      }
+    }
+
+    // 2. Images array
+    if (venue['images'] is List) {
       for (var item in (venue['images'] as List)) {
         if (item is Map) {
-          images.add(Map<String, dynamic>.from(item));
+          final type = (item['type'] ?? item['imageType'] ?? 'interior').toString().toLowerCase();
+          final u = _cleanMediaUrl(item['url'] ?? item['filePath']);
+          if (u.isNotEmpty) {
+            if (type.contains('video')) {
+              if (!videoMedia.contains(u)) videoMedia.add(u);
+            } else if (type.contains('food')) {
+              menus.putIfAbsent('FOOD MENU', () => []).add(u);
+            } else if (type.contains('bar')) {
+              menus.putIfAbsent('BAR MENU', () => []).add(u);
+            } else if (type.contains('beverage')) {
+              menus.putIfAbsent('BEVERAGE MENU', () => []).add(u);
+            } else if (type.contains('package')) {
+              menus.putIfAbsent('PARTY PACKAGES', () => []).add(u);
+            } else if (type.contains('menu')) {
+              menus.putIfAbsent('MENU GALLERY', () => []).add(u);
+            } else {
+              if (!interiorImages.contains(u)) interiorImages.add(u);
+            }
+          }
         } else if (item is String) {
-          images.add({'url': item, 'type': 'interior'});
+          final u = _cleanMediaUrl(item);
+          if (u.isNotEmpty && !interiorImages.contains(u)) interiorImages.add(u);
         }
       }
     }
 
-    final interiorImages = images.where((img) => img['type'] == 'interior').map((img) => img['url'] as String).toList();
-    final videoMedia = images.where((img) => img['type'] == 'video').map((img) => img['url'] as String).toList();
-    final menuImages = images.where((img) => img['type'] == 'menu').map((img) => img['url'] as String).toList();
-    final foodMenuImages = images.where((img) => img['type'] == 'foodMenu').map((img) => img['url'] as String).toList();
-    final barMenuImages = images.where((img) => img['type'] == 'barMenu').map((img) => img['url'] as String).toList();
-    final beverageMenuImages = images.where((img) => img['type'] == 'beverageMenu').map((img) => img['url'] as String).toList();
-    final partyPackagesImages = images.where((img) => img['type'] == 'partyPackages').map((img) => img['url'] as String).toList();
+    // 3. Menus Map
+    if (venue['menu'] is Map) {
+      final menuMap = Map<String, dynamic>.from(venue['menu']);
+      void addMenuCategory(String key, String title) {
+        if (menuMap[key] is List) {
+          for (var m in (menuMap[key] as List)) {
+            String u = '';
+            if (m is Map) {
+              u = _cleanMediaUrl(m['url'] ?? m['filePath']);
+            } else if (m is String) {
+              u = _cleanMediaUrl(m);
+            }
+            if (u.isNotEmpty) {
+              menus.putIfAbsent(title, () => []).add(u);
+            }
+          }
+        }
+      }
+      addMenuCategory('foodMenu', 'FOOD MENU');
+      addMenuCategory('barMenu', 'BAR MENU');
+      addMenuCategory('beverageMenu', 'BEVERAGE MENU');
+      addMenuCategory('partyPackages', 'PARTY PACKAGES');
+    }
 
+    // 4. Videos
+    if (venue['videos'] is List) {
+      for (var v in (venue['videos'] as List)) {
+        String u = '';
+        if (v is Map) {
+          u = _cleanMediaUrl(v['url'] ?? v['filePath']);
+        } else if (v is String) {
+          u = _cleanMediaUrl(v);
+        }
+        if (u.isNotEmpty && !videoMedia.contains(u)) videoMedia.add(u);
+      }
+    }
     if (venue['videoUrl'] != null && (venue['videoUrl'] as String).trim().isNotEmpty) {
-      final vUrl = venue['videoUrl'] as String;
-      if (!videoMedia.contains(vUrl)) {
+      final vUrl = _cleanMediaUrl(venue['videoUrl']);
+      if (vUrl.isNotEmpty && !videoMedia.contains(vUrl)) {
         videoMedia.insert(0, vUrl);
       }
     }
 
-    final Map<String, List<String>> menus = {};
-    if (foodMenuImages.isNotEmpty) menus['FOOD MENU'] = foodMenuImages;
-    if (barMenuImages.isNotEmpty) menus['BAR MENU'] = barMenuImages;
-    if (beverageMenuImages.isNotEmpty) menus['BEVERAGE MENU'] = beverageMenuImages;
-    if (partyPackagesImages.isNotEmpty) menus['PARTY PACKAGES'] = partyPackagesImages;
-    if (menuImages.isNotEmpty) menus['MENU GALLERY'] = menuImages;
-
-    final latVal = venue['latitude'];
-    final lngVal = venue['longitude'];
+    final latVal = venue['latitude'] ?? venue['lat'];
+    final lngVal = venue['longitude'] ?? venue['lng'];
     double? lat;
     double? lng;
     if (latVal != null) {
@@ -586,6 +736,38 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
         lng,
       );
     }
+
+    // Safe textual formatting to prevent 'null' or 'null • null'
+    final String venueNameStr = (venue['name'] ?? widget.venue['name'] ?? 'Venue').toString().toUpperCase();
+    final String? taglineRaw = venue['tagline']?.toString().trim();
+    final String? categoryRaw = venue['category']?.toString().trim();
+    final String? displayTagline = (taglineRaw != null && taglineRaw.isNotEmpty && taglineRaw.toLowerCase() != 'null')
+        ? taglineRaw
+        : ((categoryRaw != null && categoryRaw.isNotEmpty && categoryRaw.toLowerCase() != 'null') ? categoryRaw : null);
+
+    final String cityRaw = (venue['city'] ?? widget.venue['city'] ?? '').toString().trim();
+    final String areaRaw = (venue['area'] ?? venue['addressLine1'] ?? widget.venue['area'] ?? widget.venue['addressLine1'] ?? '').toString().trim();
+    final String cleanCity = (cityRaw.isNotEmpty && cityRaw.toLowerCase() != 'null') ? cityRaw : '';
+    final String cleanArea = (areaRaw.isNotEmpty && areaRaw.toLowerCase() != 'null') ? areaRaw : '';
+    String locationText = '';
+    if (cleanCity.isNotEmpty && cleanArea.isNotEmpty) {
+      locationText = '$cleanCity • $cleanArea';
+    } else if (cleanCity.isNotEmpty) {
+      locationText = cleanCity;
+    } else if (cleanArea.isNotEmpty) {
+      locationText = cleanArea;
+    }
+
+    // Featured party event to highlight
+    final Map<String, dynamic>? featuredParty = _venueEvents.isNotEmpty
+        ? _venueEvents.first
+        : (widget.initialPartyEvent != null ? {
+            'title': widget.initialPartyEvent!['title'] ?? 'Live Party Event',
+            'date': widget.initialPartyEvent!['toDate'] ?? widget.initialPartyEvent!['fromDate'] ?? 'LIVE PARTY',
+            'image': _cleanMediaUrl(widget.initialPartyEvent!['imagePath'] ?? widget.initialPartyEvent!['image']),
+            'aboutEvent': widget.initialPartyEvent!['aboutEvent'] ?? widget.initialPartyEvent!['about_event'] ?? widget.initialPartyEvent!['description'],
+            'rawAd': widget.initialPartyEvent,
+          } : null);
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -610,7 +792,6 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
                   fit: StackFit.expand,
                   children: [
                     _buildMediaCarousel(),
-                    // Gradient Overlay for Text Legibility
                     Positioned.fill(
                       child: DecoratedBox(
                         decoration: BoxDecoration(
@@ -628,7 +809,6 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
                         ),
                       ),
                     ),
-                    // Top Buttons (Back & Favorite)
                     Positioned(
                       top: MediaQuery.of(context).padding.top + 10,
                       left: 20,
@@ -646,7 +826,6 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
                         ],
                       ),
                     ),
-                    // Bottom Info Overlay
                     Positioned(
                       left: 24,
                       right: 24,
@@ -663,7 +842,7 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      venue['name'].toUpperCase(),
+                                      venueNameStr,
                                       style: const TextStyle(
                                         fontSize: 24,
                                         fontWeight: FontWeight.w900,
@@ -671,10 +850,10 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
                                         letterSpacing: 1.5,
                                       ),
                                     ),
-                                    if ((venue['tagline']).toString().trim().isNotEmpty) ...[
+                                    if (displayTagline != null) ...[
                                       const SizedBox(height: 2),
                                       Text(
-                                        (venue['tagline']).toString().toUpperCase(),
+                                        displayTagline.toUpperCase(),
                                         style: const TextStyle(
                                           fontSize: 12,
                                           fontWeight: FontWeight.bold,
@@ -683,27 +862,29 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
                                         ),
                                       ),
                                     ],
-                                    const SizedBox(height: 4),
-                                    Row(
-                                      crossAxisAlignment: CrossAxisAlignment.center,
-                                      children: [
-                                        const Icon(Icons.location_on_rounded, color: Colors.white, size: 14),
-                                        const SizedBox(width: 4),
-                                        Expanded(
-                                          child: Text(
-                                            '${venue['city']} • ${venue['area'] ?? venue['addressLine1']}'.toUpperCase(),
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w600,
-                                              letterSpacing: 0.5,
+                                    if (locationText.isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        crossAxisAlignment: CrossAxisAlignment.center,
+                                        children: [
+                                          const Icon(Icons.location_on_rounded, color: Colors.white, size: 14),
+                                          const SizedBox(width: 4),
+                                          Expanded(
+                                            child: Text(
+                                              locationText.toUpperCase(),
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                letterSpacing: 0.5,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
                                             ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
                                           ),
-                                        ),
-                                      ],
-                                    ),
+                                        ],
+                                      ),
+                                    ],
                                     if (venue['openingTime'] != null || venue['closingTime'] != null || venue['daysOpen'] != null) ...[
                                       const SizedBox(height: 6),
                                       Wrap(
@@ -939,6 +1120,12 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Prominent Featured Party/Event Banner (if opened for an announcement/event)
+                  if (featuredParty != null) ...[
+                    _buildFeaturedPartyCard(featuredParty),
+                    const SizedBox(height: 12),
+                  ],
+
                   LunaraActionButton(
                     key: AppTourService.venueBookNowKey,
                     text: 'BOOK NOW',
@@ -955,7 +1142,7 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
                     const SizedBox(height: 24),
                   ],
                   if (_venueEvents.isNotEmpty) ...[
-                    _sectionHeading('UPCOMING NIGHTS'),
+                    _sectionHeading('UPCOMING NIGHTS & EVENTS'),
                     const SizedBox(height: 16),
                     _buildUpcomingNightsSection(),
                     const SizedBox(height: 32),
@@ -989,10 +1176,19 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
                         ),
                       ],
                     ),
-                    child: Text(
-                      venue['description'] ?? 'No description available',
-                      style: const TextStyle(height: 1.6, color: Colors.black87, fontSize: 14),
-                    ),
+                    child: _isLoadingVenue && (venue['description'] == null || venue['description'].toString().trim().isEmpty)
+                        ? const Center(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(vertical: 12.0),
+                              child: CircularProgressIndicator(strokeWidth: 2, color: LunaraTheme.electricViolet),
+                            ),
+                          )
+                        : Text(
+                            (venue['description'] != null && venue['description'].toString().trim().isNotEmpty)
+                                ? venue['description']
+                                : 'Welcome to $venueNameStr — Pune\'s premier destination for elevated cocktails, high energy entertainment, and an unforgettable nightlife experience.',
+                            style: const TextStyle(height: 1.6, color: Colors.black87, fontSize: 14),
+                          ),
                   ),
                   const SizedBox(height: 32),
                   _sectionHeading('AMENITIES'),
@@ -1015,12 +1211,277 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
     );
   }
 
+  Widget _buildFeaturedPartyCard(Map<String, dynamic> party) {
+    final title = (party['title'] ?? 'Live Party Event').toString();
+    final date = (party['date'] ?? 'Upcoming').toString();
+    final about = (party['aboutEvent'] ?? party['about_event'] ?? party['description'] ?? '').toString();
+    final imgUrl = _cleanMediaUrl(party['image'] ?? party['imagePath']);
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF2E0854), Color(0xFF1B0336)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: LunaraTheme.electricViolet.withValues(alpha: 0.6),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: LunaraTheme.electricViolet.withValues(alpha: 0.25),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(23),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (imgUrl.isNotEmpty)
+              Stack(
+                children: [
+                  Image.network(
+                    imgUrl,
+                    height: 160,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                  ),
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black.withValues(alpha: 0.2),
+                            Colors.black.withValues(alpha: 0.85),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 12,
+                    left: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        gradient: LunaraTheme.purpleGradient,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.4),
+                            blurRadius: 6,
+                          ),
+                        ],
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.celebration_rounded, color: Colors.white, size: 12),
+                          SizedBox(width: 4),
+                          Text(
+                            'FEATURED PARTY EVENT',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.8,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 12,
+                    right: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.6),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+                      ),
+                      child: Text(
+                        date.toUpperCase(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 12,
+                    left: 16,
+                    right: 16,
+                    child: Text(
+                      title.toUpperCase(),
+                      style: const TextStyle(
+                        fontFamily: 'AllroundGothic',
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                        letterSpacing: 1,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        gradient: LunaraTheme.purpleGradient,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Text(
+                        'FEATURED PARTY EVENT',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      date.toUpperCase(),
+                      style: const TextStyle(
+                        color: LunaraTheme.cyberCyan,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (imgUrl.isEmpty)
+                    Text(
+                      title.toUpperCase(),
+                      style: const TextStyle(
+                        fontFamily: 'AllroundGothic',
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  if (about.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      about,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontSize: 12.5,
+                        height: 1.5,
+                      ),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            final rawAd = party['rawAd'] as Map<String, dynamic>? ?? party;
+                            showModalBottomSheet(
+                              context: context,
+                              isScrollControlled: true,
+                              backgroundColor: Colors.transparent,
+                              builder: (_) => PartyEventBookingSheet(event: rawAd),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: LunaraTheme.electricViolet,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          ),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.confirmation_num_rounded, size: 16, color: Colors.white),
+                              SizedBox(width: 6),
+                              Text(
+                                'BOOK PARTY PASS',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.8,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      OutlinedButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => UpcomingPartyScreen(
+                                party: party,
+                                venueMap: venue,
+                              ),
+                            ),
+                          );
+                        },
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white38),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: const Text(
+                          'DETAILS',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildAmenities() {
-    final Map<String, dynamic>? amenitiesData = venue['amenities'];
-    
-    if (amenitiesData == null) {
-      return const Text('Amenities data not available', style: TextStyle(color: Colors.grey));
-    }
+    final dynamic rawAmenities = venue['amenities'];
 
     final List<Map<String, dynamic>> allPossibleAmenities = [
       {'key': 'hasAC', 'label': 'AC', 'icon': Icons.ac_unit},
@@ -1040,17 +1501,42 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
       {'key': 'hasOutdoorSeating', 'label': 'Outdoor Seating', 'icon': Icons.deck_rounded},
     ];
 
-    final List<Map<String, dynamic>> availableAmenities = allPossibleAmenities
-        .where((a) => amenitiesData[a['key']] == true)
-        .toList();
+    List<Map<String, dynamic>> availableAmenities = [];
 
-    if (availableAmenities.isEmpty) {
-      return const Text('No specific amenities listed', style: TextStyle(color: Colors.grey));
+    if (rawAmenities is Map) {
+      availableAmenities = allPossibleAmenities.where((a) {
+        final key = a['key'];
+        final label = (a['label'] as String).toLowerCase();
+        return rawAmenities[key] == true ||
+            rawAmenities[label] == true ||
+            rawAmenities[key.toString().toLowerCase()] == true;
+      }).toList();
+    } else if (rawAmenities is List) {
+      final listStrings = rawAmenities.map((e) => e.toString().toLowerCase()).toList();
+      availableAmenities = allPossibleAmenities.where((a) {
+        final label = (a['label'] as String).toLowerCase();
+        final key = (a['key'] as String).toLowerCase();
+        return listStrings.any((s) => s.contains(label) || s.contains(key));
+      }).toList();
     }
 
-    // Show max 16 amenities (4x4 grid)
+    // If still empty and not finished loading, show loading or essential defaults
+    if (availableAmenities.isEmpty) {
+      if (_isLoadingVenue) {
+        return const Center(
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 12.0),
+            child: CircularProgressIndicator(strokeWidth: 2, color: LunaraTheme.electricViolet),
+          ),
+        );
+      }
+      // Fallback to essential venue amenities
+      availableAmenities = allPossibleAmenities
+          .where((a) => ['hasAC', 'hasDJ', 'hasWifi', 'hasParking', 'hasVIPSection'].contains(a['key']))
+          .toList();
+    }
+
     final displayAmenities = availableAmenities.take(16).toList();
-    // Calculate rows needed (max 4 rows)
     final rowCount = ((displayAmenities.length + 3) ~/ 4).clamp(1, 4);
 
     return Container(
@@ -1403,33 +1889,90 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
 
   Widget _buildMediaCarousel() {
     final List<String> mediaUrls = [];
-    // Always put the video FIRST so it is shown prominently
-    // if (venue['videoUrl'] != null &&
-    //     (venue['videoUrl'] as String).trim().isNotEmpty) {
-    //   mediaUrls.add(venue['videoUrl'] as String);
-    // }
 
-    // Show only the single cover image
+    // 1. Cover Image
+    if (venue['coverImage'] != null) {
+      if (venue['coverImage'] is Map) {
+        final u = _cleanMediaUrl(venue['coverImage']['url'] ?? venue['coverImage']['filePath']);
+        if (u.isNotEmpty && !mediaUrls.contains(u)) mediaUrls.add(u);
+      } else if (venue['coverImage'] is String) {
+        final u = _cleanMediaUrl(venue['coverImage']);
+        if (u.isNotEmpty && !mediaUrls.contains(u)) mediaUrls.add(u);
+      }
+    }
+
+    // 2. Direct string fields
     if (venue['image'] != null && (venue['image'] as String).trim().isNotEmpty) {
-      mediaUrls.add(venue['image'] as String);
+      final u = _cleanMediaUrl(venue['image']);
+      if (u.isNotEmpty && !mediaUrls.contains(u)) mediaUrls.add(u);
+    }
+    if (venue['imageUrl'] != null && (venue['imageUrl'] as String).trim().isNotEmpty) {
+      final u = _cleanMediaUrl(venue['imageUrl']);
+      if (u.isNotEmpty && !mediaUrls.contains(u)) mediaUrls.add(u);
+    }
+    if (venue['primaryPhoto'] != null && (venue['primaryPhoto'] as String).trim().isNotEmpty) {
+      final u = _cleanMediaUrl(venue['primaryPhoto']);
+      if (u.isNotEmpty && !mediaUrls.contains(u)) mediaUrls.add(u);
+    }
+
+    // 3. Gallery List
+    if (venue['gallery'] is List) {
+      for (var item in (venue['gallery'] as List)) {
+        String u = '';
+        if (item is Map) {
+          u = _cleanMediaUrl(item['url'] ?? item['filePath']);
+        } else if (item is String) {
+          u = _cleanMediaUrl(item);
+        }
+        if (u.isNotEmpty && !mediaUrls.contains(u)) mediaUrls.add(u);
+      }
+    }
+
+    // 4. Images list
+    if (venue['images'] is List) {
+      for (var item in (venue['images'] as List)) {
+        String u = '';
+        if (item is Map) {
+          u = _cleanMediaUrl(item['url'] ?? item['filePath']);
+        } else if (item is String) {
+          u = _cleanMediaUrl(item);
+        }
+        if (u.isNotEmpty && !mediaUrls.contains(u)) mediaUrls.add(u);
+      }
+    }
+
+    // 5. Initial Party Event image fallback
+    if (mediaUrls.isEmpty && widget.initialPartyEvent != null) {
+      final u = _cleanMediaUrl(widget.initialPartyEvent!['imagePath'] ?? widget.initialPartyEvent!['image']);
+      if (u.isNotEmpty && !mediaUrls.contains(u)) mediaUrls.add(u);
     }
 
     if (mediaUrls.isEmpty) {
-      return Container(color: Colors.grey[200]);
+      return Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF2C0A4B), Color(0xFF130325)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: Center(
+          child: Icon(Icons.nightlife_rounded, color: Colors.white.withValues(alpha: 0.4), size: 64),
+        ),
+      );
     }
 
     if (mediaUrls.length == 1) {
       return _buildMediaItem(mediaUrls.first);
     }
 
-    // Disable autoPlay so the carousel doesn't skip past a playing video
     return Stack(
       children: [
         CarouselSlider(
           options: CarouselOptions(
             height: double.infinity,
             viewportFraction: 1.0,
-            enableInfiniteScroll: false,
+            enableInfiniteScroll: mediaUrls.length > 1,
             autoPlay: true,
             autoPlayInterval: const Duration(seconds: 4),
             autoPlayAnimationDuration: const Duration(milliseconds: 1000),

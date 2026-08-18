@@ -4,6 +4,7 @@ import '../../core/theme.dart';
 import '../../models/venue.dart';
 import 'post_detail_screen.dart';
 import '../../services/api_service.dart';
+import '../../widgets/lunara_profile_image.dart';
 
 
 class AllPostsScreen extends StatefulWidget {
@@ -307,27 +308,22 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
                 children: [
                   Row(
                     children: [
-                      CircleAvatar(
-                        radius: 16,
-                        backgroundColor: LunaraTheme.electricViolet,
-                        child: Text(
-                          ((post['firstName'] ?? post['userName'] ?? 'U')[0])
-                              .toString()
-                              .toUpperCase(),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
+                      LunaraProfileImage(
+                        userData: post['user'] is Map ? post['user'] as Map : post,
+                        radius: 18,
+                        showGradientBorder: true,
+                        isInteractive: false,
                       ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
                           (post['firstName'] != null &&
-                                  post['lastName'] != null)
+                                  post['lastName'] != null &&
+                                  post['firstName'].toString().isNotEmpty)
                               ? '${post['firstName']} ${post['lastName']}'
-                              : (post['userName'] ?? 'Lunara User'),
+                              : ((post['user'] is Map && post['user']['firstName'] != null)
+                                  ? '${post['user']['firstName']} ${post['user']['lastName'] ?? ''}'.trim()
+                                  : (post['userName'] ?? 'Lunara User')),
                           style: const TextStyle(
                             fontWeight: FontWeight.w900,
                             fontSize: 18,
