@@ -588,8 +588,40 @@ export const getAllRequests = async (req: Request, res: Response): Promise<void>
         const { status, page = '1', limit = '20' } = req.query;
 
         const where: any = {};
-        if (status && Object.values(StrangersMeetStatus).includes(status as StrangersMeetStatus)) {
-            where.status = status;
+        if (status) {
+            const statusStr = String(status).toLowerCase();
+            if (statusStr === 'pending') {
+                where.status = StrangersMeetStatus.PENDING;
+            } else if (statusStr === 'approved') {
+                where.status = StrangersMeetStatus.APPROVED;
+            } else if (statusStr === 'in_progress' || statusStr === 'live') {
+                where.status = {
+                    [Op.in]: [
+                        StrangersMeetStatus.START_CONFIRMATION_PENDING,
+                        StrangersMeetStatus.IN_PROGRESS,
+                        StrangersMeetStatus.END_CONFIRMATION_PENDING,
+                    ],
+                };
+            } else if (statusStr === 'completed' || statusStr === 'completed_review') {
+                where.status = {
+                    [Op.in]: [
+                        StrangersMeetStatus.HOST_CONFIRMED_ENDED,
+                        StrangersMeetStatus.ADMIN_CONFIRMED_ENDED,
+                        StrangersMeetStatus.COMPLETED,
+                        StrangersMeetStatus.SETTLED,
+                    ],
+                };
+            } else if (statusStr === 'needs_contact' || statusStr === 'needs_host_contact') {
+                where.status = StrangersMeetStatus.NEEDS_HOST_CONTACT;
+            } else if (statusStr === 'payouts' || statusStr === 'settlements') {
+                where.settlementStatus = {
+                    [Op.in]: ['settlement_pending', 'requested', 'approved', 'settled', 'paid'],
+                };
+            } else if (statusStr === 'rejected') {
+                where.status = StrangersMeetStatus.REJECTED;
+            } else if (statusStr !== 'all' && Object.values(StrangersMeetStatus).includes(status as StrangersMeetStatus)) {
+                where.status = status;
+            }
         }
 
         const pageNum = Math.max(1, parseInt(page as string));
@@ -608,6 +640,37 @@ export const getAllRequests = async (req: Request, res: Response): Promise<void>
         // Counts by status for badge display
         const pendingCount = await StrangersMeetRequest.count({ where: { status: StrangersMeetStatus.PENDING } });
         const approvedCount = await StrangersMeetRequest.count({ where: { status: StrangersMeetStatus.APPROVED } });
+        const inProgressCount = await StrangersMeetRequest.count({
+            where: {
+                status: {
+                    [Op.in]: [
+                        StrangersMeetStatus.START_CONFIRMATION_PENDING,
+                        StrangersMeetStatus.IN_PROGRESS,
+                        StrangersMeetStatus.END_CONFIRMATION_PENDING,
+                    ],
+                },
+            },
+        });
+        const completedCount = await StrangersMeetRequest.count({
+            where: {
+                status: {
+                    [Op.in]: [
+                        StrangersMeetStatus.HOST_CONFIRMED_ENDED,
+                        StrangersMeetStatus.ADMIN_CONFIRMED_ENDED,
+                        StrangersMeetStatus.COMPLETED,
+                        StrangersMeetStatus.SETTLED,
+                    ],
+                },
+            },
+        });
+        const needsContactCount = await StrangersMeetRequest.count({ where: { status: StrangersMeetStatus.NEEDS_HOST_CONTACT } });
+        const payoutsCount = await StrangersMeetRequest.count({
+            where: {
+                settlementStatus: {
+                    [Op.in]: ['settlement_pending', 'requested', 'approved', 'settled', 'paid'],
+                },
+            },
+        });
         const rejectedCount = await StrangersMeetRequest.count({ where: { status: StrangersMeetStatus.REJECTED } });
 
         res.json({
@@ -619,6 +682,10 @@ export const getAllRequests = async (req: Request, res: Response): Promise<void>
             counts: {
                 pending: pendingCount,
                 approved: approvedCount,
+                inProgress: inProgressCount,
+                completed: completedCount,
+                needsContact: needsContactCount,
+                payouts: payoutsCount,
                 rejected: rejectedCount,
             },
             data: rows.map(formatRequest),
@@ -2112,6 +2179,112 @@ export const adminMarkSettled = async (req: Request, res: Response): Promise<voi
         res.status(500).json({ success: false, message: err.message || 'Failed to mark strangers meet payout as settled' });
     }
 };
+
+// POST /api/mobile/strangers-meet/:id/not-started
+export const postNotStarted = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { userId, reason } = req.body;
+
+        if (!userId) {
+            res.status(400).json({ success: false, message: 'userId is required' });
+            return;
+        }
+
+        const request = await StrangersMeetService.hostReportNotStarted(id, userId, reason ? String(reason) : undefined);
+
+        res.json({
+            success: true,
+            message: 'Meetup marked as not started',
+            data: request,
+        });
+    } catch (err: any) {
+        logger.error('postNotStarted error:', err);
+        res.status(500).json({ success: false, message: err.message || 'Failed to mark meetup as not started' });
+    }
+};
+
+// GET /api/admin/strangers-meet/needs-contact
+export const getNeedsHostContact = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { page = '1', limit = '20' } = req.query;
+        const pageNum = Math.max(1, parseInt(page as string));
+        const limitNum = Math.min(100, Math.max(1, parseInt(limit as string)));
+        const offset = (pageNum - 1) * limitNum;
+
+        const where = {
+            status: StrangersMeetStatus.NEEDS_HOST_CONTACT,
+        };
+
+        const count = await StrangersMeetRequest.count({ where });
+        const rows = await StrangersMeetRequest.findAll({
+            where,
+            include: buildIncludes(),
+            order: [['escalatedAt', 'DESC'], ['createdAt', 'DESC']],
+            limit: limitNum,
+            offset,
+        });
+
+        res.json({
+            success: true,
+            total: count,
+            page: pageNum,
+            limit: limitNum,
+            pages: Math.ceil(count / limitNum),
+            data: rows.map(formatRequest),
+        });
+    } catch (err: any) {
+        logger.error('getNeedsHostContact error:', err);
+        res.status(500).json({ success: false, message: 'Failed to fetch escalated requests', error: err.message });
+    }
+};
+
+// POST /api/admin/strangers-meet/:id/resolve-escalation
+export const resolveEscalation = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { resolution, resolutionNotes } = req.body;
+        const adminId = (req as any).admin?.id || (req as any).user?.id || 'admin';
+
+        if (!resolution) {
+            res.status(400).json({ success: false, message: 'resolution is required' });
+            return;
+        }
+
+        const request = await StrangersMeetService.adminResolveEscalation(
+            id,
+            adminId,
+            String(resolution),
+            resolutionNotes ? String(resolutionNotes) : undefined
+        );
+
+        res.json({
+            success: true,
+            message: 'Escalation resolved successfully',
+            data: request,
+        });
+    } catch (err: any) {
+        logger.error('resolveEscalation error:', err);
+        res.status(500).json({ success: false, message: err.message || 'Failed to resolve escalation' });
+    }
+};
+
+// GET /api/admin/strangers-meet/:id/settlement-summary
+export const getSettlementSummary = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const summary = await StrangersMeetService.calculateSettlementSummary(id);
+
+        res.json({
+            success: true,
+            data: summary,
+        });
+    } catch (err: any) {
+        logger.error('getSettlementSummary error:', err);
+        res.status(500).json({ success: false, message: err.message || 'Failed to calculate settlement summary' });
+    }
+};
+
 
 
 

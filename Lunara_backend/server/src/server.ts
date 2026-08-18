@@ -18,8 +18,6 @@ import User from './models/User';
 import Message, { MessageStatus } from './models/Message';
 import Conversation from './models/Conversation';
 import { Op } from 'sequelize';
-import { startPartyPlanCron, startNotificationJobCron, startExpiringPlanAlertCron } from './cron/partyPlanCron';
-import { startSubscriptionCron } from './cron/subscriptionCron';
 
 // Load environment variables
 dotenv.config();
@@ -148,6 +146,9 @@ import adminPaymentsRoutes from './routes/adminPayments';
 import adminNotificationRoutes from './routes/adminNotificationRoutes';
 import adminEventBookingRoutes from './routes/adminEventBooking';
 import { ExpiredTicketCleanupWorker } from './services/ExpiredTicketCleanupWorker';
+import { startPartyPlanCron, startNotificationJobCron, startExpiringPlanAlertCron } from './cron/partyPlanCron';
+import { startSubscriptionCron } from './cron/subscriptionCron';
+import { startStrangersMeetCron } from './cron/strangersMeetCron';
 import { getAdminChatSettings, updateAdminChatSettings } from './controllers/chatSubscriptionController';
 import { getAdminTimeLockSettings, updateAdminTimeLockSettings } from './controllers/mobilePlanController';
 import dbRestoreRoutes from './routes/dbRestore';
@@ -392,12 +393,12 @@ const startServer = async () => {
         // Only run on the master process (if native cluster is disabled) AND only on instance 0 (if PM2 cluster)
         const isMasterProcess = cluster.isPrimary || (cluster as any).isMaster;
         const isFirstPm2Instance = !process.env.NODE_APP_INSTANCE || process.env.NODE_APP_INSTANCE === '0';
-        
         if (isMasterProcess && isFirstPm2Instance) {
             startPartyPlanCron();
             startNotificationJobCron();
             startExpiringPlanAlertCron();
             startSubscriptionCron();
+            startStrangersMeetCron();
             ExpiredTicketCleanupWorker.startWorker();
             logger.info('Background Cron Jobs & ExpiredTicketCleanupWorker started on process/instance.');
         } else {
@@ -433,6 +434,7 @@ if (process.env.NODE_ENV !== 'test') {
                 startNotificationJobCron();
                 startExpiringPlanAlertCron();
                 startSubscriptionCron();
+                startStrangersMeetCron();
                 ExpiredTicketCleanupWorker.startWorker();
                 logger.info('Primary process database connected & initiated background Cron Jobs.');
             }).catch((err) => {

@@ -4,6 +4,7 @@ import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../discovery/digital_ticket_screen.dart';
 import '../social/large_party_ticket_screen.dart';
+import '../social/party_plan_ticket_screen.dart';
 
 class TicketPocketScreen extends StatefulWidget {
   const TicketPocketScreen({super.key});
@@ -514,6 +515,22 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
       padding: const EdgeInsets.only(bottom: 20),
       child: GestureDetector(
         onTap: () {
+          // Party plan tickets have dedicated matched UI
+          final isPartyPlan = booking['isPartyPlan'] == true || booking['type'] == 'party_plan';
+          if (isPartyPlan) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PartyPlanTicketScreen(
+                  request: booking,
+                  plan: booking,
+                  isHost: true,
+                ),
+              ),
+            );
+            return;
+          }
+
           // Group party tickets have richer data via LargePartyTicketScreen
           final isGroupParty = booking['isGroupParty'] == true || booking['isSmallGroupParty'] == true;
           if (isGroupParty) {

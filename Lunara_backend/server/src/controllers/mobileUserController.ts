@@ -533,17 +533,26 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
 export const getAllCustomers = async (req: Request, res: Response): Promise<Response> => {
     try {
         const page = Math.max(1, parseInt(req.query.page as string) || 1);
-        const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
+        const limitQuery = (req.query.limit as string)?.toLowerCase();
+        const limit = (limitQuery === 'all' || limitQuery === '0')
+            ? 1000
+            : Math.min(1000, parseInt(req.query.limit as string) || 200);
         const offset = (page - 1) * limit;
         const search = (req.query.search as string)?.trim();
         const city = (req.query.city as string)?.trim();
+        const isAllCities = req.query.allCities === 'true' || req.query.all_cities === 'true' || city === 'all';
 
         const currentUserId = req.user?.id || (req.query.currentUserId as string);
         const targetUserId = (req.query.userId as string)?.trim();
 
-        // Build User-level where clause
-        const userWhere: any = { role: UserRole.CUSTOMER, isActive: true };
+        // Build User-level where clause: include customers who are not soft-deleted
+        const userWhere: any = {
+            role: UserRole.CUSTOMER,
+            isDeleted: false,
+            isActive: { [Op.ne]: false },
+        };
 
+        // Exclude self or blocked users
         if (targetUserId && targetUserId !== 'undefined' && targetUserId !== 'null') {
             userWhere.id = targetUserId;
         } else {
@@ -584,22 +593,15 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
             ];
         }
 
-        // Exclude hidden profiles, but allow those without preference records or with true
-        const prefConditions = {
-            [Op.or]: [
-                { '$preferences.show_me_in_matching$': { [Op.ne]: false } },
-                { '$preferences.id$': null }
-            ]
-        };
-        if (userWhere[Op.and]) {
-            userWhere[Op.and].push(prefConditions);
-        } else {
-            userWhere[Op.and] = [prefConditions];
-        }
-
         // Build Profile-level where clause (for city filter)
         const profileWhere: any = {};
-        if (city) profileWhere.city = { [Op.iLike]: `%${city}%` };
+        if (city && !isAllCities) {
+            profileWhere[Op.or] = [
+                { city: { [Op.iLike]: `%${city}%` } },
+                { city: null },
+                { city: '' }
+            ];
+        }
 
         // PHASE 1: Scoping and Scoring
         const matchingUsersRaw = await User.findAll({
@@ -611,7 +613,7 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                     as: 'profile',
                     attributes: ['id'],
                     where: Object.keys(profileWhere).length ? profileWhere : undefined,
-                    required: Object.keys(profileWhere).length > 0,
+                    required: false,
                 },
                 {
                     model: UserPreference,

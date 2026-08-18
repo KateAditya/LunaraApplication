@@ -9,6 +9,9 @@ import {
     approveSettlementPayout,
     adminConfirmEnded,
     adminMarkSettled,
+    getNeedsHostContact,
+    resolveEscalation,
+    getSettlementSummary,
 } from '../controllers/strangersMeetController';
 
 const router = Router();
@@ -16,7 +19,7 @@ const router = Router();
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/admin/strangers-meet
 // Admin — list all requests
-// Query: ?status=pending|approved|rejected|completed|payouts|all  ?page=1  ?limit=20
+// Query: ?status=pending|approved|in_progress|completed|needs_contact|payouts|all  ?page=1  ?limit=20
 // ─────────────────────────────────────────────────────────────────────────────
 router.get(
     '/',
@@ -27,6 +30,33 @@ router.get(
         validate,
     ],
     getAllRequests
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/admin/strangers-meet/needs-contact
+// Admin — list requests requiring host contact (24h timeout escalation)
+// ─────────────────────────────────────────────────────────────────────────────
+router.get(
+    '/needs-contact',
+    [
+        query('page').optional().isInt({ min: 1 }).withMessage('page must be a positive integer'),
+        query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('limit must be between 1 and 100'),
+        validate,
+    ],
+    getNeedsHostContact
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/admin/strangers-meet/:id/settlement-summary
+// Admin — get automated settlement calculation breakdown
+// ─────────────────────────────────────────────────────────────────────────────
+router.get(
+    '/:id/settlement-summary',
+    [
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        validate,
+    ],
+    getSettlementSummary
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -92,6 +122,21 @@ router.post(
         validate,
     ],
     adminMarkSettled
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/admin/strangers-meet/:id/resolve-escalation
+// Admin resolves 24-hour escalation case
+// ─────────────────────────────────────────────────────────────────────────────
+router.post(
+    '/:id/resolve-escalation',
+    [
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        body('resolution').notEmpty().withMessage('resolution is required'),
+        body('resolutionNotes').optional().isString(),
+        validate,
+    ],
+    resolveEscalation
 );
 
 // ─────────────────────────────────────────────────────────────────────────────

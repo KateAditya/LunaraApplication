@@ -477,15 +477,26 @@ class ApiService {
     }
   }
 
-  static Future<List<Map<String, dynamic>>> fetchCustomers({String? city}) async {
+  static Future<List<Map<String, dynamic>>> fetchCustomers({
+    String? city,
+    int limit = 500,
+    int page = 1,
+    bool includeAllCities = false,
+  }) async {
     try {
       final userId = currentUserId;
-      final Map<String, String> params = {};
+      final Map<String, String> params = {
+        'limit': limit.toString(),
+        'page': page.toString(),
+      };
       if (userId != null) params['currentUserId'] = userId;
-      // Pass city to backend so it uses ILIKE (case-insensitive, partial match)
-      final String? cityToFilter = city ?? selectedCity;
-      if (cityToFilter != null && cityToFilter.isNotEmpty) {
-        params['city'] = cityToFilter;
+      if (includeAllCities) {
+        params['allCities'] = 'true';
+      } else {
+        final String? cityToFilter = city ?? selectedCity;
+        if (cityToFilter != null && cityToFilter.isNotEmpty) {
+          params['city'] = cityToFilter;
+        }
       }
       final response = await get(
         '/api/mobile/user/customers',
@@ -2076,6 +2087,28 @@ class ApiService {
       }
     } catch (e) {
       debugPrint('extendStrangersMeetDuration error: $e');
+      rethrow;
+    }
+  }
+
+  /// Host marks Strangers Meet as not started
+  static Future<Map<String, dynamic>?> reportStrangersMeetNotStarted(String id, {String? reason}) async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('User not logged in');
+
+    try {
+      final response = await post(
+        '/api/mobile/strangers-meet/$id/not-started',
+        body: {'userId': userId, if (reason != null) 'reason': reason},
+      );
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        return data['data'];
+      } else {
+        throw Exception(data['message'] ?? 'Failed to mark meetup as not started');
+      }
+    } catch (e) {
+      debugPrint('reportStrangersMeetNotStarted error: $e');
       rethrow;
     }
   }

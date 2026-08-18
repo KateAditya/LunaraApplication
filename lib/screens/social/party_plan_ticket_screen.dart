@@ -3,11 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../services/google_places_service.dart';
 import 'package:intl/intl.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../widgets/lunara_profile_image.dart';
 import '../../widgets/lunara_ticket_widget.dart';
 import '../../services/api_service.dart';
+import '../../services/lunara_ticket_capture_service.dart';
 
 class PartyPlanTicketScreen extends StatefulWidget {
   final Map<dynamic, dynamic> request;
@@ -39,6 +39,7 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
   String? _canonicalTicketCode;
   String? _ticketUrl;
   bool _isFetchingTicket = false;
+  final GlobalKey _ticketKey = GlobalKey();
 
   @override
   void initState() {
@@ -219,30 +220,26 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
   }
 
   void _shareTicket(BuildContext context) {
-    final reqId = widget.request['id']?.toString() ?? '';
-    final ticketId = (_canonicalTicketCode ?? widget.request['id']?.toString() ?? 'TICKET').toUpperCase();
+    final venue = widget.plan['venue'] ?? {};
+    final venueName = venue['name'] ?? 'Venue';
+    final planDateTime = widget.plan['planDateTime'] != null
+        ? DateFormat('MMM dd, yyyy • hh:mm a').format(
+            DateTime.tryParse(widget.plan['planDateTime'].toString())?.toLocal() ?? DateTime.now(),
+          )
+        : '';
+    final ticketId = (_canonicalTicketCode ?? widget.request['id']?.toString() ?? 'PP-PASS').toUpperCase();
+    final hostUser = _resolveHostUser();
+    final hostName = '${hostUser['firstName'] ?? ''} ${hostUser['lastName'] ?? ''}'.trim();
 
-    String? rawUrl = _ticketUrl ?? widget.request['ticketUrl'] ?? widget.request['ticket_url'];
-    String shareLink = '';
-
-    if (rawUrl != null && rawUrl.toString().trim().isNotEmpty) {
-      final str = rawUrl.toString().trim();
-      if (str.startsWith('http://') || str.startsWith('https://')) {
-        shareLink = str;
-      } else {
-        shareLink = '${ApiService.baseUrl}${str.startsWith('/') ? '' : '/'}$str';
-      }
-    } else {
-      shareLink = '${ApiService.baseUrl}/api/mobile/party-plans/requests/$reqId/ticket';
-    }
-
-    final box = context.findRenderObject() as RenderBox?;
-    Share.share(
-      shareLink,
-      subject: 'Lunara Party Ticket Pass ($ticketId)',
-      sharePositionOrigin: box != null
-          ? box.localToGlobal(Offset.zero) & box.size
-          : null,
+    LunaraTicketCaptureService.shareTicket(
+      context: context,
+      ticketKey: _ticketKey,
+      ticketCode: ticketId,
+      venueName: venueName,
+      eventDateTime: planDateTime,
+      eventType: 'Party Plan',
+      hostName: hostName.isNotEmpty ? hostName : 'Party Host',
+      guestCount: '2 Guests (Confirmed)',
     );
   }
 
@@ -439,19 +436,21 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
           child: Column(
             children: [
               // ── THE TICKET CARD (LIGHT THEME) ──────────────────────────────
-              LunaraTicketWidget(
-                cardColor: Colors.white,
-                cutoutColor: lightBgColor,
-                dashColor: const Color(0xFFCBD5E1),
-                borderRadius: 24.0,
-                border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.06),
-                    blurRadius: 24,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
+              RepaintBoundary(
+                key: _ticketKey,
+                child: LunaraTicketWidget(
+                  cardColor: Colors.white,
+                  cutoutColor: lightBgColor,
+                  dashColor: const Color(0xFFCBD5E1),
+                  borderRadius: 24.0,
+                  border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.06),
+                      blurRadius: 24,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
                 topSection: Padding(
                   padding: const EdgeInsets.all(20),
                   child: Column(
@@ -1051,31 +1050,36 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
                     ],
                   ),
                 ),
+                ),
               ),
 
               const SizedBox(height: 28),
 
-              // ── ACTION BUTTONS BELOW TICKET ────────────────────────────────
-              if ((_ticketUrl ?? widget.request['ticketUrl']) != null &&
-                  (_ticketUrl ?? widget.request['ticketUrl']).toString().isNotEmpty) ...[
                 SizedBox(
                   width: double.infinity,
                   height: 52,
                   child: ElevatedButton.icon(
-                    onPressed: () async {
-                      final url = (_ticketUrl ?? widget.request['ticketUrl']).toString();
-                      final pdfUri = Uri.parse(url);
-                      if (await canLaunchUrl(pdfUri)) {
-                        await launchUrl(pdfUri, mode: LaunchMode.externalApplication);
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Could not open the PDF URL.')),
-                        );
-                      }
+                    onPressed: () {
+                      final venue = widget.plan['venue'] ?? {};
+                      final venueName = venue['name'] ?? 'Venue';
+                      final planDateTime = widget.plan['planDateTime'] != null
+                          ? DateFormat('MMM dd, yyyy • hh:mm a').format(
+                              DateTime.tryParse(widget.plan['planDateTime'].toString())?.toLocal() ?? DateTime.now(),
+                            )
+                          : '';
+                      final ticketId = (_canonicalTicketCode ?? widget.request['id']?.toString() ?? 'PP-PASS').toUpperCase();
+                      LunaraTicketCaptureService.downloadTicket(
+                        context: context,
+                        ticketKey: _ticketKey,
+                        ticketCode: ticketId,
+                        eventType: 'Party_Plan',
+                        venueName: venueName,
+                        eventDateTime: planDateTime,
+                      );
                     },
                     icon: const Icon(Icons.download_rounded, color: Colors.white, size: 20),
                     label: const Text(
-                      'DOWNLOAD PDF TICKET',
+                      'DOWNLOAD TICKET PASS',
                       style: TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
@@ -1093,7 +1097,6 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-              ],
               SizedBox(
                 width: double.infinity,
                 height: 52,

@@ -8,7 +8,20 @@ interface SMRequest {
   eventDateTime: string;
   numberOfPersons: number;
   chargesPerHead: number;
-  status: 'pending' | 'approved' | 'rejected' | 'in_progress' | 'host_confirmed_ended' | 'admin_confirmed_ended' | 'completed' | 'cancelled';
+  status:
+    | 'pending'
+    | 'approved'
+    | 'rejected'
+    | 'start_confirmation_pending'
+    | 'in_progress'
+    | 'end_confirmation_pending'
+    | 'host_confirmed_ended'
+    | 'admin_confirmed_ended'
+    | 'settled'
+    | 'completed'
+    | 'not_started'
+    | 'needs_host_contact'
+    | 'cancelled';
   paymentAmount: number | null;
   paymentStatus: 'unpaid' | 'paid';
   mobileNumber: string;
@@ -33,6 +46,10 @@ interface SMRequest {
   adminConfirmedEndedAt: string | null;
   adminConfirmedBy: string | null;
   settlementOverdue: boolean | null;
+  escalatedAt?: string | null;
+  escalationReason?: string | null;
+  adminResolution?: string | null;
+  adminResolutionNotes?: string | null;
   user: {
     id: string;
     firstName: string;
@@ -64,9 +81,18 @@ interface SMRequest {
   drinkPreference?: string;
 }
 
-interface Counts { pending: number; approved: number; rejected: number; payouts: number; completed?: number; }
+interface Counts {
+  pending: number;
+  approved: number;
+  rejected: number;
+  payouts: number;
+  inProgress?: number;
+  completed?: number;
+  needsContact?: number;
+}
 
-const BASE_URL = import.meta.env.VITE_API_URL || 
+const BASE_URL =
+  import.meta.env.VITE_API_URL ||
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? 'http://localhost:9076'
     : `${window.location.protocol}//${window.location.hostname}:9076`);
@@ -74,17 +100,24 @@ const BASE_URL = import.meta.env.VITE_API_URL ||
 const STATUS_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   pending: { bg: 'rgba(245, 158, 11, 0.12)', text: '#d97706', border: 'rgba(245,158,11,0.3)' },
   approved: { bg: 'rgba(16, 185, 129, 0.12)', text: '#059669', border: 'rgba(16,185,129,0.3)' },
+  start_confirmation_pending: { bg: 'rgba(139, 92, 246, 0.15)', text: '#7c3aed', border: 'rgba(139, 92, 246, 0.4)' },
   in_progress: { bg: 'rgba(59, 130, 246, 0.12)', text: '#2563eb', border: 'rgba(59,130,246,0.3)' },
+  end_confirmation_pending: { bg: 'rgba(245, 158, 11, 0.15)', text: '#b45309', border: 'rgba(245,158,11,0.4)' },
   host_confirmed_ended: { bg: 'rgba(245, 158, 11, 0.15)', text: '#b45309', border: 'rgba(245,158,11,0.4)' },
   admin_confirmed_ended: { bg: 'rgba(124, 58, 237, 0.12)', text: '#7c3aed', border: 'rgba(124,58,237,0.3)' },
   completed: { bg: 'rgba(16, 185, 129, 0.15)', text: '#059669', border: 'rgba(16,185,129,0.4)' },
+  settled: { bg: 'rgba(16, 185, 129, 0.2)', text: '#047857', border: 'rgba(16,185,129,0.5)' },
+  needs_host_contact: { bg: 'rgba(239, 68, 68, 0.15)', text: '#dc2626', border: 'rgba(239, 68, 68, 0.4)' },
+  not_started: { bg: 'rgba(107, 114, 128, 0.15)', text: '#4b5563', border: 'rgba(107, 114, 128, 0.3)' },
   rejected: { bg: 'rgba(239, 68, 68, 0.12)', text: '#dc2626', border: 'rgba(239,68,68,0.3)' },
   payouts: { bg: 'rgba(124, 58, 237, 0.12)', text: '#7c3aed', border: 'rgba(124,58,237,0.3)' },
 };
 
 export const StrangersMeet: React.FC = () => {
   const { accessToken } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'rejected' | 'payouts' | 'all'>('pending');
+  const [activeTab, setActiveTab] = useState<
+    'pending' | 'approved' | 'in_progress' | 'needs_contact' | 'completed' | 'payouts' | 'rejected' | 'all'
+  >('pending');
   const [requests, setRequests] = useState<SMRequest[]>([]);
   const [counts, setCounts] = useState<Counts>({ pending: 0, approved: 0, rejected: 0, payouts: 0 });
   const [loading, setLoading] = useState(false);
@@ -92,13 +125,17 @@ export const StrangersMeet: React.FC = () => {
 
   // Modal state
   const [selected, setSelected] = useState<SMRequest | null>(null);
-  const [modalAction, setModalAction] = useState<'approve' | 'reject' | 'view' | 'settlement' | 'confirmEnded' | null>(null);
+  const [modalAction, setModalAction] = useState<
+    'approve' | 'reject' | 'view' | 'settlement' | 'confirmEnded' | 'resolveEscalation' | null
+  >(null);
   const [payAmount, setPayAmount] = useState('');
   const [chargesPerHead, setChargesPerHead] = useState('');
   const [adminNote, setAdminNote] = useState('');
   const [settlementTxnId, setSettlementTxnId] = useState('');
   const [settlementAmt, setSettlementAmt] = useState('');
   const [settlementMethod, setSettlementMethod] = useState('UPI');
+  const [resolutionType, setResolutionType] = useState('MARK_COMPLETED');
+  const [resolutionNotes, setResolutionNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -115,52 +152,142 @@ export const StrangersMeet: React.FC = () => {
     const joinedSlots = req.joinedCount || 0;
     const unfilledSeats = Math.max(0, totalSeats - paidSlots);
     const platformDepositTotal = Number(req.paymentAmount || 0);
-    const platformChargePerSeat = req.platformChargePerSeat ? Number(req.platformChargePerSeat) : 
-      (platformDepositTotal > 0 && totalSeats > 0 ? platformDepositTotal / totalSeats : 0);
+    const platformChargePerSeat = req.platformChargePerSeat
+      ? Number(req.platformChargePerSeat)
+      : platformDepositTotal > 0 && totalSeats > 0
+      ? platformDepositTotal / totalSeats
+      : 0;
     const hostChargePerHead = Number(req.chargesPerHead || 0);
     const hostRevenueFromParticipants = paidSlots * hostChargePerHead;
-    const platformSettlementToHost = (unfilledSeats * platformChargePerSeat) + hostRevenueFromParticipants;
+    const platformSettlementToHost = unfilledSeats * platformChargePerSeat + hostRevenueFromParticipants;
     const netHostProfit = platformSettlementToHost - platformDepositTotal;
 
     return (
       <div style={{ marginTop: '1.25rem' }}>
-        <h4 style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', fontWeight: 700, borderBottom: '1px solid var(--vz-border-color)', paddingBottom: '0.4rem', color: '#7c3aed' }}>
-          📊 Meetup Analytics & Financials
+        <h4
+          style={{
+            margin: '0 0 0.75rem',
+            fontSize: '0.9rem',
+            fontWeight: 700,
+            borderBottom: '1px solid var(--vz-border-color)',
+            paddingBottom: '0.4rem',
+            color: '#7c3aed',
+          }}
+        >
+          📊 Meetup Analytics & Financials (Automated Calculation)
         </h4>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.82rem', color: 'var(--vz-text-primary)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--vz-border-color)', paddingBottom: '0.2rem' }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.4rem',
+            fontSize: '0.82rem',
+            color: 'var(--vz-text-primary)',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              borderBottom: '1px dashed var(--vz-border-color)',
+              paddingBottom: '0.2rem',
+            }}
+          >
             <span>Total Seats:</span>
             <span style={{ fontWeight: 600 }}>{totalSeats} seats</span>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--vz-border-color)', paddingBottom: '0.2rem' }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              borderBottom: '1px dashed var(--vz-border-color)',
+              paddingBottom: '0.2rem',
+            }}
+          >
             <span>Joined / Paid:</span>
-            <span style={{ fontWeight: 600, color: '#7c3aed' }}>{joinedSlots} joined ({paidSlots} paid)</span>
+            <span style={{ fontWeight: 600, color: '#7c3aed' }}>
+              {joinedSlots} joined ({paidSlots} paid)
+            </span>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--vz-border-color)', paddingBottom: '0.2rem' }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              borderBottom: '1px dashed var(--vz-border-color)',
+              paddingBottom: '0.2rem',
+            }}
+          >
             <span>Unfilled Slots:</span>
             <span style={{ fontWeight: 600 }}>{unfilledSeats} unfilled</span>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--vz-border-color)', paddingBottom: '0.2rem' }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              borderBottom: '1px dashed var(--vz-border-color)',
+              paddingBottom: '0.2rem',
+            }}
+          >
             <span>Host Pre-Paid Deposit:</span>
             <span style={{ fontWeight: 600 }}>₹{platformDepositTotal.toFixed(0)}</span>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--vz-border-color)', paddingBottom: '0.2rem' }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              borderBottom: '1px dashed var(--vz-border-color)',
+              paddingBottom: '0.2rem',
+            }}
+          >
             <span>Platform Fee Per Seat:</span>
             <span style={{ fontWeight: 600 }}>₹{platformChargePerSeat.toFixed(2)}</span>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--vz-border-color)', paddingBottom: '0.2rem' }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              borderBottom: '1px dashed var(--vz-border-color)',
+              paddingBottom: '0.2rem',
+            }}
+          >
             <span>Charges Per Head (Participants):</span>
             <span style={{ fontWeight: 600 }}>₹{hostChargePerHead.toFixed(0)}</span>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--vz-border-color)', paddingBottom: '0.2rem' }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              borderBottom: '1px dashed var(--vz-border-color)',
+              paddingBottom: '0.2rem',
+            }}
+          >
             <span>Total Participant Revenue:</span>
             <span style={{ fontWeight: 600, color: '#059669' }}>₹{hostRevenueFromParticipants.toFixed(0)}</span>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(5, 150, 105, 0.08)', padding: '0.5rem', borderRadius: 6, fontWeight: 700, marginTop: '0.25rem' }}>
-            <span style={{ color: '#059669' }}>Host Settlement Amount:</span>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              background: 'rgba(5, 150, 105, 0.08)',
+              padding: '0.5rem',
+              borderRadius: 6,
+              fontWeight: 700,
+              marginTop: '0.25rem',
+            }}
+          >
+            <span style={{ color: '#059669' }}>Host Payable Settlement:</span>
             <span style={{ color: '#059669' }}>₹{platformSettlementToHost.toFixed(0)}</span>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', background: netHostProfit >= 0 ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)', padding: '0.5rem', borderRadius: 6, fontWeight: 700 }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              background: netHostProfit >= 0 ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
+              padding: '0.5rem',
+              borderRadius: 6,
+              fontWeight: 700,
+            }}
+          >
             <span>Host Net Profit:</span>
             <span style={{ color: netHostProfit >= 0 ? '#059669' : '#dc2626' }}>
               {netHostProfit >= 0 ? '+' : ''}₹{netHostProfit.toFixed(0)}
@@ -175,51 +302,151 @@ export const StrangersMeet: React.FC = () => {
     const hasStructured = req.upiId || req.accountNumber;
     if (!hasStructured && !req.bankDetails) {
       return (
-        <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'var(--vz-light)', borderRadius: 8, fontSize: '0.82rem', color: 'var(--vz-text-muted)', textAlign: 'center' }}>
-          No settlement payment details provided yet by the host.
+        <div
+          style={{
+            marginTop: '1rem',
+            padding: '0.75rem',
+            background: 'var(--vz-light)',
+            borderRadius: 8,
+            fontSize: '0.82rem',
+            color: 'var(--vz-text-muted)',
+            textAlign: 'center',
+          }}
+        >
+          No settlement payout details provided yet by the host.
         </div>
       );
     }
 
+    const maskAccount = (acc: string) => {
+      if (acc.length <= 4) return acc;
+      return '••••••••' + acc.slice(-4);
+    };
+
     return (
       <div style={{ marginTop: '1.25rem' }}>
-        <h4 style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', fontWeight: 700, borderBottom: '1px solid var(--vz-border-color)', paddingBottom: '0.4rem', color: '#f59e0b' }}>
-          🏦 Host Settlement Payment Details
+        <h4
+          style={{
+            margin: '0 0 0.75rem',
+            fontSize: '0.9rem',
+            fontWeight: 700,
+            borderBottom: '1px solid var(--vz-border-color)',
+            paddingBottom: '0.4rem',
+            color: '#f59e0b',
+          }}
+        >
+          🏦 Host Settlement Payout Details
         </h4>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', background: 'rgba(245, 158, 11, 0.05)', border: '1.5px dashed rgba(245, 158, 11, 0.25)', borderRadius: 10, padding: '1rem', fontSize: '0.85rem' }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.5rem',
+            background: 'rgba(245, 158, 11, 0.05)',
+            border: '1.5px dashed rgba(245, 158, 11, 0.25)',
+            borderRadius: 10,
+            padding: '1rem',
+            fontSize: '0.85rem',
+          }}
+        >
           {req.upiId && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span><b>UPI ID:</b> {req.upiId}</span>
-              <button 
+              <span>
+                <b>UPI ID:</b> {req.upiId}
+              </span>
+              <button
                 onClick={() => handleCopy(req.upiId!, 'upi')}
-                style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', display: 'flex', gap: '0.25rem', alignItems: 'center' }}
+                style={{
+                  padding: '0.25rem 0.6rem',
+                  fontSize: '0.75rem',
+                  background: '#f59e0b',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                }}
               >
-                {copiedField === 'upi' ? '✓ Copied' : '📋 Copy'}
+                {copiedField === 'upi' ? '✓ Copied' : '📋 Copy UPI'}
               </button>
             </div>
           )}
           {req.accountNumber && (
             <>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(245,158,11,0.1)', paddingBottom: '0.25rem' }}>
-                <span><b>Account Holder:</b> {req.accountHolderName || '—'}</span>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  borderBottom: '1px solid rgba(245,158,11,0.1)',
+                  paddingBottom: '0.25rem',
+                }}
+              >
+                <span>
+                  <b>Account Holder:</b> {req.accountHolderName || '—'}
+                </span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(245,158,11,0.1)', paddingBottom: '0.25rem' }}>
-                <span><b>Bank Name:</b> {req.bankName || '—'}</span>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  borderBottom: '1px solid rgba(245,158,11,0.1)',
+                  paddingBottom: '0.25rem',
+                }}
+              >
+                <span>
+                  <b>Bank Name:</b> {req.bankName || '—'}
+                </span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(245,158,11,0.1)', paddingBottom: '0.25rem' }}>
-                <span><b>Account No:</b> {req.accountNumber}</span>
-                <button 
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  borderBottom: '1px solid rgba(245,158,11,0.1)',
+                  paddingBottom: '0.25rem',
+                }}
+              >
+                <span>
+                  <b>Account No:</b> {maskAccount(req.accountNumber)}
+                </span>
+                <button
                   onClick={() => handleCopy(req.accountNumber!, 'acct')}
-                  style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+                  style={{
+                    padding: '0.25rem 0.6rem',
+                    fontSize: '0.75rem',
+                    background: '#f59e0b',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 4,
+                    cursor: 'pointer',
+                  }}
                 >
-                  {copiedField === 'acct' ? '✓ Copied' : '📋 Copy'}
+                  {copiedField === 'acct' ? '✓ Copied' : '📋 Copy Full'}
                 </button>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '0.25rem' }}>
-                <span><b>IFSC Code:</b> {req.ifscCode}</span>
-                <button 
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  paddingBottom: '0.25rem',
+                }}
+              >
+                <span>
+                  <b>IFSC Code:</b> {req.ifscCode}
+                </span>
+                <button
                   onClick={() => handleCopy(req.ifscCode!, 'ifsc')}
-                  style={{ padding: '0.2rem 0.6rem', fontSize: '0.75rem', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+                  style={{
+                    padding: '0.2rem 0.6rem',
+                    fontSize: '0.75rem',
+                    background: '#f59e0b',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 4,
+                    cursor: 'pointer',
+                  }}
                 >
                   {copiedField === 'ifsc' ? '✓ Copied' : '📋 Copy'}
                 </button>
@@ -227,11 +454,31 @@ export const StrangersMeet: React.FC = () => {
             </>
           )}
           {req.bankDetails && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: req.upiId || req.accountNumber ? '0.5rem' : '0' }}>
-              <span style={{ whiteSpace: 'pre-wrap' }}><b>Details summary:</b><br/>{req.bankDetails}</span>
-              <button 
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                marginTop: req.upiId || req.accountNumber ? '0.5rem' : '0',
+              }}
+            >
+              <span style={{ whiteSpace: 'pre-wrap' }}>
+                <b>Details:</b>
+                <br />
+                {req.bankDetails}
+              </span>
+              <button
                 onClick={() => handleCopy(req.bankDetails!, 'legacy')}
-                style={{ padding: '0.2rem 0.6rem', fontSize: '0.75rem', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', flexShrink: 0 }}
+                style={{
+                  padding: '0.2rem 0.6rem',
+                  fontSize: '0.75rem',
+                  background: '#f59e0b',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
               >
                 {copiedField === 'legacy' ? '✓ Copied' : '📋 Copy'}
               </button>
@@ -253,7 +500,7 @@ export const StrangersMeet: React.FC = () => {
       const data = await res.json();
       if (data.success) {
         setRequests(data.data);
-        setCounts(data.counts);
+        setCounts(data.counts || {});
       } else {
         setError(data.message || 'Failed to load requests');
       }
@@ -264,7 +511,9 @@ export const StrangersMeet: React.FC = () => {
     }
   }, [activeTab, accessToken]);
 
-  useEffect(() => { fetchRequests(); }, [fetchRequests]);
+  useEffect(() => {
+    fetchRequests();
+  }, [fetchRequests]);
 
   // Auto-refresh every 20s
   useEffect(() => {
@@ -272,31 +521,48 @@ export const StrangersMeet: React.FC = () => {
     return () => clearInterval(id);
   }, [fetchRequests]);
 
-  const openModal = (req: SMRequest, action: 'approve' | 'reject' | 'view' | 'settlement' | 'confirmEnded') => {
+  const openModal = (
+    req: SMRequest,
+    action: 'approve' | 'reject' | 'view' | 'settlement' | 'confirmEnded' | 'resolveEscalation'
+  ) => {
     setSelected(req);
     setModalAction(action);
     setPayAmount(req.paymentAmount ? req.paymentAmount.toString() : '');
     setChargesPerHead(req.chargesPerHead ? req.chargesPerHead.toString() : '');
     setAdminNote(req.adminNotes || '');
     setSettlementTxnId(req.settlementTransactionId || '');
-    
+
     // Auto-calculate suggested settlement amount to pre-fill
     const totalSeats = req.numberOfPersons;
     const paidSlots = req.paymentCount || 0;
     const unfilledSeats = Math.max(0, totalSeats - paidSlots);
     const platformDepositTotal = Number(req.paymentAmount || 0);
-    const platformChargePerSeat = req.platformChargePerSeat ? Number(req.platformChargePerSeat) : 
-      (platformDepositTotal > 0 && totalSeats > 0 ? platformDepositTotal / totalSeats : 0);
+    const platformChargePerSeat = req.platformChargePerSeat
+      ? Number(req.platformChargePerSeat)
+      : platformDepositTotal > 0 && totalSeats > 0
+      ? platformDepositTotal / totalSeats
+      : 0;
     const hostChargePerHead = Number(req.chargesPerHead || 0);
     const hostRevenueFromParticipants = paidSlots * hostChargePerHead;
-    const platformSettlementToHost = (unfilledSeats * platformChargePerSeat) + hostRevenueFromParticipants;
+    const platformSettlementToHost = unfilledSeats * platformChargePerSeat + hostRevenueFromParticipants;
 
-    setSettlementAmt(req.settlementAmount ? req.settlementAmount.toString() : (platformSettlementToHost > 0 ? platformSettlementToHost.toFixed(0) : ''));
+    setSettlementAmt(
+      req.settlementAmount
+        ? req.settlementAmount.toString()
+        : platformSettlementToHost > 0
+        ? platformSettlementToHost.toFixed(0)
+        : ''
+    );
     setSettlementMethod(req.settlementMethod || 'UPI');
+    setResolutionType('MARK_COMPLETED');
+    setResolutionNotes('');
     setSuccessMsg(null);
   };
 
-  const closeModal = () => { setSelected(null); setModalAction(null); };
+  const closeModal = () => {
+    setSelected(null);
+    setModalAction(null);
+  };
 
   const handlePayAmountChange = (value: string) => {
     setPayAmount(value);
@@ -355,7 +621,11 @@ export const StrangersMeet: React.FC = () => {
   };
 
   const handleAdminConfirmEnded = async (req: SMRequest) => {
-    if (!window.confirm(`Confirm that Strangers Meet "${req.subject}" has ended? This will start the 24-hour host settlement window.`)) {
+    if (
+      !window.confirm(
+        `Confirm that Strangers Meet "${req.subject}" has ended? This will start the 24-hour host settlement window.`
+      )
+    ) {
       return;
     }
     setSubmitting(true);
@@ -380,9 +650,15 @@ export const StrangersMeet: React.FC = () => {
 
   const handleMarkSettled = async () => {
     if (!selected) return;
-    if (!settlementTxnId.trim()) { alert('Payment Reference / Transaction ID is required'); return; }
+    if (!settlementTxnId.trim()) {
+      alert('Payment Reference / Transaction ID is required');
+      return;
+    }
     const amt = parseFloat(settlementAmt);
-    if (!settlementAmt || isNaN(amt) || amt <= 0) { alert('Enter a valid settlement amount'); return; }
+    if (!settlementAmt || isNaN(amt) || amt <= 0) {
+      alert('Enter a valid settlement amount');
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await fetch(`${BASE_URL}/api/admin/strangers-meet/${selected.id}/mark-settled`, {
@@ -391,7 +667,7 @@ export const StrangersMeet: React.FC = () => {
         body: JSON.stringify({
           paymentReference: settlementTxnId.trim(),
           amount: amt,
-          settlementMethod: settlementMethod.trim()
+          settlementMethod: settlementMethod.trim(),
         }),
       });
       const data = await res.json();
@@ -402,6 +678,33 @@ export const StrangersMeet: React.FC = () => {
       } else {
         alert(data.message || 'Failed to mark settlement');
       }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleResolveEscalation = async () => {
+    if (!selected) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`${BASE_URL}/api/admin/strangers-meet/${selected.id}/resolve-escalation`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          resolution: resolutionType,
+          resolutionNotes: resolutionNotes.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSuccessMsg(`Escalation resolved: ${resolutionType.replace(/_/g, ' ')}`);
+        fetchRequests();
+        setTimeout(closeModal, 1800);
+      } else {
+        alert(data.message || 'Failed to resolve escalation');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Network error');
     } finally {
       setSubmitting(false);
     }
@@ -431,15 +734,35 @@ export const StrangersMeet: React.FC = () => {
 
   const fmt = (dt?: string | null) => {
     if (!dt) return '—';
-    return new Date(dt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return new Date(dt).toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
   const tabs = [
-    { key: 'pending', label: 'Pending', count: counts.pending },
-    { key: 'approved', label: 'Approved', count: counts.approved },
+    { key: 'pending', label: 'Pending Approvals', count: counts.pending },
+    { key: 'approved', label: 'Approved (Upcoming)', count: counts.approved },
+    { key: 'in_progress', label: '🟢 In Progress / Live', count: counts.inProgress || 0 },
+    { key: 'needs_contact', label: '⚠️ Needs Host Contact', count: counts.needsContact || 0 },
+    { key: 'completed', label: '🏁 Completed Reviews', count: counts.completed || 0 },
+    { key: 'payouts', label: '💳 Payouts & Settlements', count: counts.payouts || 0 },
     { key: 'rejected', label: 'Rejected', count: counts.rejected },
-    { key: 'payouts', label: '💳 Completed Meets & Settlements', count: counts.payouts || 0 },
-    { key: 'all', label: 'All', count: counts.pending + counts.approved + counts.rejected + (counts.payouts || 0) },
+    {
+      key: 'all',
+      label: 'All',
+      count:
+        counts.pending +
+        counts.approved +
+        counts.rejected +
+        (counts.inProgress || 0) +
+        (counts.needsContact || 0) +
+        (counts.completed || 0) +
+        (counts.payouts || 0),
+    },
   ] as const;
 
   return (
@@ -447,22 +770,39 @@ export const StrangersMeet: React.FC = () => {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 700 }}>Strangers Meet Requests & Settlements</h2>
+          <h2 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 700 }}>Strangers Meet Lifecycle & Settlements</h2>
           <p style={{ margin: '0.25rem 0 0', color: 'var(--vz-text-muted)', fontSize: '0.85rem' }}>
-            Review, verify meetup completion, and execute host payouts
+            Review requests, track live meetups, handle timeout escalations, and confirm host payouts
           </p>
         </div>
         <button
           onClick={fetchRequests}
-          style={{ padding: '0.5rem 1rem', borderRadius: 8, border: '1px solid var(--vz-border-color)', background: 'transparent', cursor: 'pointer', color: 'var(--vz-text-primary)', fontSize: '0.8rem' }}
+          style={{
+            padding: '0.5rem 1rem',
+            borderRadius: 8,
+            border: '1px solid var(--vz-border-color)',
+            background: 'transparent',
+            cursor: 'pointer',
+            color: 'var(--vz-text-primary)',
+            fontSize: '0.8rem',
+          }}
         >
           ↻ Refresh
         </button>
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', borderBottom: '2px solid var(--vz-border-color)', paddingBottom: '0' }}>
-        {tabs.map(t => (
+      <div
+        style={{
+          display: 'flex',
+          gap: '0.5rem',
+          marginBottom: '1.25rem',
+          borderBottom: '2px solid var(--vz-border-color)',
+          paddingBottom: '0',
+          overflowX: 'auto',
+        }}
+      >
+        {tabs.map((t) => (
           <button
             key={t.key}
             onClick={() => setActiveTab(t.key)}
@@ -479,19 +819,27 @@ export const StrangersMeet: React.FC = () => {
               display: 'flex',
               alignItems: 'center',
               gap: '0.4rem',
+              whiteSpace: 'nowrap',
               transition: 'all 0.15s',
             }}
           >
             {t.label}
             {t.count > 0 && (
-              <span style={{
-                background: activeTab === t.key ? '#7c3aed' : 'var(--vz-light)',
-                color: activeTab === t.key ? '#fff' : 'var(--vz-text-muted)',
-                borderRadius: 20,
-                padding: '0.1rem 0.5rem',
-                fontSize: '0.72rem',
-                fontWeight: 700,
-              }}>
+              <span
+                style={{
+                  background:
+                    t.key === 'needs_contact'
+                      ? '#ef4444'
+                      : activeTab === t.key
+                      ? '#7c3aed'
+                      : 'var(--vz-light)',
+                  color: '#fff',
+                  borderRadius: 20,
+                  padding: '0.1rem 0.5rem',
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                }}
+              >
                 {t.count}
               </span>
             )}
@@ -507,51 +855,140 @@ export const StrangersMeet: React.FC = () => {
       ) : requests.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--vz-text-muted)' }}>
           <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>👥</div>
-          <div style={{ fontWeight: 600 }}>No {activeTab} requests</div>
+          <div style={{ fontWeight: 600 }}>No {activeTab.replace(/_/g, ' ')} requests</div>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {requests.map(req => {
+          {requests.map((req) => {
             const sc = STATUS_COLORS[req.status] || STATUS_COLORS.pending;
             const isHostEnded = req.status === 'host_confirmed_ended';
-            const isAdminVerified = req.status === 'admin_confirmed_ended' || req.settlementStatus === 'settlement_pending';
-            const isSettled = req.status === 'completed' || req.settlementStatus === 'settled' || req.settlementStatus === 'paid';
+            const isAdminVerified =
+              req.status === 'admin_confirmed_ended' || req.settlementStatus === 'settlement_pending';
+            const isSettled =
+              req.status === 'completed' ||
+              req.status === 'settled' ||
+              req.settlementStatus === 'settled' ||
+              req.settlementStatus === 'paid';
+            const isEscalated = req.status === 'needs_host_contact';
             const isOverdue = req.settlementOverdue;
 
             return (
-              <div key={req.id} style={{ background: 'var(--vz-card-bg)', border: isOverdue ? '2px solid #ef4444' : '1px solid var(--vz-border-color)', borderRadius: 14, padding: '1.25rem', display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+              <div
+                key={req.id}
+                style={{
+                  background: 'var(--vz-card-bg)',
+                  border: isEscalated
+                    ? '2px solid #ef4444'
+                    : isOverdue
+                    ? '2px solid #f59e0b'
+                    : '1px solid var(--vz-border-color)',
+                  borderRadius: 14,
+                  padding: '1.25rem',
+                  display: 'flex',
+                  gap: '1rem',
+                  flexWrap: 'wrap',
+                  alignItems: 'flex-start',
+                }}
+              >
                 {/* Venue Image */}
                 {req.venue?.imageUrl && (
                   <img
                     src={`${BASE_URL}${req.venue.imageUrl}`}
                     alt={req.venue.name}
                     style={{ width: 80, height: 70, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }}
-                    onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = 'none';
+                    }}
                   />
                 )}
 
                 {/* Main Info */}
                 <div style={{ flex: 1, minWidth: 200 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.4rem' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.75rem',
+                      flexWrap: 'wrap',
+                      marginBottom: '0.4rem',
+                    }}
+                  >
                     <span style={{ fontWeight: 700, fontSize: '1rem' }}>{req.subject}</span>
-                    <span style={{ padding: '0.15rem 0.65rem', borderRadius: 20, fontSize: '0.72rem', fontWeight: 700, background: sc.bg, color: sc.text, border: `1px solid ${sc.border}` }}>
+                    <span
+                      style={{
+                        padding: '0.15rem 0.65rem',
+                        borderRadius: 20,
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        background: sc.bg,
+                        color: sc.text,
+                        border: `1px solid ${sc.border}`,
+                      }}
+                    >
                       {req.status.replace(/_/g, ' ').toUpperCase()}
                     </span>
                     {req.paymentStatus === 'paid' && (
-                      <span style={{ padding: '0.15rem 0.65rem', borderRadius: 20, fontSize: '0.72rem', fontWeight: 700, background: 'rgba(16,185,129,0.12)', color: '#059669', border: '1px solid rgba(16,185,129,0.3)' }}>
+                      <span
+                        style={{
+                          padding: '0.15rem 0.65rem',
+                          borderRadius: 20,
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          background: 'rgba(16,185,129,0.12)',
+                          color: '#059669',
+                          border: '1px solid rgba(16,185,129,0.3)',
+                        }}
+                      >
                         HOST DEPOSIT PAID ✓
                       </span>
                     )}
-                    {isOverdue && (
-                      <span style={{ padding: '0.15rem 0.65rem', borderRadius: 20, fontSize: '0.72rem', fontWeight: 800, background: '#fee2e2', color: '#dc2626', border: '1px solid #f87171' }}>
-                        ⚠️ SETTLEMENT OVERDUE (&gt;24H)
+                    {isEscalated && (
+                      <span
+                        style={{
+                          padding: '0.15rem 0.65rem',
+                          borderRadius: 20,
+                          fontSize: '0.72rem',
+                          fontWeight: 800,
+                          background: '#fee2e2',
+                          color: '#dc2626',
+                          border: '1px solid #f87171',
+                        }}
+                      >
+                        ⚠️ ACTION REQUIRED: HOST TIMEOUT (24H)
+                      </span>
+                    )}
+                    {isOverdue && !isSettled && (
+                      <span
+                        style={{
+                          padding: '0.15rem 0.65rem',
+                          borderRadius: 20,
+                          fontSize: '0.72rem',
+                          fontWeight: 800,
+                          background: '#fef3c7',
+                          color: '#b45309',
+                          border: '1px solid #fcd34d',
+                        }}
+                      >
+                        ⏱️ SETTLEMENT OVERDUE (&gt;24H)
                       </span>
                     )}
                   </div>
-                  <p style={{ margin: '0 0 0.6rem', color: 'var(--vz-text-muted)', fontSize: '0.83rem' }}>{req.tagline}</p>
-                  
-                  <div style={{ display: 'flex', gap: '1.2rem', flexWrap: 'wrap', fontSize: '0.8rem', color: 'var(--vz-text-muted)' }}>
-                    <span>🏛️ <b>{req.venue?.name ?? '—'}</b>, {req.venue?.city}</span>
+                  <p style={{ margin: '0 0 0.6rem', color: 'var(--vz-text-muted)', fontSize: '0.83rem' }}>
+                    {req.tagline}
+                  </p>
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: '1.2rem',
+                      flexWrap: 'wrap',
+                      fontSize: '0.8rem',
+                      color: 'var(--vz-text-muted)',
+                    }}
+                  >
+                    <span>
+                      🏛️ <b>{req.venue?.name ?? '—'}</b>, {req.venue?.city}
+                    </span>
                     <span>📅 Scheduled: {fmt(req.eventDateTime)}</span>
                     {req.startedAt && <span>🟢 Started: {fmt(req.startedAt)}</span>}
                     {req.durationHours && <span>⏱️ Duration: {req.durationHours}h</span>}
@@ -559,13 +996,32 @@ export const StrangersMeet: React.FC = () => {
                     {req.endedAt && <span>🏁 Ended: {fmt(req.endedAt)}</span>}
                     <span>👥 {req.numberOfPersons} seats</span>
                     <span>📞 {req.mobileNumber}</span>
-                    {req.user && <span>👤 Host: {req.user.firstName} {req.user.lastName}</span>}
+                    {req.user && (
+                      <span>
+                        👤 Host: {req.user.firstName} {req.user.lastName}
+                      </span>
+                    )}
                   </div>
 
-                  <div style={{ display: 'flex', gap: '1.2rem', flexWrap: 'wrap', fontSize: '0.8rem', color: 'var(--vz-text-muted)', marginTop: '0.4rem' }}>
-                    <span style={{ color: '#7c3aed', fontWeight: 600 }}>👥 Joined: {req.joinedCount || 0} / {req.numberOfPersons} ({req.paymentCount || 0} Paid)</span>
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: '1.2rem',
+                      flexWrap: 'wrap',
+                      fontSize: '0.8rem',
+                      color: 'var(--vz-text-muted)',
+                      marginTop: '0.4rem',
+                    }}
+                  >
+                    <span style={{ color: '#7c3aed', fontWeight: 600 }}>
+                      👥 Joined: {req.joinedCount || 0} / {req.numberOfPersons} ({req.paymentCount || 0} Paid)
+                    </span>
                     <span style={{ color: '#059669', fontWeight: 600 }}>
-                      💰 Est. Settlement: ₹{(((req.numberOfPersons - (req.paymentCount || 0)) * (req.platformChargePerSeat || 0)) + ((req.paymentCount || 0) * (req.chargesPerHead || 0))).toFixed(0)}
+                      💰 Est. Settlement: ₹
+                      {(
+                        (req.numberOfPersons - (req.paymentCount || 0)) * (req.platformChargePerSeat || 0) +
+                        (req.paymentCount || 0) * (req.chargesPerHead || 0)
+                      ).toFixed(0)}
                     </span>
                     {req.settlementTransactionId && (
                       <span style={{ color: '#2563eb', fontWeight: 600 }}>
@@ -574,56 +1030,190 @@ export const StrangersMeet: React.FC = () => {
                     )}
                   </div>
 
+                  {isEscalated && req.escalationReason && (
+                    <div
+                      style={{
+                        marginTop: '0.5rem',
+                        padding: '0.5rem 0.75rem',
+                        background: 'rgba(239, 68, 68, 0.08)',
+                        border: '1px solid rgba(239, 68, 68, 0.2)',
+                        borderRadius: 6,
+                        fontSize: '0.8rem',
+                        color: '#dc2626',
+                      }}
+                    >
+                      ⚠️ <b>Escalation Reason:</b> {req.escalationReason} (Escalated: {fmt(req.escalatedAt)})
+                    </div>
+                  )}
+
                   {req.adminNotes && (
-                    <div style={{ marginTop: '0.5rem', padding: '0.4rem 0.75rem', background: 'var(--vz-light)', borderRadius: 6, fontSize: '0.78rem', color: 'var(--vz-text-muted)' }}>
+                    <div
+                      style={{
+                        marginTop: '0.5rem',
+                        padding: '0.4rem 0.75rem',
+                        background: 'var(--vz-light)',
+                        borderRadius: 6,
+                        fontSize: '0.78rem',
+                        color: 'var(--vz-text-muted)',
+                      }}
+                    >
                       📝 {req.adminNotes}
                     </div>
                   )}
                   {req.ticketId && (
-                    <div style={{ marginTop: '0.4rem', fontSize: '0.75rem', color: '#7c3aed', fontFamily: 'monospace' }}>
+                    <div
+                      style={{ marginTop: '0.4rem', fontSize: '0.75rem', color: '#7c3aed', fontFamily: 'monospace' }}
+                    >
                       🎟️ Ticket: {req.ticketId}
                     </div>
                   )}
                 </div>
 
                 {/* Actions */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flexShrink: 0, minWidth: 160 }}>
-                  <button onClick={() => openModal(req, 'view')} style={{ padding: '0.45rem 1rem', borderRadius: 8, border: '1px solid var(--vz-border-color)', background: 'transparent', cursor: 'pointer', fontSize: '0.8rem', color: 'var(--vz-text-primary)' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.5rem',
+                    flexShrink: 0,
+                    minWidth: 170,
+                  }}
+                >
+                  <button
+                    onClick={() => openModal(req, 'view')}
+                    style={{
+                      padding: '0.45rem 1rem',
+                      borderRadius: 8,
+                      border: '1px solid var(--vz-border-color)',
+                      background: 'transparent',
+                      cursor: 'pointer',
+                      fontSize: '0.8rem',
+                      color: 'var(--vz-text-primary)',
+                    }}
+                  >
                     View Financials
                   </button>
 
                   {req.status === 'pending' && (
                     <>
-                      <button onClick={() => openModal(req, 'approve')} style={{ padding: '0.45rem 1rem', borderRadius: 8, border: 'none', background: '#7c3aed', color: '#fff', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}>
+                      <button
+                        onClick={() => openModal(req, 'approve')}
+                        style={{
+                          padding: '0.45rem 1rem',
+                          borderRadius: 8,
+                          border: 'none',
+                          background: '#7c3aed',
+                          color: '#fff',
+                          cursor: 'pointer',
+                          fontSize: '0.8rem',
+                          fontWeight: 600,
+                        }}
+                      >
                         ✓ Approve
                       </button>
-                      <button onClick={() => openModal(req, 'reject')} style={{ padding: '0.45rem 1rem', borderRadius: 8, border: '1px solid #dc2626', background: 'transparent', color: '#dc2626', cursor: 'pointer', fontSize: '0.8rem' }}>
+                      <button
+                        onClick={() => openModal(req, 'reject')}
+                        style={{
+                          padding: '0.45rem 1rem',
+                          borderRadius: 8,
+                          border: '1px solid #dc2626',
+                          background: 'transparent',
+                          color: '#dc2626',
+                          cursor: 'pointer',
+                          fontSize: '0.8rem',
+                        }}
+                      >
                         ✕ Reject
                       </button>
                     </>
                   )}
 
+                  {isEscalated && (
+                    <>
+                      <a
+                        href={`tel:${req.mobileNumber}`}
+                        style={{
+                          padding: '0.45rem 1rem',
+                          borderRadius: 8,
+                          border: '1px solid #ef4444',
+                          background: 'rgba(239,68,68,0.1)',
+                          color: '#dc2626',
+                          textDecoration: 'none',
+                          textAlign: 'center',
+                          fontSize: '0.8rem',
+                          fontWeight: 700,
+                        }}
+                      >
+                        📞 Call Host ({req.mobileNumber})
+                      </a>
+                      <button
+                        onClick={() => openModal(req, 'resolveEscalation')}
+                        style={{
+                          padding: '0.5rem 1rem',
+                          borderRadius: 8,
+                          border: 'none',
+                          background: '#dc2626',
+                          color: '#fff',
+                          cursor: 'pointer',
+                          fontSize: '0.8rem',
+                          fontWeight: 700,
+                        }}
+                      >
+                        ⚖️ Resolve Escalation
+                      </button>
+                    </>
+                  )}
+
                   {isHostEnded && (
-                    <button 
-                      onClick={() => handleAdminConfirmEnded(req)} 
+                    <button
+                      onClick={() => handleAdminConfirmEnded(req)}
                       disabled={submitting}
-                      style={{ padding: '0.55rem 1rem', borderRadius: 8, border: 'none', background: '#b45309', color: '#fff', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700 }}
+                      style={{
+                        padding: '0.55rem 1rem',
+                        borderRadius: 8,
+                        border: 'none',
+                        background: '#b45309',
+                        color: '#fff',
+                        cursor: 'pointer',
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                      }}
                     >
-                      ✓ Confirm Strangers Meet Ended
+                      ✓ Confirm Meet Ended
                     </button>
                   )}
 
                   {isAdminVerified && !isSettled && (
-                    <button 
-                      onClick={() => openModal(req, 'settlement')} 
-                      style={{ padding: '0.55rem 1rem', borderRadius: 8, border: 'none', background: '#059669', color: '#fff', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700 }}
+                    <button
+                      onClick={() => openModal(req, 'settlement')}
+                      style={{
+                        padding: '0.55rem 1rem',
+                        borderRadius: 8,
+                        border: 'none',
+                        background: '#059669',
+                        color: '#fff',
+                        cursor: 'pointer',
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                      }}
                     >
                       💸 Mark Amount as Settled
                     </button>
                   )}
 
                   {isSettled && (
-                    <span style={{ padding: '0.35rem 0.75rem', borderRadius: 8, background: 'rgba(16,185,129,0.12)', color: '#059669', fontSize: '0.75rem', fontWeight: 700, textAlign: 'center', border: '1px solid rgba(16,185,129,0.3)' }}>
+                    <span
+                      style={{
+                        padding: '0.35rem 0.75rem',
+                        borderRadius: 8,
+                        background: 'rgba(16,185,129,0.12)',
+                        color: '#059669',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        textAlign: 'center',
+                        border: '1px solid rgba(16,185,129,0.3)',
+                      }}
+                    >
                       ✓ Settled (₹{Number(req.settlementAmount || 0).toFixed(0)})
                     </span>
                   )}
@@ -636,24 +1226,73 @@ export const StrangersMeet: React.FC = () => {
 
       {/* Modal */}
       {selected && modalAction && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }} onClick={closeModal}>
-          <div style={{ background: 'var(--vz-card-bg)', borderRadius: 16, padding: '2rem', width: '100%', maxWidth: 540, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }} onClick={e => e.stopPropagation()}>
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+          }}
+          onClick={closeModal}
+        >
+          <div
+            style={{
+              background: 'var(--vz-card-bg)',
+              borderRadius: 16,
+              padding: '2rem',
+              width: '100%',
+              maxWidth: 540,
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
             {successMsg ? (
               <div style={{ textAlign: 'center', padding: '2rem 0' }}>
-                <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>{modalAction === 'approve' ? '✅' : modalAction === 'settlement' ? '💸' : '❌'}</div>
+                <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>
+                  {modalAction === 'approve' ? '✅' : modalAction === 'settlement' ? '💸' : '⚖️'}
+                </div>
                 <div style={{ fontWeight: 700, fontSize: '1rem' }}>{successMsg}</div>
               </div>
             ) : (
               <>
                 <h3 style={{ margin: '0 0 1.25rem', fontSize: '1.1rem' }}>
-                  {modalAction === 'approve' ? '✓ Approve Request' : modalAction === 'reject' ? '✕ Reject Request' : modalAction === 'settlement' ? '💸 Mark Amount as Settled' : '📋 Request & Settlement Details'}
+                  {modalAction === 'approve'
+                    ? '✓ Approve Request'
+                    : modalAction === 'reject'
+                    ? '✕ Reject Request'
+                    : modalAction === 'settlement'
+                    ? '💸 Mark Amount as Settled'
+                    : modalAction === 'resolveEscalation'
+                    ? '⚖️ Resolve 24-Hour Timeout Escalation'
+                    : '📋 Request & Settlement Details'}
                 </h3>
 
                 {/* Summary */}
-                <div style={{ background: 'var(--vz-light)', borderRadius: 10, padding: '1rem', marginBottom: '1.25rem', fontSize: '0.85rem' }}>
+                <div
+                  style={{
+                    background: 'var(--vz-light)',
+                    borderRadius: 10,
+                    padding: '1rem',
+                    marginBottom: '1.25rem',
+                    fontSize: '0.85rem',
+                  }}
+                >
                   <div style={{ fontWeight: 700, marginBottom: '0.5rem' }}>{selected.subject}</div>
                   <div style={{ color: 'var(--vz-text-muted)', marginBottom: '0.5rem' }}>{selected.tagline}</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.4rem', color: 'var(--vz-text-muted)' }}>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                      gap: '0.4rem',
+                      color: 'var(--vz-text-muted)',
+                    }}
+                  >
                     <span>🏛️ {selected.venue?.name}</span>
                     <span>🌆 {selected.venue?.city}</span>
                     <span>📅 Scheduled: {fmt(selected.eventDateTime)}</span>
@@ -662,7 +1301,9 @@ export const StrangersMeet: React.FC = () => {
                     {selected.endedAt && <span>🏁 Ended: {fmt(selected.endedAt)}</span>}
                     <span>👥 {selected.numberOfPersons} seats</span>
                     <span>📞 {selected.mobileNumber}</span>
-                    <span>👤 {selected.user?.firstName} {selected.user?.lastName}</span>
+                    <span>
+                      👤 {selected.user?.firstName} {selected.user?.lastName}
+                    </span>
                     <span>📧 {selected.user?.email}</span>
                   </div>
                 </div>
@@ -677,14 +1318,49 @@ export const StrangersMeet: React.FC = () => {
                 {modalAction === 'approve' && (
                   <>
                     <div style={{ marginBottom: '0.85rem' }}>
-                      <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.875rem' }}>Deposit Amount (₹) *</label>
-                      <input type="number" min="1" placeholder="e.g. 2500" value={payAmount} onChange={e => handlePayAmountChange(e.target.value)}
-                        style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: 8, border: '1.5px solid var(--vz-border-color)', background: 'var(--vz-card-bg)', color: 'var(--vz-text-primary)', fontSize: '1rem', boxSizing: 'border-box' }} autoFocus />
+                      <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.875rem' }}>
+                        Deposit Amount (₹) *
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="e.g. 2500"
+                        value={payAmount}
+                        onChange={(e) => handlePayAmountChange(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '0.6rem 0.85rem',
+                          borderRadius: 8,
+                          border: '1.5px solid var(--vz-border-color)',
+                          background: 'var(--vz-card-bg)',
+                          color: 'var(--vz-text-primary)',
+                          fontSize: '1rem',
+                          boxSizing: 'border-box',
+                        }}
+                        autoFocus
+                      />
                     </div>
                     <div style={{ marginBottom: '1rem' }}>
-                      <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.875rem' }}>Charges Per Head (₹) *</label>
-                      <input type="number" min="0" placeholder="e.g. 350" value={chargesPerHead} onChange={e => handleChargesPerHeadChange(e.target.value)}
-                        style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: 8, border: '1.5px solid var(--vz-border-color)', background: 'var(--vz-card-bg)', color: 'var(--vz-text-primary)', fontSize: '1rem', boxSizing: 'border-box' }} />
+                      <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.875rem' }}>
+                        Charges Per Head (₹) *
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="e.g. 350"
+                        value={chargesPerHead}
+                        onChange={(e) => handleChargesPerHeadChange(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '0.6rem 0.85rem',
+                          borderRadius: 8,
+                          border: '1.5px solid var(--vz-border-color)',
+                          background: 'var(--vz-card-bg)',
+                          color: 'var(--vz-text-primary)',
+                          fontSize: '1rem',
+                          boxSizing: 'border-box',
+                        }}
+                      />
                     </div>
                   </>
                 )}
@@ -695,25 +1371,123 @@ export const StrangersMeet: React.FC = () => {
                     {renderBankDetails(selected)}
                     <div style={{ height: '1.25rem' }}></div>
                     <div style={{ marginBottom: '0.85rem' }}>
-                      <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.875rem' }}>Payment Reference / Transaction ID *</label>
-                      <input type="text" placeholder="e.g. UPI-REF-99238491823 or BANK-TXN-1234" value={settlementTxnId} onChange={e => setSettlementTxnId(e.target.value)}
-                        style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: 8, border: '1.5px solid var(--vz-border-color)', background: 'var(--vz-card-bg)', color: 'var(--vz-text-primary)', fontSize: '0.9rem', boxSizing: 'border-box' }} autoFocus />
+                      <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.875rem' }}>
+                        Payment Reference / Transaction ID *
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. UPI-REF-99238491823 or BANK-TXN-1234"
+                        value={settlementTxnId}
+                        onChange={(e) => setSettlementTxnId(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '0.6rem 0.85rem',
+                          borderRadius: 8,
+                          border: '1.5px solid var(--vz-border-color)',
+                          background: 'var(--vz-card-bg)',
+                          color: 'var(--vz-text-primary)',
+                          fontSize: '0.9rem',
+                          boxSizing: 'border-box',
+                        }}
+                        autoFocus
+                      />
                     </div>
                     <div style={{ marginBottom: '0.85rem' }}>
-                      <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.875rem' }}>Settlement Amount (₹) *</label>
-                      <input type="number" min="1" placeholder="e.g. 5000" value={settlementAmt} onChange={e => setSettlementAmt(e.target.value)}
-                        style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: 8, border: '1.5px solid var(--vz-border-color)', background: 'var(--vz-card-bg)', color: 'var(--vz-text-primary)', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+                      <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.875rem' }}>
+                        Settlement Amount (₹) *
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="e.g. 5000"
+                        value={settlementAmt}
+                        onChange={(e) => setSettlementAmt(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '0.6rem 0.85rem',
+                          borderRadius: 8,
+                          border: '1.5px solid var(--vz-border-color)',
+                          background: 'var(--vz-card-bg)',
+                          color: 'var(--vz-text-primary)',
+                          fontSize: '0.9rem',
+                          boxSizing: 'border-box',
+                        }}
+                      />
                     </div>
                     <div style={{ marginBottom: '1.25rem' }}>
-                      <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.875rem' }}>Payment Method</label>
-                      <select value={settlementMethod} onChange={e => setSettlementMethod(e.target.value)}
-                        style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: 8, border: '1.5px solid var(--vz-border-color)', background: 'var(--vz-card-bg)', color: 'var(--vz-text-primary)', fontSize: '0.9rem', boxSizing: 'border-box' }}>
+                      <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.875rem' }}>
+                        Payment Method
+                      </label>
+                      <select
+                        value={settlementMethod}
+                        onChange={(e) => setSettlementMethod(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '0.6rem 0.85rem',
+                          borderRadius: 8,
+                          border: '1.5px solid var(--vz-border-color)',
+                          background: 'var(--vz-card-bg)',
+                          color: 'var(--vz-text-primary)',
+                          fontSize: '0.9rem',
+                          boxSizing: 'border-box',
+                        }}
+                      >
                         <option value="UPI">UPI</option>
                         <option value="Bank Transfer">Bank Transfer</option>
                         <option value="IMPS">IMPS</option>
                         <option value="NEFT">NEFT</option>
                         <option value="RTGS">RTGS</option>
                       </select>
+                    </div>
+                  </>
+                )}
+
+                {modalAction === 'resolveEscalation' && selected && (
+                  <>
+                    <div style={{ marginBottom: '1rem' }}>
+                      <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.875rem' }}>
+                        Resolution Decision *
+                      </label>
+                      <select
+                        value={resolutionType}
+                        onChange={(e) => setResolutionType(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '0.6rem 0.85rem',
+                          borderRadius: 8,
+                          border: '1.5px solid var(--vz-border-color)',
+                          background: 'var(--vz-card-bg)',
+                          color: 'var(--vz-text-primary)',
+                          fontSize: '0.9rem',
+                          boxSizing: 'border-box',
+                        }}
+                      >
+                        <option value="MARK_COMPLETED">Mark as Completed (Proceed to Settlement)</option>
+                        <option value="MARK_NOT_STARTED">Mark as Not Started (Close Meetup)</option>
+                        <option value="CANCELLED">Cancel Meetup</option>
+                      </select>
+                    </div>
+                    <div style={{ marginBottom: '1.25rem' }}>
+                      <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.875rem' }}>
+                        Investigation / Host Contact Notes
+                      </label>
+                      <textarea
+                        placeholder="Details of conversation with host or investigation outcome…"
+                        value={resolutionNotes}
+                        onChange={(e) => setResolutionNotes(e.target.value)}
+                        rows={3}
+                        style={{
+                          width: '100%',
+                          padding: '0.6rem 0.85rem',
+                          borderRadius: 8,
+                          border: '1.5px solid var(--vz-border-color)',
+                          background: 'var(--vz-card-bg)',
+                          color: 'var(--vz-text-primary)',
+                          fontSize: '0.875rem',
+                          resize: 'vertical',
+                          boxSizing: 'border-box',
+                        }}
+                      />
                     </div>
                   </>
                 )}
@@ -726,29 +1500,107 @@ export const StrangersMeet: React.FC = () => {
                     <textarea
                       placeholder={modalAction === 'approve' ? 'Any instructions for the host…' : 'Reason for rejection…'}
                       value={adminNote}
-                      onChange={e => setAdminNote(e.target.value)}
+                      onChange={(e) => setAdminNote(e.target.value)}
                       rows={3}
-                      style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: 8, border: '1.5px solid var(--vz-border-color)', background: 'var(--vz-card-bg)', color: 'var(--vz-text-primary)', fontSize: '0.875rem', resize: 'vertical', boxSizing: 'border-box' }}
+                      style={{
+                        width: '100%',
+                        padding: '0.6rem 0.85rem',
+                        borderRadius: 8,
+                        border: '1.5px solid var(--vz-border-color)',
+                        background: 'var(--vz-card-bg)',
+                        color: 'var(--vz-text-primary)',
+                        fontSize: '0.875rem',
+                        resize: 'vertical',
+                        boxSizing: 'border-box',
+                      }}
                     />
                   </div>
                 )}
 
                 <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
-                  <button onClick={closeModal} disabled={submitting} style={{ padding: '0.6rem 1.25rem', borderRadius: 8, border: '1px solid var(--vz-border-color)', background: 'transparent', cursor: 'pointer', color: 'var(--vz-text-primary)' }}>
+                  <button
+                    onClick={closeModal}
+                    disabled={submitting}
+                    style={{
+                      padding: '0.6rem 1.25rem',
+                      borderRadius: 8,
+                      border: '1px solid var(--vz-border-color)',
+                      background: 'transparent',
+                      cursor: 'pointer',
+                      color: 'var(--vz-text-primary)',
+                    }}
+                  >
                     Cancel
                   </button>
                   {modalAction === 'approve' && (
-                    <button onClick={handleApprove} disabled={submitting || !payAmount || !chargesPerHead} style={{ padding: '0.6rem 1.5rem', borderRadius: 8, border: 'none', background: '#7c3aed', color: '#fff', cursor: 'pointer', fontWeight: 600, opacity: submitting ? 0.7 : 1 }}>
+                    <button
+                      onClick={handleApprove}
+                      disabled={submitting || !payAmount || !chargesPerHead}
+                      style={{
+                        padding: '0.6rem 1.5rem',
+                        borderRadius: 8,
+                        border: 'none',
+                        background: '#7c3aed',
+                        color: '#fff',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        opacity: submitting ? 0.7 : 1,
+                      }}
+                    >
                       {submitting ? 'Approving…' : 'Approve & Set Payment'}
                     </button>
                   )}
                   {modalAction === 'reject' && (
-                    <button onClick={handleReject} disabled={submitting} style={{ padding: '0.6rem 1.5rem', borderRadius: 8, border: 'none', background: '#dc2626', color: '#fff', cursor: 'pointer', fontWeight: 600, opacity: submitting ? 0.7 : 1 }}>
+                    <button
+                      onClick={handleReject}
+                      disabled={submitting}
+                      style={{
+                        padding: '0.6rem 1.5rem',
+                        borderRadius: 8,
+                        border: 'none',
+                        background: '#dc2626',
+                        color: '#fff',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        opacity: submitting ? 0.7 : 1,
+                      }}
+                    >
                       {submitting ? 'Rejecting…' : 'Confirm Reject'}
                     </button>
                   )}
+                  {modalAction === 'resolveEscalation' && (
+                    <button
+                      onClick={handleResolveEscalation}
+                      disabled={submitting}
+                      style={{
+                        padding: '0.6rem 1.5rem',
+                        borderRadius: 8,
+                        border: 'none',
+                        background: '#dc2626',
+                        color: '#fff',
+                        cursor: 'pointer',
+                        fontWeight: 700,
+                        opacity: submitting ? 0.7 : 1,
+                      }}
+                    >
+                      {submitting ? 'Saving…' : 'Confirm Resolution'}
+                    </button>
+                  )}
                   {modalAction === 'settlement' && (
-                    <button onClick={handleMarkSettled} disabled={submitting || !settlementTxnId || !settlementAmt} style={{ padding: '0.6rem 1.5rem', borderRadius: 8, border: 'none', background: '#059669', color: '#fff', cursor: 'pointer', fontWeight: 700, opacity: submitting ? 0.7 : 1 }}>
+                    <button
+                      onClick={handleMarkSettled}
+                      disabled={submitting || !settlementTxnId || !settlementAmt}
+                      style={{
+                        padding: '0.6rem 1.5rem',
+                        borderRadius: 8,
+                        border: 'none',
+                        background: '#059669',
+                        color: '#fff',
+                        cursor: 'pointer',
+                        fontWeight: 700,
+                        opacity: submitting ? 0.7 : 1,
+                      }}
+                    >
                       {submitting ? 'Processing…' : '💸 Mark Amount as Settled'}
                     </button>
                   )}
