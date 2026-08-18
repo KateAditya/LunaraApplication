@@ -3,6 +3,8 @@ import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../../models/strangers_meet_request.dart';
+import '../../dialogs/strangers_meet_start_dialog.dart';
+import '../../dialogs/strangers_meet_end_dialog.dart';
 import 'strangers_meet_payment_screen.dart';
 import 'strangers_meet_ticket_screen.dart';
 import 'post_detail_screen.dart';
@@ -53,7 +55,6 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
         builder: (_) => StrangersMeetPaymentScreen(
           request: req,
           onPaymentSuccess: () {
-            // Reload the list when returning
             _loadRequests();
           },
         ),
@@ -176,7 +177,7 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
   }
 
   Widget _buildRequestCard(StrangersMeetRequest req) {
-    final isApproved = req.status == 'approved';
+    final isApproved = req.status == 'approved' || req.isInProgress || req.isHostConfirmedEnded || req.isAdminConfirmedEnded || req.isCompleted;
     final isPaid = req.paymentStatus == 'paid';
     final eventPassed = req.eventDateTime.isBefore(DateTime.now());
     
@@ -275,7 +276,7 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
               ],
   
               // Actions
-              if (eventPassed) ...[
+              if (eventPassed && !isPaid) ...[
                 const SizedBox(height: 16),
                 const Divider(),
                 const SizedBox(height: 8),
@@ -359,18 +360,47 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
                   ],
                 ),
               ],
-  
+
               if (isApproved && isPaid && req.ticketId != null) ...[
                 const SizedBox(height: 16),
                 const Divider(),
                 const SizedBox(height: 8),
+
+                if (req.isInProgress) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.timer_rounded, color: Colors.blue, size: 16),
+                            SizedBox(width: 6),
+                            Text('Meetup in Progress', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue, fontSize: 12)),
+                          ],
+                        ),
+                        Text(
+                          'Ends at ${req.expectedEndAt != null ? DateFormat('hh:mm a').format(req.expectedEndAt!) : '--:--'}',
+                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+
                 Row(
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: () => _onViewTicket(req),
                         icon: const Icon(Icons.local_activity_rounded, color: LunaraTheme.electricViolet, size: 16),
-                        label: const Text('VIEW TICKET', style: TextStyle(color: LunaraTheme.electricViolet, fontWeight: FontWeight.bold, fontSize: 12)),
+                        label: const Text('VIEW TICKET', style: TextStyle(color: LunaraTheme.electricViolet, fontWeight: FontWeight.bold, fontSize: 11)),
                         style: OutlinedButton.styleFrom(
                           side: const BorderSide(color: LunaraTheme.electricViolet),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -378,15 +408,48 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
                         ),
                       ),
                     ),
-                    if (req.status != 'completed') ...[
+                    if (req.status == 'approved' && req.startedAt == null) ...[
                       const SizedBox(width: 8),
                       Expanded(
                         child: ElevatedButton.icon(
-                          onPressed: () => _onMarkCompleted(req),
-                          icon: const Icon(Icons.check_circle_outline_rounded, color: Colors.white, size: 16),
-                          label: const Text('MEET SUCCESSFUL', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                          onPressed: () {
+                            StrangersMeetStartDialog.show(
+                              context,
+                              meetId: req.id,
+                              subject: req.subject,
+                              venueName: req.venue?['name'] ?? 'Venue',
+                              eventDateTime: req.eventDateTime,
+                              onStarted: _loadRequests,
+                            );
+                          },
+                          icon: const Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 16),
+                          label: const Text('START MEET', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
+                            backgroundColor: const Color(0xFF8B5CF6),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                    ] else if (req.isInProgress) ...[
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            StrangersMeetEndDialog.show(
+                              context,
+                              meetId: req.id,
+                              subject: req.subject,
+                              venueName: req.venue?['name'] ?? 'Venue',
+                              expectedEndAt: req.expectedEndAt,
+                              onEnded: _loadRequests,
+                              onExtended: _loadRequests,
+                            );
+                          },
+                          icon: const Icon(Icons.stop_circle_rounded, color: Colors.white, size: 16),
+                          label: const Text('END / EXTEND', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange[800],
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             padding: const EdgeInsets.symmetric(vertical: 12),
                           ),
@@ -396,12 +459,12 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
                   ],
                 ),
               ],
-  
-              if (isApproved && isPaid && (req.status == 'completed' || eventPassed)) ...[
+
+              if (isApproved && isPaid && (req.status == 'completed' || req.isHostConfirmedEnded || req.isAdminConfirmedEnded || eventPassed)) ...[
                 const SizedBox(height: 16),
                 const Divider(),
                 const SizedBox(height: 12),
-                
+
                 // Dynamic Financial Breakdown Card
                 Builder(builder: (context) {
                   final deposit = req.paymentAmount ?? 0.0;
@@ -409,12 +472,11 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
                   final filled = req.slotsFilled;
                   final unfilled = totalSeats - filled;
                   final platformChargePerSeat = req.platformChargePerSeat ?? (totalSeats > 0 ? deposit / totalSeats : 0.0);
-                  
                   final refundForUnfilled = unfilled * platformChargePerSeat;
                   final ticketRevenue = filled * req.chargesPerHead;
                   final finalPayout = ticketRevenue + refundForUnfilled;
                   final profit = finalPayout - deposit;
-  
+
                   return Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
@@ -478,9 +540,9 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
                     ),
                   );
                 }),
-  
+
                 const SizedBox(height: 12),
-                if (req.settlementStatus == 'none') ...[
+                if (req.settlementStatus == 'none' && !req.isAdminConfirmedEnded && !req.isCompleted) ...[
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
@@ -568,29 +630,7 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
     );
   }
 
-  Future<void> _onMarkCompleted(StrangersMeetRequest req) async {
-    setState(() => _isLoading = true);
-    try {
-      final success = await ApiService.completeStrangersMeet(req.id);
-      if (!mounted) return;
-      if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Meetup marked as successfully completed! 🎉')),
-        );
-        _loadRequests();
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      final errorStr = e.toString().replaceAll('Exception: ', '');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(errorStr), backgroundColor: Colors.red),
-      );
-    }
-  }
-
   void _onRequestSettlement(StrangersMeetRequest req) {
-    // Default pre-fill with the bank details they provided during creation
     final defaultDetails = req.bankDetailsSummary;
     final controller = TextEditingController(text: defaultDetails);
     
@@ -657,21 +697,37 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
     );
   }
 
-
   Widget _buildStatusBadge(String status, String paymentStatus, bool isExpired) {
     Color bg;
     Color text;
     String label = status.toUpperCase();
 
-    if (isExpired) {
+    final s = status.toLowerCase();
+    if (s == 'in_progress') {
+      bg = Colors.blue.withValues(alpha: 0.15);
+      text = Colors.blue[800]!;
+      label = '🟢 LIVE • IN PROGRESS';
+    } else if (s == 'host_confirmed_ended') {
+      bg = Colors.amber.withValues(alpha: 0.18);
+      text = Colors.amber[900]!;
+      label = 'AWAITING ADMIN VERIFICATION';
+    } else if (s == 'admin_confirmed_ended') {
+      bg = Colors.purple.withValues(alpha: 0.15);
+      text = Colors.purple[800]!;
+      label = 'VERIFIED • SETTLEMENT IN 24H';
+    } else if (s == 'completed') {
+      bg = Colors.green.withValues(alpha: 0.15);
+      text = Colors.green[800]!;
+      label = 'COMPLETED & SETTLED';
+    } else if (isExpired) {
       bg = Colors.grey.withValues(alpha: 0.18);
       text = Colors.grey[700]!;
       label = 'EXPIRED';
-    } else if (status == 'pending') {
+    } else if (s == 'pending') {
       bg = Colors.orange.withValues(alpha: 0.15);
       text = Colors.orange[800]!;
       label = 'PENDING APPROVAL';
-    } else if (status == 'rejected') {
+    } else if (s == 'rejected') {
       bg = Colors.red.withValues(alpha: 0.15);
       text = Colors.red[800]!;
       label = 'REJECTED';
@@ -679,7 +735,7 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
       if (paymentStatus == 'paid') {
         bg = Colors.green.withValues(alpha: 0.15);
         text = Colors.green[800]!;
-        label = 'PAID & LIVE';
+        label = 'CONFIRMED & READY';
       } else {
         bg = Colors.amber.withValues(alpha: 0.2);
         text = Colors.amber[900]!;

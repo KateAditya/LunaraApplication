@@ -18,6 +18,9 @@ import {
     updateChargesPerHead,
     getMeetFinancials,
     getStrangersMeetTicket,
+    startMeetup,
+    extendMeetup,
+    confirmEndedMeetup,
 } from '../controllers/strangersMeetController';
 
 const router = Router();
@@ -233,6 +236,52 @@ router.patch(
         validate,
     ],
     updateChargesPerHead
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/strangers-meet/:id/start
+// Host confirms meetup started + selects duration
+// ─────────────────────────────────────────────────────────────────────────────
+router.post(
+    '/:id/start',
+    [
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
+        body('durationHours').optional().isFloat({ min: 0.25, max: 24 }).withMessage('durationHours must be between 0.25 and 24'),
+        body('customEndDateTime').optional().isISO8601().withMessage('customEndDateTime must be valid ISO8601 date'),
+        validate,
+    ],
+    startMeetup
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/strangers-meet/:id/extend
+// Host extends meetup duration
+// ─────────────────────────────────────────────────────────────────────────────
+router.post(
+    '/:id/extend',
+    [
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
+        body('additionalHours').optional().isFloat({ min: 0.25, max: 12 }).withMessage('additionalHours must be between 0.25 and 12'),
+        body('customEndDateTime').optional().isISO8601().withMessage('customEndDateTime must be valid ISO8601 date'),
+        validate,
+    ],
+    extendMeetup
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/strangers-meet/:id/confirm-ended
+// Host confirms meetup ended
+// ─────────────────────────────────────────────────────────────────────────────
+router.post(
+    '/:id/confirm-ended',
+    [
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
+        validate,
+    ],
+    confirmEndedMeetup
 );
 
 export default router;

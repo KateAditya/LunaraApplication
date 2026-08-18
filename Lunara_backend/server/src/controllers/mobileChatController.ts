@@ -42,9 +42,28 @@ function formatUserBrief(user: any) {
     };
 }
 
+// ─── Ensure conversation deletion columns helper ────────────────────────────
+let columnsEnsured = false;
+async function ensureConversationColumns() {
+    if (columnsEnsured) return;
+    try {
+        const sequelize = (await import('../config/database')).default;
+        await sequelize.query(`
+            ALTER TABLE conversations ADD COLUMN IF NOT EXISTS cleared_at_one TIMESTAMP WITH TIME ZONE;
+            ALTER TABLE conversations ADD COLUMN IF NOT EXISTS cleared_at_two TIMESTAMP WITH TIME ZONE;
+            ALTER TABLE conversations ADD COLUMN IF NOT EXISTS deleted_by_one BOOLEAN DEFAULT FALSE;
+            ALTER TABLE conversations ADD COLUMN IF NOT EXISTS deleted_by_two BOOLEAN DEFAULT FALSE;
+        `);
+        columnsEnsured = true;
+    } catch (err) {
+        logger.warn('ensureConversationColumns error:', err);
+    }
+}
+
 // ─── GET /conversations — Chat list ──────────────────────────────────────────
 export const getConversations = async (req: Request, res: Response) => {
     try {
+        await ensureConversationColumns();
         const userId = (req.query.userId || req.body.userId) as string;
         if (!userId) return res.status(400).json({ success: false, message: 'userId is required' });
 
@@ -86,6 +105,25 @@ export const getConversations = async (req: Request, res: Response) => {
         for (const conv of conversations) {
             const otherUserId = conv.getOtherParticipant(userId);
             if (!otherUserId) continue;
+
+            // Filter out conversations that the user explicitly deleted unless there's a newer message
+            const uId = userId.toLowerCase();
+            const isP1 = (conv.participantOne || '').toLowerCase() === uId;
+            const isP2 = (conv.participantTwo || '').toLowerCase() === uId;
+
+            if (isP1 && conv.deletedByOne) {
+                const clearedTime = conv.clearedAtOne ? new Date(conv.clearedAtOne).getTime() : 0;
+                const lastMsgTime = conv.lastMessageAt ? new Date(conv.lastMessageAt).getTime() : 0;
+                if (!conv.lastMessageAt || lastMsgTime <= clearedTime) {
+                    continue; // Skip deleted conversation
+                }
+            } else if (isP2 && conv.deletedByTwo) {
+                const clearedTime = conv.clearedAtTwo ? new Date(conv.clearedAtTwo).getTime() : 0;
+                const lastMsgTime = conv.lastMessageAt ? new Date(conv.lastMessageAt).getTime() : 0;
+                if (!conv.lastMessageAt || lastMsgTime <= clearedTime) {
+                    continue; // Skip deleted conversation
+                }
+            }
 
             const key = otherUserId.toLowerCase();
             const existing = mapByOtherUser.get(key);
@@ -304,11 +342,25 @@ export const getMessages = async (req: Request, res: Response) => {
         });
         const convIds = allConvs.map(c => c.id);
 
+        const timeConditions: any[] = [];
+        const isP1 = p1 === uId;
+        const clearedAt = isP1 ? conv.clearedAtOne : conv.clearedAtTwo;
+        if (clearedAt) {
+            timeConditions.push({ [Op.gt]: new Date(clearedAt) });
+        }
+        if (before) {
+            timeConditions.push({ [Op.lt]: new Date(before) });
+        }
+
         const where: any = {
             conversationId: { [Op.in]: convIds },
             deletedAt: null as any,
         };
-        if (before) where.createdAt = { [Op.lt]: new Date(before) };
+        if (timeConditions.length === 1) {
+            where.createdAt = timeConditions[0];
+        } else if (timeConditions.length > 1) {
+            where.createdAt = { [Op.and]: timeConditions };
+        }
 
         const messages = await Message.findAll({
             where,
@@ -500,6 +552,8 @@ export const sendMessage = async (req: Request, res: Response) => {
             lastMessageId:      message.id,
             lastMessageAt:      message.createdAt,
             lastMessagePreview: preview,
+            deletedByOne:       false,
+            deletedByTwo:       false,
             ...unreadUpdate,
         });
 
@@ -666,19 +720,225 @@ export const markConversationRead = async (req: Request, res: Response) => {
 export const deleteMessage = async (req: Request, res: Response) => {
     try {
         const { id, msgId } = req.params;
-        const { userId }    = req.body;
+        const { userId, deleteForEveryone } = req.body;
+        if (!userId) return res.status(400).json({ success: false, message: 'userId is required' });
 
         const message = await Message.findOne({ where: { id: msgId, conversationId: id } });
         if (!message) return res.status(404).json({ success: false, message: 'Message not found' });
-        if (message.senderId !== userId) {
+
+        const conv = await Conversation.findByPk(id);
+        if (!conv) return res.status(404).json({ success: false, message: 'Conversation not found' });
+
+        const isSender = message.senderId.toLowerCase() === userId.toLowerCase();
+        if (!isSender && !deleteForEveryone) {
             return res.status(403).json({ success: false, message: 'You can only delete your own messages' });
         }
 
         await (message as any).update({ deletedAt: new Date(), content: null, mediaUrl: null });
 
-        return res.json({ success: true, message: 'Message deleted' });
+        // Real-time socket broadcast to both participants
+        try {
+            const { io } = require('../server');
+            const otherUserId = conv.getOtherParticipant(userId);
+            io.to(`user_${userId}`).emit('message_deleted', { conversationId: id, messageId: msgId });
+            io.to(`user_${otherUserId}`).emit('message_deleted', { conversationId: id, messageId: msgId });
+        } catch (err) {
+            logger.error('Failed to emit message_deleted socket event:', err);
+        }
+
+        return res.json({ success: true, message: 'Message deleted successfully', data: { messageId: msgId } });
     } catch (err: any) {
         logger.error('deleteMessage:', err);
+        return res.status(500).json({ success: false, message: err.message });
+    }
+};
+
+// ─── DELETE /conversations/:id/messages — Clear all messages in conversation ──
+export const clearChat = async (req: Request, res: Response) => {
+    try {
+        await ensureConversationColumns();
+        const { id } = req.params;
+        const { userId, clearForEveryone } = req.body;
+        if (!userId) return res.status(400).json({ success: false, message: 'userId is required' });
+
+        let conv = await Conversation.findByPk(id);
+        if (!conv) {
+            // Check if id is otherUserId
+            conv = await Conversation.findOne({
+                where: {
+                    [Op.or]: [
+                        { participantOne: userId, participantTwo: id },
+                        { participantOne: id, participantTwo: userId },
+                    ],
+                },
+            });
+        }
+        if (!conv) return res.status(404).json({ success: false, message: 'Conversation not found' });
+
+        const uId = userId.toLowerCase();
+        const p1 = (conv.participantOne || '').toLowerCase();
+        const p2 = (conv.participantTwo || '').toLowerCase();
+        if (p1 !== uId && p2 !== uId) {
+            return res.status(403).json({ success: false, message: 'Access denied' });
+        }
+
+        const otherUserId = conv.getOtherParticipant(userId);
+
+        // Find ALL conversation IDs between these two participants
+        const allConvs = await Conversation.findAll({
+            where: {
+                [Op.or]: [
+                    { participantOne: conv.participantOne, participantTwo: conv.participantTwo },
+                    { participantOne: conv.participantTwo, participantTwo: conv.participantOne },
+                ],
+            },
+        });
+        const allConvIds = allConvs.map(c => c.id);
+
+        const now = new Date();
+        for (const c of allConvs) {
+            const isP1 = (c.participantOne || '').toLowerCase() === uId;
+            if (clearForEveryone === true) {
+                await (c as any).update({
+                    clearedAtOne: now,
+                    clearedAtTwo: now,
+                    lastMessagePreview: '',
+                    unreadOne: 0,
+                    unreadTwo: 0,
+                });
+            } else if (isP1) {
+                await (c as any).update({
+                    clearedAtOne: now,
+                    unreadOne: 0,
+                });
+            } else {
+                await (c as any).update({
+                    clearedAtTwo: now,
+                    unreadTwo: 0,
+                });
+            }
+        }
+
+        if (clearForEveryone === true) {
+            await Message.update(
+                { deletedAt: now, content: null as any, mediaUrl: null as any },
+                { where: { conversationId: { [Op.in]: allConvIds } } }
+            );
+        }
+
+        try {
+            const { io } = require('../server');
+            for (const convId of allConvIds) {
+                io.to(`user_${userId}`).emit('chat_cleared', { conversationId: convId, otherUserId });
+                if (clearForEveryone) {
+                    io.to(`user_${otherUserId}`).emit('chat_cleared', { conversationId: convId, otherUserId: userId });
+                }
+            }
+        } catch (err) {
+            logger.error('Failed to emit chat_cleared socket event:', err);
+        }
+
+        return res.json({ success: true, message: 'Chat cleared successfully' });
+    } catch (err: any) {
+        logger.error('clearChat:', err);
+        return res.status(500).json({ success: false, message: err.message });
+    }
+};
+
+// ─── DELETE /conversations/:id — Delete entire conversation / user from chat ───
+export const deleteConversation = async (req: Request, res: Response) => {
+    try {
+        await ensureConversationColumns();
+        const { id } = req.params;
+        const { userId, deleteForEveryone } = req.body;
+        if (!userId) return res.status(400).json({ success: false, message: 'userId is required' });
+
+        let conv = await Conversation.findByPk(id);
+        if (!conv) {
+            // Check if id is otherUserId
+            conv = await Conversation.findOne({
+                where: {
+                    [Op.or]: [
+                        { participantOne: userId, participantTwo: id },
+                        { participantOne: id, participantTwo: userId },
+                    ],
+                },
+            });
+        }
+        if (!conv) return res.status(404).json({ success: false, message: 'Conversation not found' });
+
+        const uId = userId.toLowerCase();
+        const p1 = (conv.participantOne || '').toLowerCase();
+        const p2 = (conv.participantTwo || '').toLowerCase();
+        if (p1 !== uId && p2 !== uId) {
+            return res.status(403).json({ success: false, message: 'Access denied' });
+        }
+
+        const otherUserId = conv.getOtherParticipant(userId);
+
+        // Find ALL conversation rows between these two participants
+        const allConvs = await Conversation.findAll({
+            where: {
+                [Op.or]: [
+                    { participantOne: conv.participantOne, participantTwo: conv.participantTwo },
+                    { participantOne: conv.participantTwo, participantTwo: conv.participantOne },
+                ],
+            },
+        });
+        const allConvIds = allConvs.map(c => c.id);
+
+        const now = new Date();
+        for (const c of allConvs) {
+            const isP1 = (c.participantOne || '').toLowerCase() === uId;
+            if (deleteForEveryone === true) {
+                await (c as any).update({
+                    deletedByOne: true,
+                    deletedByTwo: true,
+                    clearedAtOne: now,
+                    clearedAtTwo: now,
+                    unreadOne: 0,
+                    unreadTwo: 0,
+                    lastMessagePreview: '',
+                });
+            } else if (isP1) {
+                await (c as any).update({
+                    deletedByOne: true,
+                    clearedAtOne: now,
+                    unreadOne: 0,
+                });
+            } else {
+                await (c as any).update({
+                    deletedByTwo: true,
+                    clearedAtTwo: now,
+                    unreadTwo: 0,
+                });
+            }
+        }
+
+        if (deleteForEveryone === true) {
+            await Message.update(
+                { deletedAt: now, content: null as any, mediaUrl: null as any },
+                { where: { conversationId: { [Op.in]: allConvIds } } }
+            );
+        }
+
+        try {
+            const { io } = require('../server');
+            for (const convId of allConvIds) {
+                io.to(`user_${userId}`).emit('conversation_deleted', { conversationId: convId, otherUserId });
+                io.to(`user_${userId}`).emit('chat_cleared', { conversationId: convId, otherUserId });
+                if (deleteForEveryone) {
+                    io.to(`user_${otherUserId}`).emit('conversation_deleted', { conversationId: convId, otherUserId: userId });
+                    io.to(`user_${otherUserId}`).emit('chat_cleared', { conversationId: convId, otherUserId: userId });
+                }
+            }
+        } catch (err) {
+            logger.error('Failed to emit conversation_deleted socket event:', err);
+        }
+
+        return res.json({ success: true, message: 'Conversation deleted successfully' });
+    } catch (err: any) {
+        logger.error('deleteConversation:', err);
         return res.status(500).json({ success: false, message: err.message });
     }
 };
@@ -769,5 +1029,7 @@ export default {
     getIcebreakers,
     markConversationRead,
     deleteMessage,
+    clearChat,
+    deleteConversation,
     searchMessages,
 };

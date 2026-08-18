@@ -4,6 +4,9 @@ import sequelize from '../config/database';
 export enum StrangersMeetStatus {
     PENDING = 'pending',
     APPROVED = 'approved',
+    IN_PROGRESS = 'in_progress',
+    HOST_CONFIRMED_ENDED = 'host_confirmed_ended',
+    ADMIN_CONFIRMED_ENDED = 'admin_confirmed_ended',
     REJECTED = 'rejected',
     COMPLETED = 'completed',
 }
@@ -34,7 +37,7 @@ export interface StrangersMeetRequestAttributes {
     razorpayOrderId?: string;
     razorpayPaymentId?: string;
     razorpaySignature?: string;
-    settlementStatus?: 'none' | 'requested' | 'approved' | 'paid';
+    settlementStatus?: 'none' | 'requested' | 'approved' | 'settlement_pending' | 'paid' | 'settled';
     bankDetails?: string;         // Legacy text field (kept for backward compat)
     // v2: Structured bank payment fields (collected at creation)
     bankName?: string;
@@ -53,6 +56,17 @@ export interface StrangersMeetRequestAttributes {
     reminder2hSent?: boolean;
     reminder1hSent?: boolean;
     reminder30mSent?: boolean;
+    // Lifecycle additions
+    startedAt?: Date;
+    startedBy?: string;
+    durationHours?: number;
+    expectedEndAt?: Date;
+    endedAt?: Date;
+    endedConfirmedBy?: string;
+    endedConfirmedAt?: Date;
+    adminConfirmedEndedAt?: Date;
+    adminConfirmedBy?: string;
+    settlementOverdue?: boolean;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -90,6 +104,16 @@ export interface StrangersMeetRequestCreationAttributes
         | 'reminder2hSent'
         | 'reminder1hSent'
         | 'reminder30mSent'
+        | 'startedAt'
+        | 'startedBy'
+        | 'durationHours'
+        | 'expectedEndAt'
+        | 'endedAt'
+        | 'endedConfirmedBy'
+        | 'endedConfirmedAt'
+        | 'adminConfirmedEndedAt'
+        | 'adminConfirmedBy'
+        | 'settlementOverdue'
         | 'createdAt'
         | 'updatedAt'
     > { }
@@ -117,7 +141,7 @@ class StrangersMeetRequest
     public razorpayOrderId?: string;
     public razorpayPaymentId?: string;
     public razorpaySignature?: string;
-    public settlementStatus?: 'none' | 'requested' | 'paid';
+    public settlementStatus?: 'none' | 'requested' | 'approved' | 'settlement_pending' | 'paid' | 'settled';
     public bankDetails?: string;
     public bankName?: string;
     public accountNumber?: string;
@@ -135,6 +159,16 @@ class StrangersMeetRequest
     public reminder2hSent!: boolean;
     public reminder1hSent!: boolean;
     public reminder30mSent!: boolean;
+    public startedAt?: Date;
+    public startedBy?: string;
+    public durationHours?: number;
+    public expectedEndAt?: Date;
+    public endedAt?: Date;
+    public endedConfirmedBy?: string;
+    public endedConfirmedAt?: Date;
+    public adminConfirmedEndedAt?: Date;
+    public adminConfirmedBy?: string;
+    public settlementOverdue!: boolean;
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 }
@@ -202,7 +236,7 @@ StrangersMeetRequest.init(
             field: 'slots_filled',
         },
         status: {
-            type: DataTypes.ENUM(...Object.values(StrangersMeetStatus)),
+            type: DataTypes.STRING(50),
             allowNull: false,
             defaultValue: StrangersMeetStatus.PENDING,
         },
@@ -260,7 +294,7 @@ StrangersMeetRequest.init(
             field: 'razorpay_signature',
         },
         settlementStatus: {
-            type: DataTypes.ENUM('none', 'requested', 'paid'),
+            type: DataTypes.STRING(50),
             allowNull: false,
             defaultValue: 'none',
             field: 'settlement_status',
@@ -353,6 +387,57 @@ StrangersMeetRequest.init(
             allowNull: false,
             defaultValue: false,
             field: 'reminder_30m_sent',
+        },
+        startedAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'started_at',
+        },
+        startedBy: {
+            type: DataTypes.UUID,
+            allowNull: true,
+            field: 'started_by',
+        },
+        durationHours: {
+            type: DataTypes.FLOAT,
+            allowNull: true,
+            field: 'duration_hours',
+        },
+        expectedEndAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'expected_end_at',
+        },
+        endedAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'ended_at',
+        },
+        endedConfirmedBy: {
+            type: DataTypes.UUID,
+            allowNull: true,
+            field: 'ended_confirmed_by',
+        },
+        endedConfirmedAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'ended_confirmed_at',
+        },
+        adminConfirmedEndedAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'admin_confirmed_ended_at',
+        },
+        adminConfirmedBy: {
+            type: DataTypes.UUID,
+            allowNull: true,
+            field: 'admin_confirmed_by',
+        },
+        settlementOverdue: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+            field: 'settlement_overdue',
         },
     },
     {

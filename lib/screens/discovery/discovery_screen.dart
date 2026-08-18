@@ -25,6 +25,7 @@ import '../profile/lunara_wallet_screen.dart';
 import '../../services/app_tour_service.dart';
 import '../../widgets/vip_upgrade_button.dart';
 import '../../widgets/ad_announcement_dialog.dart';
+import '../../widgets/lunara_pulsing_logo_button.dart';
 import '../../main.dart';
 
 class DiscoveryScreen extends StatefulWidget {
@@ -1239,21 +1240,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        GestureDetector(
+                        LunaraPulsingLogoButton(
+                          size: 34,
+                          iconPadding: 4,
+                          borderWidth: 1.5,
                           onTap: _refreshData,
-                          child: Container(
-                            height: 32,
-                            width: 32,
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              gradient: LunaraTheme.purpleGradient,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Image.asset(
-                              LunaraTheme.logo,
-                              fit: BoxFit.contain,
-                            ),
-                          ),
                         ),
                         Expanded(
                           child: GestureDetector(

@@ -11,6 +11,8 @@ import UserPhoto from '../models/UserPhoto';
 import Venue from '../models/Venue';
 import VenueImage from '../models/VenueImage';
 import StrangersMeetRequest from '../models/StrangersMeetRequest';
+import StrangersMeetJoiner, { StrangersMeetJoinerPaymentStatus } from '../models/StrangersMeetJoiner';
+import { Op } from 'sequelize';
 import GroupParty from '../models/GroupParty';
 import Ticket, { TicketStatus, StorageCleanupStatus } from '../models/Ticket';
 
@@ -794,6 +796,21 @@ export async function generateTicketForStrangersMeetHelper(requestId: string): P
         const hostUsername = `@${(host.firstName || 'host').toLowerCase()}_${(host.lastName || '').toLowerCase()}`.replace(/_+$/, '');
         const hostProfileUrl = host.profileImageUrl || hostPhoto?.filePath || null;
 
+        // Dynamic participants calculation: count actual confirmed/paid joiners
+        const paidJoinersCount = await StrangersMeetJoiner.count({
+            where: {
+                strangersMeetRequestId: requestId,
+                [Op.or]: [
+                    { paymentStatus: StrangersMeetJoinerPaymentStatus.PAID },
+                    { status: 'paid' },
+                    { status: 'accepted' },
+                ],
+            },
+        });
+        const dynamicParticipantsCount = paidJoinersCount > 0
+            ? paidJoinersCount
+            : ((request.slotsFilled && request.slotsFilled > 0) ? request.slotsFilled : 1);
+
         const ticketUrl = await generateTicketPDF({
             bookingType: 'strangers_meet',
             ticketCode,
@@ -803,7 +820,7 @@ export async function generateTicketForStrangersMeetHelper(requestId: string): P
             venueName: (request as any).venue?.name || 'SAHARA',
             venueAddress: (request as any).venue?.addressLine1 || 'Hinjawadi - Aundh Rd, Pune',
             venueImageUrl: venueImg?.filePath || null,
-            numberOfGuests: request.numberOfPersons,
+            numberOfGuests: dynamicParticipantsCount,
             eventDate: request.eventDateTime,
             startTime: request.eventDateTime ? new Date(request.eventDateTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '08:00 PM',
             paymentAmount: Number(request.paymentAmount || 0),
