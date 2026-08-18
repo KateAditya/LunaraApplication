@@ -150,6 +150,14 @@ export const deletePhoto = async (req: Request, res: Response): Promise<Response
             return res.status(404).json({ success: false, message: 'Photo not found' });
         }
 
+        const totalPhotos = await UserPhoto.count({ where: { userId } });
+        if (totalPhotos <= 3) {
+            return res.status(400).json({
+                success: false,
+                message: 'Minimum 3 profile pictures are required. Please upload a new photo before deleting this one.',
+            });
+        }
+
         const wasPrimary = photo.isPrimary;
         await photo.destroy();
 

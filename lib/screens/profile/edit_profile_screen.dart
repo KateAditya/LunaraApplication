@@ -49,7 +49,46 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   List<Map<String, String>> _localPhotoDetails = [];
   String? _currentProfilePhotoUrl;
 
+  void _showMinPhotosRequiredDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: Colors.white,
+        title: const Row(
+          children: [
+            Icon(Icons.info_outline_rounded, color: LunaraTheme.electricViolet, size: 28),
+            SizedBox(width: 10),
+            Text(
+              'Minimum 3 Photos',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+          ],
+        ),
+        content: const Text(
+          'A minimum of 3 profile pictures is required for your profile. Please upload a new photo before deleting this one.',
+          style: TextStyle(fontSize: 14, color: Colors.black87, height: 1.4),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: LunaraTheme.electricViolet,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('GOT IT', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _deletePhoto() async {
+    if (_localPhotoDetails.length <= 3) {
+      _showMinPhotosRequiredDialog();
+      return;
+    }
+
     String? photoId;
     if (_localPhotoDetails.isNotEmpty) {
       photoId = _localPhotoDetails.first['id'];
@@ -71,7 +110,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
 
     setState(() => _isLoading = true);
-    final success = await ApiService.deleteProfilePhoto(photoId);
+    final result = await ApiService.deleteProfilePhoto(photoId);
+    final bool success = result['success'] == true;
+    final String message = result['message']?.toString() ?? (success ? 'Photo deleted successfully!' : 'Failed to delete photo.');
     
     if (!mounted) return;
     setState(() {
@@ -87,11 +128,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       await _refreshProfileData();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Photo deleted successfully!'), backgroundColor: Colors.green),
+        SnackBar(content: Text(message), backgroundColor: Colors.green),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to delete photo.'), backgroundColor: Colors.red),
+        SnackBar(content: Text(message), backgroundColor: Colors.red),
       );
     }
   }
@@ -254,8 +295,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _deleteOtherPhoto(String photoId) async {
+    if (_localPhotoDetails.length <= 3) {
+      _showMinPhotosRequiredDialog();
+      return;
+    }
+
     setState(() => _isLoading = true);
-    final success = await ApiService.deleteProfilePhoto(photoId);
+    final result = await ApiService.deleteProfilePhoto(photoId);
+    final bool success = result['success'] == true;
+    final String message = result['message']?.toString() ?? (success ? 'Photo deleted successfully!' : 'Failed to delete photo.');
     
     if (!mounted) return;
     
@@ -263,11 +311,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
        await _refreshProfileData();
        if (!mounted) return;
        ScaffoldMessenger.of(context).showSnackBar(
-         const SnackBar(content: Text('Photo deleted successfully!'), backgroundColor: Colors.green),
+         SnackBar(content: Text(message), backgroundColor: Colors.green),
        );
     } else {
        ScaffoldMessenger.of(context).showSnackBar(
-         const SnackBar(content: Text('Failed to delete photo.'), backgroundColor: Colors.red),
+         SnackBar(content: Text(message), backgroundColor: Colors.red),
        );
     }
     setState(() => _isLoading = false);

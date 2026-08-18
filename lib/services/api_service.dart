@@ -2330,18 +2330,26 @@ class ApiService {
     return false;
   }
 
-  static Future<bool> deleteProfilePhoto(String photoId) async {
+  static Future<Map<String, dynamic>> deleteProfilePhoto(String photoId) async {
     try {
       final response = await delete('/api/profile/photos/$photoId');
+      final Map<String, dynamic> data = jsonDecode(response.body);
       if (response.statusCode == 200 ||
           response.statusCode == 201 ||
           response.statusCode == 204) {
-        return true;
+        return {
+          'success': true,
+          'message': data['message'] ?? 'Photo deleted successfully!',
+        };
       }
+      return {
+        'success': false,
+        'message': data['message'] ?? 'Failed to delete photo.',
+      };
     } catch (e) {
       debugPrint('deleteProfilePhoto error: $e');
+      return {'success': false, 'message': 'Failed to delete photo: $e'};
     }
-    return false;
   }
 
   static Future<Map<String, dynamic>> changePassword(

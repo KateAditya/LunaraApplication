@@ -45,15 +45,72 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     }
   }
 
+  DateTime? _extractEventStartDateTime(Map<String, dynamic> booking) {
+    if (booking['eventStartAt'] != null) {
+      final dt = DateTime.tryParse(booking['eventStartAt'].toString())?.toLocal();
+      if (dt != null) return dt;
+    }
+    if (booking['eventDateTime'] != null) {
+      final dt = DateTime.tryParse(booking['eventDateTime'].toString())?.toLocal();
+      if (dt != null) return dt;
+    }
+    if (booking['planDateTime'] != null) {
+      final dt = DateTime.tryParse(booking['planDateTime'].toString())?.toLocal();
+      if (dt != null) return dt;
+    }
+    final dateStr = booking['bookingDate']?.toString() ??
+        booking['date']?.toString();
+    final startTimeStr = booking['startTime']?.toString() ??
+        booking['partyTime']?.toString() ??
+        '20:00';
+
+    if (dateStr != null && dateStr.isNotEmpty) {
+      try {
+        final bDate = DateTime.parse(dateStr).toLocal();
+        final parts = startTimeStr.split(':');
+        final h = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 20 : 20;
+        final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+        return DateTime(bDate.year, bDate.month, bDate.day, h, m);
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  DateTime? _extractExpirationDateTime(Map<String, dynamic> booking, DateTime? eventStart) {
+    if (booking['expiresAt'] != null) {
+      final dt = DateTime.tryParse(booking['expiresAt'].toString())?.toLocal();
+      if (dt != null) return dt;
+    }
+    if (booking['ticketExpiresAt'] != null) {
+      final dt = DateTime.tryParse(booking['ticketExpiresAt'].toString())?.toLocal();
+      if (dt != null) return dt;
+    }
+    if (booking['eventEndAt'] != null) {
+      final dt = DateTime.tryParse(booking['eventEndAt'].toString())?.toLocal();
+      if (dt != null) return dt;
+    }
+    if (eventStart != null) {
+      return eventStart.add(const Duration(hours: 4));
+    }
+    return null;
+  }
+
   bool _isActiveBooking(Map<String, dynamic> booking) {
     try {
       final status = booking['status']?.toString().toLowerCase();
       if (status == 'cancelled' ||
           status == 'completed' ||
           status == 'no_show' ||
-          status == 'expired') {
+          status == 'expired' ||
+          status == 'rejected') {
         return false;
       }
+      final eventStart = _extractEventStartDateTime(booking);
+      final expirationTime = _extractExpirationDateTime(booking, eventStart);
+      if (expirationTime != null) {
+        return DateTime.now().isBefore(expirationTime);
+      }
+
       final dateStr = booking['bookingDate']?.toString();
       if (dateStr == null || dateStr.isEmpty) return true;
 
@@ -187,124 +244,135 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     }
   }
 
-  Widget _buildExpirationTimelineBar(
-    Map<String, dynamic> booking,
-    bool isActive,
-  ) {
-    final dateStr = booking['expiresAt']?.toString() ??
-        booking['eventEndAt']?.toString() ??
-        booking['eventStartAt']?.toString() ??
-        booking['bookingDate']?.toString();
-    final startTimeStr = booking['startTime']?.toString() ?? '20:00';
+  Widget _buildTicketExpirationCard(
+    Map<String, dynamic> booking, {
+    required bool isActive,
+  }) {
+    final eventStart = _extractEventStartDateTime(booking);
+    final expirationTime = _extractExpirationDateTime(booking, eventStart);
+    final now = DateTime.now();
 
-    String timelineText = 'EXPIRED';
-    Color timelineColor = Colors.grey;
-    double progressRatio = 0.0;
+    final bool isExpired = expirationTime != null ? now.isAfter(expirationTime) : !isActive;
+    final bool isLiveNow = eventStart != null &&
+        expirationTime != null &&
+        now.isAfter(eventStart) &&
+        now.isBefore(expirationTime);
 
-    try {
-      if (dateStr != null && dateStr.isNotEmpty) {
-        DateTime? expirationTime;
-        if (booking['expiresAt'] != null) {
-          expirationTime = DateTime.tryParse(booking['expiresAt'].toString())?.toLocal();
-        } else if (booking['eventEndAt'] != null) {
-          expirationTime = DateTime.tryParse(booking['eventEndAt'].toString())?.toLocal();
-        }
+    // Format Expiration String
+    final String expiryDateFormatted = expirationTime != null
+        ? DateFormat('EEE, MMM d, yyyy • h:mm a').format(expirationTime)
+        : (eventStart != null
+            ? DateFormat('EEE, MMM d, yyyy • h:mm a').format(eventStart.add(const Duration(hours: 4)))
+            : 'END OF EVENT');
 
-        DateTime eventStartDateTime;
-        if (booking['eventStartAt'] != null) {
-          eventStartDateTime = DateTime.tryParse(booking['eventStartAt'].toString())?.toLocal() ?? DateTime.now();
-        } else {
-          final bDate = DateTime.parse(dateStr).toLocal();
-          final parts = startTimeStr.split(':');
-          final h = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 20 : 20;
-          final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
-          eventStartDateTime = DateTime(bDate.year, bDate.month, bDate.day, h, m);
-        }
+    // Status badge label & theme
+    String badgeLabel = 'VALID';
+    Color themeColor = LunaraTheme.electricViolet;
+    IconData leadingIcon = Icons.verified_outlined;
 
-        expirationTime ??= eventStartDateTime.add(const Duration(hours: 4));
-        final now = DateTime.now();
-
-        if (now.isAfter(expirationTime)) {
-          timelineText =
-              'EXPIRED ON ${DateFormat('MMM d, yyyy • h:mm a').format(expirationTime)}';
-          timelineColor = Colors.red.shade400;
-          progressRatio = 1.0;
-        } else if (now.isAfter(eventStartDateTime)) {
-          final remaining = expirationTime.difference(now);
-          final hrs = remaining.inHours;
-          final mins = remaining.inMinutes % 60;
-          timelineText = 'VALID UNTIL ${DateFormat('h:mm a').format(expirationTime)} (${hrs}h ${mins}m LEFT)';
-          timelineColor = Colors.amber.shade800;
-          progressRatio = 1.0 - (remaining.inSeconds / (4 * 3600)).clamp(0.0, 1.0);
-        } else {
-          final remaining = eventStartDateTime.difference(now);
-          if (remaining.inDays > 0) {
-            timelineText =
-                'VALID FOR EVENT ON ${DateFormat('EEE, MMM d • h:mm a').format(eventStartDateTime)}';
-          } else {
-            final hrs = remaining.inHours;
-            final mins = remaining.inMinutes % 60;
-            timelineText = 'STARTS IN ${hrs}h ${mins}m • VALID UNTIL ${DateFormat('h:mm a').format(expirationTime)}';
-          }
-          timelineColor = LunaraTheme.electricViolet;
-          progressRatio = 0.35;
-        }
+    if (isExpired) {
+      badgeLabel = 'EXPIRED';
+      themeColor = const Color(0xFFEF4444);
+      leadingIcon = Icons.event_busy_rounded;
+    } else if (isLiveNow) {
+      final remaining = expirationTime.difference(now);
+      final hrs = remaining.inHours;
+      final mins = remaining.inMinutes % 60;
+      badgeLabel = hrs > 0 ? 'LIVE NOW • ${hrs}h ${mins}m LEFT' : 'LIVE NOW • ${mins}m LEFT';
+      themeColor = const Color(0xFF10B981);
+      leadingIcon = Icons.bolt_rounded;
+    } else if (eventStart != null) {
+      final untilStart = eventStart.difference(now);
+      if (untilStart.inDays > 0) {
+        badgeLabel = 'STARTS IN ${untilStart.inDays} ${untilStart.inDays == 1 ? 'DAY' : 'DAYS'}';
+      } else if (untilStart.inHours > 0) {
+        badgeLabel = 'STARTS IN ${untilStart.inHours}h ${untilStart.inMinutes % 60}m';
+      } else if (untilStart.inMinutes > 0) {
+        badgeLabel = 'STARTS IN ${untilStart.inMinutes}m';
+      } else {
+        badgeLabel = 'UPCOMING';
       }
-    } catch (_) {}
+      themeColor = LunaraTheme.electricViolet;
+      leadingIcon = Icons.access_time_rounded;
+    }
 
     return Container(
+      margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: timelineColor.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: timelineColor.withValues(alpha: 0.2)),
+        color: themeColor.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: themeColor.withValues(alpha: 0.22),
+          width: 1,
+        ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.timer_outlined, size: 14, color: timelineColor),
-                  const SizedBox(width: 6),
-                  Text(
-                    'EXPIRATION TIMELINE',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1,
-                      color: timelineColor,
+          Container(
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              color: themeColor.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              leadingIcon,
+              size: 16,
+              color: themeColor,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      isExpired ? 'TICKET EXPIRED' : 'EXPIRES ON',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.8,
+                        color: themeColor,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              Flexible(
-                child: Text(
-                  timelineText,
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: themeColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        badgeLabel,
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.4,
+                          color: themeColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  expiryDateFormatted,
                   style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: timelineColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: isExpired ? Colors.grey[700] : const Color(0xFF0F172A),
+                    letterSpacing: 0.2,
                   ),
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-              ),
-            ],
-          ),
-          if (isActive) ...[
-            const SizedBox(height: 6),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: progressRatio.clamp(0.0, 1.0),
-                minHeight: 4,
-                backgroundColor: timelineColor.withValues(alpha: 0.15),
-                valueColor: AlwaysStoppedAnimation<Color>(timelineColor),
-              ),
+              ],
             ),
-          ],
+          ),
         ],
       ),
     );
@@ -676,8 +744,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
-                    _buildExpirationTimelineBar(booking, isActive),
-                    const SizedBox(height: 12),
+                    _buildTicketExpirationCard(booking, isActive: isActive),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
