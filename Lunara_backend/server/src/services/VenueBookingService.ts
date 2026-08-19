@@ -114,9 +114,9 @@ export class VenueBookingService {
         const isLargeParty = goingMode === GoingMode.PARTY_REQUEST && numberOfGuests > 20;
 
         if (isLargeParty) {
-            const bookingConflictMsg = await checkExistingBookingForDate(userId, bookingDate);
+            const bookingConflictMsg = await checkExistingBookingForDate(userId, bookingDate, 'group_party');
             if (bookingConflictMsg) {
-                throw new Error('You already have an active plan or booking scheduled on this day.');
+                throw new Error(bookingConflictMsg);
             }
         }
 

@@ -2261,8 +2261,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         planMap['paymentStatus']?.toString().toLowerCase().contains('refunded') == true;
 
     final bool inArrivalWindow = parsedEventDate != null &&
-        parsedEventDate.difference(DateTime.now()).inMinutes <= 15 &&
-        parsedEventDate.difference(DateTime.now()).inHours >= -3;
+        parsedEventDate.difference(DateTime.now()).inMinutes <= 30 &&
+        parsedEventDate.difference(DateTime.now()).inHours >= -5;
 
     // A plan-level lifecycleStatus/acceptedJoinerRequest only genuinely reflects
     // the current viewer's own match when they're the host (there's only one

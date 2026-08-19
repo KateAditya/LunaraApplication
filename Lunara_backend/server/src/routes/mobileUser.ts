@@ -597,8 +597,8 @@ async function getUserNotifications(
         const groupParties = await GroupParty.findAll({
             where: {
                 userId: uId,
-                // Exclude dead-end states to reduce unnecessary processing
-                status: { [Op.notIn]: ['cancelled', 'rejected'] }
+                status: { [Op.in]: ['confirmed', 'completed'] },
+                paymentStatus: { [Op.in]: ['paid', 'free'] }
             },
             include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city'] }],
             order: [['createdAt', 'DESC']],

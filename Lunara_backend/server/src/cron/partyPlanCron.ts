@@ -532,71 +532,312 @@ export const startPartyPlanCron = () => {
                 }
             }
 
-            // 10-Minute Arrival Confirmation Prompt
-            const next15m10m = new Date(now.getTime() + 15 * 60 * 1000);
-            const next5m = new Date(now.getTime() + 5 * 60 * 1000);
-            const upcoming10mPlans = await PartyPlan.findAll({
-                where: {
-                    status: { [Op.in]: ['active', 'inactive'] },
-                    reminder10mSent: false,
-                    planDateTime: { [Op.between]: [next5m, next15m10m] },
-                }
-            });
+            // ── 2. Party Plan Arrival Cadence Engine (T-20m, T-10m, T-5m, On-Time, T+5m, T+10m, T+30m, 5h Expiry) ──
+            try {
+                const sequelize = (await import('../config/database')).default;
+                await sequelize.query(`
+                    ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_20m_sent BOOLEAN DEFAULT FALSE;
+                    ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_10m_sent BOOLEAN DEFAULT FALSE;
+                    ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_5m_sent BOOLEAN DEFAULT FALSE;
+                    ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_on_time_sent BOOLEAN DEFAULT FALSE;
+                    ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_post_5m_sent BOOLEAN DEFAULT FALSE;
+                    ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_post_10m_sent BOOLEAN DEFAULT FALSE;
+                    ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_post_30m_sent BOOLEAN DEFAULT FALSE;
+                    ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS expired_no_show_cancelled BOOLEAN DEFAULT FALSE;
+                `).catch(() => {});
 
-            for (const plan of upcoming10mPlans) {
-                await plan.update({
-                    reminder10mSent: true,
-                    lifecycleStatus: PartyPlanLifecycleStatus.TEN_MIN_CONFIRMATION,
-                });
-                const acceptedReq = await PartyPlanRequest.findOne({
-                    where: { planId: plan.id, status: PartyPlanRequestStatus.ACCEPTED }
-                });
-                if (acceptedReq) {
+                const { sendMulticastPushNotification } = require('../services/fcmService');
+                const NotificationService = (await import('../services/NotificationService')).NotificationService;
+                const { io } = require('../server');
+
+                const sendPartyArrivalPrompt = async (plan: any, acceptedReq: any, stepLabel: string) => {
+                    const bothConfirmed = plan.hostArrivalConfirmed === true && acceptedReq?.guestArrivalConfirmed === true;
+                    if (bothConfirmed || plan.status === 'cancelled' || plan.status === 'completed') {
+                        return; // Stoppage rule: Do not send any arrival check notifications once both have confirmed or plan is settled
+                    }
+
                     const host = await User.findByPk(plan.userId);
                     const joiner = await User.findByPk(acceptedReq.requesterId);
-                    const { sendMulticastPushNotification } = require('../services/fcmService');
-                    const NotificationService = (await import('../services/NotificationService')).NotificationService;
-                    const promptMsg = `Have you reached the venue? Please confirm your arrival.`;
+                    const venue = plan.venue || await (await import('../models/Venue')).default.findByPk(plan.venueId);
+                    const venueName = venue?.name || 'the venue';
 
-                    if (host?.fcmToken) {
-                        await sendMulticastPushNotification([host.fcmToken], {
-                            title: '📍 Have you reached the venue?',
-                            body: promptMsg,
-                            data: { type: 'arrival_prompt', partyPlanId: plan.id }
+                    const title = '📍 Has your partner reached?';
+                    const body = `Your Party Plan at ${venueName} is starting! Please confirm if your partner has reached.`;
+
+                    const recipients = [
+                        { user: host, isHost: true, partnerId: acceptedReq.requesterId },
+                        { user: joiner, isHost: false, partnerId: plan.userId }
+                    ];
+
+                    for (const r of recipients) {
+                        if (!r.user) continue;
+                        if (r.user.fcmToken) {
+                            await sendMulticastPushNotification([r.user.fcmToken], {
+                                title,
+                                body,
+                                data: {
+                                    type: 'arrival_prompt',
+                                    partyPlanId: plan.id,
+                                    action: 'CONFIRM_ARRIVAL'
+                                }
+                            });
+                        }
+
+                        await NotificationService.dispatch({
+                            recipientUserId: r.user.id,
+                            actorUserId: r.partnerId,
+                            eventType: 'arrival_prompt',
+                            category: 'events',
+                            entityType: 'party_plan',
+                            entityId: plan.id,
+                            title,
+                            body,
+                            actionType: 'CONFIRM_ARRIVAL',
+                            metadata: {
+                                partyPlanId: plan.id,
+                                step: stepLabel,
+                                isHost: r.isHost
+                            }
                         });
                     }
-                    if (joiner?.fcmToken) {
-                        await sendMulticastPushNotification([joiner.fcmToken], {
-                            title: '📍 Have you reached the venue?',
-                            body: promptMsg,
-                            data: { type: 'arrival_prompt', partyPlanId: plan.id }
-                        });
+
+                    if (io) {
+                        io.to(`user_${plan.userId}`).emit('party_plan_arrival_prompt', { planId: plan.id, step: stepLabel });
+                        io.to(`user_${acceptedReq.requesterId}`).emit('party_plan_arrival_prompt', { planId: plan.id, step: stepLabel });
                     }
+                };
 
-                    await NotificationService.dispatch({
-                        recipientUserId: plan.userId,
-                        actorUserId: acceptedReq.requesterId,
-                        eventType: 'arrival_prompt',
-                        category: 'events',
-                        entityType: 'party_plan',
-                        entityId: plan.id,
-                        title: '📍 Have you reached the venue?',
-                        body: promptMsg,
-                        actionType: 'CONFIRM_ARRIVAL'
+                // A. T - 20 Minutes Arrival Prompt
+                const next25m = new Date(now.getTime() + 25 * 60 * 1000);
+                const next16m = new Date(now.getTime() + 16 * 60 * 1000);
+                const plans20m = await PartyPlan.findAll({
+                    where: {
+                        status: { [Op.in]: ['active', 'inactive'] },
+                        reminder20mSent: false,
+                        planDateTime: { [Op.between]: [next16m, next25m] },
+                    }
+                });
+                for (const plan of plans20m) {
+                    await plan.update({ reminder20mSent: true });
+                    const acceptedReq = await PartyPlanRequest.findOne({
+                        where: { planId: plan.id, status: PartyPlanRequestStatus.ACCEPTED }
                     });
-
-                    await NotificationService.dispatch({
-                        recipientUserId: acceptedReq.requesterId,
-                        actorUserId: plan.userId,
-                        eventType: 'arrival_prompt',
-                        category: 'events',
-                        entityType: 'party_plan',
-                        entityId: plan.id,
-                        title: '📍 Have you reached the venue?',
-                        body: promptMsg,
-                        actionType: 'CONFIRM_ARRIVAL'
-                    });
+                    if (acceptedReq) {
+                        await sendPartyArrivalPrompt(plan, acceptedReq, '20m_before');
+                    }
                 }
+
+                // B. T - 10 Minutes Arrival Prompt
+                const next15m = new Date(now.getTime() + 15 * 60 * 1000);
+                const next7m = new Date(now.getTime() + 7 * 60 * 1000);
+                const plans10m = await PartyPlan.findAll({
+                    where: {
+                        status: { [Op.in]: ['active', 'inactive'] },
+                        reminder10mSent: false,
+                        planDateTime: { [Op.between]: [next7m, next15m] },
+                    }
+                });
+                for (const plan of plans10m) {
+                    await plan.update({ reminder10mSent: true, lifecycleStatus: PartyPlanLifecycleStatus.TEN_MIN_CONFIRMATION });
+                    const acceptedReq = await PartyPlanRequest.findOne({
+                        where: { planId: plan.id, status: PartyPlanRequestStatus.ACCEPTED }
+                    });
+                    if (acceptedReq) {
+                        await sendPartyArrivalPrompt(plan, acceptedReq, '10m_before');
+                    }
+                }
+
+                // C. T - 5 Minutes Arrival Prompt
+                const next6m = new Date(now.getTime() + 6 * 60 * 1000);
+                const next2m = new Date(now.getTime() + 2 * 60 * 1000);
+                const plans5m = await PartyPlan.findAll({
+                    where: {
+                        status: { [Op.in]: ['active', 'inactive'] },
+                        reminder5mSent: false,
+                        planDateTime: { [Op.between]: [next2m, next6m] },
+                    }
+                });
+                for (const plan of plans5m) {
+                    await plan.update({ reminder5mSent: true });
+                    const acceptedReq = await PartyPlanRequest.findOne({
+                        where: { planId: plan.id, status: PartyPlanRequestStatus.ACCEPTED }
+                    });
+                    if (acceptedReq) {
+                        await sendPartyArrivalPrompt(plan, acceptedReq, '5m_before');
+                    }
+                }
+
+                // D. On-Time Arrival Prompt (T = 0m)
+                const onTimeStart = new Date(now.getTime() - 2 * 60 * 1000);
+                const onTimeEnd = new Date(now.getTime() + 2 * 60 * 1000);
+                const plansOnTime = await PartyPlan.findAll({
+                    where: {
+                        status: { [Op.in]: ['active', 'inactive'] },
+                        reminderOnTimeSent: false,
+                        planDateTime: { [Op.between]: [onTimeStart, onTimeEnd] },
+                    }
+                });
+                for (const plan of plansOnTime) {
+                    await plan.update({ reminderOnTimeSent: true, lifecycleStatus: PartyPlanLifecycleStatus.ARRIVAL_PENDING });
+                    const acceptedReq = await PartyPlanRequest.findOne({
+                        where: { planId: plan.id, status: PartyPlanRequestStatus.ACCEPTED }
+                    });
+                    if (acceptedReq) {
+                        await sendPartyArrivalPrompt(plan, acceptedReq, 'on_time');
+                    }
+                }
+
+                // E. T + 5 Minutes Post-Start Follow-up
+                const post5mStart = new Date(now.getTime() - 9 * 60 * 1000);
+                const post5mEnd = new Date(now.getTime() - 3 * 60 * 1000);
+                const plansPost5m = await PartyPlan.findAll({
+                    where: {
+                        status: { [Op.in]: ['active', 'inactive'] },
+                        reminderPost5mSent: false,
+                        planDateTime: { [Op.between]: [post5mStart, post5mEnd] },
+                    }
+                });
+                for (const plan of plansPost5m) {
+                    await plan.update({ reminderPost5mSent: true });
+                    const acceptedReq = await PartyPlanRequest.findOne({
+                        where: { planId: plan.id, status: PartyPlanRequestStatus.ACCEPTED }
+                    });
+                    if (acceptedReq) {
+                        await sendPartyArrivalPrompt(plan, acceptedReq, '5m_after');
+                    }
+                }
+
+                // F. T + 10 Minutes Post-Start Follow-up
+                const post10mStart = new Date(now.getTime() - 19 * 60 * 1000);
+                const post10mEnd = new Date(now.getTime() - 9 * 60 * 1000);
+                const plansPost10m = await PartyPlan.findAll({
+                    where: {
+                        status: { [Op.in]: ['active', 'inactive'] },
+                        reminderPost10mSent: false,
+                        planDateTime: { [Op.between]: [post10mStart, post10mEnd] },
+                    }
+                });
+                for (const plan of plansPost10m) {
+                    await plan.update({ reminderPost10mSent: true });
+                    const acceptedReq = await PartyPlanRequest.findOne({
+                        where: { planId: plan.id, status: PartyPlanRequestStatus.ACCEPTED }
+                    });
+                    if (acceptedReq) {
+                        await sendPartyArrivalPrompt(plan, acceptedReq, '10m_after');
+                    }
+                }
+
+                // G. T + 30 Minutes Post-Start Follow-up
+                const post30mStart = new Date(now.getTime() - 45 * 60 * 1000);
+                const post30mEnd = new Date(now.getTime() - 20 * 60 * 1000);
+                const plansPost30m = await PartyPlan.findAll({
+                    where: {
+                        status: { [Op.in]: ['active', 'inactive'] },
+                        reminderPost30mSent: false,
+                        planDateTime: { [Op.between]: [post30mStart, post30mEnd] },
+                    }
+                });
+                for (const plan of plansPost30m) {
+                    await plan.update({ reminderPost30mSent: true });
+                    const acceptedReq = await PartyPlanRequest.findOne({
+                        where: { planId: plan.id, status: PartyPlanRequestStatus.ACCEPTED }
+                    });
+                    if (acceptedReq) {
+                        await sendPartyArrivalPrompt(plan, acceptedReq, '30m_after');
+                    }
+                }
+
+                // H. 5-Hour No-Action Cancellation & Forfeiture Check (T + 5 hours / 300 mins)
+                const fiveHoursAgo = new Date(now.getTime() - 5 * 60 * 60 * 1000);
+                const expiredUnconfirmedPlans = await PartyPlan.findAll({
+                    where: {
+                        status: { [Op.in]: ['active', 'inactive'] },
+                        expiredNoShowCancelled: false,
+                        planDateTime: { [Op.lte]: fiveHoursAgo },
+                    }
+                });
+
+                for (const plan of expiredUnconfirmedPlans) {
+                    const acceptedReq = await PartyPlanRequest.findOne({
+                        where: { planId: plan.id, status: PartyPlanRequestStatus.ACCEPTED }
+                    });
+
+                    const bothConfirmed = plan.hostArrivalConfirmed === true && acceptedReq?.guestArrivalConfirmed === true;
+                    if (bothConfirmed) {
+                        await plan.update({ expiredNoShowCancelled: true });
+                        continue;
+                    }
+
+                    // Cancel plan, DO NOT refund deposit (forfeit deposit)
+                    await plan.update({
+                        status: PartyPlanStatus.CANCELLED,
+                        lifecycleStatus: PartyPlanLifecycleStatus.EXPIRED,
+                        paymentStatus: 'Cancelled (Deposit Forfeited - No Confirmation within 5h)',
+                        expiredNoShowCancelled: true,
+                    });
+
+                    if (acceptedReq) {
+                        await acceptedReq.update({
+                            status: PartyPlanRequestStatus.CANCELLED,
+                            cancellationReason: 'No arrival confirmation within 5 hours. Deposit forfeited.',
+                        });
+                    }
+
+                    // Release time lock
+                    const { PlanEligibilityService } = await import('../services/PlanEligibilityService');
+                    await PlanEligibilityService.releaseLock(plan.id);
+
+                    const host = await User.findByPk(plan.userId);
+                    const joiner = acceptedReq ? await User.findByPk(acceptedReq.requesterId) : null;
+                    const venue = (plan as any).venue || await (await import('../models/Venue')).default.findByPk(plan.venueId);
+                    const venueName = venue?.name || 'the venue';
+
+                    const cancelTitle = '❌ Party Plan Cancelled (Deposit Forfeited)';
+                    const cancelBody = `Your party plan at ${venueName} expired without arrival confirmation within 5 hours. As per policy, the commitment deposit has been forfeited.`;
+
+                    const tokens = [host?.fcmToken, joiner?.fcmToken].filter(Boolean) as string[];
+                    if (tokens.length > 0) {
+                        await sendMulticastPushNotification(tokens, {
+                            title: cancelTitle,
+                            body: cancelBody,
+                            data: { type: 'party_plan_expired_forfeited', partyPlanId: plan.id }
+                        });
+                    }
+
+                    if (host) {
+                        await NotificationService.dispatch({
+                            recipientUserId: host.id,
+                            eventType: 'party_cancelled',
+                            category: 'events',
+                            entityType: 'party_plan',
+                            entityId: plan.id,
+                            title: cancelTitle,
+                            body: cancelBody,
+                            metadata: { partyPlanId: plan.id, refundStatus: 'FORFEITED' }
+                        });
+                    }
+                    if (joiner) {
+                        await NotificationService.dispatch({
+                            recipientUserId: joiner.id,
+                            eventType: 'party_cancelled',
+                            category: 'events',
+                            entityType: 'party_plan',
+                            entityId: plan.id,
+                            title: cancelTitle,
+                            body: cancelBody,
+                            metadata: { partyPlanId: plan.id, refundStatus: 'FORFEITED' }
+                        });
+                    }
+
+                    if (io) {
+                        io.to(`user_${plan.userId}`).emit('party_plan_cancelled', { planId: plan.id, reason: 'Deposit forfeited after 5h no-confirmation' });
+                        if (joiner) {
+                            io.to(`user_${joiner.id}`).emit('party_plan_cancelled', { planId: plan.id, reason: 'Deposit forfeited after 5h no-confirmation' });
+                        }
+                    }
+                }
+            } catch (arrivalCronErr: any) {
+                logger.error('[Cron] Party Plan Arrival Cadence Engine error: ' + arrivalCronErr.message);
             }
 
             // ── 2.5 Stranger Meet Automated Reminder Engine (2h, 1h, 30m) ─────

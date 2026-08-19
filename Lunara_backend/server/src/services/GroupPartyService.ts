@@ -130,9 +130,9 @@ export class GroupPartyService {
         }
 
         // Check user booking conflict for date
-        const bookingConflictMsg = await checkExistingBookingForDate(userId, partyDate);
+        const bookingConflictMsg = await checkExistingBookingForDate(userId, partyDate, 'group_party');
         if (bookingConflictMsg) {
-            throw new Error('You already have an active plan or booking scheduled on this day.');
+            throw new Error(bookingConflictMsg);
         }
 
         const partyType = this.resolvePartyType(numberOfFriends, venue.capacity || 500);

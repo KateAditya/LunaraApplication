@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Op } from 'sequelize';
 import { v4 as uuidv4 } from 'uuid';
 import Booking, { BookingStatus, PaymentStatus, BookingPaymentMode } from '../models/Booking';
 import User from '../models/User';
@@ -688,16 +689,28 @@ export const listMyBookings = async (req: Request, res: Response) => {
             include: [{ model: PartyPlan, as: 'plan', include: [venueInclude] }],
         });
 
+        const groupParties = await GroupParty.findAll({
+            where: {
+                userId,
+                status: { [Op.in]: ['confirmed', 'completed'] },
+                paymentStatus: { [Op.in]: ['paid', 'free'] },
+            },
+            include: [venueInclude],
+        });
+
         const synthesized: any[] = [];
 
         for (const plan of hostPlans) {
             const venue = (plan as any).venue;
             const planDateTime = new Date(plan.planDateTime);
+            const bookedDate = plan.createdAt ? new Date(plan.createdAt).toISOString() : planDateTime.toISOString();
             synthesized.push({
                 id: `party_plan_host_${plan.id}`,
                 bookingId: plan.id,
                 bookingType: 'party_plan',
                 status: plan.status === 'cancelled' ? 'cancelled' : 'confirmed',
+                createdAt: bookedDate,
+                bookedAt: bookedDate,
                 bookingDate: planDateTime.toISOString(),
                 startTime: planDateTime.toTimeString().substring(0, 5),
                 totalAmount: Number(plan.depositAmount),
@@ -713,11 +726,14 @@ export const listMyBookings = async (req: Request, res: Response) => {
             if (!plan) continue;
             const venue = (plan as any).venue;
             const planDateTime = new Date(plan.planDateTime);
+            const bookedDate = request.createdAt ? new Date(request.createdAt).toISOString() : (plan.createdAt ? new Date(plan.createdAt).toISOString() : planDateTime.toISOString());
             synthesized.push({
                 id: `party_plan_joiner_${request.id}`,
                 bookingId: plan.id,
                 bookingType: 'party_plan',
                 status: request.status === 'cancelled' || request.status === 'rejected' ? 'cancelled' : 'confirmed',
+                createdAt: bookedDate,
+                bookedAt: bookedDate,
                 bookingDate: planDateTime.toISOString(),
                 startTime: planDateTime.toTimeString().substring(0, 5),
                 totalAmount: Number(plan.depositAmount ?? 99),
@@ -728,8 +744,39 @@ export const listMyBookings = async (req: Request, res: Response) => {
             });
         }
 
-        const combined = [...bookings.map(b => b.toJSON()), ...synthesized].sort((a, b) => {
-            return new Date(b.bookingDate).getTime() - new Date(a.bookingDate).getTime();
+        for (const gp of groupParties) {
+            const venue = (gp as any).venue;
+            const partyDate = new Date(gp.partyDate);
+            const bookedDate = gp.createdAt ? new Date(gp.createdAt).toISOString() : partyDate.toISOString();
+            synthesized.push({
+                id: `group_party_${gp.id}`,
+                bookingId: gp.id,
+                bookingType: 'group_party',
+                status: gp.status === 'cancelled' ? 'cancelled' : 'confirmed',
+                createdAt: bookedDate,
+                bookedAt: bookedDate,
+                bookingDate: partyDate.toISOString(),
+                startTime: gp.startTime || '20:00',
+                totalAmount: Number(gp.totalAmount || 0),
+                tablePackage: 'GROUP PARTY',
+                numberOfGuests: gp.numberOfFriends || 1,
+                venue,
+                isGroupParty: true,
+                ticketCode: gp.ticketCode,
+                ticketUrl: gp.ticketUrl,
+            });
+        }
+
+        const normalizedBookings = bookings.map(b => {
+            const json: any = b.toJSON();
+            json.bookedAt = json.createdAt ? new Date(json.createdAt).toISOString() : json.bookingDate;
+            return json;
+        });
+
+        const combined = [...normalizedBookings, ...synthesized].sort((a, b) => {
+            const timeB = new Date(b.bookedAt || b.createdAt || b.bookingDate).getTime();
+            const timeA = new Date(a.bookedAt || a.createdAt || a.bookingDate).getTime();
+            return timeB - timeA;
         });
 
         return res.json({ success: true, data: combined });

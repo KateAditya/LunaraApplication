@@ -8,7 +8,8 @@ import { PartyPlan, StrangersMeetRequest, GroupParty, Booking } from '../models'
  */
 export const checkExistingBookingForDate = async (
     userId: string,
-    dateInput: Date | string
+    dateInput: Date | string,
+    forType?: 'party_plan' | 'strangers_meet' | 'group_party' | 'booking' | string
 ): Promise<string | null> => {
     try {
         const targetDate = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
@@ -28,62 +29,69 @@ export const checkExistingBookingForDate = async (
         const dd = String(targetDate.getDate()).padStart(2, '0');
         const dateStr = `${yyyy}-${mm}-${dd}`;
 
-        // 1. Check PartyPlan
-        const existingPartyPlan = await PartyPlan.findOne({
-            where: {
-                userId,
-                status: { [Op.ne]: 'cancelled' },
-                planDateTime: {
-                    [Op.between]: [startOfDay, endOfDay]
+        // 1. Check PartyPlan (checks 4-hour cooldown time window)
+        if (!forType || forType === 'party_plan') {
+            const fourHoursMs = 4 * 60 * 60 * 1000;
+            const windowStart = new Date(targetDate.getTime() - fourHoursMs);
+            const windowEnd = new Date(targetDate.getTime() + fourHoursMs);
+
+            const existingPartyPlan = await PartyPlan.findOne({
+                where: {
+                    userId,
+                    status: { [Op.ne]: 'cancelled' },
+                    planDateTime: {
+                        [Op.between]: [windowStart, windowEnd]
+                    }
                 }
+            });
+            if (existingPartyPlan) {
+                const planTime = new Date(existingPartyPlan.planDateTime);
+                const timeStr = planTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                return `You already have a party plan scheduled near this time (${timeStr}). Party plans must be at least 4 hours apart.`;
             }
-        });
-        if (existingPartyPlan) {
-            return 'You already have a party plan scheduled on this day.';
         }
 
         // 2. Check StrangersMeetRequest
-        const existingStrangersMeet = await StrangersMeetRequest.findOne({
-            where: {
-                userId,
-                status: { [Op.notIn]: ['cancelled', 'rejected'] },
-                eventDateTime: {
-                    [Op.between]: [startOfDay, endOfDay]
+        if (!forType || forType === 'strangers_meet') {
+            const existingStrangersMeet = await StrangersMeetRequest.findOne({
+                where: {
+                    userId,
+                    status: { [Op.notIn]: ['cancelled', 'rejected'] },
+                    eventDateTime: {
+                        [Op.between]: [startOfDay, endOfDay]
+                    }
                 }
+            });
+            if (existingStrangersMeet) {
+                return 'You already have a strangers meetup scheduled on this day.';
             }
-        });
-        if (existingStrangersMeet) {
-            return 'You already have a strangers meetup scheduled on this day.';
         }
 
         // 3. Check GroupParty
-        // 'pending' (payment not yet completed) and 'expired' (payment window
-        // passed) rows are abandoned/incomplete attempts, not real
-        // commitments — they must not block a fresh payment attempt on the
-        // same date, otherwise a single dismissed/failed payment permanently
-        // blocks every subsequent retry (wallet or Razorpay) for that day.
-        const existingGroupParty = await GroupParty.findOne({
-            where: {
-                userId,
-                status: { [Op.notIn]: ['cancelled', 'rejected', 'pending', 'expired'] },
-                partyDate: dateStr
+        if (!forType || forType === 'group_party') {
+            const existingGroupParty = await GroupParty.findOne({
+                where: {
+                    userId,
+                    status: { [Op.notIn]: ['cancelled', 'rejected', 'pending', 'expired'] },
+                    partyDate: dateStr
+                }
+            });
+            if (existingGroupParty) {
+                return 'You already have a group party booked on this day.';
             }
-        });
-        if (existingGroupParty) {
-            return 'You already have a group party booked on this day.';
-        }
 
-        // 4. Check Booking (where goingMode = 'party_request')
-        const existingLargePartyBooking = await Booking.findOne({
-            where: {
-                userId,
-                status: { [Op.ne]: 'cancelled' },
-                goingMode: 'party_request',
-                bookingDate: dateStr
+            // 4. Check Booking (where goingMode = 'party_request')
+            const existingLargePartyBooking = await Booking.findOne({
+                where: {
+                    userId,
+                    status: { [Op.ne]: 'cancelled' },
+                    goingMode: 'party_request',
+                    bookingDate: dateStr
+                }
+            });
+            if (existingLargePartyBooking) {
+                return 'You already have a group party booked on this day.';
             }
-        });
-        if (existingLargePartyBooking) {
-            return 'You already have a group party booked on this day.';
         }
 
         return null;

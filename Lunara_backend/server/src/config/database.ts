@@ -114,6 +114,23 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
 
                     -- UserSubscriptions columns
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='UserSubscriptions' AND column_name='expiration_alert_sent') THEN ALTER TABLE "UserSubscriptions" ADD COLUMN expiration_alert_sent BOOLEAN NOT NULL DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='UserSubscriptions' AND column_name='superlikes_remaining') THEN ALTER TABLE "UserSubscriptions" ADD COLUMN superlikes_remaining INTEGER DEFAULT 0; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='UserSubscriptions' AND column_name='boosts_remaining') THEN ALTER TABLE "UserSubscriptions" ADD COLUMN boosts_remaining INTEGER DEFAULT 0; END IF;
+
+                    -- SubscriptionPackages columns
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='superlikes_per_cycle') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN superlikes_per_cycle INTEGER DEFAULT 0; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='boosts_per_cycle') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN boosts_per_cycle INTEGER DEFAULT 0; END IF;
+
+                    -- user_likes table
+                    CREATE TABLE IF NOT EXISTS user_likes (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        target_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        action_type VARCHAR(50) NOT NULL,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                        CONSTRAINT unique_user_target_like UNIQUE (user_id, target_user_id)
+                    );
 
                     -- users columns
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='mfa_enabled') THEN ALTER TABLE users ADD COLUMN mfa_enabled BOOLEAN NOT NULL DEFAULT FALSE; END IF;

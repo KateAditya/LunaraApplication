@@ -90,7 +90,14 @@ export interface PartyPlanAttributes {
     reminder1hSent?: boolean;
     reminder30mSent?: boolean;
     reminder2hSent?: boolean;
+    reminder20mSent?: boolean;
     reminder10mSent?: boolean;
+    reminder5mSent?: boolean;
+    reminderOnTimeSent?: boolean;
+    reminderPost5mSent?: boolean;
+    reminderPost10mSent?: boolean;
+    reminderPost30mSent?: boolean;
+    expiredNoShowCancelled?: boolean;
     // ── Lifecycle Timestamps ──────────────────────────────────────────────────
     acceptedAt?: Date | null;       // When host accepted a requester
     paymentDeadlineAt?: Date | null; // Canonical 30-min payment deadline
@@ -141,7 +148,14 @@ class PartyPlan
     public reminder1hSent!: boolean;
     public reminder30mSent!: boolean;
     public reminder2hSent!: boolean;
+    public reminder20mSent!: boolean;
     public reminder10mSent!: boolean;
+    public reminder5mSent!: boolean;
+    public reminderOnTimeSent!: boolean;
+    public reminderPost5mSent!: boolean;
+    public reminderPost10mSent!: boolean;
+    public reminderPost30mSent!: boolean;
+    public expiredNoShowCancelled!: boolean;
     public acceptedAt?: Date | null;
     public paymentDeadlineAt?: Date | null;
     public matchedRequestId?: string | null;
@@ -332,10 +346,45 @@ PartyPlan.init(
             defaultValue: false,
             field: 'reminder_2h_sent',
         },
+        reminder20mSent: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            field: 'reminder_20m_sent',
+        },
         reminder10mSent: {
             type: DataTypes.BOOLEAN,
             defaultValue: false,
             field: 'reminder_10m_sent',
+        },
+        reminder5mSent: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            field: 'reminder_5m_sent',
+        },
+        reminderOnTimeSent: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            field: 'reminder_on_time_sent',
+        },
+        reminderPost5mSent: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            field: 'reminder_post_5m_sent',
+        },
+        reminderPost10mSent: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            field: 'reminder_post_10m_sent',
+        },
+        reminderPost30mSent: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            field: 'reminder_post_30m_sent',
+        },
+        expiredNoShowCancelled: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            field: 'expired_no_show_cancelled',
         },
         // ── Lifecycle Timestamps ────────────────────────────────────────────────
         acceptedAt: {

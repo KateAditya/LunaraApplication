@@ -7,7 +7,7 @@ import { Op } from 'sequelize';
 
 export const getAdminGroupParties = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { venueId, status, paymentStatus, page = '1', limit = '20' } = req.query;
+        const { venueId, paymentStatus, page = '1', limit = '20' } = req.query;
 
         const where: any = {
             numberOfFriends: { [Op.lte]: 20 }
@@ -22,25 +22,9 @@ export const getAdminGroupParties = async (req: Request, res: Response): Promise
         // pending row, including abandoned checkouts, with Approve/Reject
         // actions that don't apply to them — so pending/unpaid rows are
         // never surfaced to admins regardless of the requested filter.
-        if (status && status !== 'pending') {
-            if (status === 'confirmed') {
-                where[Op.or] = [
-                    { status: 'confirmed' },
-                    { paymentStatus: 'paid' }
-                ];
-            } else {
-                where.status = status;
-            }
-        } else {
-            // Default (and explicit 'pending' request): only genuine
-            // confirmed/paid bookings — exclude incomplete pending drafts
-            // and cancelled attempts.
-            where[Op.or] = [
-                { status: 'confirmed' },
-                { paymentStatus: 'paid' }
-            ];
-        }
-        if (paymentStatus) where.paymentStatus = paymentStatus;
+        where.status = { [Op.in]: ['confirmed', 'completed'] };
+        where.paymentStatus = { [Op.in]: ['paid', 'free'] };
+        if (paymentStatus && paymentStatus !== 'pending') where.paymentStatus = paymentStatus;
 
         const pageNum = Math.max(1, parseInt(page as string));
         const limitNum = Math.min(100, Math.max(1, parseInt(limit as string)));

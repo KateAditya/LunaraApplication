@@ -5,6 +5,8 @@ import '../../services/api_service.dart';
 import '../discovery/digital_ticket_screen.dart';
 import '../social/large_party_ticket_screen.dart';
 import '../social/party_plan_ticket_screen.dart';
+import '../social/strangers_meet_ticket_screen.dart';
+import '../../models/strangers_meet_request.dart';
 
 class TicketPocketScreen extends StatefulWidget {
   const TicketPocketScreen({super.key});
@@ -97,11 +99,13 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
 
   bool _isActiveBooking(Map<String, dynamic> booking) {
     try {
+      if (booking['isExpired'] == true) return false;
       final status = booking['status']?.toString().toLowerCase();
       if (status == 'cancelled' ||
           status == 'completed' ||
           status == 'no_show' ||
           status == 'expired' ||
+          status == 'used' ||
           status == 'rejected') {
         return false;
       }
@@ -600,7 +604,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
           }
 
           // Group party tickets have richer data via LargePartyTicketScreen
-          final isGroupParty = booking['isGroupParty'] == true || booking['isSmallGroupParty'] == true;
+          final isGroupParty = booking['isGroupParty'] == true || booking['isSmallGroupParty'] == true || booking['bookingType'] == 'group_party';
           if (isGroupParty) {
             Navigator.push(
               context,
@@ -612,6 +616,21 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
               ),
             );
             return;
+          }
+
+          // Strangers meet tickets
+          final isStrangersMeet = booking['bookingType'] == 'strangers_meet' || booking['type'] == 'strangers_meet';
+          if (isStrangersMeet) {
+            try {
+              final req = StrangersMeetRequest.fromJson(Map<String, dynamic>.from(booking['rawRequest'] ?? booking['plan'] ?? booking));
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => StrangersMeetTicketScreen(request: req),
+                ),
+              );
+              return;
+            } catch (_) {}
           }
           Navigator.push(
             context,

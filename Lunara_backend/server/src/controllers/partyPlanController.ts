@@ -798,10 +798,10 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             await PlanEligibilityService.releaseLock(stale.id);
         }
 
-        // ── Check for 1 plan per day limit (Stranger Meet / Party Plan / Group Party) ──
-        const bookingConflictMsg = await checkExistingBookingForDate(userId, partyDate);
+        // ── Check for 1 plan per day limit (Party Plan) ──
+        const bookingConflictMsg = await checkExistingBookingForDate(userId, partyDate, 'party_plan');
         if (bookingConflictMsg) {
-            res.status(400).json({ success: false, message: 'You already have a plan scheduled on this day.' });
+            res.status(400).json({ success: false, message: bookingConflictMsg });
             return;
         }
 
@@ -3686,10 +3686,10 @@ export const repostPartyPlan = async (req: Request, res: Response): Promise<void
             res.status(400).json({ success: false, message: timingValidation.reason });
             return;
         }
-        const bookingConflictMsg = await checkExistingBookingForDate(callerUserId, parsedDate);
+        const bookingConflictMsg = await checkExistingBookingForDate(callerUserId, parsedDate, 'party_plan');
         if (bookingConflictMsg) {
             await transaction.rollback();
-            res.status(400).json({ success: false, message: 'You already have a plan scheduled on this day.' });
+            res.status(400).json({ success: false, message: bookingConflictMsg });
             return;
         }
 

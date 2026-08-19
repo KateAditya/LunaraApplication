@@ -76,9 +76,9 @@ export class StrangersMeetService {
             throw new Error(timingValidation.reason || 'Venue is closed on selected date or time.');
         }
 
-        const bookingConflictMsg = await checkExistingBookingForDate(userId, eventDate);
+        const bookingConflictMsg = await checkExistingBookingForDate(userId, eventDate, 'strangers_meet');
         if (bookingConflictMsg) {
-            throw new Error('You already have an active plan or event scheduled on this day.');
+            throw new Error(bookingConflictMsg);
         }
 
         const request = await PlanEligibilityService.runAtomicCheckAndCreate(

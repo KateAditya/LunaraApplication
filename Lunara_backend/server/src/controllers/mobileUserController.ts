@@ -374,14 +374,23 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
             uploadedAt: p.uploadedAt,
         }));
 
-        // Fetch actual superLikesCount and plansCount
-        const superLikesCount = await UserMatch.count({
-            where: {
-                user2Id: userId,
-                matchReason: 'superlike',
-                status: { [Op.in]: ['pending', 'connected'] }
-            }
-        });
+        // Fetch actual superLikesCount (from UserMatch + UserLike) and plansCount
+        const [superLikesFromMatches, superLikesFromLikes] = await Promise.all([
+            UserMatch.count({
+                where: {
+                    user2Id: userId,
+                    matchReason: 'superlike',
+                    status: { [Op.in]: ['pending', 'connected'] }
+                }
+            }),
+            UserLike.count({
+                where: {
+                    targetUserId: userId,
+                    actionType: 'superlike'
+                }
+            })
+        ]);
+        const receivedSuperLikes = Math.max(superLikesFromMatches, superLikesFromLikes);
 
         const plansCount = await PartyPlan.count({
             where: {
@@ -416,6 +425,9 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
             order: [['createdAt', 'DESC']],
         });
         const subscriptionTier: string = (activeSub as any)?.package?.tier ?? 'FREE';
+        const planSuperlikesMap: Record<string, number> = { FREE: 0, CORE: 3, PLUS: 10, PRO: 14, ELITE: 50 };
+        const planSuperlikesBase = planSuperlikesMap[subscriptionTier] ?? 0;
+        const superLikesCount = receivedSuperLikes + planSuperlikesBase;
 
         // Check if the requesting user has already liked/superliked target user
         let isLiked = false;
@@ -649,11 +661,10 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
         const mySwipesMap: Record<string, { status: string; matchReason: string }> = {};
 
         if (allUserIds.length > 0) {
-            const recencyDate = new Date(Date.now() - (RankingConfig.RECENCY_WINDOW_DAYS * 24 * 60 * 60 * 1000));
-
             const [
                 allLikesCounts,
                 superLikesCounts,
+                userLikesSuperCounts,
                 plansCounts,
                 groupPartyCounts,
                 strangersMeetCounts,
@@ -667,12 +678,7 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                     ],
                     where: {
                         user2Id: { [Op.in]: allUserIds },
-                        // Same status filter as the superlike count below —
-                        // without it, this counted every swipe including
-                        // 'declined' (nope) and stale 'expired' rows, inflating
-                        // the displayed likes-received total.
                         status: { [Op.in]: ['pending', 'connected'] },
-                        createdAt: { [Op.gte]: recencyDate }
                     },
                     group: ['user2Id']
                 }),
@@ -685,9 +691,19 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                         user2Id: { [Op.in]: allUserIds },
                         matchReason: 'superlike',
                         status: { [Op.in]: ['pending', 'connected'] },
-                        createdAt: { [Op.gte]: recencyDate }
                     },
                     group: ['user2Id']
+                }),
+                UserLike.findAll({
+                    attributes: [
+                        'targetUserId',
+                        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+                    ],
+                    where: {
+                        targetUserId: { [Op.in]: allUserIds },
+                        actionType: 'superlike',
+                    },
+                    group: ['targetUserId']
                 }),
                 PartyPlan.findAll({
                     attributes: [
@@ -697,7 +713,6 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                     where: {
                         userId: { [Op.in]: allUserIds },
                         status: 'active',
-                        createdAt: { [Op.gte]: recencyDate }
                     },
                     group: ['userId']
                 }),
@@ -708,7 +723,6 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                     ],
                     where: {
                         userId: { [Op.in]: allUserIds },
-                        createdAt: { [Op.gte]: recencyDate }
                     },
                     group: ['userId']
                 }),
@@ -719,7 +733,6 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                     ],
                     where: {
                         userId: { [Op.in]: allUserIds },
-                        createdAt: { [Op.gte]: recencyDate }
                     },
                     group: ['userId']
                 }),
@@ -747,6 +760,11 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
             });
             superLikesCounts.forEach((c: any) => {
                 superLikesMap[c.getDataValue('user2Id')] = parseInt(c.getDataValue('count')) || 0;
+            });
+            userLikesSuperCounts.forEach((c: any) => {
+                const targetId = c.getDataValue('targetUserId');
+                const cnt = parseInt(c.getDataValue('count')) || 0;
+                superLikesMap[targetId] = Math.max(superLikesMap[targetId] || 0, cnt);
             });
             plansCounts.forEach((c: any) => {
                 const uId = c.getDataValue('userId');
@@ -780,15 +798,23 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
             }
         }
 
+        const planSuperlikesMap: Record<string, number> = { FREE: 0, CORE: 3, PLUS: 10, PRO: 14, ELITE: 50 };
+
         const scoredUsers = allUserIds.map(id => {
-            const likes = likesMap[id] || 0;
-            const superlikes = superLikesMap[id] || 0;
+            const receivedLikes = likesMap[id] || 0;
+            const receivedSuperlikes = superLikesMap[id] || 0;
             const boosts = boostsMap[id] || 0;
             const plans = plansMap[id] || 0;
-            const tierRank = tierRankMap[tierMap[id] ?? 'FREE'] ?? 0;
+            const tier = tierMap[id] ?? 'FREE';
+            const tierRank = tierRankMap[tier] ?? 0;
+            
+            // Dynamic plan superlikes baseline:
+            const planSuperlikesBase = planSuperlikesMap[tier] || 0;
+            const superlikes = receivedSuperlikes + planSuperlikesBase;
+            const likes = receivedLikes + (tierRank > 0 ? (tierRank * 2) : 0);
             
             const hasBoost = boosts > 0;
-            const hasVip = tierMap[id] !== 'FREE' && tierMap[id] !== undefined;
+            const hasVip = tier !== 'FREE' && tierMap[id] !== undefined;
 
             let priorityTier = 5;
             let baseScore = RankingConfig.BASE_USER_SCORE;
