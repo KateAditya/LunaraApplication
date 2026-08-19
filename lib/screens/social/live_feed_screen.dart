@@ -1203,8 +1203,79 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
   }
 
+  void _showExpiredItemDialog(UnifiedNotificationItem item) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1B2E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: const [
+            Icon(Icons.timer_off_rounded, color: Colors.grey, size: 24),
+            SizedBox(width: 10),
+            Text(
+              'Event Expired',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              item.title,
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              item.body,
+              style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: Row(
+                children: const [
+                  Icon(Icons.info_outline_rounded, color: Colors.grey, size: 16),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'This event has passed its scheduled date or payment window. No actions can be performed.',
+                      style: TextStyle(color: Colors.white60, fontSize: 11.5, fontStyle: FontStyle.italic),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: LunaraTheme.electricViolet,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            ),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _onCardTap(UnifiedNotificationItem item) {
     _markItemAsRead(item);
+    if (item.isExpired) {
+      _showExpiredItemDialog(item);
+      return;
+    }
     final status = (item.rawData['status'] ?? item.rawData['paymentStatus'] ?? '').toString().toLowerCase();
     final category = item.category.toLowerCase();
     final pendingReqs = item.rawData['pendingIncomingRequests'];
@@ -1885,6 +1956,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (isExpired) {
       accentColor = const Color(0xFF9CA3AF);
       badgeText = 'EXPIRED';
+      cardTitle = 'Group Party Expired ⌛';
+      cardBody = 'Your group party request at $venueName has expired.';
+      actionButtonText = null;
+      onActionTap = null;
     } else if (overallStatus == 'confirmed') {
       cardTitle = 'Group Party Confirmed! 🎉';
       cardBody = 'Your group party of $guestCount friends at $venueName is fully confirmed. Get ready!';
@@ -2262,6 +2337,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (isExpired) {
       accent = const Color(0xFF9CA3AF);
       badge = 'EXPIRED';
+      title = 'Party Plan Expired ⌛';
       body = 'This Party Plan at $venueName has expired.';
       actionsList = null;
       statusSummary = 'Plan Expired';
@@ -2982,7 +3058,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final DateTime? expectedEnd = rawExpectedEnd != null ? DateTime.tryParse(rawExpectedEnd.toString())?.toLocal() : null;
     final String endFormatted = expectedEnd != null ? DateFormat('hh:mm a').format(expectedEnd) : '';
 
-    if (meetStatus == 'start_confirmation_pending') {
+    if (isExpired) {
+      accent = const Color(0xFF9CA3AF);
+      badge = 'EXPIRED';
+      title = '🤝 Stranger Meet Expired ⌛';
+      body = 'This Stranger Meet at $venueName has ended / expired.';
+      statusSummary = 'Meet Expired';
+      actionsList = null;
+    } else if (meetStatus == 'start_confirmation_pending') {
       title = '🟢 START CONFIRMATION REQUIRED';
       badge = 'ACTION REQUIRED';
       accent = const Color(0xFF8B5CF6);
@@ -3308,12 +3391,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           },
         ),
       ];
-    } else if (isExpired) {
-      accent = const Color(0xFF9CA3AF);
-      badge = 'EXPIRED';
-      body = 'This Stranger Meet at $venueName has ended/expired.';
-      statusSummary = 'Meet Expired';
-      actionsList = null;
+
     } else if (isHost) {
       userRoleLabel = '👑 Your Stranger Meet';
       final hostPayStatus = (meetMap['paymentStatus'] ?? '').toString().toLowerCase();

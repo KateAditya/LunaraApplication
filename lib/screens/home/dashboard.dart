@@ -201,10 +201,19 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
 
   void _initSocketListeners() {
     ApiService.addSocketListener('new_match', _onNewMatchReceived);
+    ApiService.addSocketListener('new_message', _onChatBadgeSocket);
+    ApiService.addSocketListener('messages_read', _onChatBadgeSocket);
   }
 
   void _disposeSocketListeners() {
     ApiService.removeSocketListener('new_match', _onNewMatchReceived);
+    ApiService.removeSocketListener('new_message', _onChatBadgeSocket);
+    ApiService.removeSocketListener('messages_read', _onChatBadgeSocket);
+  }
+
+  void _onChatBadgeSocket(dynamic data) {
+    if (!mounted) return;
+    _fetchBadges();
   }
 
   void _onNewMatchReceived(dynamic data) {

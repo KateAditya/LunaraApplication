@@ -139,24 +139,57 @@ export const getConversations = async (req: Request, res: Response) => {
             }
         }
 
-        const list = Array.from(mapByOtherUser.values()).map(conv => {
+        const list = [];
+        for (const conv of mapByOtherUser.values()) {
             const otherUserId = conv.getOtherParticipant(userId);
             const otherUser = (otherUserId && conv.participantOne && otherUserId.toLowerCase() === conv.participantOne.toLowerCase())
                 ? (conv as any).userOne
                 : (conv as any).userTwo;
 
-            return {
+            let effectivePreview = conv.lastMessagePreview ?? '';
+            let effectiveLastMsgAt = conv.lastMessageAt;
+
+            // If the conversation's shared "last message" was individually deleted-for-me
+            // by this user, fall back to the latest message this user can still see.
+            if (conv.lastMessageId) {
+                const lastMsg = await Message.findByPk(conv.lastMessageId);
+                const dfu = lastMsg ? (lastMsg as any).deletedForUsers : null;
+                let hiddenForUser = false;
+                if (dfu) {
+                    const parsed = Array.isArray(dfu) ? dfu : (typeof dfu === 'string' ? (() => { try { return JSON.parse(dfu); } catch (_) { return []; } })() : []);
+                    hiddenForUser = Array.isArray(parsed) && parsed.map((x: any) => String(x).toLowerCase()).includes(userId.toLowerCase());
+                }
+                if (hiddenForUser) {
+                    // JSONB "not contains" isn't portable to filter in the query itself,
+                    // so scan a small recent batch and filter in application code.
+                    const recentMsgs = await Message.findAll({
+                        where: { conversationId: conv.id, deletedAt: null as any },
+                        order: [['createdAt', 'DESC']],
+                        limit: 50,
+                    });
+                    const nextVisible = recentMsgs.find(m => {
+                        const d = (m as any).deletedForUsers;
+                        if (!d) return true;
+                        const arr = Array.isArray(d) ? d : (typeof d === 'string' ? (() => { try { return JSON.parse(d); } catch (_) { return []; } })() : []);
+                        return !(Array.isArray(arr) && arr.map((x: any) => String(x).toLowerCase()).includes(userId.toLowerCase()));
+                    });
+                    effectivePreview = nextVisible ? nextVisible.getPreview() : '';
+                    effectiveLastMsgAt = nextVisible ? nextVisible.createdAt : undefined;
+                }
+            }
+
+            list.push({
                 conversationId:      conv.id,
                 id:                  conv.id,
                 otherUser:           formatUserBrief(otherUser),
-                lastMessagePreview:  conv.lastMessagePreview ?? '',
-                lastMessageAt:       conv.lastMessageAt,
+                lastMessagePreview:  effectivePreview,
+                lastMessageAt:       effectiveLastMsgAt,
                 unreadCount:         conv.getUnreadFor(userId),
                 status:              conv.status,
                 contextType:         conv.contextType,
                 contextId:           conv.contextId,
-            };
-        });
+            });
+        }
 
         return res.json({ success: true, count: list.length, data: list });
     } catch (err: any) {
@@ -874,24 +907,13 @@ export const deleteMessage = async (req: Request, res: Response) => {
             const latestUserMsg = userRemainingMessages.length > 0 ? userRemainingMessages[0] : null;
             const newPreview = latestUserMsg ? latestUserMsg.getPreview() : '';
             const newLastMsgAt = latestUserMsg ? latestUserMsg.createdAt : null;
-            const newLastMsgId = latestUserMsg ? latestUserMsg.id : null;
 
-            for (const c of allConvs) {
-                const isP1 = (c.participantOne || '').toLowerCase() === uId;
-                if (isP1) {
-                    await (c as any).update({
-                        lastMessageId: newLastMsgId,
-                        lastMessagePreview: newPreview,
-                        lastMessageAt: newLastMsgAt,
-                    });
-                } else {
-                    await (c as any).update({
-                        lastMessageId: newLastMsgId,
-                        lastMessagePreview: newPreview,
-                        lastMessageAt: newLastMsgAt,
-                    });
-                }
-            }
+            // NOTE: "Delete for me" only hides the message for the requesting user.
+            // The conversation's shared lastMessageId/lastMessagePreview/lastMessageAt
+            // columns represent the true last message for BOTH participants and must
+            // NOT be overwritten here — otherwise the other participant's chat list
+            // preview gets corrupted with a message they never deleted. getConversations
+            // computes each user's effective preview dynamically instead.
 
             // Real-time socket broadcast ONLY to requesting user
             try {

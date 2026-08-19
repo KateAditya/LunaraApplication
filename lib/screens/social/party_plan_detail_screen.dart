@@ -1640,6 +1640,15 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   }
 
   void _openDepositPaymentSheet() {
+    if (_isExpired) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This Party Plan has expired. No actions can be performed.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
     final reqId = _activeRequestId ?? widget.plan['requestId']?.toString() ?? widget.plan['activeRequestId']?.toString();
     if (reqId == null || reqId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1722,6 +1731,15 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   }
 
   void _openHostDepositPaymentSheet() {
+    if (_isExpired) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This Party Plan has expired. No actions can be performed.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
     final cleanPlanId = widget.plan['id']?.toString() ?? '';
     final venue = widget.plan['venue'] as Map<String, dynamic>? ?? {};
     final venueName = venue['name'] as String? ?? 'Venue';
@@ -1889,6 +1907,15 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   }
 
   Future<void> _sendJoinRequest() async {
+    if (_isExpired) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This Party Plan has expired. No requests can be sent.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
     if (_isJoining || _alreadyRequested) return;
 
     final planId =
@@ -2359,7 +2386,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                   ],
 
                   // Pending Requests Section (For Host)
-                  if (isMyPost && _pendingRequests.isNotEmpty)
+                  if (isMyPost && _pendingRequests.isNotEmpty && !_isExpired)
                     _buildPendingRequestsSection(),
 
                   // Date / Time Card
@@ -2395,12 +2422,16 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                   ),
 
                   // Arrival Confirmation Card (30m Window)
-                  _buildArrivalConfirmationCard(),
-                  const SizedBox(height: 12),
+                  if (!_isExpired) ...[
+                    _buildArrivalConfirmationCard(),
+                    const SizedBox(height: 12),
+                  ],
 
                   // Mutual Cancellation Section
-                  _buildCancellationSection(),
-                  const SizedBox(height: 30),
+                  if (!_isExpired) ...[
+                    _buildCancellationSection(),
+                    const SizedBox(height: 30),
+                  ],
                 ],
               ),
             ),
@@ -2961,10 +2992,11 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
 
   bool get _isExpired {
     final plan = widget.plan;
+    if (plan['isExpired'] == true) return true;
     final status = (plan['status'] ?? '').toString().toLowerCase();
     final lifecycleStatus = (plan['lifecycleStatus'] ?? plan['lifecycle_status'] ?? '').toString().toLowerCase();
 
-    if (status == 'expired' || lifecycleStatus == 'expired') return true;
+    if (status == 'expired' || lifecycleStatus == 'expired' || lifecycleStatus == 'payment_expired') return true;
 
     final rawDateTime = plan['planDateTime'] ??
         plan['eventDateTime'] ??
@@ -2976,6 +3008,16 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       try {
         final planTime = DateTime.parse(rawDateTime.toString()).toLocal();
         if (planTime.isBefore(DateTime.now())) {
+          return true;
+        }
+      } catch (_) {}
+    }
+
+    final rawDeadline = plan['paymentDeadlineAt'] ?? plan['paymentTimeoutAt'];
+    if (rawDeadline != null && (_requestStatus == 'accepted' || _requestStatus == 'payment_pending')) {
+      try {
+        final deadline = DateTime.parse(rawDeadline.toString()).toLocal();
+        if (deadline.isBefore(DateTime.now())) {
           return true;
         }
       } catch (_) {}

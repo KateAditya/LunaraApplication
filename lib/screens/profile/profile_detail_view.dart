@@ -1673,10 +1673,22 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
       final List<Map<String, dynamic>> allPlans = results[0];
       final List<Map<String, dynamic>> myRequests = results[1];
 
-      // Filter only active plans
+      // Filter only active AND not-yet-passed plans. The backend `status`
+      // field alone isn't enough — a plan stays 'active' in the DB even
+      // after its event date/time has passed (nothing flips it
+      // automatically), so date-filtering is required too, otherwise past
+      // plans stay listed here and "Request to Join" then fails with
+      // "This Party Plan has expired."
+      final now = DateTime.now();
       final activePlans = allPlans.where((plan) {
         final status = (plan['status'] ?? 'active').toString().toLowerCase();
-        return status == 'active';
+        if (status != 'active') return false;
+        final rawDateTime = plan['actualPlanDateTime'] ?? plan['planDateTime'];
+        if (rawDateTime != null) {
+          final planDateTime = DateTime.tryParse(rawDateTime.toString());
+          if (planDateTime != null && planDateTime.isBefore(now)) return false;
+        }
+        return true;
       }).toList();
 
       // Collect plan IDs that current user has already requested to join (combining sync cache + server response)
