@@ -227,7 +227,7 @@ export const SubscriptionManagement: React.FC = () => {
             name: '',
             displayName: '',
             description: '',
-            tier: 'core',
+            tier: 'CORE',
             price: 0,
             durationDays: 30,
             currency: 'INR',
@@ -236,6 +236,14 @@ export const SubscriptionManagement: React.FC = () => {
             isActive: true,
             isPopular: false,
             isRecommended: false,
+            superlikesPerCycle: 0,
+            boostsPerCycle: 0,
+            backtrackLimit: 3,
+            hasHideProfile: false,
+            hasPriorityVisibility: false,
+            hasTrustBadge: false,
+            hasEliteBadge: false,
+            canSeeWhoLiked: false,
             displayOrder: plans.length + 1,
             dailyMatchRequests: -1,
             dailyLikes: -1,
@@ -892,15 +900,14 @@ export const SubscriptionManagement: React.FC = () => {
                                             <label className="form-label" style={{ fontWeight: 700, fontSize: '0.8rem' }}>Pricing Tier (Unique Tag)</label>
                                             <select
                                                 className="form-select"
-                                                value={editingPlan.tier || 'core'}
+                                                value={editingPlan.tier || 'CORE'}
                                                 onChange={e => setEditingPlan({ ...editingPlan, tier: e.target.value as any })}
                                             >
-                                                <option value="free">Free</option>
-                                                <option value="core">Core</option>
-                                                <option value="plus">Plus</option>
-                                                <option value="pro">Pro</option>
-                                                <option value="elite">Elite</option>
-                                                <option value="boost">Boost</option>
+                                                <option value="FREE">Free</option>
+                                                <option value="CORE">Core</option>
+                                                <option value="PLUS">Plus</option>
+                                                <option value="PRO">Pro</option>
+                                                <option value="ELITE">Elite</option>
                                             </select>
                                         </div>
                                         <div className="col-md-6">
@@ -959,6 +966,33 @@ export const SubscriptionManagement: React.FC = () => {
                                                 onChange={e => setEditingPlan({ ...editingPlan, dailyPosts: Number(e.target.value) })}
                                             />
                                         </div>
+                                        <div className="col-md-4">
+                                            <label className="form-label" style={{ fontWeight: 700, fontSize: '0.8rem' }}>Superlikes per Cycle</label>
+                                            <input
+                                                type="number"
+                                                className="form-control"
+                                                value={editingPlan.superlikesPerCycle ?? 0}
+                                                onChange={e => setEditingPlan({ ...editingPlan, superlikesPerCycle: Number(e.target.value) })}
+                                            />
+                                        </div>
+                                        <div className="col-md-4">
+                                            <label className="form-label" style={{ fontWeight: 700, fontSize: '0.8rem' }}>Boosts per Cycle</label>
+                                            <input
+                                                type="number"
+                                                className="form-control"
+                                                value={editingPlan.boostsPerCycle ?? 0}
+                                                onChange={e => setEditingPlan({ ...editingPlan, boostsPerCycle: Number(e.target.value) })}
+                                            />
+                                        </div>
+                                        <div className="col-md-4">
+                                            <label className="form-label" style={{ fontWeight: 700, fontSize: '0.8rem' }}>Backtrack Limit</label>
+                                            <input
+                                                type="number"
+                                                className="form-control"
+                                                value={editingPlan.backtrackLimit ?? 3}
+                                                onChange={e => setEditingPlan({ ...editingPlan, backtrackLimit: Number(e.target.value) })}
+                                            />
+                                        </div>
                                         <div className="col-md-6">
                                             <label className="form-label" style={{ fontWeight: 700, fontSize: '0.8rem' }}>Theme Color Hex</label>
                                             <input
@@ -978,6 +1012,71 @@ export const SubscriptionManagement: React.FC = () => {
                                                     onChange={e => setEditingPlan({ ...editingPlan, isPopular: e.target.checked })}
                                                 />
                                                 <label className="form-check-label" htmlFor="isPopular">Mark as Popular</label>
+                                            </div>
+                                        </div>
+                                        <div className="col-12">
+                                            <label className="form-label" style={{ fontWeight: 700, fontSize: '0.8rem' }}>Feature Flags</label>
+                                            <div className="d-flex flex-wrap gap-4">
+                                                <div className="form-check">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="form-check-input"
+                                                        id="hasHideProfile"
+                                                        checked={!!editingPlan.hasHideProfile}
+                                                        onChange={e => setEditingPlan({ ...editingPlan, hasHideProfile: e.target.checked })}
+                                                    />
+                                                    <label className="form-check-label" htmlFor="hasHideProfile">Hide Profile Access</label>
+                                                </div>
+                                                <div className="form-check">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="form-check-input"
+                                                        id="hasPriorityVisibility"
+                                                        checked={!!editingPlan.hasPriorityVisibility}
+                                                        onChange={e => setEditingPlan({ ...editingPlan, hasPriorityVisibility: e.target.checked })}
+                                                    />
+                                                    <label className="form-check-label" htmlFor="hasPriorityVisibility">Priority Visibility</label>
+                                                </div>
+                                                <div className="form-check">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="form-check-input"
+                                                        id="hasTrustBadge"
+                                                        checked={!!editingPlan.hasTrustBadge}
+                                                        onChange={e => setEditingPlan({ ...editingPlan, hasTrustBadge: e.target.checked })}
+                                                    />
+                                                    <label className="form-check-label" htmlFor="hasTrustBadge">Trust Badge</label>
+                                                </div>
+                                                <div className="form-check">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="form-check-input"
+                                                        id="hasEliteBadge"
+                                                        checked={!!editingPlan.hasEliteBadge}
+                                                        onChange={e => setEditingPlan({ ...editingPlan, hasEliteBadge: e.target.checked })}
+                                                    />
+                                                    <label className="form-check-label" htmlFor="hasEliteBadge">Elite Badge</label>
+                                                </div>
+                                                <div className="form-check">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="form-check-input"
+                                                        id="canSeeWhoLiked"
+                                                        checked={!!editingPlan.canSeeWhoLiked}
+                                                        onChange={e => setEditingPlan({ ...editingPlan, canSeeWhoLiked: e.target.checked })}
+                                                    />
+                                                    <label className="form-check-label" htmlFor="canSeeWhoLiked">See Who Liked Me</label>
+                                                </div>
+                                                <div className="form-check">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="form-check-input"
+                                                        id="isRecommended"
+                                                        checked={!!editingPlan.isRecommended}
+                                                        onChange={e => setEditingPlan({ ...editingPlan, isRecommended: e.target.checked })}
+                                                    />
+                                                    <label className="form-check-label" htmlFor="isRecommended">Mark as Recommended</label>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>

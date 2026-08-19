@@ -1756,14 +1756,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final status = (e['status'] ?? e['bookingStatus'] ?? e['data']?['status'] ?? e['adminApprovalStatus'] ?? '').toString().toLowerCase();
       final paymentStatus = (e['paymentStatus'] ?? e['data']?['paymentStatus'] ?? '').toString().toLowerCase();
       final title = (e['title'] ?? '').toString().toLowerCase();
-      final body = (e['body'] ?? '').toString().toLowerCase();
       final eventType = (e['type'] ?? e['eventType'] ?? '').toString().toLowerCase();
 
       if (status == 'expired' || e['isExpired'] == true || e['data']?['isExpired'] == true) {
         isExpiredFromServer = true;
       } else if (status == 'confirmed' || status == 'paid' || status == 'payment_done' ||
           paymentStatus == 'paid' || paymentStatus == 'free' ||
-          title.contains('confirmed') || eventType.contains('confirmed') || eventType.contains('payment_success')) {
+          eventType == 'payment_success') {
+        // Deliberately does NOT match on title/body substrings — a
+        // notification whose text merely mentions "confirmed" (e.g. an
+        // unrelated status update) must never be enough to unlock a ticket
+        // that hasn't actually been paid for. Only explicit status/type
+        // fields count.
         isConfirmed = true;
       } else if (status == 'approved' || status == 'awaiting_payment' || title.contains('approved') || eventType.contains('approved')) {
         isApproved = true;

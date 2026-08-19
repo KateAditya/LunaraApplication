@@ -24,6 +24,7 @@ export interface SubscriptionPlan {
     dailyPosts: number;
     superlikesPerCycle: number;
     boostsPerCycle: number;
+    backtrackLimit?: number;
     hasHideProfile: boolean;
     hasPriorityVisibility: boolean;
     hasTrustBadge: boolean;

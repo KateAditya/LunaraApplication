@@ -8,6 +8,7 @@ import '../../services/block_service.dart';
 import '../../services/api_service.dart';
 import 'package:intl/intl.dart';
 import '../../widgets/profile_share_sheet.dart';
+import '../../widgets/subscription_limit_dialog.dart';
 
 class ProfileDetailView extends StatefulWidget {
   final User user;
@@ -1124,12 +1125,18 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                   onPressed: (isActed || likeDisabled)
                       ? null
                       : () async {
-                          setState(() => _localSwipedAction = 'like');
                           if (widget.onLike != null) {
+                            setState(() => _localSwipedAction = 'like');
                             widget.onLike!.call();
                           } else {
                             final res = await ApiService.swipeUser(targetUserId: _currentUser.id, action: 'like');
-                            if (res != null && res['matched'] == true && mounted) {
+                            if (!mounted) return;
+                            if (res == null || res['limitReached'] == true) {
+                              showSubscriptionLimitDialog(context, feature: SubLimitFeature.dailyLikes, customMessage: res?['message']);
+                              return;
+                            }
+                            setState(() => _localSwipedAction = 'like');
+                            if (res['matched'] == true) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text('🎉 It\'s a Match with ${_currentUser.firstName}!'),
@@ -1211,12 +1218,18 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                   onPressed: (isSuperLiked || superLikeDisabled)
                       ? null
                       : () async {
-                          setState(() => _localSwipedAction = 'superlike');
                           if (widget.onSuper != null) {
+                            setState(() => _localSwipedAction = 'superlike');
                             widget.onSuper!.call();
                           } else {
                             final res = await ApiService.swipeUser(targetUserId: _currentUser.id, action: 'superlike');
-                            if (res != null && res['matched'] == true && mounted) {
+                            if (!mounted) return;
+                            if (res == null || res['limitReached'] == true) {
+                              showSubscriptionLimitDialog(context, feature: SubLimitFeature.superLike, customMessage: res?['message']);
+                              return;
+                            }
+                            setState(() => _localSwipedAction = 'superlike');
+                            if (res['matched'] == true) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text('🎉 It\'s a Match with ${_currentUser.firstName}!'),

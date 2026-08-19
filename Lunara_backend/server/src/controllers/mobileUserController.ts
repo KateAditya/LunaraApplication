@@ -1824,22 +1824,27 @@ export const getSwipeStatus = async (req: Request, res: Response): Promise<Respo
         const alreadySuperLiked = actionType === 'superlike' || (alreadyLiked && existingSwipe?.matchReason === 'superlike');
         const alreadyNoped = actionType === 'nope' || actionType === 'dislike' || (!!existingSwipe && existingSwipe.status === 'declined');
 
-        // Get today's total like count for this user
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-
-        const todayLikeCount = await UserMatch.count({
-            where: {
-                user1Id: userId,
-                status: { [Op.in]: ['pending', 'connected'] },
-                createdAt: { [Op.gte]: todayStart },
-            }
-        });
-
-        // Get subscription limits
+        // Daily likes: use the exact same SubscriptionService accessors that
+        // swipeUser's consumeUsage('daily_likes') gate enforces, so the
+        // displayed remaining count never drifts from what will actually be
+        // allowed (previously this recomputed usage independently by
+        // counting today's UserMatch rows, which could disagree with the
+        // SubscriptionUsage-tracked count consumeUsage relies on).
         let dailyLikesLimit = 3;
+        let todayLikeCount = 0;
         let superlikesRemaining = 0;
         let superlikesPerCycle = 0;
+
+        try {
+            const { SubscriptionService } = require('../services/subscriptionService');
+            const limit = await SubscriptionService.getLimit(userId, 'daily_likes');
+            const remaining = await SubscriptionService.getRemainingUsage(userId, 'daily_likes');
+            dailyLikesLimit = limit === 'unlimited' ? 999999 : limit;
+            const remainingNum = remaining === 'unlimited' ? dailyLikesLimit : remaining;
+            todayLikeCount = Math.max(0, dailyLikesLimit - remainingNum);
+        } catch (limitErr) {
+            logger.warn('[swipeStatus] Could not fetch daily like limits:', limitErr);
+        }
 
         try {
             const UserSubscription = require('../models/UserSubscription').default;
@@ -1856,10 +1861,6 @@ export const getSwipeStatus = async (req: Request, res: Response): Promise<Respo
             });
 
             if (activeSub) {
-                const pkg = (activeSub as any).package;
-                if (pkg) {
-                    dailyLikesLimit = pkg.dailyLikes === -1 ? 999999 : (pkg.dailyLikes || 3);
-                }
                 superlikesRemaining = activeSub.superlikesRemaining || 0;
                 superlikesPerCycle = (activeSub as any).package?.superlikesPerCycle || 0;
             }

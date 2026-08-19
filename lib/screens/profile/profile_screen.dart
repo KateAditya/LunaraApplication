@@ -353,23 +353,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
 
-    // Optimistically update UI immediately
-    setState(() {
-      _swipedActions[targetId] = 'like';
-      if (currentAction == 'superlike') {
-        // Return the superlike count
-        if (_superlikesPerCycle > 0) _superlikesRemaining++;
-      } else {
-        _dailyLikesUsed++;
-      }
-    });
-
-    // Show in-app notification
-    _showLikeNotification(targetUser.firstName, isSuperLike: false);
-
-    // Fire API
+    // Fire API first — only apply optimistic UI once the server confirms
+    // the like was actually accepted (previously this mutated state before
+    // the call resolved, so a rejected like still showed as successful).
     ApiService.swipeUser(targetUserId: targetId, action: 'like').then((res) {
-      if (res != null && res['matched'] == true && mounted) {
+      if (!mounted) return;
+
+      if (res == null || res['limitReached'] == true) {
+        _showLimitReachedSnack();
+        return;
+      }
+
+      setState(() {
+        _swipedActions[targetId] = 'like';
+        if (currentAction == 'superlike') {
+          // Return the superlike count
+          if (_superlikesPerCycle > 0) _superlikesRemaining++;
+        } else {
+          _dailyLikesUsed++;
+        }
+      });
+
+      _showLikeNotification(targetUser.firstName, isSuperLike: false);
+
+      if (res['matched'] == true) {
         _showMatchDialog(targetUser);
       }
     });
@@ -394,24 +401,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
 
-    // Optimistically update UI immediately
-    setState(() {
-      _swipedActions[targetId] = 'superlike';
-      if (currentAction == 'like') {
-        // Upgrading: consume one superlike
-        if (_superlikesPerCycle > 0) _superlikesRemaining--;
-      } else {
-        if (_superlikesPerCycle > 0) _superlikesRemaining--;
-        _dailyLikesUsed++;
-      }
-    });
-
-    // Show in-app notification
-    _showLikeNotification(targetUser.firstName, isSuperLike: true);
-
-    // Fire API
+    // Fire API first — only apply optimistic UI once the server confirms
+    // the superlike was actually accepted.
     ApiService.swipeUser(targetUserId: targetId, action: 'superlike').then((res) {
-      if (res != null && res['matched'] == true && mounted) {
+      if (!mounted) return;
+
+      if (res == null || res['limitReached'] == true) {
+        _showSuperLikeLimitSnack();
+        return;
+      }
+
+      setState(() {
+        _swipedActions[targetId] = 'superlike';
+        if (currentAction == 'like') {
+          // Upgrading: consume one superlike
+          if (_superlikesPerCycle > 0) _superlikesRemaining--;
+        } else {
+          if (_superlikesPerCycle > 0) _superlikesRemaining--;
+          _dailyLikesUsed++;
+        }
+      });
+
+      _showLikeNotification(targetUser.firstName, isSuperLike: true);
+
+      if (res['matched'] == true) {
         _showMatchDialog(targetUser);
       }
     });

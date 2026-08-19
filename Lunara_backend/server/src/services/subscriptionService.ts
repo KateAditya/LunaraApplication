@@ -11,7 +11,7 @@
  */
 
 import { Op, Transaction } from 'sequelize';
-import SubscriptionPackage from '../models/SubscriptionPackage';
+import SubscriptionPackage, { PackageTier } from '../models/SubscriptionPackage';
 import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription';
 import SubscriptionPlanFeature from '../models/SubscriptionPlanFeature';
 import SubscriptionFeature from '../models/SubscriptionFeature';
@@ -179,11 +179,17 @@ export class SubscriptionService {
                 features.set('party_creation', { enabled: true, value: 'unlimited' });
             }
         } else {
-            // Seed programmatical defaults for free/unsubscribed users
-            features.set('daily_likes', { enabled: true, value: 3 });
-            features.set('daily_match_requests', { enabled: true, value: 3 });
-            features.set('daily_posts', { enabled: true, value: 5 });
-            features.set('daily_backtracks', { enabled: true, value: 3 });
+            // Unsubscribed users: use the admin-configured FREE tier package
+            // as the source of truth, falling back to hardcoded defaults only
+            // if no FREE package has been seeded at all.
+            const freePkg = await SubscriptionPackage.findOne({
+                where: { tier: PackageTier.FREE, isActive: true },
+            });
+
+            features.set('daily_likes', { enabled: true, value: freePkg ? freePkg.dailyLikes : 7 });
+            features.set('daily_match_requests', { enabled: true, value: freePkg ? freePkg.dailyMatchRequests : 3 });
+            features.set('daily_posts', { enabled: true, value: freePkg ? freePkg.dailyPosts : 5 });
+            features.set('daily_backtracks', { enabled: true, value: freePkg ? freePkg.backtrackLimit : 3 });
             features.set('super_likes', { enabled: false, value: 0 });
             features.set('boosts', { enabled: false, value: 0 });
             features.set('stranger_meet', { enabled: true, value: 'unlimited' });

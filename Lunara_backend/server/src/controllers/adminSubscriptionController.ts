@@ -11,6 +11,50 @@ import { logger } from '../config/logger';
 import { SubscriptionService } from '../services/subscriptionService';
 import { sendPushNotification } from '../services/fcmService';
 
+// Fields that may be -1 (unlimited) or any non-negative integer.
+const NON_NEGATIVE_OR_UNLIMITED_FIELDS = [
+    'dailyMatchRequests', 'dailyLikes', 'dailyPosts',
+    'superlikesPerCycle', 'boostsPerCycle', 'backtrackLimit',
+];
+
+function validatePackagePayload(body: any, isCreate: boolean): string | null {
+    if (isCreate) {
+        if (!body.name || typeof body.name !== 'string' || !body.name.trim()) {
+            return 'name is required';
+        }
+        if (!body.tier || !Object.values(PackageTier).includes(body.tier)) {
+            return `tier is required and must be one of: ${Object.values(PackageTier).join(', ')}`;
+        }
+    } else if (body.tier !== undefined && !Object.values(PackageTier).includes(body.tier)) {
+        return `tier must be one of: ${Object.values(PackageTier).join(', ')}`;
+    }
+
+    if (body.price !== undefined) {
+        const price = Number(body.price);
+        if (!Number.isFinite(price) || price < 0) {
+            return 'price must be a non-negative number';
+        }
+    }
+
+    if (body.durationDays !== undefined) {
+        const durationDays = Number(body.durationDays);
+        if (!Number.isInteger(durationDays) || durationDays <= 0) {
+            return 'durationDays must be a positive integer';
+        }
+    }
+
+    for (const field of NON_NEGATIVE_OR_UNLIMITED_FIELDS) {
+        if (body[field] !== undefined) {
+            const val = Number(body[field]);
+            if (!Number.isInteger(val) || (val < 0 && val !== -1)) {
+                return `${field} must be -1 (unlimited) or a non-negative integer`;
+            }
+        }
+    }
+
+    return null;
+}
+
 // ─── Plans CRUD ───────────────────────────────────────────────────────────────
 
 // @route GET /api/admin/subscriptions
@@ -45,6 +89,12 @@ export const getAllPackages = async (_req: Request, res: Response): Promise<void
 // @route POST /api/admin/subscriptions
 export const createPackage = async (req: Request, res: Response): Promise<void> => {
     try {
+        const validationError = validatePackagePayload(req.body, true);
+        if (validationError) {
+            res.status(400).json({ success: false, message: validationError });
+            return;
+        }
+
         const adminId = (req as any).user?.id;
         const packageData = { ...req.body, createdBy: adminId, updatedBy: adminId };
 
@@ -68,6 +118,12 @@ export const createPackage = async (req: Request, res: Response): Promise<void> 
 // @route PUT /api/admin/subscriptions/:id
 export const updatePackage = async (req: Request, res: Response): Promise<void> => {
     try {
+        const validationError = validatePackagePayload(req.body, false);
+        if (validationError) {
+            res.status(400).json({ success: false, message: validationError });
+            return;
+        }
+
         const { id } = req.params;
         const adminId = (req as any).user?.id;
         const pkg = await SubscriptionPackage.findByPk(id);

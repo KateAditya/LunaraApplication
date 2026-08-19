@@ -1041,10 +1041,19 @@ export const rechargeWallet = async (req: Request, res: Response): Promise<void>
 // ─────────────────────────────────────────────────────────────────────────────
 export const payVipWithWallet = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { packageId, tier = 'PRO', price = 199 } = req.body;
+        const { packageId } = req.body;
         const userId = req.user!.id;
 
-        const requiredPrice = Number(price);
+        // Price is never trusted from the client — always sourced from the
+        // package record itself, which is the only authoritative price.
+        const pkg = await SubscriptionPackage.findOne({ where: { id: packageId, isActive: true } });
+        if (!pkg) {
+            res.status(400).json({ success: false, message: 'Invalid or inactive subscription package' });
+            return;
+        }
+
+        const requiredPrice = Number(pkg.price);
+        const tier = pkg.tier;
 
         // Execute Feature Purchase via WalletService Engine
         const WalletTransactionType = (await import('../models/WalletTransaction')).WalletTransactionType;
@@ -1060,16 +1069,9 @@ export const payVipWithWallet = async (req: Request, res: Response): Promise<voi
         const UserSubscriptionModel = (await import('../models/UserSubscription')).default;
         const SubscriptionStatusEnum = (await import('../models/UserSubscription')).SubscriptionStatus;
 
-        let pkg = await SubscriptionPackage.findByPk(packageId);
-        let durationDays = 30; // default
-        let superlikesRemaining = 0;
-        let boostsRemaining = 0;
-
-        if (pkg) {
-            durationDays = pkg.durationDays;
-            superlikesRemaining = pkg.superlikesPerCycle;
-            boostsRemaining = pkg.boostsPerCycle;
-        }
+        const durationDays = pkg.durationDays;
+        const superlikesRemaining = pkg.superlikesPerCycle;
+        const boostsRemaining = pkg.boostsPerCycle;
 
         // Do NOT expire active subscriptions to support future stacking.
         // Find the latest upcoming or active subscription to determine start date.
@@ -1096,7 +1098,7 @@ export const payVipWithWallet = async (req: Request, res: Response): Promise<voi
 
         const sub = await UserSubscriptionModel.create({
             userId,
-            packageId: packageId || (pkg ? pkg.id : 'DEFAULT_GOLD_PKG'),
+            packageId: pkg.id,
             status: newStatus,
             startDate,
             endDate: validUntil,
@@ -1135,28 +1137,84 @@ export const payVipWithWallet = async (req: Request, res: Response): Promise<voi
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/mobile/wallet/pay-super-likes
 // ─────────────────────────────────────────────────────────────────────────────
+// Server-authoritative pricing for à la carte credit purchases — matches the
+// Boost Profile pricing already used by mobileSubscriptionController.ts's
+// Razorpay boost flow (₹49/₹90/₹140/₹160 for 1/2/3/5). Client-supplied price
+// is never trusted.
+const CREDIT_PRICE_TABLE: Record<number, number> = { 1: 49, 2: 90, 3: 140, 5: 160 };
+
+async function findOrCreateSubscriptionForCredit(userId: string) {
+    const UserSubscriptionModel = (await import('../models/UserSubscription')).default;
+    const SubscriptionStatusEnum = (await import('../models/UserSubscription')).SubscriptionStatus;
+    const { PackageTier } = await import('../models/SubscriptionPackage');
+
+    let sub = await UserSubscriptionModel.findOne({
+        where: { userId, status: SubscriptionStatusEnum.ACTIVE, endDate: { [Op.gt]: new Date() } },
+        order: [['createdAt', 'DESC']],
+    });
+
+    if (!sub) {
+        let freePackage = await SubscriptionPackage.findOne({ where: { tier: PackageTier.FREE } });
+        if (!freePackage) {
+            freePackage = await SubscriptionPackage.findOne({ order: [['price', 'ASC']] });
+        }
+        if (!freePackage) {
+            const err: any = new Error('No subscription package found to link credit purchase');
+            err.statusCode = 400;
+            throw err;
+        }
+        sub = await UserSubscriptionModel.create({
+            userId,
+            packageId: freePackage.id,
+            status: SubscriptionStatusEnum.ACTIVE,
+            startDate: new Date(),
+            endDate: new Date(2099, 0, 1),
+            superlikesRemaining: 0,
+            boostsRemaining: 0,
+        });
+    }
+    return sub;
+}
+
 export const paySuperLikesWithWallet = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { count = 5, price = 49 } = req.body;
+        const { count } = req.body;
         const userId = req.user!.id;
-        const WalletTransactionType = (await import('../models/WalletTransaction')).WalletTransactionType;
+        const purchaseCount = Number(count);
 
+        const price = CREDIT_PRICE_TABLE[purchaseCount];
+        if (!price) {
+            res.status(400).json({ success: false, message: 'Invalid Super Like count' });
+            return;
+        }
+
+        const sub = await findOrCreateSubscriptionForCredit(userId);
+
+        const WalletTransactionType = (await import('../models/WalletTransaction')).WalletTransactionType;
         const purchaseResult = await WalletService.purchaseFeatureWithCredit({
             userId,
-            price: Number(price),
+            price,
             transactionType: WalletTransactionType.SUPER_LIKE_PURCHASE,
-            reference: `SUPER_LIKES_${count}_${Date.now()}`,
-            metadata: { count },
+            reference: `SUPER_LIKES_${purchaseCount}_${Date.now()}`,
+            metadata: { count: purchaseCount },
         });
+
+        await sub.update({ superlikesRemaining: sub.superlikesRemaining + purchaseCount });
+        const { SubscriptionService } = await import('../services/subscriptionService');
+        SubscriptionService.invalidateCache(userId);
 
         res.json({
             success: true,
-            message: `Successfully purchased ${count} Super Likes!`,
-            data: purchaseResult.data,
+            message: `Successfully purchased ${purchaseCount} Super Likes!`,
+            data: { ...purchaseResult.data, superlikesRemaining: sub.superlikesRemaining },
         });
     } catch (err: any) {
         if (err.statusCode === 402) {
             res.status(402).json({ success: false, insufficientBalance: true, data: err.shortfallData });
+            return;
+        }
+        if (err.statusCode === 400) {
+            res.status(400).json({ success: false, message: err.message });
             return;
         }
         res.status(500).json({ success: false, message: err.message || 'Super Likes purchase failed' });
@@ -1168,26 +1226,43 @@ export const paySuperLikesWithWallet = async (req: Request, res: Response): Prom
 // ─────────────────────────────────────────────────────────────────────────────
 export const payBoostWithWallet = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { count = 1, price = 99 } = req.body;
+        const { count } = req.body;
         const userId = req.user!.id;
-        const WalletTransactionType = (await import('../models/WalletTransaction')).WalletTransactionType;
+        const purchaseCount = Number(count);
 
+        const price = CREDIT_PRICE_TABLE[purchaseCount];
+        if (!price) {
+            res.status(400).json({ success: false, message: 'Invalid boost count' });
+            return;
+        }
+
+        const sub = await findOrCreateSubscriptionForCredit(userId);
+
+        const WalletTransactionType = (await import('../models/WalletTransaction')).WalletTransactionType;
         const purchaseResult = await WalletService.purchaseFeatureWithCredit({
             userId,
-            price: Number(price),
+            price,
             transactionType: WalletTransactionType.BOOST_PURCHASE,
-            reference: `BOOST_${count}_${Date.now()}`,
-            metadata: { count },
+            reference: `BOOST_${purchaseCount}_${Date.now()}`,
+            metadata: { count: purchaseCount },
         });
+
+        await sub.update({ boostsRemaining: sub.boostsRemaining + purchaseCount });
+        const { SubscriptionService } = await import('../services/subscriptionService');
+        SubscriptionService.invalidateCache(userId);
 
         res.json({
             success: true,
             message: `Successfully purchased Profile Boost!`,
-            data: purchaseResult.data,
+            data: { ...purchaseResult.data, boostsRemaining: sub.boostsRemaining },
         });
     } catch (err: any) {
         if (err.statusCode === 402) {
             res.status(402).json({ success: false, insufficientBalance: true, data: err.shortfallData });
+            return;
+        }
+        if (err.statusCode === 400) {
+            res.status(400).json({ success: false, message: err.message });
             return;
         }
         res.status(500).json({ success: false, message: err.message || 'Profile Boost purchase failed' });
