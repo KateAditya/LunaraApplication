@@ -697,6 +697,13 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
         await Ad.sync(options);
         try {
             await sequelize.query(`
+                ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS start_time VARCHAR(5);
+                ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE;
+                ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS optional_mobile_number VARCHAR(255);
+                ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS food_preference VARCHAR(100);
+                ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS drink_preference VARCHAR(100);
+                ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS ticket_url VARCHAR(500);
+                ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS ticket_code VARCHAR(100);
                 ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;
                 ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;
                 ALTER TABLE group_parties ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;

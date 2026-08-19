@@ -104,9 +104,13 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='drink_preference') THEN ALTER TABLE group_parties ADD COLUMN drink_preference VARCHAR(100); END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='ticket_url') THEN ALTER TABLE group_parties ADD COLUMN ticket_url VARCHAR(500); END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='ticket_code') THEN ALTER TABLE group_parties ADD COLUMN ticket_code VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='start_time') THEN ALTER TABLE group_parties ADD COLUMN start_time VARCHAR(5); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='expires_at') THEN ALTER TABLE group_parties ADD COLUMN expires_at TIMESTAMP WITH TIME ZONE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='optional_mobile_number') THEN ALTER TABLE group_parties ADD COLUMN optional_mobile_number VARCHAR(255); END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='reminder_2h_sent') THEN ALTER TABLE group_parties ADD COLUMN reminder_2h_sent BOOLEAN DEFAULT FALSE; END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='reminder_1h_sent') THEN ALTER TABLE group_parties ADD COLUMN reminder_1h_sent BOOLEAN DEFAULT FALSE; END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='reminder_30m_sent') THEN ALTER TABLE group_parties ADD COLUMN reminder_30m_sent BOOLEAN DEFAULT FALSE; END IF;
+                    BEGIN ALTER TYPE "enum_group_parties_status" ADD VALUE IF NOT EXISTS 'expired'; EXCEPTION WHEN others THEN NULL; END;
 
                     -- UserSubscriptions columns
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='UserSubscriptions' AND column_name='expiration_alert_sent') THEN ALTER TABLE "UserSubscriptions" ADD COLUMN expiration_alert_sent BOOLEAN NOT NULL DEFAULT FALSE; END IF;
